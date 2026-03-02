@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { SessionView } from './SessionView';
 
 type Props = {
   cardId: number;
@@ -297,9 +298,7 @@ function InProgressContent({ card }: { card: CardData }) {
   return (
     <div>
       {card.repoId ? (
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-          Claude session area
-        </div>
+        <SessionView cardId={card.id} />
       ) : (
         <div className="text-sm text-gray-500 dark:text-gray-400 italic">
           No repo linked - assign a repo to enable Claude sessions
