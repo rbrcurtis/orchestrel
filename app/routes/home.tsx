@@ -1,5 +1,6 @@
 import type { Route } from "./+types/home";
 import { Board } from "~/components/Board";
+import { ErrorBoundary } from "~/components/ErrorBoundary";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -9,5 +10,9 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function Home() {
-  return <Board />;
+  return (
+    <ErrorBoundary>
+      <Board />
+    </ErrorBoundary>
+  );
 }
