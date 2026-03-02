@@ -4,4 +4,9 @@ build/
 .env
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 .DS_Store
+*.tsbuildinfo
+.react-router/
+data/
