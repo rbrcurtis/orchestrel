@@ -1,7 +1,8 @@
 import { router } from '../trpc';
+import { cardsRouter } from './cards';
 
 export const appRouter = router({
-  // routers added here in subsequent tasks
+  cards: cardsRouter,
 });
 
 export type AppRouter = typeof appRouter;
