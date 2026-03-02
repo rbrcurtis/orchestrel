@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router';
 import {
   DndContext,
   DragOverlay,
@@ -21,7 +22,7 @@ import {
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Column, COLUMNS, type ColumnId } from './Column';
+import { Column, COLUMNS, type ColumnId, type ColumnHandle } from './Column';
 import { CardOverlay } from './Card';
 import { SearchBar } from './SearchBar';
 import { CardDetailPanel } from './CardDetailPanel';
@@ -83,7 +84,7 @@ export function Board() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  const { data: serverCards } = useQuery(trpc.cards.list.queryOptions());
+  const { data: serverCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
 
   const moveMutation = useMutation(
     trpc.cards.move.mutationOptions({
@@ -102,6 +103,9 @@ export function Board() {
   const snapshotRef = useRef<ColumnCards | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  const searchRef = useRef<HTMLInputElement>(null);
+  const backlogRef = useRef<ColumnHandle>(null);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -112,6 +116,27 @@ export function Board() {
       setColumns(groupByColumn(serverCards));
     }
   }, [serverCards, activeId]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === '/') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === 'n') {
+        backlogRef.current?.openAddCard();
+      }
+      if (e.key === 'Escape') {
+        setSelectedCardId(null);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -275,11 +300,36 @@ export function Board() {
     return null;
   }, [activeId, columns]);
 
+  if (isLoading) {
+    return (
+      <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
+        <header className="shrink-0 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center gap-4">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Dispatch</h1>
+        </header>
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
-      <header className="shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-4">
+      <header className="shrink-0 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Dispatch</h1>
-        <SearchBar value={search} onChange={setSearch} />
+        <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
+          <SearchBar ref={searchRef} value={search} onChange={setSearch} />
+          <Link
+            to="/settings/repos"
+            className="shrink-0 p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            title="Settings"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </Link>
+        </div>
       </header>
       <div className="flex-1 overflow-x-auto p-4">
         <DndContext
@@ -291,9 +341,15 @@ export function Board() {
           onDragCancel={handleDragCancel}
           measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         >
-          <div className="flex gap-4 h-full">
+          <div className="flex gap-4 h-full min-w-max">
             {COLUMNS.map((col) => (
-              <Column key={col} id={col} cards={filteredColumns[col]} onCardClick={setSelectedCardId} />
+              <Column
+                key={col}
+                ref={col === 'backlog' ? backlogRef : undefined}
+                id={col}
+                cards={filteredColumns[col]}
+                onCardClick={setSelectedCardId}
+              />
             ))}
           </div>
           {mounted &&
