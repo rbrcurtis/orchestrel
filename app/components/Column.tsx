@@ -26,9 +26,10 @@ interface CardItem {
 interface ColumnProps {
   id: ColumnId;
   cards: CardItem[];
+  onCardClick?: (id: number) => void;
 }
 
-export function Column({ id, cards }: ColumnProps) {
+export function Column({ id, cards, onCardClick }: ColumnProps) {
   const { setNodeRef } = useDroppable({ id });
   const [isAdding, setIsAdding] = useState(false);
 
@@ -58,7 +59,7 @@ export function Column({ id, cards }: ColumnProps) {
       >
         <SortableContext items={cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
           {cards.map((card) => (
-            <Card key={card.id} id={card.id} title={card.title} priority={card.priority} />
+            <Card key={card.id} id={card.id} title={card.title} priority={card.priority} onClick={onCardClick} />
           ))}
         </SortableContext>
       </div>

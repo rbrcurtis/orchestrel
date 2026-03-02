@@ -24,6 +24,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Column, COLUMNS, type ColumnId } from './Column';
 import { CardOverlay } from './Card';
 import { SearchBar } from './SearchBar';
+import { CardDetailPanel } from './CardDetailPanel';
 
 interface CardItem {
   id: number;
@@ -96,6 +97,7 @@ export function Board() {
     groupByColumn(serverCards ?? [])
   );
   const [search, setSearch] = useState('');
+  const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const snapshotRef = useRef<ColumnCards | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -291,7 +293,7 @@ export function Board() {
         >
           <div className="flex gap-4 h-full">
             {COLUMNS.map((col) => (
-              <Column key={col} id={col} cards={filteredColumns[col]} />
+              <Column key={col} id={col} cards={filteredColumns[col]} onCardClick={setSelectedCardId} />
             ))}
           </div>
           {mounted &&
@@ -305,6 +307,12 @@ export function Board() {
             )}
         </DndContext>
       </div>
+      {selectedCardId !== null && (
+        <CardDetailPanel
+          cardId={selectedCardId}
+          onClose={() => setSelectedCardId(null)}
+        />
+      )}
     </div>
   );
 }
