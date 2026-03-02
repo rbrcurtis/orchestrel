@@ -6,6 +6,9 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { TRPCProvider, makeTRPCClient } from '~/lib/trpc';
+import { useState } from 'react';
 
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -42,7 +45,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  const [queryClient] = useState(() => new QueryClient());
+  const [trpcClient] = useState(() => makeTRPCClient());
+
+  return (
+    <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+      </QueryClientProvider>
+    </TRPCProvider>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
