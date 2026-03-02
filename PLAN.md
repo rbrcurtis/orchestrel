@@ -44,17 +44,17 @@
 ## Phase 5: Claude Code Integration
 
 1. Subprocess manager — spawn, track, kill Claude Code processes
-2. Spawn with flags:
-   - `-p --output-format=stream-json --input-format=stream-json`
+2. Spawn `claude` CLI with flags:
+   - `-p --output-format=stream-json --input-format=stream-json` (Claude Code CLI flags for subprocess stdio protocol — newline-delimited JSON over stdin/stdout)
    - `--permission-prompt-tool=stdio --permission-mode=bypassPermissions`
    - `--verbose`
    - cwd = card's worktree path
-3. JSON protocol handler:
-   - Read stdout line-by-line, parse streaming JSON messages
+3. Claude subprocess stdio protocol handler (server-side):
+   - Read child process stdout line-by-line, parse newline-delimited JSON messages
    - Handle `control_request` messages (auto-approve all `can_use_tool`)
-   - Send `control_response` back via stdin
+   - Send `control_response` back via child process stdin
    - Send `initialize` and `set_permission_mode` on startup
-4. tRPC subscription to stream parsed output to client
+4. tRPC subscription (WebSocket/SSE, separate from Claude's stdio protocol) to re-emit parsed Claude output to the browser client
 5. Send follow-up user messages to active session via stdin
 6. Track session ID from Claude's output for log file reference
 7. Handle session completion, errors, process exit
