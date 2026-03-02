@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SessionView } from './SessionView';
+import { MessageBlock } from './MessageBlock';
 
 type Props = {
   cardId: number;
@@ -360,9 +361,7 @@ function ReviewContent({
           Open PR &rarr;
         </a>
       )}
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-        Session output placeholder
-      </div>
+      <SessionLog sessionId={card.sessionId} />
     </div>
   );
 }
@@ -387,8 +386,91 @@ function DoneContent({ card }: { card: CardData }) {
           </a>
         </div>
       )}
+      <SessionLog sessionId={card.sessionId} />
+    </div>
+  );
+}
+
+// --- Session log (read-only historical messages) ---
+
+type ToolResultBlock = {
+  type: 'tool_result';
+  tool_use_id: string;
+  content: Array<{ type: string; text: string }>;
+};
+
+function SessionLog({ sessionId }: { sessionId: string | null }) {
+  const trpc = useTRPC();
+
+  const { data, isLoading, isError } = useQuery(
+    trpc.sessions.loadSession.queryOptions(
+      { sessionId: sessionId! },
+      { enabled: !!sessionId }
+    )
+  );
+
+  // Extract tool outputs from user messages
+  const toolOutputs = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!data) return map;
+
+    for (const msg of data) {
+      if (msg.type !== 'user') continue;
+      const inner = msg.message as { content?: unknown } | undefined;
+      if (!inner?.content || !Array.isArray(inner.content)) continue;
+
+      for (const block of inner.content as ToolResultBlock[]) {
+        if (block.type === 'tool_result' && block.tool_use_id) {
+          const text = block.content
+            ?.map((c) => c.text)
+            .filter(Boolean)
+            .join('\n');
+          if (text) map.set(block.tool_use_id, text);
+        }
+      }
+    }
+    return map;
+  }, [data]);
+
+  if (!sessionId) {
+    return (
       <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-        Session log placeholder
+        No session log
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+        Loading session log...
+      </div>
+    );
+  }
+
+  if (isError || !data || data.length === 0) {
+    return (
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+        No session log available
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+          Session Log
+        </span>
+      </div>
+      <div className="overflow-y-auto px-3 py-2 space-y-1" style={{ maxHeight: '50vh' }}>
+        {data.map((msg, i) => (
+          <MessageBlock
+            key={i}
+            message={msg as Record<string, unknown>}
+            toolOutputs={toolOutputs}
+          />
+        ))}
       </div>
     </div>
   );
