@@ -23,6 +23,7 @@ import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Column, COLUMNS, type ColumnId } from './Column';
 import { CardOverlay } from './Card';
+import { SearchBar } from './SearchBar';
 
 interface CardItem {
   id: number;
@@ -94,6 +95,7 @@ export function Board() {
   const [columns, setColumns] = useState<ColumnCards>(() =>
     groupByColumn(serverCards ?? [])
   );
+  const [search, setSearch] = useState('');
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const snapshotRef = useRef<ColumnCards | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -248,6 +250,20 @@ export function Board() {
     snapshotRef.current = null;
   }
 
+  const filteredColumns = useMemo(() => {
+    if (!search) return columns;
+    const q = search.toLowerCase();
+    const result = {} as ColumnCards;
+    for (const col of COLUMNS) {
+      result[col] = columns[col].filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          (c.description && c.description.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [columns, search]);
+
   const activeCard = useMemo(() => {
     if (!activeId) return null;
     for (const col of COLUMNS) {
@@ -259,8 +275,9 @@ export function Board() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
-      <header className="shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+      <header className="shrink-0 px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Dispatch</h1>
+        <SearchBar value={search} onChange={setSearch} />
       </header>
       <div className="flex-1 overflow-x-auto p-4">
         <DndContext
@@ -274,7 +291,7 @@ export function Board() {
         >
           <div className="flex gap-4 h-full">
             {COLUMNS.map((col) => (
-              <Column key={col} id={col} cards={columns[col]} />
+              <Column key={col} id={col} cards={filteredColumns[col]} />
             ))}
           </div>
           {mounted &&
