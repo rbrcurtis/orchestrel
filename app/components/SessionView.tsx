@@ -1,8 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Play } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSubscription } from '@trpc/tanstack-react-query';
 import { MessageBlock } from './MessageBlock';
+import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
+import { Textarea } from '~/components/ui/textarea';
+import { Badge } from '~/components/ui/badge';
+import { ScrollArea } from '~/components/ui/scroll-area';
+import { Alert, AlertDescription } from '~/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
 
 type Props = {
   cardId: number;
@@ -102,12 +110,14 @@ export function SessionView({ cardId }: Props) {
       <StatusBar status={sessionStatus} />
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 min-h-0">
-        {messages.map((msg, i) => (
-          <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} />
-        ))}
-        <div ref={bottomRef} />
-      </div>
+      <ScrollArea className="flex-1 min-h-0" style={{ maxHeight: 'calc(60vh - 80px)' }}>
+        <div className="px-3 py-2 space-y-1">
+          {messages.map((msg, i) => (
+            <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+      </ScrollArea>
 
       {/* Input */}
       {sessionActive && <MessageInput cardId={cardId} />}
@@ -118,28 +128,29 @@ export function SessionView({ cardId }: Props) {
 // --- Status bar ---
 
 function StatusBar({ status }: { status: string }) {
-  let dot: string;
+  let variant: 'default' | 'secondary' | 'destructive' | 'outline';
   let label: string;
 
   switch (status) {
     case 'running':
     case 'starting':
-      dot = 'bg-green-500 animate-pulse';
+      variant = 'default';
       label = status === 'starting' ? 'Starting...' : 'Running';
       break;
     case 'completed':
-      dot = 'bg-gray-400';
+      variant = 'secondary';
       label = 'Completed';
       break;
     default:
-      dot = 'bg-red-500';
+      variant = 'destructive';
       label = 'Errored';
   }
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-      <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
-      <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{label}</span>
+      <Badge variant={variant} className="text-xs">
+        {label}
+      </Badge>
     </div>
   );
 }
@@ -172,24 +183,26 @@ function StartSessionForm({ cardId }: { cardId: number }) {
         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">
           Start a Claude session
         </label>
-        <textarea
+        <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Describe the task for Claude..."
           rows={3}
-          className="w-full text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+          className="resize-y"
         />
-        <button
+        <Button
           type="submit"
           disabled={startMutation.isPending || !prompt.trim()}
-          className="w-full px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+          className="w-full"
         >
+          <Play className="size-4" />
           {startMutation.isPending ? 'Starting...' : 'Start Session'}
-        </button>
+        </Button>
         {startMutation.isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">
-            {startMutation.error.message}
-          </p>
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>{startMutation.error.message}</AlertDescription>
+          </Alert>
         )}
       </form>
     </div>
@@ -217,19 +230,20 @@ function MessageInput({ cardId }: { cardId: number }) {
       onSubmit={handleSubmit}
       className="flex gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0"
     >
-      <input
+      <Input
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Send a follow-up message..."
-        className="flex-1 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="flex-1"
       />
-      <button
+      <Button
         type="submit"
+        size="sm"
         disabled={sendMutation.isPending || !text.trim()}
-        className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
       >
+        <Send className="size-4" />
         Send
-      </button>
+      </Button>
     </form>
   );
 }

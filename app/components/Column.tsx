@@ -1,6 +1,9 @@
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useState, useImperativeHandle, forwardRef } from 'react';
+import { Plus } from 'lucide-react';
+import { Button } from '~/components/ui/button';
+import { Badge } from '~/components/ui/badge';
 import { Card } from './Card';
 import { AddCardForm } from './AddCardForm';
 
@@ -51,16 +54,15 @@ export const Column = forwardRef<ColumnHandle, ColumnProps>(
             {displayNames[id]}
           </h2>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500 bg-gray-200 dark:bg-gray-700 rounded-full px-2 py-0.5">
-              {cards.length}
-            </span>
-            <button
+            <Badge variant="secondary">{cards.length}</Badge>
+            <Button
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setIsAdding(true)}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-lg leading-none"
               title="Add card"
             >
-              +
-            </button>
+              <Plus className="size-4" />
+            </Button>
           </div>
         </div>
         {isAdding && <AddCardForm column={id} onClose={() => setIsAdding(false)} />}

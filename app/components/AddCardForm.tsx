@@ -1,6 +1,7 @@
 import { useTRPC } from '~/lib/trpc';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, useEffect } from 'react';
+import { Input } from '~/components/ui/input';
 
 interface AddCardFormProps {
   column: string;
@@ -41,7 +42,7 @@ export function AddCardForm({ column, onClose }: AddCardFormProps) {
 
   return (
     <div className="px-2 pb-2">
-      <input
+      <Input
         ref={inputRef}
         type="text"
         value={title}
@@ -49,7 +50,6 @@ export function AddCardForm({ column, onClose }: AddCardFormProps) {
         onKeyDown={handleKeyDown}
         onBlur={onClose}
         placeholder="Card title..."
-        className="w-full rounded bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
         disabled={createMutation.isPending}
       />
     </div>

@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery } from '@tanstack/react-query';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '~/components/ui/dialog';
+import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from '~/components/ui/breadcrumb';
+import { Badge } from '~/components/ui/badge';
+import { Button } from '~/components/ui/button';
+import { ScrollArea } from '~/components/ui/scroll-area';
+import { Folder } from 'lucide-react';
 
 interface DirectoryBrowserProps {
   initialPath?: string;
@@ -26,79 +32,82 @@ export default function DirectoryBrowser({ initialPath = '/home/ryan', onSelect,
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 flex flex-col max-h-96">
-        {/* Header with breadcrumb */}
-        <div className="px-4 pt-4 pb-2 border-b border-gray-200">
-          <div className="flex items-center gap-1 text-sm overflow-x-auto whitespace-nowrap">
-            <button
-              onClick={() => setCurrentPath('/')}
-              className="text-blue-600 hover:text-blue-800 font-medium"
-            >
-              /
-            </button>
-            {segments.map((seg, i) => (
-              <span key={i} className="flex items-center gap-1">
-                <span className="text-gray-400">/</span>
-                <button
-                  onClick={() => navigateToBreadcrumb(i)}
-                  className="text-blue-600 hover:text-blue-800"
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <DialogContent className="max-w-lg flex flex-col max-h-[80vh] p-0 gap-0" showCloseButton={false}>
+        <DialogHeader className="px-4 pt-4 pb-2 border-b space-y-2">
+          <DialogTitle className="sr-only">Browse Directories</DialogTitle>
+          <Breadcrumb>
+            <BreadcrumbList className="flex-nowrap overflow-x-auto">
+              <BreadcrumbItem>
+                <BreadcrumbLink
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); setCurrentPath('/'); }}
+                  className="cursor-pointer font-medium"
                 >
-                  {seg}
-                </button>
-              </span>
-            ))}
-          </div>
+                  /
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              {segments.map((seg, i) => (
+                <BreadcrumbItem key={i}>
+                  <BreadcrumbSeparator>/</BreadcrumbSeparator>
+                  <BreadcrumbLink
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); navigateToBreadcrumb(i); }}
+                    className="cursor-pointer"
+                  >
+                    {seg}
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
           {data?.isGitRepo && (
-            <span className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-green-700 bg-green-100 rounded px-2 py-0.5">
+            <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 w-fit">
               <span className="w-2 h-2 rounded-full bg-green-500" />
               Git Repository
-            </span>
+            </Badge>
           )}
-        </div>
+        </DialogHeader>
 
         {/* Directory list */}
-        <div className="flex-1 overflow-y-auto">
-          {isLoading && (
-            <div className="p-4 text-sm text-gray-500">Loading...</div>
-          )}
-          {data?.error && (
-            <div className="p-4 text-sm text-red-600">{data.error}</div>
-          )}
-          {data && !data.error && data.dirs.length === 0 && (
-            <div className="p-4 text-sm text-gray-500">No subdirectories</div>
-          )}
-          {data?.dirs.map((dir) => (
-            <button
-              key={dir.path}
-              onClick={() => navigateTo(dir.path)}
-              className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm border-b border-gray-50"
-            >
-              <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-              </svg>
-              <span className="text-gray-800">{dir.name}</span>
-            </button>
-          ))}
-        </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="max-h-64">
+            {isLoading && (
+              <div className="p-4 text-sm text-muted-foreground">Loading...</div>
+            )}
+            {data?.error && (
+              <div className="p-4 text-sm text-destructive">{data.error}</div>
+            )}
+            {data && !data.error && data.dirs.length === 0 && (
+              <div className="p-4 text-sm text-muted-foreground">No subdirectories</div>
+            )}
+            {data?.dirs.map((dir) => (
+              <Button
+                key={dir.path}
+                variant="ghost"
+                className="w-full justify-start rounded-none h-auto px-4 py-2 text-sm font-normal"
+                onClick={() => navigateTo(dir.path)}
+              >
+                <Folder className="size-4 text-muted-foreground shrink-0" />
+                <span>{dir.name}</span>
+              </Button>
+            ))}
+          </div>
+        </ScrollArea>
 
         {/* Footer actions */}
-        <div className="px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded"
-          >
+        <DialogFooter className="px-4 py-3 border-t">
+          <Button variant="outline" onClick={onCancel}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => onSelect(currentPath)}
             disabled={!data?.isGitRepo}
-            className="px-3 py-1.5 text-sm text-white bg-green-600 hover:bg-green-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Select
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

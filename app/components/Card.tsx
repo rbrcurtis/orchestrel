@@ -1,5 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { X } from 'lucide-react';
+import { Button } from '~/components/ui/button';
 import { useTRPC } from '~/lib/trpc';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -51,15 +53,17 @@ export function Card({ id, title, priority, onClick }: CardProps) {
       className={`group relative rounded bg-white dark:bg-gray-800 border-l-4 ${priorityColors[priority] ?? 'border-l-gray-300'} px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
     >
       <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
-      <button
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className="absolute top-1 right-1 hidden group-hover:flex text-muted-foreground"
         onClick={(e) => {
           e.stopPropagation();
           deleteMutation.mutate({ id });
         }}
-        className="absolute top-1 right-1 hidden group-hover:block p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
       >
-        <span className="text-xs leading-none">&times;</span>
-      </button>
+        <X className="size-3" />
+      </Button>
     </div>
   );
 }

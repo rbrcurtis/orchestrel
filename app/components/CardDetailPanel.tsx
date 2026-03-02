@@ -1,8 +1,16 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SessionView } from './SessionView';
 import { MessageBlock } from './MessageBlock';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '~/components/ui/sheet';
+import { Input } from '~/components/ui/input';
+import { Textarea } from '~/components/ui/textarea';
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '~/components/ui/select';
+import { Badge } from '~/components/ui/badge';
+import { Button } from '~/components/ui/button';
+import { ScrollArea } from '~/components/ui/scroll-area';
 
 type Props = {
   cardId: number;
@@ -35,34 +43,17 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
     })
   );
 
-  // Escape key to close
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  // Slide-in animation
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    requestAnimationFrame(() => setVisible(true));
-  }, []);
-
-  function handleClose() {
-    setVisible(false);
-    setTimeout(onClose, 200);
-  }
-
   if (!card) {
     return (
-      <>
-        <div className="fixed inset-0 bg-black/20 z-40" onClick={handleClose} />
-        <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white dark:bg-gray-900 shadow-xl z-50 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">Card not found</p>
-        </div>
-      </>
+      <Sheet open={true} onOpenChange={() => onClose()}>
+        <SheetContent side="right" className="w-full sm:w-[420px] sm:max-w-[420px]">
+          <SheetHeader>
+            <SheetTitle>Card</SheetTitle>
+            <SheetDescription>Card not found</SheetDescription>
+          </SheetHeader>
+          <p className="p-6 text-center text-muted-foreground">Card not found</p>
+        </SheetContent>
+      </Sheet>
     );
   }
 
@@ -70,30 +61,19 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
   const isEditable = col === 'backlog' || col === 'ready';
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className={`fixed inset-0 bg-black/20 z-40 transition-opacity duration-200 ${visible ? 'opacity-100' : 'opacity-0'}`}
-        onClick={handleClose}
-      />
-      {/* Panel */}
-      <div
-        className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white dark:bg-gray-900 shadow-xl z-50 overflow-y-auto transition-transform duration-200 ${visible ? 'translate-x-0' : 'translate-x-full'}`}
-      >
-        <div className="p-6 space-y-6">
-          {/* Header */}
-          <div className="flex items-start justify-between gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+    <Sheet open={true} onOpenChange={() => onClose()}>
+      <SheetContent side="right" className="w-full sm:w-[420px] sm:max-w-[420px] overflow-y-auto">
+        <SheetHeader>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="uppercase text-xs tracking-wide">
               {col.replace('_', ' ')}
-            </span>
-            <button
-              onClick={handleClose}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              <span className="text-lg leading-none">&times;</span>
-            </button>
+            </Badge>
           </div>
+          <SheetTitle className="sr-only">{card.title}</SheetTitle>
+          <SheetDescription className="sr-only">Card detail panel</SheetDescription>
+        </SheetHeader>
 
+        <div className="px-4 pb-6 space-y-6">
           {/* Title */}
           {isEditable ? (
             <EditableTitle
@@ -101,7 +81,7 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
               onSave={(title) => updateMutation.mutate({ id: card.id, title })}
             />
           ) : (
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <h2 className="text-lg font-semibold text-foreground">
               {card.title}
             </h2>
           )}
@@ -115,7 +95,7 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
               }
             />
           ) : (
-            <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+            <div className="text-sm text-muted-foreground whitespace-pre-wrap">
               {card.description || 'No description'}
             </div>
           )}
@@ -144,8 +124,8 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
             <DoneContent card={card} />
           )}
         </div>
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -169,7 +149,7 @@ function EditableTitle({ value, onSave }: { value: string; onSave: (v: string) =
   }
 
   return (
-    <input
+    <Input
       ref={ref}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
@@ -177,7 +157,7 @@ function EditableTitle({ value, onSave }: { value: string; onSave: (v: string) =
       onKeyDown={(e) => {
         if (e.key === 'Enter') ref.current?.blur();
       }}
-      className="w-full text-lg font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-b border-transparent hover:border-gray-300 dark:hover:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none pb-1 transition-colors"
+      className="text-lg font-semibold border-transparent shadow-none hover:border-input focus-visible:border-ring"
     />
   );
 }
@@ -204,17 +184,17 @@ function EditableDescription({
 
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+      <label className="block text-xs font-medium text-muted-foreground mb-1">
         Description
       </label>
-      <textarea
+      <Textarea
         ref={ref}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         rows={4}
         placeholder="Add a description..."
-        className="w-full text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400 resize-y"
+        className="resize-y"
       />
     </div>
   );
@@ -252,42 +232,49 @@ function EditableFields({
     <div className="space-y-4">
       {/* Priority */}
       <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label className="block text-xs font-medium text-muted-foreground mb-1">
           Priority
         </label>
-        <select
+        <Select
           value={card.priority}
-          onChange={(e) => onUpdate({ priority: e.target.value })}
-          className="w-full text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          onValueChange={(val) => onUpdate({ priority: val })}
         >
-          {PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {priorityLabels[p]}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PRIORITIES.map((p) => (
+              <SelectItem key={p} value={p}>
+                {priorityLabels[p]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Repo */}
       <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label className="block text-xs font-medium text-muted-foreground mb-1">
           Repository
         </label>
-        <select
-          value={card.repoId ?? ''}
-          onChange={(e) => {
-            const v = e.target.value;
-            onUpdate({ repoId: v ? Number(v) : null });
+        <Select
+          value={card.repoId != null ? String(card.repoId) : '__none__'}
+          onValueChange={(val) => {
+            onUpdate({ repoId: val === '__none__' ? null : Number(val) });
           }}
-          className="w-full text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
-          <option value="">None</option>
-          {repos.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.displayName}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">None</SelectItem>
+            {repos.map((r) => (
+              <SelectItem key={r.id} value={String(r.id)}>
+                {r.displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );
@@ -301,7 +288,7 @@ function InProgressContent({ card }: { card: CardData }) {
       {card.repoId ? (
         <SessionView cardId={card.id} />
       ) : (
-        <div className="text-sm text-gray-500 dark:text-gray-400 italic">
+        <div className="text-sm text-muted-foreground italic">
           No repo linked - assign a repo to enable Claude sessions
         </div>
       )}
@@ -336,10 +323,10 @@ function ReviewContent({
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label className="block text-xs font-medium text-muted-foreground mb-1">
           PR URL
         </label>
-        <input
+        <Input
           ref={ref}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -348,18 +335,19 @@ function ReviewContent({
             if (e.key === 'Enter') ref.current?.blur();
           }}
           placeholder="https://github.com/..."
-          className="w-full text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
       {card.prUrl && (
-        <a
-          href={card.prUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-        >
-          Open PR &rarr;
-        </a>
+        <Button variant="link" asChild className="px-0">
+          <a
+            href={card.prUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink className="size-4" />
+            Open PR
+          </a>
+        </Button>
       )}
       <SessionLog sessionId={card.sessionId} />
     </div>
@@ -373,17 +361,19 @@ function DoneContent({ card }: { card: CardData }) {
     <div className="space-y-4">
       {card.prUrl && (
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
             PR URL
           </label>
-          <a
-            href={card.prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            {card.prUrl} &rarr;
-          </a>
+          <Button variant="link" asChild className="px-0">
+            <a
+              href={card.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="size-4" />
+              {card.prUrl}
+            </a>
+          </Button>
         </div>
       )}
       <SessionLog sessionId={card.sessionId} />
@@ -434,7 +424,7 @@ function SessionLog({ sessionId }: { sessionId: string | null }) {
 
   if (!sessionId) {
     return (
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-muted-foreground">
         No session log
       </div>
     );
@@ -442,7 +432,7 @@ function SessionLog({ sessionId }: { sessionId: string | null }) {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-muted-foreground">
         Loading session log...
       </div>
     );
@@ -450,7 +440,7 @@ function SessionLog({ sessionId }: { sessionId: string | null }) {
 
   if (isError || !data || data.length === 0) {
     return (
-      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 text-center text-sm text-muted-foreground">
         No session log available
       </div>
     );
@@ -459,19 +449,21 @@ function SessionLog({ sessionId }: { sessionId: string | null }) {
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
       <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+        <span className="text-xs font-medium text-muted-foreground">
           Session Log
         </span>
       </div>
-      <div className="overflow-y-auto px-3 py-2 space-y-1" style={{ maxHeight: '50vh' }}>
-        {data.map((msg, i) => (
-          <MessageBlock
-            key={i}
-            message={msg as Record<string, unknown>}
-            toolOutputs={toolOutputs}
-          />
-        ))}
-      </div>
+      <ScrollArea className="px-3 py-2" style={{ maxHeight: '50vh' }}>
+        <div className="space-y-1">
+          {data.map((msg, i) => (
+            <MessageBlock
+              key={i}
+              message={msg as Record<string, unknown>}
+              toolOutputs={toolOutputs}
+            />
+          ))}
+        </div>
+      </ScrollArea>
     </div>
   );
 }

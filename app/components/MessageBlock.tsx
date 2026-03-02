@@ -1,4 +1,8 @@
+import { useState } from 'react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import { ToolUseBlock } from './ToolUseBlock';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
+import { Alert, AlertTitle, AlertDescription } from '~/components/ui/alert';
 
 type Props = {
   message: Record<string, unknown>;
@@ -81,20 +85,31 @@ function AssistantBlock({
           );
         }
         if (block.type === 'thinking' && block.thinking) {
-          return (
-            <details key={i} className="text-xs text-gray-400 dark:text-gray-500">
-              <summary className="cursor-pointer hover:text-gray-600 dark:hover:text-gray-400">
-                Thinking...
-              </summary>
-              <div className="mt-1 whitespace-pre-wrap pl-3 border-l border-gray-200 dark:border-gray-700">
-                {block.thinking}
-              </div>
-            </details>
-          );
+          return <ThinkingBlock key={i} thinking={block.thinking} />;
         }
         return null;
       })}
     </div>
+  );
+}
+
+// --- Thinking block (collapsible) ---
+
+function ThinkingBlock({ thinking }: { thinking: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="text-xs text-gray-400 dark:text-gray-500">
+      <CollapsibleTrigger className="cursor-pointer hover:text-gray-600 dark:hover:text-gray-400 flex items-center gap-1">
+        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+        Thinking...
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-1 whitespace-pre-wrap pl-3 border-l border-gray-200 dark:border-gray-700">
+          {thinking}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -108,19 +123,17 @@ function ResultBlock({ message }: { message: Record<string, unknown> }) {
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
 
   return (
-    <div
-      className={`rounded-lg px-3 py-2 text-xs font-medium my-2 ${
-        isSuccess
-          ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-          : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
-      }`}
-    >
-      <div>{isSuccess ? 'Session completed' : `Session errored: ${subtype}`}</div>
-      <div className="flex gap-3 mt-1 text-[11px] opacity-80">
-        {cost != null && <span>Cost: ${cost.toFixed(4)}</span>}
-        {durationSec != null && <span>Duration: {durationSec}s</span>}
-      </div>
-    </div>
+    <Alert variant={isSuccess ? 'default' : 'destructive'} className="my-2">
+      <AlertTitle className="text-xs font-medium">
+        {isSuccess ? 'Session completed' : `Session errored: ${subtype}`}
+      </AlertTitle>
+      <AlertDescription>
+        <div className="flex gap-3 mt-1 text-[11px] opacity-80">
+          {cost != null && <span>Cost: ${cost.toFixed(4)}</span>}
+          {durationSec != null && <span>Duration: {durationSec}s</span>}
+        </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
