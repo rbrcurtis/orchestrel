@@ -10,18 +10,26 @@ export class ClaudeSession extends EventEmitter {
 
   constructor(
     private cwd: string,
+    private resumeSessionId?: string,
   ) {
     super();
   }
 
   async start(): Promise<void> {
-    this.process = spawn('claude', [
-      '-p',
+    const args = [
       '--output-format=stream-json',
       '--input-format=stream-json',
       '--verbose',
       '--permission-mode=bypassPermissions',
-    ], {
+    ];
+
+    if (this.resumeSessionId) {
+      args.unshift('--resume', this.resumeSessionId);
+    } else {
+      args.unshift('-p');
+    }
+
+    this.process = spawn('claude', args, {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },

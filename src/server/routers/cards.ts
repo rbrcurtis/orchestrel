@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { execFileSync } from 'child_process';
 import { router, publicProcedure } from '../trpc';
 import { cards, repos } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -44,6 +43,8 @@ export const cardsRouter = router({
       priority: priorityEnum.optional(),
       repoId: z.number().nullable().optional(),
       prUrl: z.string().nullable().optional(),
+      useWorktree: z.boolean().optional(),
+      sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
@@ -72,57 +73,52 @@ export const cardsRouter = router({
         updatedAt: new Date().toISOString(),
       };
 
-      // Worktree creation when moving to in_progress
+      // Worktree / working directory setup when moving to in_progress
       if (columnChanged && input.column === 'in_progress' && existing.repoId) {
         try {
           const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, existing.repoId));
           if (repo) {
-            const branch = `dispatch/card-${existing.id}-${slugify(existing.title)}`;
-            const wtPath = `${repo.path}/.worktrees/dispatch-${existing.id}`;
+            if (!existing.useWorktree) {
+              // Non-worktree mode: work directly in repo path
+              updates.worktreePath = repo.path;
+            } else {
+              // Worktree mode
+              const slug = existing.worktreeBranch || slugify(existing.title);
+              const wtPath = existing.worktreePath || `${repo.path}/.worktrees/${slug}`;
+              const branch = slug;
+              const source = existing.sourceBranch ?? repo.defaultBranch ?? undefined;
 
-            if (!worktreeExists(wtPath)) {
-              createWorktree(repo.path, wtPath, branch);
-              if (repo.setupCommands) {
-                runSetupCommands(wtPath, repo.setupCommands);
+              if (!worktreeExists(wtPath)) {
+                createWorktree(repo.path, wtPath, branch, source);
+                if (repo.setupCommands) {
+                  runSetupCommands(wtPath, repo.setupCommands);
+                }
               }
-            }
 
-            updates.worktreePath = wtPath;
-            updates.worktreeBranch = branch;
+              updates.worktreePath = wtPath;
+              updates.worktreeBranch = branch;
+            }
           }
         } catch (err) {
-          console.error(`Failed to create worktree for card ${existing.id}:`, err);
+          console.error(`Failed to set up working directory for card ${existing.id}:`, err);
         }
       }
 
-      // Worktree removal when moving to done
-      if (columnChanged && input.column === 'done' && existing.worktreePath && existing.repoId) {
+      // Worktree removal when moving to done (preserve path/branch/session fields)
+      if (columnChanged && input.column === 'done' && existing.useWorktree && existing.worktreePath && existing.repoId) {
         try {
           const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, existing.repoId));
-          if (repo) {
+          if (repo && worktreeExists(existing.worktreePath)) {
             try {
               removeWorktree(repo.path, existing.worktreePath);
             } catch (err) {
               console.error(`Failed to remove worktree for card ${existing.id}:`, err);
             }
-
-            if (existing.worktreeBranch) {
-              try {
-                execFileSync('git', ['branch', '-d', existing.worktreeBranch], {
-                  cwd: repo.path,
-                  stdio: 'pipe',
-                });
-              } catch {
-                // Branch may not be merged — that's fine
-              }
-            }
           }
         } catch (err) {
           console.error(`Failed to clean up worktree for card ${existing.id}:`, err);
         }
-
-        updates.worktreePath = null;
-        updates.worktreeBranch = null;
+        // Do NOT null worktreePath, worktreeBranch, or sessionId — needed for resumption
       }
 
       const [card] = await ctx.db.update(cards)

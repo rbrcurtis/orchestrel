@@ -8,13 +8,18 @@ import type { SessionStatus } from '../claude/types';
 
 export const claudeRouter = router({
   start: publicProcedure
-    .input(z.object({ cardId: z.number(), prompt: z.string().min(1) }))
+    .input(z.object({ cardId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const [card] = await ctx.db.select().from(cards).where(eq(cards.id, input.cardId));
       if (!card) throw new Error(`Card ${input.cardId} not found`);
-      if (!card.worktreePath) throw new Error(`Card ${input.cardId} has no worktree path`);
+      if (!card.worktreePath) throw new Error(`Card ${input.cardId} has no working directory`);
 
-      const session = sessionManager.create(input.cardId, card.worktreePath);
+      const isResume = !!card.sessionId;
+      const session = sessionManager.create(
+        input.cardId,
+        card.worktreePath,
+        card.sessionId ?? undefined,
+      );
       await session.start();
 
       // Wait for the system init message to capture session_id
@@ -37,13 +42,16 @@ export const claudeRouter = router({
         });
       });
 
-      // Update card with sessionId
+      // Update card with sessionId (may be new or same)
       await ctx.db.update(cards)
         .set({ sessionId: session.sessionId, updatedAt: new Date().toISOString() })
         .where(eq(cards.id, input.cardId));
 
-      // Send the initial prompt
-      session.sendUserMessage(input.prompt);
+      // Only send initial prompt for new sessions
+      if (!isResume) {
+        if (!card.description?.trim()) throw new Error(`Card ${input.cardId} has no description`);
+        session.sendUserMessage(card.description.trim());
+      }
 
       return { status: 'started' as const };
     }),
