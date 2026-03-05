@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
 import { repos } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { existsSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
 
@@ -13,13 +14,15 @@ export const reposRouter = router({
   create: publicProcedure
     .input(z.object({
       name: z.string().min(1),
-      displayName: z.string().min(1),
       path: z.string().min(1),
-      host: z.enum(['github', 'bitbucket']),
       setupCommands: z.string().optional(),
+      defaultBranch: z.enum(['main', 'dev']).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const [repo] = await ctx.db.insert(repos).values(input).returning();
+      const isGitRepo = existsSync(join(input.path, '.git'));
+      const [repo] = await ctx.db.insert(repos)
+        .values({ ...input, isGitRepo })
+        .returning();
       return repo;
     }),
 
@@ -27,17 +30,35 @@ export const reposRouter = router({
     .input(z.object({
       id: z.number(),
       name: z.string().min(1).optional(),
-      displayName: z.string().min(1).optional(),
       path: z.string().min(1).optional(),
-      host: z.enum(['github', 'bitbucket']).optional(),
       setupCommands: z.string().optional(),
+      defaultBranch: z.enum(['main', 'dev']).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      if (data.path) {
+        (data as Record<string, unknown>).isGitRepo = existsSync(join(data.path, '.git'));
+      }
       const [repo] = await ctx.db.update(repos)
         .set(data)
         .where(eq(repos.id, id))
         .returning();
+      return repo;
+    }),
+
+  get: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, input.id));
+      if (!repo) throw new Error(`Repo ${input.id} not found`);
+
+      const isGitRepo = existsSync(join(repo.path, '.git'));
+      if (isGitRepo !== repo.isGitRepo) {
+        await ctx.db.update(repos)
+          .set({ isGitRepo })
+          .where(eq(repos.id, input.id));
+        return { ...repo, isGitRepo };
+      }
       return repo;
     }),
 
