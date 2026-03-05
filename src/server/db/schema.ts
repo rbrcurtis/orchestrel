@@ -3,11 +3,11 @@ import { sql } from 'drizzle-orm';
 
 export const repos = sqliteTable('repos', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull().unique(),
-  displayName: text('display_name').notNull(),
+  name: text('name').notNull(),
   path: text('path').notNull(),
-  host: text('host', { enum: ['github', 'bitbucket'] }).notNull(),
   setupCommands: text('setup_commands').default(''),
+  isGitRepo: integer('is_git_repo', { mode: 'boolean' }).notNull().default(false),
+  defaultBranch: text('default_branch', { enum: ['main', 'dev'] }),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
 
@@ -23,6 +23,8 @@ export const cards = sqliteTable('cards', {
   sessionId: text('session_id'),
   worktreePath: text('worktree_path'),
   worktreeBranch: text('worktree_branch'),
+  useWorktree: integer('use_worktree', { mode: 'boolean' }).notNull().default(true),
+  sourceBranch: text('source_branch', { enum: ['main', 'dev'] }),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });
