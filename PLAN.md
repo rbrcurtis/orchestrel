@@ -1,4 +1,4 @@
-# Dispatch — Implementation Plan
+# Conductor — Implementation Plan
 
 ## Phase 1: Project Scaffold
 

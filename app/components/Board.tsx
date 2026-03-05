@@ -306,7 +306,7 @@ export function Board() {
     return (
       <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
         <header className="shrink-0 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center gap-4">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Dispatch</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Conductor</h1>
         </header>
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -318,7 +318,7 @@ export function Board() {
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
       <header className="shrink-0 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Dispatch</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Conductor</h1>
         <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
           <Button variant="ghost" size="icon" asChild className="shrink-0 text-muted-foreground">

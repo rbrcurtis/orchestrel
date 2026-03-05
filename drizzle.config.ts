@@ -4,5 +4,5 @@ export default defineConfig({
   out: './drizzle',
   schema: './src/server/db/schema.ts',
   dialect: 'sqlite',
-  dbCredentials: { url: './data/dispatch.db' },
+  dbCredentials: { url: './data/conductor.db' },
 });

@@ -4,7 +4,7 @@ import { ErrorBoundary } from "~/components/ErrorBoundary";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Dispatch" },
+    { title: "Conductor" },
     { name: "description", content: "Personal kanban board + Claude Code orchestration" },
   ];
 }

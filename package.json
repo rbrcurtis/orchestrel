@@ -1,5 +1,5 @@
 {
-  "name": "dispatch",
+  "name": "conductor",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,8 +7,7 @@
     "dev": "cross-env NODE_ENV=development node server.js",
     "start": "node server.js",
     "typecheck": "react-router typegen && tsc -b",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:push": "drizzle-kit push"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

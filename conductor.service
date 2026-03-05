@@ -1,14 +1,14 @@
 [Unit]
-Description=Dispatch Kanban
+Description=Conductor Kanban
 After=network.target
 
 [Service]
 Type=simple
 User=ryan
-WorkingDirectory=/home/ryan/Code/dispatch
+WorkingDirectory=/home/ryan/Code/conductor
 ExecStart=/usr/bin/node server.js
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=PORT=6194
 Restart=on-failure
 
 [Install]
