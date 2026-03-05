@@ -1,19 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Play } from 'lucide-react';
+import { Send, Play, AlertCircle } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSubscription } from '@trpc/tanstack-react-query';
 import { MessageBlock } from './MessageBlock';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
-import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { Alert, AlertDescription } from '~/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
 
 type Props = {
   cardId: number;
+  sessionId?: string | null;
 };
 
 type ToolResultBlock = {
@@ -22,7 +21,7 @@ type ToolResultBlock = {
   content: Array<{ type: string; text: string }>;
 };
 
-export function SessionView({ cardId }: Props) {
+export function SessionView({ cardId, sessionId }: Props) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -100,7 +99,7 @@ export function SessionView({ cardId }: Props) {
 
   // No active session -- show start form
   if (!sessionActive && messages.length === 0) {
-    return <StartSessionForm cardId={cardId} />;
+    return <StartSessionForm cardId={cardId} isResume={!!sessionId} />;
   }
 
   // Active or completed session with messages
@@ -157,10 +156,9 @@ function StatusBar({ status }: { status: string }) {
 
 // --- Start session form ---
 
-function StartSessionForm({ cardId }: { cardId: number }) {
+function StartSessionForm({ cardId, isResume }: { cardId: number; isResume: boolean }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const [prompt, setPrompt] = useState('');
 
   const startMutation = useMutation(
     trpc.claude.start.mutationOptions({
@@ -170,41 +168,24 @@ function StartSessionForm({ cardId }: { cardId: number }) {
     })
   );
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = prompt.trim();
-    if (!trimmed) return;
-    startMutation.mutate({ cardId, prompt: trimmed });
-  }
-
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">
-          Start a Claude session
-        </label>
-        <Textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe the task for Claude..."
-          rows={3}
-          className="resize-y"
-        />
-        <Button
-          type="submit"
-          disabled={startMutation.isPending || !prompt.trim()}
-          className="w-full"
-        >
-          <Play className="size-4" />
-          {startMutation.isPending ? 'Starting...' : 'Start Session'}
-        </Button>
-        {startMutation.isError && (
-          <Alert variant="destructive">
-            <AlertCircle className="size-4" />
-            <AlertDescription>{startMutation.error.message}</AlertDescription>
-          </Alert>
-        )}
-      </form>
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 space-y-3">
+      <Button
+        onClick={() => startMutation.mutate({ cardId })}
+        disabled={startMutation.isPending}
+        className="w-full"
+      >
+        <Play className="size-4" />
+        {startMutation.isPending
+          ? (isResume ? 'Resuming...' : 'Starting...')
+          : (isResume ? 'Resume Session' : 'Start Session')}
+      </Button>
+      {startMutation.isError && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertDescription>{startMutation.error.message}</AlertDescription>
+        </Alert>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { Textarea } from '~/components/ui/textarea';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '~/components/ui/select';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { Checkbox } from '~/components/ui/checkbox';
 import { ScrollArea } from '~/components/ui/scroll-area';
 
 type Props = {
@@ -211,12 +212,15 @@ type CardData = {
   sessionId: string | null;
   worktreePath: string | null;
   worktreeBranch: string | null;
+  useWorktree: boolean;
+  sourceBranch: string | null;
 };
 
 type RepoData = {
   id: number;
-  displayName: string;
   name: string;
+  isGitRepo: boolean;
+  defaultBranch: string | null;
 };
 
 function EditableFields({
@@ -226,8 +230,10 @@ function EditableFields({
 }: {
   card: CardData;
   repos: RepoData[];
-  onUpdate: (data: { priority?: string; repoId?: number | null }) => void;
+  onUpdate: (data: { priority?: string; repoId?: number | null; useWorktree?: boolean; sourceBranch?: string | null }) => void;
 }) {
+  const selectedRepo = repos.find(r => r.id === card.repoId);
+
   return (
     <div className="space-y-4">
       {/* Priority */}
@@ -270,12 +276,54 @@ function EditableFields({
             <SelectItem value="__none__">None</SelectItem>
             {repos.map((r) => (
               <SelectItem key={r.id} value={String(r.id)}>
-                {r.displayName}
+                {r.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
+
+      {/* Use Worktree */}
+      {selectedRepo?.isGitRepo && (
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="useWorktree"
+            checked={card.useWorktree}
+            onCheckedChange={(checked) => onUpdate({ useWorktree: checked === true })}
+          />
+          <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
+            Use worktree
+          </label>
+        </div>
+      )}
+
+      {/* Non-git repo indicator */}
+      {card.repoId && selectedRepo && !selectedRepo.isGitRepo && (
+        <p className="text-xs text-muted-foreground">
+          Working directory (not a git repo)
+        </p>
+      )}
+
+      {/* Source Branch */}
+      {selectedRepo?.isGitRepo && card.useWorktree && (
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Source Branch
+          </label>
+          <Select
+            value={card.sourceBranch ?? selectedRepo.defaultBranch ?? ''}
+            onValueChange={(val) => onUpdate({ sourceBranch: val })}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="main">main</SelectItem>
+              <SelectItem value="dev">dev</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
     </div>
   );
 }
@@ -285,8 +333,8 @@ function EditableFields({
 function InProgressContent({ card }: { card: CardData }) {
   return (
     <div>
-      {card.repoId ? (
-        <SessionView cardId={card.id} />
+      {card.repoId || card.worktreePath ? (
+        <SessionView cardId={card.id} sessionId={card.sessionId} />
       ) : (
         <div className="text-sm text-muted-foreground italic">
           No repo linked - assign a repo to enable Claude sessions
