@@ -37,7 +37,7 @@ export default function RepoForm({ repo, onDone }: RepoFormProps) {
 
   const { data: freshRepo } = useQuery(
     trpc.repos.get.queryOptions(
-      { id: repo!.id },
+      { id: repo?.id ?? 0 },
       { enabled: !!repo }
     )
   );

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
 import { cards, repos } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import type { InferInsertModel } from 'drizzle-orm';
 import { createWorktree, removeWorktree, runSetupCommands, slugify, worktreeExists } from '../worktree';
 
 const columnEnum = z.enum(['backlog', 'ready', 'in_progress', 'review', 'done']);
@@ -67,7 +68,7 @@ export const cardsRouter = router({
 
       const columnChanged = existing.column !== input.column;
 
-      const updates: Record<string, unknown> = {
+      const updates: Partial<InferInsertModel<typeof cards>> = {
         column: input.column,
         position: input.position,
         updatedAt: new Date().toISOString(),

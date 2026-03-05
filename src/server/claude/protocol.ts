@@ -66,7 +66,9 @@ export class ClaudeSession extends EventEmitter {
   private handleMessage(msg: Record<string, unknown>): void {
     // Capture session ID from init message
     if (msg.type === 'system' && msg.subtype === 'init') {
-      this.sessionId = msg.session_id as string;
+      if (typeof msg.session_id === 'string') {
+        this.sessionId = msg.session_id;
+      }
       this.status = 'running';
     }
 

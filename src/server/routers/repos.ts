@@ -36,11 +36,12 @@ export const reposRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      if (data.path) {
-        (data as Record<string, unknown>).isGitRepo = existsSync(join(data.path, '.git'));
+      const updates: typeof data & { isGitRepo?: boolean } = { ...data };
+      if (updates.path) {
+        updates.isGitRepo = existsSync(join(updates.path, '.git'));
       }
       const [repo] = await ctx.db.update(repos)
-        .set(data)
+        .set(updates)
         .where(eq(repos.id, id))
         .returning();
       return repo;

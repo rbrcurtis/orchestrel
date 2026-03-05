@@ -156,6 +156,11 @@ function StatusBar({ status }: { status: string }) {
 
 // --- Start session form ---
 
+function buttonLabel(isResume: boolean, isPending: boolean): string {
+  if (isPending) return isResume ? 'Resuming...' : 'Starting...';
+  return isResume ? 'Resume Session' : 'Start Session';
+}
+
 function StartSessionForm({ cardId, isResume }: { cardId: number; isResume: boolean }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -176,9 +181,7 @@ function StartSessionForm({ cardId, isResume }: { cardId: number; isResume: bool
         className="w-full"
       >
         <Play className="size-4" />
-        {startMutation.isPending
-          ? (isResume ? 'Resuming...' : 'Starting...')
-          : (isResume ? 'Resume Session' : 'Start Session')}
+        {buttonLabel(isResume, startMutation.isPending)}
       </Button>
       {startMutation.isError && (
         <Alert variant="destructive">
