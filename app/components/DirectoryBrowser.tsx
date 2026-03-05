@@ -10,7 +10,7 @@ import { Folder } from 'lucide-react';
 
 interface DirectoryBrowserProps {
   initialPath?: string;
-  onSelect: (path: string) => void;
+  onSelect: (path: string, isGitRepo: boolean) => void;
   onCancel: () => void;
 }
 
@@ -101,8 +101,7 @@ export default function DirectoryBrowser({ initialPath = '/home/ryan', onSelect,
             Cancel
           </Button>
           <Button
-            onClick={() => onSelect(currentPath)}
-            disabled={!data?.isGitRepo}
+            onClick={() => onSelect(currentPath, data?.isGitRepo ?? false)}
           >
             Select
           </Button>

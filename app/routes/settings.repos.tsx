@@ -4,7 +4,6 @@ import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import RepoForm from '~/components/RepoForm';
 import { Button } from '~/components/ui/button';
-import { Badge } from '~/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card';
 import { ArrowLeft, Pencil, Trash2, Plus } from 'lucide-react';
@@ -12,10 +11,10 @@ import { ArrowLeft, Pencil, Trash2, Plus } from 'lucide-react';
 interface Repo {
   id: number;
   name: string;
-  displayName: string;
   path: string;
-  host: 'github' | 'bitbucket';
   setupCommands: string | null;
+  isGitRepo: boolean;
+  defaultBranch: string | null;
   createdAt: string;
 }
 
@@ -101,7 +100,6 @@ export default function SettingsRepos() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Repository</TableHead>
-                    <TableHead>Host</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -110,14 +108,9 @@ export default function SettingsRepos() {
                     <TableRow key={repo.id}>
                       <TableCell>
                         <div className="min-w-0">
-                          <span className="font-medium text-sm">{repo.displayName}</span>
+                          <span className="font-medium text-sm">{repo.name}</span>
                           <p className="text-xs text-muted-foreground truncate mt-0.5">{repo.path}</p>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={repo.host === 'github' ? 'secondary' : 'outline'}>
-                          {repo.host === 'github' ? 'GitHub' : 'Bitbucket'}
-                        </Badge>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
