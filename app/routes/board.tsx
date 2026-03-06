@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Outlet, Link, useLocation, useSearchParams } from 'react-router';
+import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Settings } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
 import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '~/components/ui/sheet';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -27,6 +28,7 @@ function useIsDesktop() {
 
 export default function BoardLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -76,7 +78,19 @@ export default function BoardLayout() {
       <header className="shrink-0 px-4 sm:px-6 py-3 border-b border-gray-200 dark:border-gray-800 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Conductor</h1>
-          <nav className="flex items-center gap-1">
+          {/* Mobile: dropdown nav */}
+          <Select value={location.pathname} onValueChange={(v) => navigate(v)}>
+            <SelectTrigger size="sm" className="sm:hidden">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {NAV_ITEMS.map(({ to, label }) => (
+                <SelectItem key={to} value={to}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Desktop: button nav */}
+          <nav className="hidden sm:flex items-center gap-1">
             {NAV_ITEMS.map(({ to, label }) => (
               <Button
                 key={to}

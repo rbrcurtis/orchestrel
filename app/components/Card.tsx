@@ -43,7 +43,7 @@ export function Card({ id, title, onClick }: CardProps) {
       {...attributes}
       {...listeners}
       onClick={() => onClick?.(id)}
-      className={`group relative w-56 shrink-0 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
+      className={`group relative w-full sm:w-56 sm:shrink-0 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
     >
       <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
       <Button
@@ -65,7 +65,7 @@ export function Card({ id, title, onClick }: CardProps) {
 
 export function CardOverlay({ title }: { title: string }) {
   return (
-    <div className="rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-lg cursor-grabbing select-none w-56">
+    <div className="rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-lg cursor-grabbing select-none w-full sm:w-56">
       <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
     </div>
   );
