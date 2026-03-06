@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -301,6 +301,184 @@ export function CardDetail({ cardId, onClose }: Props) {
       {showSession && (
         <SessionView cardId={card.id} sessionId={card.sessionId} />
       )}
+    </div>
+  );
+}
+
+type NewCardProps = {
+  column: string;
+  onCreated: (id: number) => void;
+  onClose: () => void;
+};
+
+export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  const { data: repos } = useQuery(trpc.repos.list.queryOptions());
+
+  const [draft, setDraft] = useState<Draft>({
+    title: '',
+    description: '',
+    priority: 'medium',
+    repoId: null,
+    useWorktree: false,
+    sourceBranch: null,
+  });
+
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
+
+  const createMutation = useMutation(
+    trpc.cards.create.mutationOptions({
+      onSuccess: (card) => {
+        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
+        onCreated(card.id);
+      },
+    })
+  );
+
+  function handleSave() {
+    if (!draft.title.trim()) return;
+    createMutation.mutate({
+      title: draft.title,
+      description: draft.description || undefined,
+      column,
+      priority: draft.priority,
+      repoId: draft.repoId,
+    });
+  }
+
+  const selectedRepo = repos?.find((r) => r.id === draft.repoId);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <Badge variant="outline" className="uppercase text-xs tracking-wide">
+          {statusLabels[column] ?? column}
+        </Badge>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}>
+          <X className="size-4" />
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
+          <Input
+            ref={titleRef}
+            value={draft.title}
+            onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+            placeholder="Card title"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
+          <Textarea
+            value={draft.description}
+            onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+            rows={4}
+            placeholder="Add a description..."
+            className="resize-y"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Priority</label>
+          <Select
+            value={draft.priority}
+            onValueChange={(val) => setDraft((d) => ({ ...d, priority: val }))}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {priorityLabels[p]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Repository</label>
+          <Select
+            value={draft.repoId != null ? String(draft.repoId) : '__none__'}
+            onValueChange={(val) =>
+              setDraft((d) => ({
+                ...d,
+                repoId: val === '__none__' ? null : Number(val),
+                useWorktree: false,
+                sourceBranch: null,
+              }))
+            }
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">None</SelectItem>
+              {(repos ?? []).map((r) => (
+                <SelectItem key={r.id} value={String(r.id)}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {selectedRepo?.isGitRepo && (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="newUseWorktree"
+              checked={draft.useWorktree}
+              onCheckedChange={(checked) =>
+                setDraft((d) => ({ ...d, useWorktree: checked === true }))
+              }
+            />
+            <label htmlFor="newUseWorktree" className="text-sm font-medium text-muted-foreground">
+              Use worktree
+            </label>
+          </div>
+        )}
+
+        {draft.repoId && selectedRepo && !selectedRepo.isGitRepo && (
+          <p className="text-xs text-muted-foreground">
+            Working directory (not a git repo)
+          </p>
+        )}
+
+        {selectedRepo?.isGitRepo && draft.useWorktree && (
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
+            <Select
+              value={draft.sourceBranch ?? selectedRepo.defaultBranch ?? ''}
+              onValueChange={(val) => setDraft((d) => ({ ...d, sourceBranch: val }))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="main">main</SelectItem>
+                <SelectItem value="dev">dev</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <Button
+          className="w-full"
+          disabled={!draft.title.trim() || createMutation.isPending}
+          onClick={handleSave}
+        >
+          {createMutation.isPending ? 'Creating...' : 'Save'}
+        </Button>
+      </div>
     </div>
   );
 }

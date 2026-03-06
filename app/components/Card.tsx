@@ -59,7 +59,9 @@ export function Card({ id, title, priority, onClick }: CardProps) {
         className="absolute top-1 right-1 hidden group-hover:flex text-muted-foreground"
         onClick={(e) => {
           e.stopPropagation();
-          deleteMutation.mutate({ id });
+          if (window.confirm(`Delete "${title}"?`)) {
+            deleteMutation.mutate({ id });
+          }
         }}
       >
         <X className="size-3" />

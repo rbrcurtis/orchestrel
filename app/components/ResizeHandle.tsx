@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 const STORAGE_KEY = 'conductor-panel-width';
 const DEFAULT_WIDTH = 400;
@@ -16,7 +16,16 @@ function getStoredWidth(): number {
 
 export function useResizablePanel() {
   const panelRef = useRef<HTMLDivElement>(null);
-  const widthRef = useRef(getStoredWidth());
+  const widthRef = useRef(DEFAULT_WIDTH);
+
+  // Read from localStorage on mount (client-side only)
+  useEffect(() => {
+    const stored = getStoredWidth();
+    widthRef.current = stored;
+    if (panelRef.current) {
+      panelRef.current.style.width = `${stored}px`;
+    }
+  }, []);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
