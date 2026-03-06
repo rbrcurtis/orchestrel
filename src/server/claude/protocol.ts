@@ -1,7 +1,12 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { createInterface } from 'readline';
+import { appendFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import type { SessionStatus } from './types';
+
+const SESSIONS_DIR = join(process.cwd(), 'data', 'sessions');
+mkdirSync(SESSIONS_DIR, { recursive: true });
 
 export class ClaudeSession extends EventEmitter {
   process: ChildProcess | null = null;
@@ -18,26 +23,32 @@ export class ClaudeSession extends EventEmitter {
     super();
   }
 
-  async start(): Promise<void> {
+  async start(prompt: string): Promise<void> {
+    await this.spawnWithPrompt(prompt, this.resumeSessionId);
+  }
+
+  private async spawnWithPrompt(prompt: string, resumeId?: string): Promise<void> {
     const args = [
+      '-p',
       '--output-format=stream-json',
-      '--input-format=stream-json',
       '--verbose',
       '--dangerously-skip-permissions',
+      '--max-turns', '1',
     ];
 
-    if (this.resumeSessionId) {
-      args.unshift('--resume', this.resumeSessionId);
-    } else {
-      args.unshift('-p');
+    if (resumeId) {
+      args.push('--resume', resumeId);
     }
+
+    // Prompt goes as CLI argument (not stdin) so Claude persists the session
+    args.push(prompt);
 
     const env = { ...process.env };
     delete env.CLAUDECODE;
 
     this.process = spawn('/home/ryan/.local/bin/claude', args, {
       cwd: this.cwd,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       env,
     });
 
@@ -67,64 +78,56 @@ export class ClaudeSession extends EventEmitter {
       this.status = (code === 0 || signal === 'SIGTERM') ? 'completed' : 'errored';
       this.emit('exit', code);
     });
-
-    // Send initialize control request
-    this.send({
-      type: 'control_request',
-      request_id: `req_1_${Date.now().toString(16)}`,
-      request: { subtype: 'initialize' },
-    });
   }
 
   private handleMessage(msg: Record<string, unknown>): void {
     // Capture session ID from any system message that has one
-    if (msg.type === 'system' && typeof msg.session_id === 'string' && !this.sessionId) {
-      this.sessionId = msg.session_id;
+    if (msg.type === 'system' && typeof msg.session_id === 'string') {
+      if (!this.sessionId) {
+        this.sessionId = msg.session_id as string;
+      }
       this.status = 'running';
     }
 
-    // Auto-approve tool use requests (since we use bypassPermissions,
-    // this is a safety net -- shouldn't normally fire)
-    if (msg.type === 'control_request') {
-      const req = msg as { request_id: string; request: { subtype: string } };
-      if (req.request.subtype === 'can_use_tool') {
-        this.send({
-          type: 'control_response',
-          response: {
-            subtype: 'success',
-            request_id: req.request_id,
-            response: { behavior: 'allow' },
-          },
-        });
-      }
-      return; // Don't emit control messages to client
-    }
+    // Don't emit control messages to client
+    if (msg.type === 'control_request') return;
 
-    // Buffer for late subscribers, then emit
+    // Buffer for late subscribers, persist, then emit
     this.messages.push(msg);
+    this.persistMessage(msg);
     this.emit('message', msg);
 
-    // Auto-stop when all queued prompts have been answered
     if (msg.type === 'result') {
       this.turnsCompleted++;
-      if (this.turnsCompleted >= this.promptsSent) {
-        this.kill();
-      }
+      // Don't kill — --max-turns 1 ensures Claude exits naturally,
+      // which allows it to persist the session file for --resume
     }
   }
 
-  sendUserMessage(content: string): void {
+  async sendUserMessage(content: string): Promise<void> {
     this.promptsSent++;
     const msg = { type: 'user', message: { role: 'user', content } };
-    // Buffer and emit so subscribers see user prompts
+    // Buffer, persist, emit so subscribers see user prompts
     this.messages.push(msg);
+    this.persistMessage(msg);
     this.emit('message', msg);
-    this.send(msg);
+
+    // If no process or process completed, spawn a new one with --resume.
+    if (!this.process || this.status === 'completed' || this.status === 'errored') {
+      if (!this.sessionId) return;
+      this.status = 'starting';
+      await this.spawnWithPrompt(content, this.sessionId);
+    }
+    // If process is still running, auto-kill will fire when result arrives
+    // and the next queued prompt will be handled by the router's message listener
   }
 
-  private send(data: unknown): void {
-    if (this.process?.stdin?.writable) {
-      this.process.stdin.write(JSON.stringify(data) + '\n');
+  private persistMessage(msg: Record<string, unknown>): void {
+    if (!this.sessionId) return;
+    try {
+      appendFileSync(join(SESSIONS_DIR, `${this.sessionId}.jsonl`), JSON.stringify(msg) + '\n');
+    } catch {
+      // ignore write errors
     }
   }
 

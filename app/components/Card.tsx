@@ -5,21 +5,13 @@ import { Button } from '~/components/ui/button';
 import { useTRPC } from '~/lib/trpc';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-const priorityColors: Record<string, string> = {
-  urgent: 'border-l-red-500',
-  high: 'border-l-orange-500',
-  medium: 'border-l-blue-500',
-  low: 'border-l-gray-300',
-};
-
 interface CardProps {
   id: number;
   title: string;
-  priority: string;
   onClick?: (id: number) => void;
 }
 
-export function Card({ id, title, priority, onClick }: CardProps) {
+export function Card({ id, title, onClick }: CardProps) {
   const {
     attributes,
     listeners,
@@ -41,6 +33,7 @@ export function Card({ id, title, priority, onClick }: CardProps) {
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
+    touchAction: 'none' as const,
   };
 
   return (
@@ -50,7 +43,7 @@ export function Card({ id, title, priority, onClick }: CardProps) {
       {...attributes}
       {...listeners}
       onClick={() => onClick?.(id)}
-      className={`group relative w-56 shrink-0 rounded bg-white dark:bg-gray-800 border-l-4 ${priorityColors[priority] ?? 'border-l-gray-300'} px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
+      className={`group relative w-56 shrink-0 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
     >
       <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
       <Button
@@ -70,11 +63,9 @@ export function Card({ id, title, priority, onClick }: CardProps) {
   );
 }
 
-export function CardOverlay({ title, priority }: { title: string; priority: string }) {
+export function CardOverlay({ title }: { title: string }) {
   return (
-    <div
-      className={`rounded bg-white dark:bg-gray-800 border-l-4 ${priorityColors[priority] ?? 'border-l-gray-300'} px-3 py-2 shadow-lg cursor-grabbing select-none w-56`}
-    >
+    <div className="rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-lg cursor-grabbing select-none w-56">
       <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
     </div>
   );

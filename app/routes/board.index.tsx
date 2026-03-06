@@ -95,10 +95,20 @@ export default function ActiveBoard() {
 
   const { data: serverCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
 
+  const startClaudeMutation = useMutation(
+    trpc.claude.start.mutationOptions({})
+  );
+
+  const pendingClaudeStart = useRef<{ cardId: number; prompt: string } | null>(null);
+
   const moveMutation = useMutation(
     trpc.cards.move.mutationOptions({
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
+        if (pendingClaudeStart.current) {
+          startClaudeMutation.mutate(pendingClaudeStart.current);
+          pendingClaudeStart.current = null;
+        }
       },
     })
   );
@@ -248,6 +258,14 @@ export default function ActiveBoard() {
       const pos = calcPosition(destCards, insertIdx === -1 ? destCards.length : insertIdx);
 
       moveMutation.mutate({ id: active.id as number, column: currentCol, position: pos });
+
+      // Auto-start Claude when dragging to in_progress (after move completes)
+      if (currentCol === 'in_progress') {
+        const card = columns[currentCol].find((c) => c.id === active.id);
+        if (card && card.repoId && card.description?.trim() && !card.sessionId) {
+          pendingClaudeStart.current = { cardId: card.id, prompt: card.description.trim() };
+        }
+      }
     }
 
     setActiveId(null);
@@ -317,7 +335,7 @@ export default function ActiveBoard() {
       {mounted && createPortal(
         <DragOverlay>
           {activeCard ? (
-            <CardOverlay title={activeCard.title} priority={activeCard.priority} />
+            <CardOverlay title={activeCard.title} />
           ) : null}
         </DragOverlay>,
         document.body

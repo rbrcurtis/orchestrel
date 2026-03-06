@@ -43,16 +43,32 @@ export function SessionView({ cardId, sessionId }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Reset live state when switching cards
+  useEffect(() => {
+    setLiveMessages([]);
+    setSubscribing(false);
+    seenIds.current.clear();
+  }, [cardId]);
+
   const sessionActive = statusData?.active ?? false;
   const sessionStatus = statusData?.status ?? 'completed';
   const promptsSent = statusData?.promptsSent ?? 0;
   const turnsCompleted = statusData?.turnsCompleted ?? 0;
 
-  // Use live messages when streaming, otherwise historical
+  // Merge history + live messages (live may replay history, so deduplicate)
   const isStreaming = sessionActive || subscribing;
-  const messages = isStreaming || liveMessages.length > 0
-    ? liveMessages
-    : (historyData as Record<string, unknown>[] | undefined) ?? [];
+  const history = (historyData as Record<string, unknown>[] | undefined) ?? [];
+  const messages = useMemo(() => {
+    if (liveMessages.length === 0) return history;
+    // Live subscription replays buffered messages then streams new ones.
+    // History covers everything before this process lifecycle.
+    // Use history as base, then append any live messages beyond history length.
+    if (liveMessages.length > history.length) {
+      return [...history, ...liveMessages.slice(history.length)];
+    }
+    // Live is still catching up or equal — just show whichever is longer
+    return liveMessages.length >= history.length ? liveMessages : history;
+  }, [history, liveMessages]);
 
   // Extract tool outputs from all messages
   const toolOutputs = useMemo(() => {
@@ -75,12 +91,22 @@ export function SessionView({ cardId, sessionId }: Props) {
     return map;
   }, [messages]);
 
+  // Move card to in_progress when starting a session
+  const moveMutation = useMutation(
+    trpc.cards.move.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
+      },
+    })
+  );
+
   // Start mutation
   const startMutation = useMutation(
     trpc.claude.start.mutationOptions({
       onSuccess: () => {
         setSubscribing(true);
         queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
+        moveMutation.mutate({ id: cardId, column: 'in_progress', position: 0 });
       },
     })
   );
@@ -107,13 +133,20 @@ export function SessionView({ cardId, sessionId }: Props) {
 
   const shouldSubscribe = sessionActive || subscribing;
 
-  // Clear subscribing flag when status changes to completed/errored
+  // Invalidate cards when session completes (covers both manual start and auto-start)
+  const prevStatus = useRef(sessionStatus);
   useEffect(() => {
-    if (subscribing && !sessionActive && sessionStatus !== 'starting') {
-      setSubscribing(false);
-      queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
+    if (prevStatus.current !== sessionStatus) {
+      prevStatus.current = sessionStatus;
+      if (sessionStatus === 'completed' || sessionStatus === 'errored') {
+        setSubscribing(false);
+        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
+        if (sessionId) {
+          queryClient.invalidateQueries({ queryKey: trpc.sessions.loadSession.queryKey({ sessionId }) });
+        }
+      }
     }
-  }, [sessionActive, sessionStatus, subscribing, queryClient, trpc]);
+  }, [sessionStatus, queryClient, trpc, sessionId]);
 
   // Extract tool outputs for live streaming
   const extractToolOutputs = useCallback((msg: Record<string, unknown>) => {
@@ -204,6 +237,7 @@ export function SessionView({ cardId, sessionId }: Props) {
       <PromptInput
         cardId={cardId}
         isRunning={isStreaming}
+        hasSession={!!sessionId}
         isPending={startMutation.isPending}
         onStart={(prompt) => startMutation.mutate({ cardId, prompt })}
         onSend={(message) => sendMutation.mutate({ cardId, message })}
@@ -246,6 +280,7 @@ function StatusBadge({ status }: { status: string }) {
 function PromptInput({
   cardId,
   isRunning,
+  hasSession,
   isPending,
   onStart,
   onSend,
@@ -253,6 +288,7 @@ function PromptInput({
 }: {
   cardId: number;
   isRunning: boolean;
+  hasSession: boolean;
   isPending: boolean;
   onStart: (prompt: string) => void;
   onSend: (message: string) => void;
@@ -270,7 +306,8 @@ function PromptInput({
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    if (isRunning) {
+    // Use sendMessage for follow-ups (existing session), onStart for new sessions
+    if (isRunning || hasSession) {
       onSend(trimmed);
     } else {
       onStart(trimmed);
