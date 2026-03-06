@@ -17,7 +17,6 @@ export const cards = sqliteTable('cards', {
   description: text('description').default(''),
   column: text('column', { enum: ['backlog', 'ready', 'in_progress', 'review', 'done'] }).notNull().default('backlog'),
   position: real('position').notNull().default(0),
-  priority: text('priority', { enum: ['low', 'medium', 'high', 'urgent'] }).notNull().default('medium'),
   repoId: integer('repo_id').references(() => repos.id, { onDelete: 'set null' }),
   prUrl: text('pr_url'),
   sessionId: text('session_id'),

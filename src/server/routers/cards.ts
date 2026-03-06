@@ -6,7 +6,6 @@ import type { InferInsertModel } from 'drizzle-orm';
 import { createWorktree, removeWorktree, runSetupCommands, slugify, worktreeExists } from '../worktree';
 
 const columnEnum = z.enum(['backlog', 'ready', 'in_progress', 'review', 'done']);
-const priorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
 
 export const cardsRouter = router({
   list: publicProcedure.query(async ({ ctx }) => {
@@ -18,8 +17,9 @@ export const cardsRouter = router({
       title: z.string().min(1),
       description: z.string().optional(),
       column: columnEnum.optional(),
-      priority: priorityEnum.optional(),
       repoId: z.number().nullable().optional(),
+      useWorktree: z.boolean().optional(),
+      sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const col = input.column ?? 'backlog';
@@ -30,8 +30,40 @@ export const cardsRouter = router({
       const pos = existing.length > 0
         ? existing[existing.length - 1].position + 1
         : 1;
+
+      const extra: Partial<InferInsertModel<typeof cards>> = {};
+
+      // Set up working directory when creating directly into in_progress
+      if (col === 'in_progress' && input.repoId) {
+        try {
+          const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, input.repoId));
+          if (repo) {
+            if (!input.useWorktree) {
+              extra.worktreePath = repo.path;
+            } else {
+              const slug = slugify(input.title);
+              const wtPath = `${repo.path}/.worktrees/${slug}`;
+              const branch = slug;
+              const source = input.sourceBranch ?? repo.defaultBranch ?? undefined;
+
+              if (!worktreeExists(wtPath)) {
+                createWorktree(repo.path, wtPath, branch, source);
+                if (repo.setupCommands) {
+                  runSetupCommands(wtPath, repo.setupCommands);
+                }
+              }
+
+              extra.worktreePath = wtPath;
+              extra.worktreeBranch = branch;
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to set up working directory for new card:`, err);
+        }
+      }
+
       const [card] = await ctx.db.insert(cards)
-        .values({ ...input, position: pos })
+        .values({ ...input, ...extra, position: pos })
         .returning();
       return card;
     }),
@@ -41,7 +73,6 @@ export const cardsRouter = router({
       id: z.number(),
       title: z.string().min(1).optional(),
       description: z.string().optional(),
-      priority: priorityEnum.optional(),
       repoId: z.number().nullable().optional(),
       prUrl: z.string().nullable().optional(),
       useWorktree: z.boolean().optional(),

@@ -173,7 +173,7 @@ export default function BacklogBoard() {
       {mounted && createPortal(
         <DragOverlay>
           {activeCard ? (
-            <CardOverlay title={activeCard.title} priority={activeCard.priority} />
+            <CardOverlay title={activeCard.title} />
           ) : null}
         </DragOverlay>,
         document.body

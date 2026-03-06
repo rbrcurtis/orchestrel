@@ -20,7 +20,6 @@ const displayNames: Record<ColumnId, string> = {
 interface CardItem {
   id: number;
   title: string;
-  priority: string;
   position: number;
 }
 
@@ -56,7 +55,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
       >
         <SortableContext items={cards.map(c => c.id)} strategy={horizontalListSortingStrategy}>
           {cards.map(card => (
-            <Card key={card.id} id={card.id} title={card.title} priority={card.priority} onClick={onCardClick} />
+            <Card key={card.id} id={card.id} title={card.title} onClick={onCardClick} />
           ))}
         </SortableContext>
         {cards.length === 0 && (

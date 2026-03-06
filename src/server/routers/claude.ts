@@ -15,44 +15,32 @@ export const claudeRouter = router({
       if (!card) throw new Error(`Card ${input.cardId} not found`);
       if (!card.worktreePath) throw new Error(`Card ${input.cardId} has no working directory`);
 
+      function waitForInit(s: typeof session) {
+        return new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Timed out waiting for session init')), 30_000);
+          const onMessage = () => {
+            if (s.sessionId) {
+              clearTimeout(timeout);
+              s.off('message', onMessage);
+              resolve();
+            }
+          };
+          s.on('message', onMessage);
+          s.on('exit', () => {
+            clearTimeout(timeout);
+            s.off('message', onMessage);
+            reject(new Error('Session exited before init'));
+          });
+        });
+      }
+
+      const isResume = !!card.sessionId;
       const session = sessionManager.create(
         input.cardId,
         card.worktreePath,
         card.sessionId ?? undefined,
       );
-      await session.start();
-
-      // Wait for the system init message to capture session_id
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Timed out waiting for session init')), 30_000);
-
-        const onMessage = () => {
-          if (session.sessionId) {
-            clearTimeout(timeout);
-            session.off('message', onMessage);
-            resolve();
-          }
-        };
-        session.on('message', onMessage);
-
-        session.on('exit', () => {
-          clearTimeout(timeout);
-          session.off('message', onMessage);
-          reject(new Error('Session exited before init'));
-        });
-      });
-
-      // Update card with sessionId, reset counters
-      await ctx.db.update(cards)
-        .set({
-          sessionId: session.sessionId,
-          promptsSent: 0,
-          turnsCompleted: 0,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(cards.id, input.cardId));
-
-      // Persist counters on each turn completion, auto-move on exit
+      // Register event handlers BEFORE starting to avoid race with --max-turns 1
       session.on('message', async (msg: Record<string, unknown>) => {
         if (msg.type === 'result') {
           try {
@@ -84,8 +72,22 @@ export const claudeRouter = router({
         }
       });
 
-      // Send the user's prompt
-      session.sendUserMessage(input.prompt);
+      // Prompt is passed as CLI arg (not stdin) so Claude persists the session
+      session.promptsSent++;
+      await session.start(input.prompt);
+      await waitForInit(session);
+
+      // For fresh sessions, store the new sessionId and reset counters
+      if (!isResume) {
+        await ctx.db.update(cards)
+          .set({
+            sessionId: session.sessionId,
+            promptsSent: 1,
+            turnsCompleted: 0,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(cards.id, input.cardId));
+      }
 
       return { status: 'started' as const };
     }),
@@ -93,9 +95,18 @@ export const claudeRouter = router({
   sendMessage: publicProcedure
     .input(z.object({ cardId: z.number(), message: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const session = sessionManager.get(input.cardId);
-      if (!session) throw new Error(`No session for card ${input.cardId}`);
-      session.sendUserMessage(input.message);
+      let session = sessionManager.get(input.cardId);
+
+      // If no in-memory session, recreate from DB (e.g. after server restart)
+      if (!session) {
+        const [card] = await ctx.db.select().from(cards).where(eq(cards.id, input.cardId));
+        if (!card?.sessionId || !card.worktreePath) {
+          throw new Error(`No session for card ${input.cardId}`);
+        }
+        session = sessionManager.create(input.cardId, card.worktreePath, card.sessionId);
+      }
+
+      await session.sendUserMessage(input.message);
       await ctx.db.update(cards)
         .set({ promptsSent: session.promptsSent, updatedAt: new Date().toISOString() })
         .where(eq(cards.id, input.cardId));
