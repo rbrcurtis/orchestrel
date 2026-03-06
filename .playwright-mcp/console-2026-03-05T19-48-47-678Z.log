@@ -1,0 +1,1 @@
+[   42246ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://192.168.4.200:6194/api/trpc/claude.start?batch=1:0

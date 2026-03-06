@@ -4,6 +4,8 @@ import { Settings } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
+import { CardDetail } from '~/components/CardDetail';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '~/components/ui/sheet';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -75,9 +77,7 @@ export default function BoardLayout() {
           style={{ width: initialWidth }}
         >
           {selectedCardId ? (
-            <div className="p-4 text-sm text-muted-foreground">
-              Card {selectedCardId} detail (placeholder)
-            </div>
+            <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
           ) : (
             <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
               Select a card to view details
@@ -85,6 +85,21 @@ export default function BoardLayout() {
           )}
         </div>
       </div>
+
+      {/* Mobile sheet (shown only on <lg when card is selected) */}
+      {selectedCardId && (
+        <div className="lg:hidden">
+          <Sheet open={true} onOpenChange={() => selectCard(null)}>
+            <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Card Detail</SheetTitle>
+                <SheetDescription>Card detail panel</SheetDescription>
+              </SheetHeader>
+              <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
+            </SheetContent>
+          </Sheet>
+        </div>
+      )}
     </div>
   );
 }
