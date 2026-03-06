@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Outlet, Link, useLocation, useSearchParams } from 'react-router';
 import { Settings } from 'lucide-react';
 import { Button } from '~/components/ui/button';
@@ -32,6 +32,24 @@ export default function BoardLayout() {
       return prev;
     }, { replace: true });
   }
+
+  // Keyboard shortcuts (layout-level)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === '/') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === 'Escape') {
+        selectCard(null);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
