@@ -24,7 +24,7 @@ import {
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Column, COLUMNS, type ColumnId, type ColumnHandle } from './Column';
+import { Column, COLUMNS, type ColumnId } from './Column';
 import { CardOverlay } from './Card';
 import { SearchBar } from './SearchBar';
 import { CardDetailPanel } from './CardDetailPanel';
@@ -41,6 +41,8 @@ interface CardItem {
   sessionId: string | null;
   worktreePath: string | null;
   worktreeBranch: string | null;
+  promptsSent: number;
+  turnsCompleted: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +98,15 @@ export function Board() {
     })
   );
 
+  const createMutation = useMutation(
+    trpc.cards.create.mutationOptions({
+      onSuccess: (card) => {
+        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
+        setSelectedCardId(card.id);
+      },
+    })
+  );
+
   const [columns, setColumns] = useState<ColumnCards>(() =>
     groupByColumn(serverCards ?? [])
   );
@@ -106,18 +117,17 @@ export function Board() {
   const [mounted, setMounted] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
-  const backlogRef = useRef<ColumnHandle>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Sync server data into local state when not dragging
+  // Sync server data into local state when not dragging and no mutation in flight
   useEffect(() => {
-    if (serverCards && !activeId) {
+    if (serverCards && !activeId && !moveMutation.isPending) {
       setColumns(groupByColumn(serverCards));
     }
-  }, [serverCards, activeId]);
+  }, [serverCards, activeId, moveMutation.isPending]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -130,7 +140,7 @@ export function Board() {
         searchRef.current?.focus();
       }
       if (e.key === 'n') {
-        backlogRef.current?.openAddCard();
+        createMutation.mutate({ title: 'New card', column: 'backlog' });
       }
       if (e.key === 'Escape') {
         setSelectedCardId(null);
@@ -232,39 +242,40 @@ export function Board() {
       return;
     }
 
-    const activeCol = findColumn(columns, active.id);
-    const overCol = findColumn(columns, over.id);
+    const currentCol = findColumn(columns, active.id);
+    const originalCol = snapshotRef.current
+      ? findColumn(snapshotRef.current, active.id)
+      : currentCol;
 
-    if (!activeCol || !overCol) {
+    if (!currentCol || !originalCol) {
       setActiveId(null);
       snapshotRef.current = null;
       return;
     }
 
-    // If same column, handle reorder
-    if (activeCol === overCol) {
-      const colCards = columns[activeCol];
+    if (originalCol === currentCol) {
+      // Same column reorder
+      const colCards = columns[currentCol];
       const oldIdx = colCards.findIndex((c) => c.id === active.id);
       const newIdx = colCards.findIndex((c) => c.id === over.id);
 
       if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
         const reordered = arrayMove(colCards, oldIdx, newIdx);
-        setColumns((prev) => ({ ...prev, [activeCol]: reordered }));
+        setColumns((prev) => ({ ...prev, [currentCol]: reordered }));
 
-        // Calculate position based on neighbors in reordered array
         const others = reordered.filter((c) => c.id !== active.id);
         const finalIdx = reordered.findIndex((c) => c.id === active.id);
         const pos = calcPosition(others, finalIdx);
 
-        moveMutation.mutate({ id: active.id as number, column: activeCol, position: pos });
+        moveMutation.mutate({ id: active.id as number, column: currentCol, position: pos });
       }
     } else {
-      // Cross-column move already happened in onDragOver, just persist
-      const destCards = columns[overCol].filter((c) => c.id !== active.id);
-      const insertIdx = columns[overCol].findIndex((c) => c.id === active.id);
+      // Cross-column move — handleDragOver already moved it visually, persist it
+      const destCards = columns[currentCol].filter((c) => c.id !== active.id);
+      const insertIdx = columns[currentCol].findIndex((c) => c.id === active.id);
       const pos = calcPosition(destCards, insertIdx === -1 ? destCards.length : insertIdx);
 
-      moveMutation.mutate({ id: active.id as number, column: overCol, position: pos });
+      moveMutation.mutate({ id: active.id as number, column: currentCol, position: pos });
     }
 
     setActiveId(null);
@@ -342,10 +353,10 @@ export function Board() {
             {COLUMNS.map((col) => (
               <Column
                 key={col}
-                ref={col === 'backlog' ? backlogRef : undefined}
                 id={col}
                 cards={filteredColumns[col]}
                 onCardClick={setSelectedCardId}
+                onAddCard={(column) => createMutation.mutate({ title: 'New card', column })}
               />
             ))}
           </div>

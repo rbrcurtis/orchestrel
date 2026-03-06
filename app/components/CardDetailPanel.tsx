@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ExternalLink } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SessionView } from './SessionView';
@@ -47,7 +46,7 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
   if (!card) {
     return (
       <Sheet open={true} onOpenChange={() => onClose()}>
-        <SheetContent side="right" className="w-full sm:w-[420px] sm:max-w-[420px]">
+        <SheetContent side="right" className="w-full sm:w-1/3 sm:max-w-none">
           <SheetHeader>
             <SheetTitle>Card</SheetTitle>
             <SheetDescription>Card not found</SheetDescription>
@@ -63,7 +62,7 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
 
   return (
     <Sheet open={true} onOpenChange={() => onClose()}>
-      <SheetContent side="right" className="w-full sm:w-[420px] sm:max-w-[420px] overflow-y-auto">
+      <SheetContent side="right" className="w-full sm:w-1/3 sm:max-w-none flex flex-col overflow-hidden">
         <SheetHeader>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="uppercase text-xs tracking-wide">
@@ -74,7 +73,8 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
           <SheetDescription className="sr-only">Card detail panel</SheetDescription>
         </SheetHeader>
 
-        <div className="px-4 pb-6 space-y-6">
+        {/* Top: card metadata (shrinks) */}
+        <div className="px-4 pb-4 space-y-4 shrink-0">
           {/* Title */}
           {isEditable ? (
             <EditableTitle
@@ -95,36 +95,40 @@ export function CardDetailPanel({ cardId, onClose }: Props) {
                 updateMutation.mutate({ id: card.id, description })
               }
             />
-          ) : (
+          ) : card.description ? (
             <div className="text-sm text-muted-foreground whitespace-pre-wrap">
-              {card.description || 'No description'}
+              {card.description}
             </div>
-          )}
+          ) : null}
 
-          {/* Column-specific content */}
-          {isEditable && (
+          {/* Card fields — editable for backlog/ready, read-only summary otherwise */}
+          {isEditable ? (
             <EditableFields
               card={card}
               repos={repos ?? []}
               onUpdate={(data) => updateMutation.mutate({ id: card.id, ...data })}
             />
-          )}
-
-          {col === 'in_progress' && (
-            <InProgressContent card={card} />
-          )}
-
-          {col === 'review' && (
-            <ReviewContent
-              card={card}
-              onUpdate={(data) => updateMutation.mutate({ id: card.id, ...data })}
-            />
-          )}
-
-          {col === 'done' && (
-            <DoneContent card={card} />
+          ) : (
+            <ReadOnlyFields card={card} repos={repos ?? []} />
           )}
         </div>
+
+        {/* Middle + Bottom: session area (grows to fill) */}
+        {(col === 'in_progress' || col === 'review') && (
+          card.repoId || card.worktreePath ? (
+            <SessionView cardId={card.id} sessionId={card.sessionId} />
+          ) : (
+            <div className="px-4 text-sm text-muted-foreground italic">
+              No repo linked - assign a repo to enable Claude sessions
+            </div>
+          )
+        )}
+
+        {col === 'done' && (
+          <div className="px-4 pb-6 overflow-y-auto flex-1 min-h-0">
+            <DoneContent card={card} />
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -289,6 +293,7 @@ function EditableFields({
           <Checkbox
             id="useWorktree"
             checked={card.useWorktree}
+            disabled={!!card.worktreePath}
             onCheckedChange={(checked) => onUpdate({ useWorktree: checked === true })}
           />
           <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
@@ -328,76 +333,19 @@ function EditableFields({
   );
 }
 
-// --- In Progress content ---
-
-function InProgressContent({ card }: { card: CardData }) {
-  return (
-    <div>
-      {card.repoId || card.worktreePath ? (
-        <SessionView cardId={card.id} sessionId={card.sessionId} />
-      ) : (
-        <div className="text-sm text-muted-foreground italic">
-          No repo linked - assign a repo to enable Claude sessions
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- Review content ---
-
-function ReviewContent({
-  card,
-  onUpdate,
-}: {
-  card: CardData;
-  onUpdate: (data: { prUrl?: string | null }) => void;
-}) {
-  const [draft, setDraft] = useState(card.prUrl ?? '');
-  const ref = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setDraft(card.prUrl ?? '');
-  }, [card.prUrl]);
-
-  function commit() {
-    const trimmed = draft.trim();
-    const newVal = trimmed || null;
-    if (newVal !== card.prUrl) {
-      onUpdate({ prUrl: newVal });
-    }
-  }
+function ReadOnlyFields({ card, repos }: { card: CardData; repos: RepoData[] }) {
+  const repo = repos.find(r => r.id === card.repoId);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-xs font-medium text-muted-foreground mb-1">
-          PR URL
-        </label>
-        <Input
-          ref={ref}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') ref.current?.blur();
-          }}
-          placeholder="https://github.com/..."
-        />
-      </div>
-      {card.prUrl && (
-        <Button variant="link" asChild className="px-0">
-          <a
-            href={card.prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <ExternalLink className="size-4" />
-            Open PR
-          </a>
-        </Button>
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <span><span className="font-medium">Priority:</span> {priorityLabels[card.priority] ?? card.priority}</span>
+      {repo && <span><span className="font-medium">Repo:</span> {repo.name}</span>}
+      {card.useWorktree && card.worktreeBranch && (
+        <span><span className="font-medium">Worktree:</span> {card.worktreeBranch}</span>
       )}
-      <SessionLog sessionId={card.sessionId} />
+      {card.sourceBranch && (
+        <span><span className="font-medium">Source:</span> {card.sourceBranch}</span>
+      )}
     </div>
   );
 }
@@ -407,23 +355,6 @@ function ReviewContent({
 function DoneContent({ card }: { card: CardData }) {
   return (
     <div className="space-y-4">
-      {card.prUrl && (
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            PR URL
-          </label>
-          <Button variant="link" asChild className="px-0">
-            <a
-              href={card.prUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink className="size-4" />
-              {card.prUrl}
-            </a>
-          </Button>
-        </div>
-      )}
       <SessionLog sessionId={card.sessionId} />
     </div>
   );
