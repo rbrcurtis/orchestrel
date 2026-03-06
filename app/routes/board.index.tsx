@@ -30,6 +30,7 @@ type BoardContext = {
   search: string;
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
+  startNewCard: (column: string) => void;
 };
 
 const ACTIVE_COLUMNS: ColumnId[] = ['ready', 'in_progress', 'review'];
@@ -88,7 +89,7 @@ function findColumn(columns: ColumnCards, id: UniqueIdentifier): ColumnId | null
 }
 
 export default function ActiveBoard() {
-  const { search, selectCard } = useOutletContext<BoardContext>();
+  const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -102,14 +103,6 @@ export default function ActiveBoard() {
     })
   );
 
-  const createMutation = useMutation(
-    trpc.cards.create.mutationOptions({
-      onSuccess: (card) => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        selectCard(card.id);
-      },
-    })
-  );
 
   const [columns, setColumns] = useState<ColumnCards>(() =>
     groupByColumn(serverCards ?? [])
@@ -317,7 +310,7 @@ export default function ActiveBoard() {
             id={col}
             cards={filteredColumns[col]}
             onCardClick={selectCard}
-            onAddCard={(column) => createMutation.mutate({ title: 'New card', column })}
+            onAddCard={(column) => startNewCard(column)}
           />
         ))}
       </div>
