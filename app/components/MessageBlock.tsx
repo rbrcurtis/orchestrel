@@ -37,7 +37,11 @@ export function MessageBlock({ message, toolOutputs }: Props) {
     return null;
   }
 
-  // Skip user messages and other types
+  if (type === 'user') {
+    return <UserBlock message={message} />;
+  }
+
+  // Skip other types
   return null;
 }
 
@@ -123,17 +127,15 @@ function ResultBlock({ message }: { message: Record<string, unknown> }) {
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
 
   return (
-    <Alert variant={isSuccess ? 'default' : 'destructive'} className="my-2">
-      <AlertTitle className="text-xs font-medium">
-        {isSuccess ? 'Session completed' : `Session errored: ${subtype}`}
-      </AlertTitle>
-      <AlertDescription>
-        <div className="flex gap-3 mt-1 text-[11px] opacity-80">
-          {cost != null && <span>Cost: ${cost.toFixed(4)}</span>}
-          {durationSec != null && <span>Duration: {durationSec}s</span>}
-        </div>
-      </AlertDescription>
-    </Alert>
+    <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground">
+      <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
+      <span className={isSuccess ? '' : 'text-destructive'}>
+        {isSuccess ? 'Turn complete' : `Error: ${subtype}`}
+        {cost != null && ` · $${cost.toFixed(4)}`}
+        {durationSec != null && ` · ${durationSec}s`}
+      </span>
+      <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
+    </div>
   );
 }
 
@@ -147,6 +149,38 @@ function ToolProgressBlock({ message }: { message: Record<string, unknown> }) {
     <div className="text-xs text-gray-400 dark:text-gray-500 py-0.5 flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
       {toolName} ({elapsed.toFixed(0)}s)
+    </div>
+  );
+}
+
+// --- User message ---
+
+function UserBlock({ message }: { message: Record<string, unknown> }) {
+  const inner = message.message as { content?: unknown } | undefined;
+  if (!inner?.content) return null;
+
+  // Content can be a string or array of blocks
+  let text: string | null = null;
+  if (typeof inner.content === 'string') {
+    text = inner.content;
+  } else if (Array.isArray(inner.content)) {
+    // Extract text from content blocks, skip tool_result blocks
+    const parts = (inner.content as Array<{ type: string; text?: string }>)
+      .filter((b) => b.type === 'text' && b.text)
+      .map((b) => b.text!);
+    if (parts.length > 0) text = parts.join('\n');
+  }
+
+  if (!text) return null;
+
+  // Skip Claude Code internal messages (commands, system reminders, etc.)
+  if (text.includes('<command-name>') || text.includes('<local-command-') || text.includes('<system-reminder>')) {
+    return null;
+  }
+
+  return (
+    <div className="text-sm text-foreground whitespace-pre-wrap bg-blue-50 dark:bg-blue-950/30 rounded-lg px-3 py-2 my-2">
+      {text}
     </div>
   );
 }

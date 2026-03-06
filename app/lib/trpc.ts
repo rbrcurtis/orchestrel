@@ -5,7 +5,7 @@ import type { AppRouter } from '../../src/server/routers/index';
 
 function getBaseUrl() {
   if (typeof window !== 'undefined') return window.location.origin;
-  return 'http://192.168.4.200:3000';
+  return 'http://192.168.4.200:6194';
 }
 
 export const { TRPCProvider, useTRPC } = createTRPCContext<AppRouter>();

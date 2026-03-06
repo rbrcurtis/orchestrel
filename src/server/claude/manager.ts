@@ -18,10 +18,13 @@ class SessionManager {
     return this.sessions.get(`card-${cardId}`);
   }
 
-  kill(cardId: number): void {
-    const session = this.sessions.get(`card-${cardId}`);
-    session?.kill();
-    this.sessions.delete(`card-${cardId}`);
+  async kill(cardId: number): Promise<void> {
+    const key = `card-${cardId}`;
+    const session = this.sessions.get(key);
+    if (session) {
+      await session.kill();
+      this.sessions.delete(key);
+    }
   }
 }
 

@@ -20,10 +20,10 @@ export const sessionsRouter = router({
           { encoding: 'utf-8' }
         ).trim();
       } catch {
-        throw new Error('Session log not found');
+        return [];
       }
 
-      if (!findOutput) throw new Error('Session log not found');
+      if (!findOutput) return [];
 
       // If find returns multiple results, take the first
       const filePath = findOutput.split('\n')[0];
@@ -40,9 +40,9 @@ export const sessionsRouter = router({
         })
         .filter((m): m is Record<string, unknown> => m !== null);
 
-      // Filter to assistant and user messages only (skip progress, system, file-history-snapshot)
+      // Filter to displayable message types
       return messages.filter(
-        (m) => m.type === 'assistant' || m.type === 'user'
+        (m) => m.type === 'assistant' || m.type === 'user' || m.type === 'result' || m.type === 'system'
       );
     }),
 });

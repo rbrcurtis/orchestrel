@@ -25,6 +25,8 @@ export const cards = sqliteTable('cards', {
   worktreeBranch: text('worktree_branch'),
   useWorktree: integer('use_worktree', { mode: 'boolean' }).notNull().default(true),
   sourceBranch: text('source_branch', { enum: ['main', 'dev'] }),
+  promptsSent: integer('prompts_sent').notNull().default(0),
+  turnsCompleted: integer('turns_completed').notNull().default(0),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 });

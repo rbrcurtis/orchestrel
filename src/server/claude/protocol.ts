@@ -7,6 +7,9 @@ export class ClaudeSession extends EventEmitter {
   process: ChildProcess | null = null;
   sessionId: string | null = null;
   status: SessionStatus = 'starting';
+  messages: Record<string, unknown>[] = [];
+  promptsSent = 0;
+  turnsCompleted = 0;
 
   constructor(
     private cwd: string,
@@ -20,7 +23,7 @@ export class ClaudeSession extends EventEmitter {
       '--output-format=stream-json',
       '--input-format=stream-json',
       '--verbose',
-      '--permission-mode=bypassPermissions',
+      '--dangerously-skip-permissions',
     ];
 
     if (this.resumeSessionId) {
@@ -29,10 +32,19 @@ export class ClaudeSession extends EventEmitter {
       args.unshift('-p');
     }
 
-    this.process = spawn('claude', args, {
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+
+    this.process = spawn('/home/ryan/.local/bin/claude', args, {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env,
+    });
+
+    this.process.on('error', (err) => {
+      this.status = 'errored';
+      this.emit('exit', 1);
+      console.error('Failed to spawn claude:', err.message);
     });
 
     const rl = createInterface({ input: this.process.stdout! });
@@ -50,8 +62,9 @@ export class ClaudeSession extends EventEmitter {
       this.emit('stderr', data.toString());
     });
 
-    this.process.on('exit', (code) => {
-      this.status = code === 0 ? 'completed' : 'errored';
+    this.process.on('exit', (code, signal) => {
+      // SIGTERM from our auto-stop or stop button is a clean exit
+      this.status = (code === 0 || signal === 'SIGTERM') ? 'completed' : 'errored';
       this.emit('exit', code);
     });
 
@@ -64,11 +77,9 @@ export class ClaudeSession extends EventEmitter {
   }
 
   private handleMessage(msg: Record<string, unknown>): void {
-    // Capture session ID from init message
-    if (msg.type === 'system' && msg.subtype === 'init') {
-      if (typeof msg.session_id === 'string') {
-        this.sessionId = msg.session_id;
-      }
+    // Capture session ID from any system message that has one
+    if (msg.type === 'system' && typeof msg.session_id === 'string' && !this.sessionId) {
+      this.sessionId = msg.session_id;
       this.status = 'running';
     }
 
@@ -89,20 +100,26 @@ export class ClaudeSession extends EventEmitter {
       return; // Don't emit control messages to client
     }
 
-    // Track completion
-    if (msg.type === 'result') {
-      this.status = 'completed';
-    }
-
-    // Emit all other messages to listeners
+    // Buffer for late subscribers, then emit
+    this.messages.push(msg);
     this.emit('message', msg);
+
+    // Auto-stop when all queued prompts have been answered
+    if (msg.type === 'result') {
+      this.turnsCompleted++;
+      if (this.turnsCompleted >= this.promptsSent) {
+        this.kill();
+      }
+    }
   }
 
   sendUserMessage(content: string): void {
-    this.send({
-      type: 'user',
-      message: { role: 'user', content },
-    });
+    this.promptsSent++;
+    const msg = { type: 'user', message: { role: 'user', content } };
+    // Buffer and emit so subscribers see user prompts
+    this.messages.push(msg);
+    this.emit('message', msg);
+    this.send(msg);
   }
 
   private send(data: unknown): void {
@@ -111,8 +128,11 @@ export class ClaudeSession extends EventEmitter {
     }
   }
 
-  kill(): void {
-    this.process?.kill('SIGTERM');
-    this.status = 'errored';
+  kill(): Promise<void> {
+    if (!this.process) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.process!.on('exit', () => resolve());
+      this.process!.kill('SIGTERM');
+    });
   }
 }
