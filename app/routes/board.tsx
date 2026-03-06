@@ -13,12 +13,25 @@ const NAV_ITEMS = [
   { to: '/done', label: 'Done' },
 ] as const;
 
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    setIsDesktop(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isDesktop;
+}
+
 export default function BoardLayout() {
   const location = useLocation();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
+  const isDesktop = useIsDesktop();
 
   const selectedCardId = searchParams.get('card') ? Number(searchParams.get('card')) : null;
 
@@ -105,18 +118,16 @@ export default function BoardLayout() {
       </div>
 
       {/* Mobile sheet (shown only on <lg when card is selected) */}
-      {selectedCardId && (
-        <div className="lg:hidden">
-          <Sheet open={true} onOpenChange={() => selectCard(null)}>
-            <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col">
-              <SheetHeader className="sr-only">
-                <SheetTitle>Card Detail</SheetTitle>
-                <SheetDescription>Card detail panel</SheetDescription>
-              </SheetHeader>
-              <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
-            </SheetContent>
-          </Sheet>
-        </div>
+      {selectedCardId && !isDesktop && (
+        <Sheet open={true} onOpenChange={() => selectCard(null)}>
+          <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col">
+            <SheetHeader className="sr-only">
+              <SheetTitle>Card Detail</SheetTitle>
+              <SheetDescription>Card detail panel</SheetDescription>
+            </SheetHeader>
+            <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
+          </SheetContent>
+        </Sheet>
       )}
     </div>
   );
