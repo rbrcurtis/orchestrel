@@ -1,0 +1,4 @@
+[    1483ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://192.168.4.200:3000/node_modules/.vite/deps/@dnd-kit_sortable.js?v=76aeab37:0
+[    1555ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://192.168.4.200:3000/node_modules/.vite/deps/class-variance-authority.js?v=0842a729:0
+[    1556ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://192.168.4.200:3000/node_modules/.vite/deps/radix-ui.js?v=e4ece9ac:0
+[    1598ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://192.168.4.200:3000/node_modules/.vite/deps/chunk-N5AUN7JR.js?v=8205e73b:0

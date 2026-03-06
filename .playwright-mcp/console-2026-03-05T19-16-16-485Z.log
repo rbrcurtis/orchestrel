@@ -1,0 +1,32 @@
+[   91369ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: backlogRef is not defined
+    at http://192.168.4.200:6194/app/components/Board.tsx?t=1772738267786:357:38
+    at Array.map (<anonymous>)
+    at Board (http://192.168.4.200:6194/app/components/Board.tsx?t=1772738267786:356:29)
+    at Object.react_stack_bottom_frame (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:18509:20)
+    at renderWithHooks (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:5654:24)
+    at updateFunctionComponent (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:7475:21)
+    at beginWork (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:8525:20)
+    at runWithFiberInDEV (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:997:72)
+    at performUnitOfWork (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:12561:98)
+    at workLoopSync (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:12424:43) The above error occurred in the <Board> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:7000
+[   95152ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: backlogRef is not defined
+    at http://192.168.4.200:6194/app/components/Board.tsx?t=1772738271579:360:38
+    at Array.map (<anonymous>)
+    at Board (http://192.168.4.200:6194/app/components/Board.tsx?t=1772738271579:359:29)
+    at Object.react_stack_bottom_frame (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:18509:20)
+    at renderWithHooks (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:5654:24)
+    at updateFunctionComponent (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:7475:21)
+    at beginWork (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:8525:20)
+    at runWithFiberInDEV (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:997:72)
+    at performUnitOfWork (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:12561:98)
+    at workLoopSync (http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:12424:43) The above error occurred in the <Board> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.4.200:6194/node_modules/.vite/deps/react-dom_client.js?v=556a9271:7000
