@@ -50,7 +50,7 @@ export function Card({ id, title, priority, onClick }: CardProps) {
       {...attributes}
       {...listeners}
       onClick={() => onClick?.(id)}
-      className={`group relative rounded bg-white dark:bg-gray-800 border-l-4 ${priorityColors[priority] ?? 'border-l-gray-300'} px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
+      className={`group relative w-56 shrink-0 rounded bg-white dark:bg-gray-800 border-l-4 ${priorityColors[priority] ?? 'border-l-gray-300'} px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
     >
       <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
       <Button
@@ -71,7 +71,7 @@ export function Card({ id, title, priority, onClick }: CardProps) {
 export function CardOverlay({ title, priority }: { title: string; priority: string }) {
   return (
     <div
-      className={`rounded bg-white dark:bg-gray-800 border-l-4 ${priorityColors[priority] ?? 'border-l-gray-300'} px-3 py-2 shadow-lg cursor-grabbing select-none w-72`}
+      className={`rounded bg-white dark:bg-gray-800 border-l-4 ${priorityColors[priority] ?? 'border-l-gray-300'} px-3 py-2 shadow-lg cursor-grabbing select-none w-56`}
     >
       <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
     </div>
