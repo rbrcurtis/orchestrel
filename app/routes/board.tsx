@@ -133,7 +133,7 @@ export default function BoardLayout() {
       {/* Mobile sheet (shown only on <lg when card or new-card is active) */}
       {(selectedCardId || newCardColumn) && !isDesktop && (
         <Sheet open={true} onOpenChange={() => { selectCard(null); setNewCardColumn(null); }}>
-          <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col">
+          <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col" showCloseButton={false}>
             <SheetHeader className="sr-only">
               <SheetTitle>Card Detail</SheetTitle>
               <SheetDescription>Card detail panel</SheetDescription>
