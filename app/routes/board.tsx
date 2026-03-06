@@ -4,7 +4,7 @@ import { Settings } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
-import { CardDetail } from '~/components/CardDetail';
+import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '~/components/ui/sheet';
 
 const NAV_ITEMS = [
@@ -34,8 +34,10 @@ export default function BoardLayout() {
   const isDesktop = useIsDesktop();
 
   const selectedCardId = searchParams.get('card') ? Number(searchParams.get('card')) : null;
+  const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
 
   function selectCard(id: number | null) {
+    setNewCardColumn(null);
     setSearchParams(prev => {
       if (id === null) {
         prev.delete('card');
@@ -44,6 +46,11 @@ export default function BoardLayout() {
       }
       return prev;
     }, { replace: true });
+  }
+
+  function startNewCard(column: string) {
+    selectCard(null);
+    setNewCardColumn(column);
   }
 
   // Keyboard shortcuts (layout-level)
@@ -94,8 +101,8 @@ export default function BoardLayout() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left: rows area */}
-        <div className="flex-1 min-w-0 overflow-y-auto">
-          <Outlet context={{ search, selectedCardId, selectCard }} />
+        <div className="flex-1 overflow-y-auto" style={{ minWidth: 272 }}>
+          <Outlet context={{ search, selectedCardId, selectCard, startNewCard }} />
         </div>
 
         {/* Resize handle (desktop only) */}
@@ -107,7 +114,13 @@ export default function BoardLayout() {
           className="hidden lg:flex flex-col border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden"
           style={{ width: initialWidth }}
         >
-          {selectedCardId ? (
+          {newCardColumn ? (
+            <NewCardDetail
+              column={newCardColumn}
+              onCreated={(id) => selectCard(id)}
+              onClose={() => setNewCardColumn(null)}
+            />
+          ) : selectedCardId ? (
             <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
           ) : (
             <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
@@ -117,15 +130,23 @@ export default function BoardLayout() {
         </div>
       </div>
 
-      {/* Mobile sheet (shown only on <lg when card is selected) */}
-      {selectedCardId && !isDesktop && (
-        <Sheet open={true} onOpenChange={() => selectCard(null)}>
+      {/* Mobile sheet (shown only on <lg when card or new-card is active) */}
+      {(selectedCardId || newCardColumn) && !isDesktop && (
+        <Sheet open={true} onOpenChange={() => { selectCard(null); setNewCardColumn(null); }}>
           <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col">
             <SheetHeader className="sr-only">
               <SheetTitle>Card Detail</SheetTitle>
               <SheetDescription>Card detail panel</SheetDescription>
             </SheetHeader>
-            <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
+            {newCardColumn ? (
+              <NewCardDetail
+                column={newCardColumn}
+                onCreated={(id) => selectCard(id)}
+                onClose={() => setNewCardColumn(null)}
+              />
+            ) : selectedCardId ? (
+              <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
+            ) : null}
           </SheetContent>
         </Sheet>
       )}

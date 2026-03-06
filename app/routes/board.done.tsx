@@ -24,6 +24,7 @@ type BoardContext = {
   search: string;
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
+  startNewCard: (column: string) => void;
 };
 
 interface CardItem {
@@ -52,7 +53,7 @@ function calcPosition(items: { position: number }[], targetIndex: number): numbe
 }
 
 export default function DoneBoard() {
-  const { search, selectCard } = useOutletContext<BoardContext>();
+  const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -66,14 +67,6 @@ export default function DoneBoard() {
     })
   );
 
-  const createMutation = useMutation(
-    trpc.cards.create.mutationOptions({
-      onSuccess: (card) => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        selectCard(card.id);
-      },
-    })
-  );
 
   const doneCards = useMemo(() => {
     if (!serverCards) return [];
@@ -172,7 +165,7 @@ export default function DoneBoard() {
           id="done"
           cards={filteredCards}
           onCardClick={selectCard}
-          onAddCard={() => createMutation.mutate({ title: 'New card', column: 'done' })}
+          onAddCard={() => startNewCard('done')}
         />
       </div>
       {mounted && createPortal(

@@ -52,7 +52,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
       </div>
       <div
         ref={setNodeRef}
-        className="flex gap-2 px-4 pb-3 overflow-x-auto min-h-[3.5rem]"
+        className="flex flex-wrap gap-2 px-4 pb-3 min-h-[3.5rem]"
       >
         <SortableContext items={cards.map(c => c.id)} strategy={horizontalListSortingStrategy}>
           {cards.map(card => (
