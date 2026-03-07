@@ -1,6 +1,7 @@
+import { EventEmitter } from 'events';
 import { ClaudeSession } from './protocol';
 
-class SessionManager {
+class SessionManager extends EventEmitter {
   private sessions = new Map<string, ClaudeSession>();
 
   create(cardId: number, cwd: string, resumeSessionId?: string): ClaudeSession {
@@ -11,6 +12,7 @@ class SessionManager {
     }
     const session = new ClaudeSession(cwd, resumeSessionId);
     this.sessions.set(key, session);
+    this.emit('session', cardId, session);
     return session;
   }
 

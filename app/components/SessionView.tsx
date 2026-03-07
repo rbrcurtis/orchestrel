@@ -60,19 +60,13 @@ export function SessionView({ cardId, sessionId }: Props) {
   const promptsSent = statusData?.promptsSent ?? 0;
   const turnsCompleted = statusData?.turnsCompleted ?? 0;
 
-  // Merge history + live messages (live may replay history, so deduplicate)
+  // Merge history + live messages (live only contains current query's messages)
   const isStreaming = sessionActive || subscribing;
   const history = (historyData as Record<string, unknown>[] | undefined) ?? [];
   const messages = useMemo(() => {
     if (liveMessages.length === 0) return history;
-    // Live subscription replays buffered messages then streams new ones.
-    // History covers everything before this process lifecycle.
-    // Use history as base, then append any live messages beyond history length.
-    if (liveMessages.length > history.length) {
-      return [...history, ...liveMessages.slice(history.length)];
-    }
-    // Live is still catching up or equal — just show whichever is longer
-    return liveMessages.length >= history.length ? liveMessages : history;
+    if (history.length === 0) return liveMessages;
+    return [...history, ...liveMessages];
   }, [history, liveMessages]);
 
   // Extract tool outputs from all messages
@@ -118,8 +112,10 @@ export function SessionView({ cardId, sessionId }: Props) {
   // Send message mutation
   const sendMutation = useMutation(
     trpc.claude.sendMessage.mutationOptions({
-      onSuccess: () => {
+      onMutate: () => {
         setSubscribing(true);
+      },
+      onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
       },
     })

@@ -5,6 +5,7 @@ import { cards } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { sessionManager } from '../claude/manager';
+import type { ClaudeSession } from '../claude/protocol';
 import type { SessionStatus } from '../claude/types';
 
 export const claudeRouter = router({
@@ -151,7 +152,24 @@ export const claudeRouter = router({
   onMessage: publicProcedure
     .input(z.object({ cardId: z.number() }))
     .subscription(async function* ({ input, signal }) {
-      const session = sessionManager.get(input.cardId);
+      // Wait for session to appear (may be created by concurrent sendMessage mutation)
+      let session = sessionManager.get(input.cardId);
+      if (!session) {
+        session = await new Promise<ClaudeSession | undefined>((resolve) => {
+          const timeout = setTimeout(() => { cleanup(); resolve(undefined); }, 15_000);
+          const onSession = (cardId: number, s: ClaudeSession) => {
+            if (cardId === input.cardId) { cleanup(); resolve(s); }
+          };
+          const onAbort = () => { cleanup(); resolve(undefined); };
+          const cleanup = () => {
+            clearTimeout(timeout);
+            sessionManager.off('session', onSession);
+            signal?.removeEventListener('abort', onAbort);
+          };
+          sessionManager.on('session', onSession);
+          signal?.addEventListener('abort', onAbort);
+        });
+      }
       if (!session) return;
 
       let counter = 0;
@@ -167,11 +185,12 @@ export const claudeRouter = router({
       // Register listener BEFORE snapshotting buffer to avoid race
       session.on('message', onMessage);
       session.on('exit', wake);
+      const replayFrom = session.queryStartIndex;
       const buffered = session.messages.length;
 
       try {
-        // Replay buffered messages
-        for (let i = 0; i < buffered; i++) {
+        // Replay only messages from current query (history loaded separately via JSONL)
+        for (let i = replayFrom; i < buffered; i++) {
           yield tracked(String(counter++), session.messages[i]);
         }
 

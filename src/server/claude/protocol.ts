@@ -17,6 +17,7 @@ export class ClaudeSession extends EventEmitter {
 
   private queryInstance: Query | null = null;
   private abortController: AbortController | null = null;
+  queryStartIndex = 0;
 
   constructor(
     private cwd: string,
@@ -117,6 +118,7 @@ export class ClaudeSession extends EventEmitter {
     }
     const resumeId = this.sessionId ?? this.resumeSessionId;
     if (!resumeId) return;
+    this.queryStartIndex = this.messages.length;
     this.status = 'starting';
     await this.runQuery(content, resumeId);
   }
