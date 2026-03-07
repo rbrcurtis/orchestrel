@@ -69,17 +69,6 @@ export type StreamEvent = {
   };
 };
 
-export type ControlRequest = {
-  type: 'control_request';
-  request_id: string;
-  request: {
-    subtype: 'can_use_tool';
-    tool_name: string;
-    input: Record<string, unknown>;
-    tool_use_id: string;
-  };
-};
-
 export type ToolProgressMessage = {
   type: 'tool_progress';
   tool_use_id: string;
@@ -104,7 +93,6 @@ export type ClaudeMessage =
   | UserMessage
   | ResultMessage
   | StreamEvent
-  | ControlRequest
   | ToolProgressMessage
   | StatusMessage;
 

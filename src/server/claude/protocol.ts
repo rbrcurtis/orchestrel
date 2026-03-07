@@ -1,6 +1,6 @@
-import { spawn, type ChildProcess } from 'child_process';
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { Options as SDKOptions, Query } from '@anthropic-ai/claude-agent-sdk';
 import { EventEmitter } from 'events';
-import { createInterface } from 'readline';
 import { appendFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import type { SessionStatus } from './types';
@@ -9,12 +9,14 @@ const SESSIONS_DIR = join(process.cwd(), 'data', 'sessions');
 mkdirSync(SESSIONS_DIR, { recursive: true });
 
 export class ClaudeSession extends EventEmitter {
-  process: ChildProcess | null = null;
   sessionId: string | null = null;
   status: SessionStatus = 'starting';
   messages: Record<string, unknown>[] = [];
   promptsSent = 0;
   turnsCompleted = 0;
+
+  private queryInstance: Query | null = null;
+  private abortController: AbortController | null = null;
 
   constructor(
     private cwd: string,
@@ -24,64 +26,68 @@ export class ClaudeSession extends EventEmitter {
   }
 
   async start(prompt: string): Promise<void> {
-    await this.spawnWithPrompt(prompt, this.resumeSessionId);
+    await this.runQuery(prompt, this.resumeSessionId);
   }
 
-  private async spawnWithPrompt(prompt: string, resumeId?: string): Promise<void> {
-    const args = [
-      '-p',
-      '--output-format=stream-json',
-      '--verbose',
-      '--dangerously-skip-permissions',
-      '--max-turns', '1',
-    ];
-
-    if (resumeId) {
-      args.push('--resume', resumeId);
-    }
-
-    // Prompt goes as CLI argument (not stdin) so Claude persists the session
-    args.push(prompt);
+  private async runQuery(prompt: string, resumeId?: string): Promise<void> {
+    this.abortController = new AbortController();
 
     const env = { ...process.env };
     delete env.CLAUDECODE;
 
-    this.process = spawn('/home/ryan/.local/bin/claude', args, {
+    const opts: SDKOptions = {
       cwd: this.cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
       env,
-    });
+      abortController: this.abortController,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
+      settingSources: ['project', 'user', 'local'],
+      includePartialMessages: false,
+    };
 
-    this.process.on('error', (err) => {
+    if (resumeId) {
+      opts.resume = resumeId;
+    }
+
+    this.queryInstance = query({ prompt, options: opts });
+
+    // Run generator in background — don't await the full loop
+    this.consumeMessages().catch((err) => {
+      console.error('Query consumption error:', err);
       this.status = 'errored';
       this.emit('exit', 1);
-      console.error('Failed to spawn claude:', err.message);
-    });
-
-    const rl = createInterface({ input: this.process.stdout! });
-
-    rl.on('line', (line) => {
-      try {
-        const msg = JSON.parse(line) as Record<string, unknown>;
-        this.handleMessage(msg);
-      } catch {
-        // non-JSON line, ignore
-      }
-    });
-
-    this.process.stderr?.on('data', (data: Buffer) => {
-      this.emit('stderr', data.toString());
-    });
-
-    this.process.on('exit', (code, signal) => {
-      // SIGTERM from our auto-stop or stop button is a clean exit
-      this.status = (code === 0 || signal === 'SIGTERM') ? 'completed' : 'errored';
-      this.emit('exit', code);
     });
   }
 
+  private async consumeMessages(): Promise<void> {
+    if (!this.queryInstance) return;
+
+    try {
+      for await (const msg of this.queryInstance) {
+        this.handleMessage(msg as Record<string, unknown>);
+      }
+      // Generator completed normally
+      this.status = 'completed';
+      this.emit('exit', 0);
+    } catch (err: unknown) {
+      // AbortError means we called interrupt/abort — treat as clean exit
+      if (err instanceof Error && err.name === 'AbortError') {
+        this.status = 'completed';
+        this.emit('exit', 0);
+      } else {
+        console.error('SDK query error:', err);
+        this.status = 'errored';
+        this.emit('exit', 1);
+      }
+    } finally {
+      this.queryInstance = null;
+      this.abortController = null;
+    }
+  }
+
   private handleMessage(msg: Record<string, unknown>): void {
-    // Capture session ID from any system message that has one
+    // Capture session ID from system init message
     if (msg.type === 'system' && typeof msg.session_id === 'string') {
       if (!this.sessionId) {
         this.sessionId = msg.session_id as string;
@@ -89,53 +95,48 @@ export class ClaudeSession extends EventEmitter {
       this.status = 'running';
     }
 
-    // Don't emit control messages to client
-    if (msg.type === 'control_request') return;
-
-    // Buffer for late subscribers, persist, then emit
+    // Buffer, persist, emit
     this.messages.push(msg);
     this.persistMessage(msg);
     this.emit('message', msg);
 
     if (msg.type === 'result') {
       this.turnsCompleted++;
-      // Don't kill — --max-turns 1 ensures Claude exits naturally,
-      // which allows it to persist the session file for --resume
     }
   }
 
   async sendUserMessage(content: string): Promise<void> {
     this.promptsSent++;
     const msg = { type: 'user', message: { role: 'user', content } };
-    // Buffer, persist, emit so subscribers see user prompts
     this.messages.push(msg);
     this.persistMessage(msg);
     this.emit('message', msg);
 
-    // If no process or process completed, spawn a new one with --resume.
-    if (!this.process || this.status === 'completed' || this.status === 'errored') {
-      if (!this.sessionId) return;
-      this.status = 'starting';
-      await this.spawnWithPrompt(content, this.sessionId);
+    // Interrupt running query if any, then resume with new prompt
+    if (this.queryInstance) {
+      try { await this.queryInstance.interrupt(); } catch { /* ignore */ }
     }
-    // If process is still running, auto-kill will fire when result arrives
-    // and the next queued prompt will be handled by the router's message listener
+    if (!this.sessionId) return;
+    this.status = 'starting';
+    await this.runQuery(content, this.sessionId);
   }
 
   private persistMessage(msg: Record<string, unknown>): void {
     if (!this.sessionId) return;
     try {
-      appendFileSync(join(SESSIONS_DIR, `${this.sessionId}.jsonl`), JSON.stringify(msg) + '\n');
-    } catch {
-      // ignore write errors
-    }
+      appendFileSync(
+        join(SESSIONS_DIR, `${this.sessionId}.jsonl`),
+        JSON.stringify(msg) + '\n',
+      );
+    } catch { /* ignore */ }
   }
 
-  kill(): Promise<void> {
-    if (!this.process) return Promise.resolve();
-    return new Promise((resolve) => {
-      this.process!.on('exit', () => resolve());
-      this.process!.kill('SIGTERM');
-    });
+  async kill(): Promise<void> {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    if (this.queryInstance) {
+      try { await this.queryInstance.interrupt(); } catch { /* ignore */ }
+    }
   }
 }

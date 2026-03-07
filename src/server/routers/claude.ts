@@ -40,7 +40,7 @@ export const claudeRouter = router({
         card.worktreePath,
         card.sessionId ?? undefined,
       );
-      // Register event handlers BEFORE starting to avoid race with --max-turns 1
+      // Register event handlers BEFORE starting
       session.on('message', async (msg: Record<string, unknown>) => {
         if (msg.type === 'result') {
           try {
@@ -58,6 +58,7 @@ export const claudeRouter = router({
       });
 
       session.on('exit', async () => {
+        if (session.status !== 'completed' && session.status !== 'errored') return;
         try {
           await db.update(cards)
             .set({
@@ -72,7 +73,6 @@ export const claudeRouter = router({
         }
       });
 
-      // Prompt is passed as CLI arg (not stdin) so Claude persists the session
       session.promptsSent++;
       await session.start(input.prompt);
       await waitForInit(session);
