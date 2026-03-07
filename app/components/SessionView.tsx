@@ -8,6 +8,7 @@ import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { Alert, AlertDescription } from '~/components/ui/alert';
+import { ContextGauge } from './ContextGauge';
 
 type Props = {
   cardId: number;
@@ -42,12 +43,16 @@ export function SessionView({ cardId, sessionId }: Props) {
   const seenIds = useRef(new Set<number>());
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [contextTokens, setContextTokens] = useState(0);
+  const [compacted, setCompacted] = useState(false);
 
   // Reset live state when switching cards
   useEffect(() => {
     setLiveMessages([]);
     setSubscribing(false);
     seenIds.current.clear();
+    setContextTokens(0);
+    setCompacted(false);
   }, [cardId]);
 
   const sessionActive = statusData?.active ?? false;
@@ -80,10 +85,9 @@ export function SessionView({ cardId, sessionId }: Props) {
 
       for (const block of inner.content as ToolResultBlock[]) {
         if (block.type === 'tool_result' && block.tool_use_id) {
-          const text = block.content
-            ?.map((c) => c.text)
-            .filter(Boolean)
-            .join('\n');
+          const text = Array.isArray(block.content)
+            ? block.content.map((c) => c.text).filter(Boolean).join('\n')
+            : typeof block.content === 'string' ? block.content : '';
           if (text) map.set(block.tool_use_id, text);
         }
       }
@@ -115,6 +119,7 @@ export function SessionView({ cardId, sessionId }: Props) {
   const sendMutation = useMutation(
     trpc.claude.sendMessage.mutationOptions({
       onSuccess: () => {
+        setSubscribing(true);
         queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
       },
     })
@@ -163,6 +168,23 @@ export function SessionView({ cardId, sessionId }: Props) {
           if (seenIds.current.has(tracked.id)) return;
           seenIds.current.add(tracked.id);
           setLiveMessages((prev) => [...prev, tracked.data]);
+
+          // Extract context token usage
+          const msg = tracked.data;
+          if (msg.type === 'assistant') {
+            const message = msg.message as { usage?: { input_tokens?: number } } | undefined;
+            if (message?.usage?.input_tokens) {
+              setContextTokens(message.usage.input_tokens);
+            }
+          } else if (msg.type === 'result') {
+            const usage = (msg as { usage?: { input_tokens?: number } }).usage;
+            if (usage?.input_tokens) {
+              setContextTokens(usage.input_tokens);
+            }
+          } else if (msg.type === 'system' && (msg as { subtype?: string }).subtype === 'compact_boundary') {
+            setCompacted(true);
+            setTimeout(() => setCompacted(false), 600);
+          }
         },
         onError: (err) => {
           console.error('Subscription error:', err);
@@ -186,13 +208,37 @@ export function SessionView({ cardId, sessionId }: Props) {
     }
   }, [historyData, liveMessages.length]);
 
+  // Extract initial context tokens from history
+  useEffect(() => {
+    if (!historyData || historyData.length === 0) return;
+    // Scan backwards for the last message with token usage
+    for (let i = historyData.length - 1; i >= 0; i--) {
+      const msg = historyData[i] as Record<string, unknown>;
+      if (msg.type === 'result') {
+        const usage = (msg as { usage?: { input_tokens?: number } }).usage;
+        if (usage?.input_tokens) {
+          setContextTokens(usage.input_tokens);
+          return;
+        }
+      }
+      if (msg.type === 'assistant') {
+        const message = msg.message as { usage?: { input_tokens?: number } } | undefined;
+        if (message?.usage?.input_tokens) {
+          setContextTokens(message.usage.input_tokens);
+          return;
+        }
+      }
+    }
+  }, [historyData]);
+
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
+  const contextPercent = Math.min(100, contextTokens / 200_000 * 100);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 border-t border-gray-200 dark:border-gray-700">
+    <div className="flex flex-col flex-1 min-h-0 border-t border-border">
       {/* Status bar — only shown when there's activity */}
       {(isStreaming || messages.length > 0) && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-b border-border shrink-0">
           <StatusBadge status={startMutation.isPending ? 'starting' : sessionStatus} />
           {showCounters && (
             <span className="text-[11px] text-muted-foreground">
@@ -242,6 +288,8 @@ export function SessionView({ cardId, sessionId }: Props) {
         onStart={(prompt) => startMutation.mutate({ cardId, prompt })}
         onSend={(message) => sendMutation.mutate({ cardId, message })}
         sendPending={sendMutation.isPending}
+        contextPercent={contextPercent}
+        compacted={compacted}
       />
     </div>
   );
@@ -285,6 +333,8 @@ function PromptInput({
   onStart,
   onSend,
   sendPending,
+  contextPercent,
+  compacted,
 }: {
   cardId: number;
   isRunning: boolean;
@@ -293,6 +343,8 @@ function PromptInput({
   onStart: (prompt: string) => void;
   onSend: (message: string) => void;
   sendPending: boolean;
+  contextPercent: number;
+  compacted: boolean;
 }) {
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -327,8 +379,9 @@ function PromptInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex gap-2 px-3 py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 shrink-0"
+      className="flex gap-2 px-3 py-2 border-t border-border bg-muted shrink-0"
     >
+      <ContextGauge percent={contextPercent} compacted={compacted} />
       <Textarea
         ref={ref}
         value={text}
