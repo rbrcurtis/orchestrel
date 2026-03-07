@@ -104,6 +104,41 @@ export const claudeRouter = router({
           throw new Error(`No session for card ${input.cardId}`);
         }
         session = sessionManager.create(input.cardId, card.worktreePath, card.sessionId);
+        session.promptsSent = card.promptsSent ?? 0;
+        session.turnsCompleted = card.turnsCompleted ?? 0;
+
+        // Register event handlers (same as start mutation)
+        session.on('message', async (msg: Record<string, unknown>) => {
+          if (msg.type === 'result') {
+            try {
+              await db.update(cards)
+                .set({
+                  promptsSent: session!.promptsSent,
+                  turnsCompleted: session!.turnsCompleted,
+                  updatedAt: new Date().toISOString(),
+                })
+                .where(eq(cards.id, input.cardId));
+            } catch (err) {
+              console.error(`Failed to persist counters for card ${input.cardId}:`, err);
+            }
+          }
+        });
+
+        session.on('exit', async () => {
+          if (session!.status !== 'completed' && session!.status !== 'errored') return;
+          try {
+            await db.update(cards)
+              .set({
+                column: 'review',
+                promptsSent: session!.promptsSent,
+                turnsCompleted: session!.turnsCompleted,
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(cards.id, input.cardId));
+          } catch (err) {
+            console.error(`Failed to auto-move card ${input.cardId} to review:`, err);
+          }
+        });
       }
 
       await session.sendUserMessage(input.message);

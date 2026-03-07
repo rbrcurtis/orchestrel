@@ -67,7 +67,6 @@ export class ClaudeSession extends EventEmitter {
       for await (const msg of this.queryInstance) {
         this.handleMessage(msg as Record<string, unknown>);
       }
-      // Generator completed normally
       this.status = 'completed';
       this.emit('exit', 0);
     } catch (err: unknown) {
@@ -76,7 +75,7 @@ export class ClaudeSession extends EventEmitter {
         this.status = 'completed';
         this.emit('exit', 0);
       } else {
-        console.error('SDK query error:', err);
+        console.error('[ClaudeSession] SDK query error:', err);
         this.status = 'errored';
         this.emit('exit', 1);
       }
@@ -87,9 +86,9 @@ export class ClaudeSession extends EventEmitter {
   }
 
   private handleMessage(msg: Record<string, unknown>): void {
-    // Capture session ID from system init message
+    // Capture session ID from system init message (only for fresh sessions)
     if (msg.type === 'system' && typeof msg.session_id === 'string') {
-      if (!this.sessionId) {
+      if (!this.sessionId && !this.resumeSessionId) {
         this.sessionId = msg.session_id;
       }
       this.status = 'running';
@@ -116,16 +115,18 @@ export class ClaudeSession extends EventEmitter {
     if (this.queryInstance) {
       try { await this.queryInstance.interrupt(); } catch { /* ignore */ }
     }
-    if (!this.sessionId) return;
+    const resumeId = this.sessionId ?? this.resumeSessionId;
+    if (!resumeId) return;
     this.status = 'starting';
-    await this.runQuery(content, this.sessionId);
+    await this.runQuery(content, resumeId);
   }
 
   private persistMessage(msg: Record<string, unknown>): void {
-    if (!this.sessionId) return;
+    const sid = this.sessionId ?? this.resumeSessionId;
+    if (!sid) return;
     try {
       appendFileSync(
-        join(SESSIONS_DIR, `${this.sessionId}.jsonl`),
+        join(SESSIONS_DIR, `${sid}.jsonl`),
         JSON.stringify(msg) + '\n',
       );
     } catch { /* ignore */ }
