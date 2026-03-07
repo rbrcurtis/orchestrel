@@ -90,7 +90,7 @@ export class ClaudeSession extends EventEmitter {
     // Capture session ID from system init message
     if (msg.type === 'system' && typeof msg.session_id === 'string') {
       if (!this.sessionId) {
-        this.sessionId = msg.session_id as string;
+        this.sessionId = msg.session_id;
       }
       this.status = 'running';
     }
