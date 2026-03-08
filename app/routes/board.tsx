@@ -13,7 +13,6 @@ import { useQuery } from '@tanstack/react-query';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
-  { to: '/backlog', label: 'Backlog' },
   { to: '/archive', label: 'Archive' },
 ] as const;
 

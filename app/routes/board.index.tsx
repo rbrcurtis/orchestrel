@@ -33,7 +33,7 @@ type BoardContext = {
   startNewCard: (column: string) => void;
 };
 
-const ACTIVE_COLUMNS: ColumnId[] = ['ready', 'in_progress', 'review', 'done'];
+const ACTIVE_COLUMNS: ColumnId[] = ['backlog', 'ready', 'in_progress', 'review', 'done'];
 
 interface CardItem {
   id: number;
@@ -94,7 +94,7 @@ export default function ActiveBoard() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  const { data: serverCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
+  const { data: serverCards, isLoading, isFetching } = useQuery(trpc.cards.list.queryOptions());
   const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
 
   // Build color map from projects
@@ -146,12 +146,12 @@ export default function ActiveBoard() {
     setMounted(true);
   }, []);
 
-  // Sync server data into local state when not dragging and no mutation in flight
+  // Sync server data into local state when not dragging and no mutation/refetch in flight
   useEffect(() => {
-    if (enrichedCards.length > 0 && !activeId && !moveMutation.isPending) {
+    if (enrichedCards.length > 0 && !activeId && !moveMutation.isPending && !isFetching) {
       setColumns(groupByColumn(enrichedCards));
     }
-  }, [enrichedCards, activeId, moveMutation.isPending]);
+  }, [enrichedCards, activeId, moveMutation.isPending, isFetching]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -354,7 +354,7 @@ export default function ActiveBoard() {
         ))}
       </div>
       {mounted && createPortal(
-        <DragOverlay>
+        <DragOverlay dropAnimation={null}>
           {activeCard ? (
             <CardOverlay title={activeCard.title} color={activeCard.color} />
           ) : null}

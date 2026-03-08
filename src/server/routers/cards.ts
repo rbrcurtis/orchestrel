@@ -173,7 +173,7 @@ export const cardsRouter = router({
         body: JSON.stringify({
           model: 'gemma3:4b',
           stream: false,
-          prompt: `Generate a concise kanban card title (under 60 characters) based on this description. Return only the title text, no quotes, no prefix like "Title:".\n\nDescription: ${input.description}`,
+          prompt: `Generate a kanban card title of 3 words or fewer based on this description. Return only the title text, no quotes, no prefix.\n\nDescription: ${input.description}`,
         }),
       });
 

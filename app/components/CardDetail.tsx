@@ -3,6 +3,7 @@ import { X, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SessionView } from './SessionView';
+import { InlineEdit } from './InlineEdit';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '~/components/ui/select';
@@ -164,10 +165,13 @@ export function CardDetail({ cardId, onClose }: Props) {
   const selectedProject = projectsList?.find((p) => p.id === draft.projectId);
   const cardProject = projectsList?.find((p) => p.id === card.projectId);
   const col = card.column;
-  const showSession =
-    (col === 'in_progress' || col === 'review' || col === 'done' || col === 'archive') &&
-    (card.projectId || card.worktreePath);
+  const isActive = col === 'in_progress' || col === 'review' || col === 'done' || col === 'archive';
+  const showSession = isActive && (card.projectId || card.worktreePath);
   const projectLocked = !!card.projectId;
+
+  async function saveField(field: 'title' | 'description', val: string) {
+    await updateMutation.mutateAsync({ id: card.id, [field]: val });
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -187,7 +191,17 @@ export function CardDetail({ cardId, onClose }: Props) {
             ))}
           </SelectContent>
         </Select>
-        <span className="text-sm font-medium truncate flex-1">{card.title}</span>
+        {isActive ? (
+          <InlineEdit
+            value={card.title}
+            onSave={(v) => saveField('title', v)}
+            className="text-sm font-medium flex-1 min-w-0"
+            placeholder="Untitled"
+            minLength={1}
+          />
+        ) : (
+          <span className="text-sm font-medium truncate flex-1">{card.title}</span>
+        )}
         {card.sessionId && <CopyResumeButton sessionId={card.sessionId} />}
         {cardProject && (
           <Badge
@@ -212,25 +226,36 @@ export function CardDetail({ cardId, onClose }: Props) {
         <CollapsibleContent>
           <div className="px-4 pb-4 space-y-4">
             {/* Title */}
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
-              <Input
-                value={draft.title}
-                onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-              />
-            </div>
+            {!isActive && (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
+                <Input
+                  value={draft.title}
+                  onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+                />
+              </div>
+            )}
 
             {/* Description */}
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
-              <Textarea
-                value={draft.description}
-                onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                rows={4}
-                placeholder="Add a description..."
-                className="resize-y"
-                disabled={!!card.sessionId}
-              />
+              {isActive ? (
+                <InlineEdit
+                  value={card.description ?? ''}
+                  onSave={(v) => saveField('description', v)}
+                  multiline
+                  placeholder="Add a description..."
+                />
+              ) : (
+                <Textarea
+                  value={draft.description}
+                  onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                  rows={4}
+                  placeholder="Add a description..."
+                  className="resize-y"
+                  disabled={!!card.sessionId}
+                />
+              )}
             </div>
 
             {/* Project — only editable if not yet saved */}

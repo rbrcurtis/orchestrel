@@ -33,8 +33,9 @@ export function Card({ id, title, color, onClick }: CardProps) {
 
   const style = {
     transform: CSS.Translate.toString(transform),
-    transition,
+    transition: isDragging ? 'none' : transition,
     touchAction: 'none' as const,
+    opacity: isDragging ? 0 : 1,
     ...(color ? { borderLeftColor: `var(--${color})` } : {}),
   };
 
@@ -45,7 +46,7 @@ export function Card({ id, title, color, onClick }: CardProps) {
       {...attributes}
       {...listeners}
       onClick={() => onClick?.(id)}
-      className={`group relative w-full sm:w-56 sm:shrink-0 rounded bg-card border border-border px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${color ? 'border-l-3' : ''} ${isDragging ? 'opacity-40' : ''}`}
+      className={`group relative w-full sm:w-56 sm:shrink-0 rounded bg-card border border-border px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${color ? 'border-l-3' : ''}`}
     >
       <p className="text-sm text-foreground truncate">{title}</p>
       <Button

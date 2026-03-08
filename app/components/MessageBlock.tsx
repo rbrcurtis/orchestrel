@@ -334,6 +334,14 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
     return null;
   }
 
+  if (text.startsWith('# ') && (text.includes('## Instructions') || text.includes('## Arguments'))) {
+    return (
+      <div className="text-xs text-muted-foreground py-0.5 italic">
+        skill loaded
+      </div>
+    );
+  }
+
   // Extract file attachments from prompt prefix
   const fileMatch = text.match(/^I've attached the following files for you to review\. Use the Read tool to read them:\n((?:- .+\n)+)\n([\s\S]*)$/);
   let attachedFiles: { name: string; mimeType: string }[] = [];

@@ -155,6 +155,9 @@ export class ClaudeSession extends EventEmitter {
 
   async sendUserMessage(content: string): Promise<void> {
     this.promptsSent++;
+    // Set queryStartIndex BEFORE push so subscription replay includes this user message
+    // (needed for file attachment prefix to render in chat)
+    this.queryStartIndex = this.messages.length;
     const msg = { type: 'user', message: { role: 'user', content } };
     this.messages.push(msg);
     this.persistMessage(msg);
@@ -166,7 +169,6 @@ export class ClaudeSession extends EventEmitter {
     }
     const resumeId = this.sessionId ?? this.resumeSessionId;
     if (!resumeId) return;
-    this.queryStartIndex = this.messages.length;
     this.status = 'starting';
     await this.runQuery(content, resumeId);
   }
