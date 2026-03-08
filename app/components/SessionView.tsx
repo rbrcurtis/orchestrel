@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Square, AlertCircle } from 'lucide-react';
+import { Send, Square, AlertCircle, ChevronDown } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSubscription } from '@trpc/tanstack-react-query';
@@ -70,6 +70,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   const [contextTokens, setContextTokens] = useState(0);
   const [contextWindow, setContextWindow] = useState(200_000);
   const [compacted, setCompacted] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   // Reset live state when switching cards
   useEffect(() => {
@@ -234,10 +235,15 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
     )
   );
 
-  // Auto-scroll to bottom when new live messages or pending prompt arrive
+  // Auto-scroll to bottom when new live messages or pending prompt arrive (only if near bottom)
   useEffect(() => {
     if (liveMessages.length === 0 && !pendingPrompt) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [liveMessages, pendingPrompt]);
 
   // Scroll to bottom on initial load of history
@@ -247,6 +253,20 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
       bottomRef.current?.scrollIntoView({ behavior: 'instant' });
     }
   }, [historyData, liveMessages.length]);
+
+  // Show/hide scroll-to-bottom button based on scroll position
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onScroll() {
+      if (!el) return;
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      setShowScrollBtn(!nearBottom);
+    }
+    onScroll(); // check initial position
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [messages.length]);
 
   // Extract initial context tokens from history
   useEffect(() => {
@@ -274,13 +294,24 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
     <div className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border">
       {/* Status bar — only shown when there's activity */}
       {/* Messages — scrollable middle area */}
-      <div ref={scrollRef} className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
-        <div className="px-3 py-2 space-y-1 min-w-0">
-          {messages.map((msg, i) => (
-            <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} accentColor={accentColor} />
-          ))}
-          <div ref={bottomRef} />
+      <div className="relative flex-1 min-h-0 min-w-0">
+        <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden">
+          <div className="px-3 py-2 space-y-1 min-w-0">
+            {messages.map((msg, i) => (
+              <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} accentColor={accentColor} />
+            ))}
+            <div ref={bottomRef} />
+          </div>
         </div>
+        {showScrollBtn && (
+          <button
+            type="button"
+            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
+            className="absolute bottom-3 right-3 size-8 flex items-center justify-center rounded-full bg-muted/80 border border-border text-muted-foreground shadow-md backdrop-blur-sm hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <ChevronDown className="size-4" />
+          </button>
+        )}
       </div>
 
       {startMutation.isError && (
@@ -426,16 +457,20 @@ function PromptInput({
         placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
         maxLength={10000}
         rows={3}
-        className="flex-1 resize-none"
+        className="flex-1 resize-none min-h-[106px] sm:min-h-0"
       />
       <div className="flex flex-col items-center justify-end gap-1.5">
-        <ContextGauge percent={contextPercent} compacted={compacted} />
+        <ContextGauge
+          percent={contextPercent}
+          compacted={compacted}
+          onCompact={hasSession ? () => onSend('/compact') : undefined}
+        />
         <Button
           type="submit"
           disabled={disabled}
-          className="size-[34px] p-0"
+          className="size-[50px] sm:size-[34px] p-0"
         >
-          <Send className="size-4" />
+          <Send className="size-5 sm:size-4" />
         </Button>
       </div>
     </form>

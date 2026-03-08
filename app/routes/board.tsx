@@ -97,7 +97,7 @@ export default function BoardLayout() {
     <div className="h-screen flex flex-col bg-background">
       <header className="shrink-0 px-4 sm:px-6 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-foreground">Dispatcher</h1>
+          <h1 className="text-xl font-bold text-foreground hidden sm:block">Dispatcher</h1>
           {/* Mobile: dropdown nav */}
           <Select value={location.pathname} onValueChange={(v) => navigate(v)}>
             <SelectTrigger size="sm" className="sm:hidden">

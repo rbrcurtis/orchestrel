@@ -1,5 +1,5 @@
-import { useState, useMemo, type ComponentProps } from 'react';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import { useState, useMemo, useCallback, type ComponentProps } from 'react';
+import { ChevronRight, ChevronDown, Copy, Check } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ToolUseBlock } from './ToolUseBlock';
@@ -96,6 +96,25 @@ function Markdown({ text, linkColor }: { text: string; linkColor: string }) {
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [text]);
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute bottom-1 right-1 p-1 rounded text-muted-foreground hover:text-foreground"
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+    </button>
+  );
+}
+
 type Props = {
   message: Record<string, unknown>;
   toolOutputs: Map<string, string>;
@@ -154,8 +173,14 @@ function AssistantBlock({
   if (!content || !Array.isArray(content)) return null;
   const linkColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
 
+  const copyText = content
+    .filter((b) => b.type === 'text' && b.text)
+    .map((b) => b.text!)
+    .join('\n\n');
+
   return (
-    <div className="space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
+    <div className="group relative space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
+      {copyText && <CopyButton text={copyText} />}
       {content.map((block, i) => {
         if (block.type === 'text' && block.text) {
           return (
@@ -317,9 +342,10 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
   return (
     <div className="flex justify-end my-2">
       <div
-        className="text-sm text-foreground bg-elevated rounded-lg px-3 py-2 max-w-[85%] border-l-2"
+        className="group relative text-sm text-foreground bg-elevated rounded-lg px-3 py-2 max-w-[85%] border-l-2"
         style={{ borderLeftColor: accentVar }}
       >
+        <CopyButton text={text} />
         <Markdown text={text} linkColor={accentVar} />
       </div>
     </div>

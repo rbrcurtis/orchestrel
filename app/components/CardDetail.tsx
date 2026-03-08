@@ -38,7 +38,7 @@ export function CardDetail({ cardId, onClose }: Props) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  const { data: allCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
+  const { data: allCards, isPending } = useQuery(trpc.cards.list.queryOptions());
   const card = allCards?.find((c) => c.id === cardId);
 
   const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
@@ -64,7 +64,7 @@ export function CardDetail({ cardId, onClose }: Props) {
       sourceBranch: card.sourceBranch,
     });
     // Auto-collapse for in_progress/review
-    setFormOpen(card.column !== 'in_progress' && card.column !== 'review');
+    setFormOpen(card.column !== 'in_progress' && card.column !== 'review' && card.column !== 'done' && card.column !== 'archive');
   }, [card?.id]);
 
   // Re-sync fields on update (but don't reset formOpen)
@@ -142,7 +142,12 @@ export function CardDetail({ cardId, onClose }: Props) {
   if (!card) {
     return (
       <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        {isLoading ? 'Loading...' : 'Card not found'}
+        {isPending ? (
+          <svg className="size-6 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ) : 'Card not found'}
       </div>
     );
   }
@@ -151,7 +156,7 @@ export function CardDetail({ cardId, onClose }: Props) {
   const cardProject = projectsList?.find((p) => p.id === card.projectId);
   const col = card.column;
   const showSession =
-    (col === 'in_progress' || col === 'review') &&
+    (col === 'in_progress' || col === 'review' || col === 'done' || col === 'archive') &&
     (card.projectId || card.worktreePath);
   const projectLocked = !!card.projectId;
 
@@ -333,6 +338,14 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     titleRef.current?.focus();
   }, []);
 
+  const generateTitleMutation = useMutation(
+    trpc.cards.generateTitle.mutationOptions({
+      onSuccess: (result) => {
+        setDraft((d) => ({ ...d, title: result.title }));
+      },
+    })
+  );
+
   const startClaudeMutation = useMutation(
     trpc.claude.start.mutationOptions({})
   );
@@ -343,8 +356,10 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
         queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
         if (column === 'in_progress' && draft.projectId && draft.description.trim()) {
           startClaudeMutation.mutate({ cardId: card.id, prompt: draft.description.trim() });
+          onCreated(card.id);
+        } else {
+          onClose();
         }
-        onCreated(card.id);
       },
     })
   );
@@ -381,7 +396,8 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
             ref={titleRef}
             value={draft.title}
             onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-            placeholder="Card title"
+            placeholder={generateTitleMutation.isPending ? 'Generating title...' : 'Card title'}
+            disabled={generateTitleMutation.isPending}
           />
         </div>
 
@@ -390,6 +406,11 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
           <Textarea
             value={draft.description}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+            onBlur={() => {
+              if (!draft.title.trim() && draft.description.trim()) {
+                generateTitleMutation.mutate({ description: draft.description.trim() });
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && e.shiftKey) {
                 e.preventDefault();
@@ -474,7 +495,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
 
         <Button
           className="w-full"
-          disabled={!draft.title.trim() || createMutation.isPending}
+          disabled={!draft.title.trim() || generateTitleMutation.isPending || createMutation.isPending}
           onClick={handleSave}
         >
           {createMutation.isPending ? 'Creating...' : 'Save'}
