@@ -6,8 +6,10 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { TRPCProvider, makeTRPCClient } from '~/lib/trpc';
+import { persister } from '~/lib/query-persist';
 import { useState } from 'react';
 
 import type { Route } from "./+types/root";
@@ -54,14 +56,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: { queries: { gcTime: Infinity } },
+  }));
   const [trpcClient] = useState(() => makeTRPCClient());
 
   return (
     <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
+      >
         <Outlet />
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </TRPCProvider>
   );
 }
