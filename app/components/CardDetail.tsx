@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SessionView } from './SessionView';
@@ -174,6 +174,7 @@ export function CardDetail({ cardId, onClose }: Props) {
           </SelectContent>
         </Select>
         <span className="text-sm font-medium truncate flex-1">{card.title}</span>
+        {card.sessionId && <CopyResumeButton sessionId={card.sessionId} />}
         {cardProject && (
           <Badge
             variant="secondary"
@@ -480,5 +481,27 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
         </Button>
       </div>
     </div>
+  );
+}
+
+function CopyResumeButton({ sessionId }: { sessionId: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(`claude --resume ${sessionId}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 w-7 p-0 shrink-0"
+      onClick={handleCopy}
+      title="Copy resume command"
+    >
+      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+    </Button>
   );
 }

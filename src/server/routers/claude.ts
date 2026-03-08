@@ -184,7 +184,7 @@ export const claudeRouter = router({
       }
       if (!session) return;
 
-      let counter = 0;
+      let counter = session.queryStartIndex;
       const queue: unknown[] = [];
       let resolve: (() => void) | null = null;
 
