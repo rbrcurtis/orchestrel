@@ -136,7 +136,16 @@ export function CardDetail({ cardId, onClose }: Props) {
     if (newColumn === 'in_progress' && card.projectId && card.description?.trim() && !card.sessionId) {
       pendingClaudeStart.current = { cardId: card.id, prompt: card.description.trim() };
     }
-    moveMutation.mutate({ id: card.id, column: newColumn, position: 0 });
+    moveMutation.mutate(
+      { id: card.id, column: newColumn, position: 0 },
+      {
+        onSuccess: () => {
+          if (newColumn === 'done' || newColumn === 'archive') {
+            onClose();
+          }
+        },
+      }
+    );
   }
 
   if (!card) {

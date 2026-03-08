@@ -437,12 +437,26 @@ function PromptInput({
   contextPercent: number;
   compacted: boolean;
 }) {
-  const [text, setText] = useState('');
+  const storageKey = `prompt-draft-${cardId}`;
+  const [text, setText] = useState(() => {
+    try { return localStorage.getItem(storageKey) ?? ''; } catch { return ''; }
+  });
   const [files, setFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync text to localStorage on every change
+  function updateText(val: string) {
+    setText(val);
+    try { if (val) localStorage.setItem(storageKey, val); else localStorage.removeItem(storageKey); } catch {}
+  }
+
+  // Reload draft when switching cards
+  useEffect(() => {
+    try { setText(localStorage.getItem(storageKey) ?? ''); } catch { setText(''); }
+  }, [storageKey]);
 
   useEffect(() => {
     ref.current?.focus();
@@ -500,7 +514,7 @@ function PromptInput({
     } else {
       onStart(trimmed);
     }
-    setText('');
+    updateText('');
     setFiles([]);
   }
 
@@ -551,7 +565,7 @@ function PromptInput({
           <Textarea
             ref={ref}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => updateText(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}

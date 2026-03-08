@@ -52,6 +52,11 @@ export class ClaudeSession extends EventEmitter {
   }
 
   async start(prompt: string): Promise<void> {
+    // Persist initial prompt as a user message (like sendUserMessage does for follow-ups)
+    const msg = { type: 'user', message: { role: 'user', content: prompt } };
+    this.messages.push(msg);
+    this.persistMessage(msg);
+    this.emit('message', msg);
     await this.runQuery(prompt, this.resumeSessionId);
   }
 
@@ -132,6 +137,8 @@ export class ClaudeSession extends EventEmitter {
     if (msg.type === 'system' && typeof msg.session_id === 'string') {
       if (!this.sessionId && !this.resumeSessionId) {
         this.sessionId = msg.session_id;
+        // Retroactively persist any buffered messages (e.g. initial user prompt)
+        for (const m of this.messages) this.persistMessage(m);
       }
       this.status = 'running';
     }
