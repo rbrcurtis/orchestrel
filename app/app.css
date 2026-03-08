@@ -125,6 +125,9 @@
   --color-surface: var(--surface);
   --color-elevated: var(--elevated);
   --color-hover: var(--hover);
+  --color-ghost: var(--text-ghost);
+  --color-subtle: var(--border-subtle);
+  --color-strong: var(--border-strong);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

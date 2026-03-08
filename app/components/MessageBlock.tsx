@@ -1,8 +1,100 @@
-import { useState } from 'react';
+import { useState, useMemo, type ComponentProps } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ToolUseBlock } from './ToolUseBlock';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
-import { Alert, AlertTitle, AlertDescription } from '~/components/ui/alert';
+
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
+
+/** Linkify URLs within plain text children (for code blocks) */
+function linkifyChildren(children: React.ReactNode, color: string): React.ReactNode {
+  if (typeof children === 'string') {
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    for (const m of children.matchAll(URL_RE)) {
+      const idx = m.index!;
+      if (idx > last) parts.push(children.slice(last, idx));
+      const url = m[0];
+      parts.push(
+        <a key={idx} href={url} target="_blank" rel="noopener noreferrer"
+          className="underline hover:opacity-80" style={{ color }}>
+          {url}
+        </a>
+      );
+      last = idx + url.length;
+    }
+    if (parts.length === 0) return children;
+    if (last < children.length) parts.push(children.slice(last));
+    return parts;
+  }
+  return children;
+}
+
+/** Build react-markdown component overrides with accent-colored links */
+function mdComponents(linkColor: string): Components {
+  return {
+    a: ({ href, children }) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline hover:opacity-80"
+        style={{ color: linkColor }}
+      >
+        {children}
+      </a>
+    ),
+    code: ({ className, children, ...rest }) => {
+      const isBlock = className?.startsWith('language-');
+      const linked = linkifyChildren(children, linkColor);
+      if (isBlock) {
+        return (
+          <pre className="bg-elevated rounded px-3 py-2 overflow-x-auto text-xs my-2">
+            <code className={className} {...rest}>{linked}</code>
+          </pre>
+        );
+      }
+      return (
+        <code className="bg-elevated rounded px-1 py-0.5 text-xs" {...rest}>
+          {linked}
+        </code>
+      );
+    },
+    pre: ({ children }) => <>{children}</>,
+    ul: ({ children }) => <ul className="list-disc pl-5 space-y-0.5">{children}</ul>,
+    ol: ({ children }) => <ol className="list-decimal pl-5 space-y-0.5">{children}</ol>,
+    li: ({ children }) => <li className="text-sm">{children}</li>,
+    h1: ({ children }) => <h1 className="text-base font-bold mt-3 mb-1">{children}</h1>,
+    h2: ({ children }) => <h2 className="text-sm font-bold mt-2 mb-1">{children}</h2>,
+    h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-0.5">{children}</h3>,
+    p: ({ children }) => <p className="text-sm my-1">{children}</p>,
+    blockquote: ({ children }) => (
+      <blockquote className="border-l-2 border-border pl-3 text-muted-foreground italic my-1">
+        {children}
+      </blockquote>
+    ),
+    table: ({ children }) => (
+      <div className="overflow-x-auto my-2">
+        <table className="text-xs border-collapse">{children}</table>
+      </div>
+    ),
+    th: ({ children }) => <th className="border border-border px-2 py-1 text-left font-semibold">{children}</th>,
+    td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
+    hr: () => <hr className="border-border my-2" />,
+    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  };
+}
+
+/** Render markdown text with accent-colored links */
+function Markdown({ text, linkColor }: { text: string; linkColor: string }) {
+  const components = useMemo(() => mdComponents(linkColor), [linkColor]);
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {text}
+    </ReactMarkdown>
+  );
+}
 
 type Props = {
   message: Record<string, unknown>;
@@ -14,7 +106,7 @@ export function MessageBlock({ message, toolOutputs, accentColor }: Props) {
   const type = message.type as string;
 
   if (type === 'assistant') {
-    return <AssistantBlock message={message} toolOutputs={toolOutputs} />;
+    return <AssistantBlock message={message} toolOutputs={toolOutputs} accentColor={accentColor} />;
   }
 
   if (type === 'result') {
@@ -26,16 +118,7 @@ export function MessageBlock({ message, toolOutputs, accentColor }: Props) {
   }
 
   if (type === 'system') {
-    const subtype = message.subtype as string | undefined;
-    if (subtype === 'init') {
-      return (
-        <div className="text-xs text-muted-foreground py-1">
-          Session started (model: {String((message as Record<string, unknown>).model ?? 'unknown')})
-        </div>
-      );
-    }
-    // Skip other system messages
-    return null;
+    return <SystemBlock message={message} />;
   }
 
   if (type === 'user') {
@@ -60,21 +143,24 @@ type ContentBlock = {
 function AssistantBlock({
   message,
   toolOutputs,
+  accentColor,
 }: {
   message: Record<string, unknown>;
   toolOutputs: Map<string, string>;
+  accentColor?: string | null;
 }) {
   const inner = message.message as { content?: ContentBlock[] } | undefined;
   const content = inner?.content;
   if (!content || !Array.isArray(content)) return null;
+  const linkColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
 
   return (
-    <div className="space-y-2 py-2">
+    <div className="space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
       {content.map((block, i) => {
         if (block.type === 'text' && block.text) {
           return (
-            <div key={i} className="text-sm text-foreground whitespace-pre-wrap">
-              {block.text}
+            <div key={i} className="text-sm text-foreground min-w-0 break-words">
+              <Markdown text={block.text} linkColor={linkColor} />
             </div>
           );
         }
@@ -115,6 +201,53 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+// --- System message ---
+
+function SystemBlock({ message }: { message: Record<string, unknown> }) {
+  const subtype = message.subtype as string | undefined;
+
+  if (subtype === 'init') {
+    return (
+      <div className="text-xs text-muted-foreground py-1">
+        Session started (model: {String(message.model ?? 'unknown')})
+      </div>
+    );
+  }
+
+  if (subtype === 'compact_boundary') {
+    const meta = message.compact_metadata as { pre_tokens?: number; trigger?: string } | undefined;
+    return (
+      <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground">
+        <div className="flex-1 border-t border-neon-amber/30" />
+        <span className="text-neon-amber">
+          Context compacted
+          {meta?.pre_tokens != null && ` · ${Math.round(meta.pre_tokens / 1000)}k tokens`}
+        </span>
+        <div className="flex-1 border-t border-neon-amber/30" />
+      </div>
+    );
+  }
+
+  if (subtype === 'local_command_output') {
+    const content = message.content as string | undefined;
+    if (!content) return null;
+    return (
+      <div className="text-xs text-muted-foreground whitespace-pre-wrap py-1 pl-3 border-l-2 border-neon-violet/40">
+        {content}
+      </div>
+    );
+  }
+
+  // Show any other system message as plain text
+  const content = message.content as string | undefined;
+  if (!content) return null;
+  return (
+    <div className="text-xs text-muted-foreground py-1">
+      {content}
+    </div>
   );
 }
 
@@ -179,15 +312,15 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
     return null;
   }
 
-  const borderColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
+  const accentVar = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
 
   return (
     <div className="flex justify-end my-2">
       <div
-        className="text-sm text-foreground whitespace-pre-wrap bg-elevated rounded-lg px-3 py-2 max-w-[85%] border-l-2"
-        style={{ borderLeftColor: borderColor }}
+        className="text-sm text-foreground bg-elevated rounded-lg px-3 py-2 max-w-[85%] border-l-2"
+        style={{ borderLeftColor: accentVar }}
       >
-        {text}
+        <Markdown text={text} linkColor={accentVar} />
       </div>
     </div>
   );

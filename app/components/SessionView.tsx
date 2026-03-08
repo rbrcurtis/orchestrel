@@ -62,6 +62,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   );
 
   const [liveMessages, setLiveMessages] = useState<Record<string, unknown>[]>([]);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
   const seenIds = useRef(new Set<number>());
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -73,6 +74,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   // Reset live state when switching cards
   useEffect(() => {
     setLiveMessages([]);
+    setPendingPrompt(null);
     setSubscribing(false);
     seenIds.current.clear();
     setContextTokens(0);
@@ -85,14 +87,18 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   const promptsSent = statusData?.promptsSent ?? 0;
   const turnsCompleted = statusData?.turnsCompleted ?? 0;
 
-  // Merge history + live messages (live only contains current query's messages)
   const isStreaming = sessionActive || subscribing;
   const history = (historyData as Record<string, unknown>[] | undefined) ?? [];
+
+  // Merge: history + optimistic pending prompt + live subscription data
   const messages = useMemo(() => {
-    if (liveMessages.length === 0) return history;
-    if (history.length === 0) return liveMessages;
-    return [...history, ...liveMessages];
-  }, [history, liveMessages]);
+    const result = [...history];
+    if (pendingPrompt) {
+      result.push({ type: 'user', message: { role: 'user', content: pendingPrompt } });
+    }
+    result.push(...liveMessages);
+    return result;
+  }, [history, liveMessages, pendingPrompt]);
 
   // Extract tool outputs from all messages
   const toolOutputs = useMemo(() => {
@@ -124,7 +130,9 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   );
 
   function addOptimisticUser(text: string) {
-    setLiveMessages((prev) => [...prev, { type: 'user', message: { role: 'user', content: text } }]);
+    setPendingPrompt(text);
+    setLiveMessages([]);
+    seenIds.current.clear();
   }
 
   // Start mutation
@@ -141,14 +149,15 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
     })
   );
 
-  // Send message mutation
+  // Send message mutation — delay subscribing until server confirms
+  // to avoid replaying messages from the previous query
   const sendMutation = useMutation(
     trpc.claude.sendMessage.mutationOptions({
       onMutate: ({ message }) => {
         addOptimisticUser(message);
-        setSubscribing(true);
       },
       onSuccess: () => {
+        setSubscribing(true);
         queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
         moveMutation.mutate({ id: cardId, column: 'in_progress', position: 0 });
       },
@@ -167,6 +176,16 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   );
 
   const shouldSubscribe = sessionActive || subscribing;
+
+  // Clean up stale live data on streaming → idle transition
+  const wasStreaming = useRef(false);
+  useEffect(() => {
+    if (wasStreaming.current && !isStreaming) {
+      setLiveMessages([]);
+      setPendingPrompt(null);
+    }
+    wasStreaming.current = isStreaming;
+  }, [isStreaming]);
 
   // Invalidate cards when session completes (covers both manual start and auto-start)
   const prevStatus = useRef(sessionStatus);
@@ -215,11 +234,11 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
     )
   );
 
-  // Auto-scroll to bottom when new live messages arrive
+  // Auto-scroll to bottom when new live messages or pending prompt arrive
   useEffect(() => {
-    if (liveMessages.length === 0) return;
+    if (liveMessages.length === 0 && !pendingPrompt) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [liveMessages]);
+  }, [liveMessages, pendingPrompt]);
 
   // Scroll to bottom on initial load of history
   useEffect(() => {
@@ -252,11 +271,11 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   const contextPercent = contextWindow > 0 ? Math.min(100, contextTokens / contextWindow * 100) : 0;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 border-t border-border">
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border">
       {/* Status bar — only shown when there's activity */}
       {/* Messages — scrollable middle area */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-        <div className="px-3 py-2 space-y-1">
+      <div ref={scrollRef} className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
+        <div className="px-3 py-2 space-y-1 min-w-0">
           {messages.map((msg, i) => (
             <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} accentColor={accentColor} />
           ))}
@@ -290,7 +309,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
               onClick={() => stopMutation.mutate({ cardId })}
               disabled={stopMutation.isPending}
             >
-              <Square className="size-3" />
+              <Square className="size-3 fill-current" />
               Stop
             </Button>
           )}
@@ -399,24 +418,26 @@ function PromptInput({
       onSubmit={handleSubmit}
       className="flex gap-2 px-3 py-2 border-t border-border bg-muted shrink-0"
     >
-      <ContextGauge percent={contextPercent} compacted={compacted} />
       <Textarea
         ref={ref}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
-        rows={2}
+        maxLength={10000}
+        rows={3}
         className="flex-1 resize-none"
       />
-      <Button
-        type="submit"
-        size="sm"
-        disabled={disabled}
-        className="self-end"
-      >
-        <Send className="size-4" />
-      </Button>
+      <div className="flex flex-col items-center justify-end gap-1.5">
+        <ContextGauge percent={contextPercent} compacted={compacted} />
+        <Button
+          type="submit"
+          disabled={disabled}
+          className="size-[34px] p-0"
+        >
+          <Send className="size-4" />
+        </Button>
+      </div>
     </form>
   );
 }

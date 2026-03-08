@@ -16,7 +16,7 @@ export function ContextGauge({ percent, compacted }: Props) {
   const { color, glow } = getTier(clamped);
 
   return (
-    <div className="flex-shrink-0 self-center" style={{ width: 28, height: 28 }}>
+    <div className="flex-shrink-0 self-center" style={{ width: 34, height: 34 }}>
       <svg
         viewBox="0 0 36 36"
         className={compacted ? "context-gauge-pulse" : undefined}
