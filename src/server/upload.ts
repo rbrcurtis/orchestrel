@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
@@ -9,8 +10,8 @@ const MAX_FILES = 10;
 
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const sessionId = req.body?.sessionId || 'unsorted';
-    const dir = join('/tmp/dispatcher-uploads', sessionId);
+    const safeId = (req.body?.sessionId || 'unsorted').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const dir = join('/tmp/dispatcher-uploads', safeId);
     mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -43,4 +44,16 @@ uploadRouter.post('/api/upload', upload.array('files', MAX_FILES), (req, res) =>
   }));
 
   res.json({ files: refs });
+});
+
+uploadRouter.use('/api/upload', (err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ error: 'File too large (25 MB max)' });
+      return;
+    }
+    res.status(400).json({ error: err.message });
+    return;
+  }
+  res.status(500).json({ error: 'Upload failed' });
 });
