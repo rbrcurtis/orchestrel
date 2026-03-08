@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { resolve } from 'path';
 import { tracked } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import { cards, projects } from '../db/schema';
@@ -168,6 +169,11 @@ export const claudeRouter = router({
 
       let prompt = input.message;
       if (input.files?.length) {
+        for (const f of input.files) {
+          if (!resolve(f.path).startsWith('/tmp/dispatcher-uploads/')) {
+            throw new Error(`Invalid file path: ${f.path}`);
+          }
+        }
         const fileList = input.files
           .map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`)
           .join('\n');
