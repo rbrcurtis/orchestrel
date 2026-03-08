@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import ProjectForm from '~/components/ProjectForm';
@@ -6,6 +6,7 @@ import { Button } from '~/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Card, CardContent } from '~/components/ui/card';
 import { X, Pencil, Trash2, Plus } from 'lucide-react';
+import { getCacheSize, clearCache } from '~/lib/query-persist';
 
 interface Project {
   id: number;
@@ -151,7 +152,56 @@ export default function SettingsProjectsModal({ onClose }: { onClose: () => void
             </CardContent>
           </Card>
         )}
+
+        {/* Cache management */}
+        <div className="mt-6">
+          <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
+          <CacheSection />
+        </div>
       </div>
     </div>
+  );
+}
+
+function CacheSection() {
+  const [size, setSize] = useState<number | null>(null);
+  const [clearing, setClearing] = useState(false);
+
+  useEffect(() => {
+    getCacheSize().then(setSize);
+  }, []);
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function handleClear() {
+    setClearing(true);
+    await clearCache();
+    setSize(0);
+    setClearing(false);
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between py-4">
+        <div>
+          <p className="text-sm font-medium">Local Cache</p>
+          <p className="text-xs text-muted-foreground">
+            {size === null ? 'Calculating...' : formatBytes(size)}
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleClear}
+          disabled={clearing || size === 0}
+        >
+          {clearing ? 'Clearing...' : 'Clear'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
