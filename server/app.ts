@@ -1,6 +1,7 @@
 import "react-router";
 import { createRequestHandler } from "@react-router/express";
 import express from "express";
+import { uploadRouter } from "../src/server/upload";
 
 declare module "react-router" {
   interface AppLoadContext {
@@ -9,6 +10,8 @@ declare module "react-router" {
 }
 
 export const app = express();
+
+app.use(uploadRouter);
 
 app.use(
   createRequestHandler({
