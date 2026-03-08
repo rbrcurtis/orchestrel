@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Square, AlertCircle, ChevronDown } from 'lucide-react';
+import { Send, Square, AlertCircle, ChevronDown, Paperclip } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSubscription } from '@trpc/tanstack-react-query';
@@ -212,6 +212,8 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
           const tracked = evt as { data: Record<string, unknown>; id: number };
           if (seenIds.current.has(tracked.id)) return;
           seenIds.current.add(tracked.id);
+          // Clear optimistic prompt once real data arrives (server now emits the user message)
+          setPendingPrompt(null);
           setLiveMessages((prev) => [...prev, tracked.data]);
 
           const msg = tracked.data;
@@ -354,7 +356,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
         hasSession={!!sessionId}
         isPending={startMutation.isPending}
         onStart={(prompt) => startMutation.mutate({ cardId, prompt })}
-        onSend={(message) => sendMutation.mutate({ cardId, message })}
+        onSend={(message, files) => sendMutation.mutate({ cardId, message, files })}
         sendPending={sendMutation.isPending}
         contextPercent={contextPercent}
         compacted={compacted}
@@ -391,6 +393,27 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// --- File upload helpers ---
+
+type FileRef = {
+  id: string;
+  name: string;
+  mimeType: string;
+  path: string;
+  size: number;
+};
+
+async function uploadFiles(files: File[], sessionId?: string): Promise<FileRef[]> {
+  const form = new FormData();
+  if (sessionId) form.append('sessionId', sessionId);
+  for (const f of files) form.append('files', f);
+
+  const res = await fetch('/api/upload', { method: 'POST', body: form });
+  if (!res.ok) throw new Error('Upload failed');
+  const data = await res.json();
+  return data.files;
+}
+
 // --- Prompt input ---
 
 function PromptInput({
@@ -409,30 +432,71 @@ function PromptInput({
   hasSession: boolean;
   isPending: boolean;
   onStart: (prompt: string) => void;
-  onSend: (message: string) => void;
+  onSend: (message: string, files?: FileRef[]) => void;
   sendPending: boolean;
   contextPercent: number;
   compacted: boolean;
 }) {
   const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     ref.current?.focus();
   }, []);
 
-  function handleSubmit(e: React.FormEvent) {
+  function addFiles(newFiles: FileList | File[]) {
+    const arr = Array.from(newFiles).filter((f) => f.size <= 25 * 1024 * 1024);
+    setFiles((prev) => [...prev, ...arr]);
+  }
+
+  function removeFile(idx: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const items = Array.from(e.clipboardData.items);
+    const imageFiles = items
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      addFiles(imageFiles);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    if (e.dataTransfer.files.length > 0) {
+      addFiles(e.dataTransfer.files);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed && files.length === 0) return;
 
-    // Use sendMessage for follow-ups (existing session), onStart for new sessions
     if (isRunning || hasSession) {
-      onSend(trimmed);
+      if (files.length > 0) {
+        try {
+          const refs = await uploadFiles(files);
+          onSend(trimmed || 'Please review the attached files.', refs);
+        } catch {
+          return;
+        }
+      } else {
+        onSend(trimmed);
+      }
     } else {
       onStart(trimmed);
     }
     setText('');
+    setFiles([]);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -442,36 +506,83 @@ function PromptInput({
     }
   }
 
-  const disabled = isPending || sendPending || !text.trim();
+  const disabled = isPending || sendPending || (!text.trim() && files.length === 0);
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex gap-2 px-3 py-2 border-t border-border bg-muted shrink-0"
+      className="px-3 py-2 border-t border-border bg-muted shrink-0"
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
     >
-      <Textarea
-        ref={ref}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
-        maxLength={10000}
-        rows={3}
-        className="flex-1 resize-none min-h-[106px] sm:min-h-0"
-      />
-      <div className="flex flex-col items-center justify-end gap-1.5">
-        <ContextGauge
-          percent={contextPercent}
-          compacted={compacted}
-          onCompact={hasSession ? () => onSend('/compact') : undefined}
-        />
-        <Button
-          type="submit"
-          disabled={disabled}
-          className="size-[50px] sm:size-[34px] p-0"
-        >
-          <Send className="size-5 sm:size-4" />
-        </Button>
+      {/* File chips row - right aligned, left of stop button area */}
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2 justify-end pr-[46px] sm:pr-[38px]">
+          {files.map((f, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated text-xs text-muted-foreground border border-border"
+            >
+              <span className="max-w-[120px] truncate">{f.name}</span>
+              <button
+                type="button"
+                onClick={() => removeFile(i)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className={`flex gap-2 ${dragging ? 'ring-2 ring-neon-cyan/50 rounded-md' : ''}`}>
+        <div className="relative flex-1">
+          <Textarea
+            ref={ref}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
+            maxLength={10000}
+            rows={3}
+            className="resize-none min-h-[106px] sm:min-h-0 pr-10"
+          />
+          {/* Paperclip button - bottom right inside textarea */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute bottom-2 right-2 text-muted-foreground hover:text-foreground transition-colors"
+            title="Attach files"
+          >
+            <Paperclip className="size-4" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) addFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+        </div>
+        <div className="flex flex-col items-center justify-end gap-1.5">
+          <ContextGauge
+            percent={contextPercent}
+            compacted={compacted}
+            onCompact={hasSession ? () => onSend('/compact') : undefined}
+          />
+          <Button
+            type="submit"
+            disabled={disabled}
+            className="size-[50px] sm:size-[34px] p-0"
+          >
+            <Send className="size-5 sm:size-4" />
+          </Button>
+        </div>
       </div>
     </form>
   );
