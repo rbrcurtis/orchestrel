@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
-import { repos } from '../db/schema';
+import { projects, NEON_COLORS } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { existsSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
 
-export const reposRouter = router({
+export const projectsRouter = router({
   list: publicProcedure.query(async ({ ctx }) => {
-    return ctx.db.select().from(repos);
+    return ctx.db.select().from(projects);
   }),
 
   create: publicProcedure
@@ -17,13 +17,24 @@ export const reposRouter = router({
       path: z.string().min(1),
       setupCommands: z.string().optional(),
       defaultBranch: z.enum(['main', 'dev']).optional(),
+      defaultWorktree: z.boolean().optional(),
+      color: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const isGitRepo = existsSync(join(input.path, '.git'));
-      const [repo] = await ctx.db.insert(repos)
-        .values({ ...input, isGitRepo })
+
+      // Auto-assign next available neon color if not specified
+      let color = input.color;
+      if (!color) {
+        const existing = await ctx.db.select({ color: projects.color }).from(projects);
+        const used = new Set(existing.map(p => p.color));
+        color = NEON_COLORS.find(c => !used.has(c)) ?? NEON_COLORS[0];
+      }
+
+      const [project] = await ctx.db.insert(projects)
+        .values({ ...input, isGitRepo, color })
         .returning();
-      return repo;
+      return project;
     }),
 
   update: publicProcedure
@@ -33,6 +44,8 @@ export const reposRouter = router({
       path: z.string().min(1).optional(),
       setupCommands: z.string().optional(),
       defaultBranch: z.enum(['main', 'dev']).nullable().optional(),
+      defaultWorktree: z.boolean().optional(),
+      color: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
@@ -40,36 +53,36 @@ export const reposRouter = router({
       if (updates.path) {
         updates.isGitRepo = existsSync(join(updates.path, '.git'));
       }
-      const [repo] = await ctx.db.update(repos)
+      const [project] = await ctx.db.update(projects)
         .set(updates)
-        .where(eq(repos.id, id))
+        .where(eq(projects.id, id))
         .returning();
-      return repo;
+      return project;
     }),
 
   get: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, input.id));
-      if (!repo) throw new Error(`Repo ${input.id} not found`);
+      const [project] = await ctx.db.select().from(projects).where(eq(projects.id, input.id));
+      if (!project) throw new Error(`Project ${input.id} not found`);
 
-      const isGitRepo = existsSync(join(repo.path, '.git'));
-      if (isGitRepo !== repo.isGitRepo) {
-        await ctx.db.update(repos)
+      const isGitRepo = existsSync(join(project.path, '.git'));
+      if (isGitRepo !== project.isGitRepo) {
+        await ctx.db.update(projects)
           .set({ isGitRepo })
-          .where(eq(repos.id, input.id));
-        return { ...repo, isGitRepo };
+          .where(eq(projects.id, input.id));
+        return { ...project, isGitRepo };
       }
-      return repo;
+      return project;
     }),
 
   delete: publicProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.delete(repos).where(eq(repos.id, input.id));
+      await ctx.db.delete(projects).where(eq(projects.id, input.id));
     }),
 
-  // Directory browser for selecting repo paths
+  // Directory browser for selecting project paths
   browse: publicProcedure
     .input(z.object({ path: z.string() }))
     .query(async ({ input }) => {

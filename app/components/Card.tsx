@@ -8,10 +8,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 interface CardProps {
   id: number;
   title: string;
+  color?: string | null;
   onClick?: (id: number) => void;
 }
 
-export function Card({ id, title, onClick }: CardProps) {
+export function Card({ id, title, color, onClick }: CardProps) {
   const {
     attributes,
     listeners,
@@ -34,6 +35,7 @@ export function Card({ id, title, onClick }: CardProps) {
     transform: CSS.Translate.toString(transform),
     transition,
     touchAction: 'none' as const,
+    ...(color ? { borderLeftColor: `var(--${color})` } : {}),
   };
 
   return (
@@ -43,9 +45,9 @@ export function Card({ id, title, onClick }: CardProps) {
       {...attributes}
       {...listeners}
       onClick={() => onClick?.(id)}
-      className={`group relative w-full sm:w-56 sm:shrink-0 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${isDragging ? 'opacity-40' : ''}`}
+      className={`group relative w-full sm:w-56 sm:shrink-0 rounded bg-card border border-border px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${color ? 'border-l-3' : ''} ${isDragging ? 'opacity-40' : ''}`}
     >
-      <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
+      <p className="text-sm text-foreground truncate">{title}</p>
       <Button
         variant="ghost"
         size="icon-xs"
@@ -63,10 +65,13 @@ export function Card({ id, title, onClick }: CardProps) {
   );
 }
 
-export function CardOverlay({ title }: { title: string }) {
+export function CardOverlay({ title, color }: { title: string; color?: string | null }) {
   return (
-    <div className="rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-lg cursor-grabbing select-none w-full sm:w-56">
-      <p className="text-sm text-gray-900 dark:text-gray-100 truncate">{title}</p>
+    <div
+      className={`rounded bg-card border border-border px-3 py-2 shadow-lg cursor-grabbing select-none w-full sm:w-56 ${color ? 'border-l-3' : ''}`}
+      style={color ? { borderLeftColor: `var(--${color})` } : undefined}
+    >
+      <p className="text-sm text-foreground truncate">{title}</p>
     </div>
   );
 }

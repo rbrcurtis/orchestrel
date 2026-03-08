@@ -8,54 +8,75 @@ import { Textarea } from '~/components/ui/textarea';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '~/components/ui/select';
 import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card';
 import { Alert, AlertDescription } from '~/components/ui/alert';
+import { Checkbox } from '~/components/ui/checkbox';
 import { AlertCircle } from 'lucide-react';
 
-interface Repo {
+const NEON_COLORS = [
+  'neon-cyan', 'neon-magenta', 'neon-violet', 'neon-amber',
+  'neon-lime', 'neon-coral', 'neon-electric', 'neon-plasma',
+] as const;
+
+const COLOR_LABELS: Record<string, string> = {
+  'neon-cyan': 'Cyan',
+  'neon-magenta': 'Magenta',
+  'neon-violet': 'Violet',
+  'neon-amber': 'Amber',
+  'neon-lime': 'Lime',
+  'neon-coral': 'Coral',
+  'neon-electric': 'Electric',
+  'neon-plasma': 'Plasma',
+};
+
+interface Project {
   id: number;
   name: string;
   path: string;
   setupCommands: string | null;
   isGitRepo: boolean;
   defaultBranch: string | null;
+  defaultWorktree: boolean;
+  color: string | null;
 }
 
-interface RepoFormProps {
-  repo?: Repo;
+interface ProjectFormProps {
+  project?: Project;
   onDone: () => void;
 }
 
-export default function RepoForm({ repo, onDone }: RepoFormProps) {
-  const [name, setName] = useState(repo?.name ?? '');
-  const [path, setPath] = useState(repo?.path ?? '');
-  const [setupCommands, setSetupCommands] = useState(repo?.setupCommands ?? '');
-  const [isGitRepo, setIsGitRepo] = useState(repo?.isGitRepo ?? false);
-  const [defaultBranch, setDefaultBranch] = useState(repo?.defaultBranch ?? '');
+export default function ProjectForm({ project, onDone }: ProjectFormProps) {
+  const [name, setName] = useState(project?.name ?? '');
+  const [path, setPath] = useState(project?.path ?? '');
+  const [setupCommands, setSetupCommands] = useState(project?.setupCommands ?? '');
+  const [isGitRepo, setIsGitRepo] = useState(project?.isGitRepo ?? false);
+  const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? '');
+  const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
+  const [color, setColor] = useState(project?.color ?? '');
   const [showBrowser, setShowBrowser] = useState(false);
 
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  const { data: freshRepo } = useQuery(
-    trpc.repos.get.queryOptions(
-      { id: repo?.id ?? 0 },
-      { enabled: !!repo }
+  const { data: freshProject } = useQuery(
+    trpc.projects.get.queryOptions(
+      { id: project?.id ?? 0 },
+      { enabled: !!project }
     )
   );
 
   useEffect(() => {
-    if (freshRepo) setIsGitRepo(freshRepo.isGitRepo);
-  }, [freshRepo]);
+    if (freshProject) setIsGitRepo(freshProject.isGitRepo);
+  }, [freshProject]);
 
-  const createMutation = useMutation(trpc.repos.create.mutationOptions({
+  const createMutation = useMutation(trpc.projects.create.mutationOptions({
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.repos.list.queryKey() });
+      queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryKey() });
       onDone();
     },
   }));
 
-  const updateMutation = useMutation(trpc.repos.update.mutationOptions({
+  const updateMutation = useMutation(trpc.projects.update.mutationOptions({
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.repos.list.queryKey() });
+      queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryKey() });
       onDone();
     },
   }));
@@ -72,10 +93,12 @@ export default function RepoForm({ repo, onDone }: RepoFormProps) {
       path: path.trim(),
       setupCommands: setupCommands || undefined,
       defaultBranch: isGitRepo && defaultBranch ? defaultBranch : undefined,
+      defaultWorktree: isGitRepo ? defaultWorktree : undefined,
+      color: color || undefined,
     };
 
-    if (repo) {
-      updateMutation.mutate({ id: repo.id, ...data });
+    if (project) {
+      updateMutation.mutate({ id: project.id, ...data });
     } else {
       createMutation.mutate(data);
     }
@@ -86,7 +109,7 @@ export default function RepoForm({ repo, onDone }: RepoFormProps) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
-            {repo ? 'Edit Repository' : 'Add Repository'}
+            {project ? 'Edit Project' : 'Add Project'}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -99,7 +122,7 @@ export default function RepoForm({ repo, onDone }: RepoFormProps) {
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="My Repository"
+                  placeholder="My Project"
                 />
               </div>
 
@@ -122,6 +145,25 @@ export default function RepoForm({ repo, onDone }: RepoFormProps) {
                   >
                     Browse
                   </Button>
+                </div>
+              </div>
+
+              {/* Color */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Color</label>
+                <div className="flex gap-2 flex-wrap">
+                  {NEON_COLORS.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setColor(c)}
+                      className={`w-7 h-7 rounded-full border-2 transition-all ${
+                        color === c ? 'border-foreground scale-110' : 'border-transparent'
+                      }`}
+                      style={{ backgroundColor: `var(--${c})` }}
+                      title={COLOR_LABELS[c]}
+                    />
+                  ))}
                 </div>
               </div>
 
@@ -153,6 +195,19 @@ export default function RepoForm({ repo, onDone }: RepoFormProps) {
                       <SelectItem value="dev">dev</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {isGitRepo && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="defaultWorktree"
+                    checked={defaultWorktree}
+                    onCheckedChange={(checked) => setDefaultWorktree(checked === true)}
+                  />
+                  <label htmlFor="defaultWorktree" className="text-sm font-medium text-muted-foreground">
+                    Default to worktree for new cards
+                  </label>
                 </div>
               )}
             </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Send, Square, AlertCircle } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ import { ContextGauge } from './ContextGauge';
 type Props = {
   cardId: number;
   sessionId?: string | null;
+  accentColor?: string | null;
 };
 
 type ToolResultBlock = {
@@ -21,7 +22,29 @@ type ToolResultBlock = {
   content: Array<{ type: string; text: string }>;
 };
 
-export function SessionView({ cardId, sessionId }: Props) {
+/** Extract context fill from an assistant message's per-turn usage.
+ *  Context = input_tokens + cache_creation_input_tokens + cache_read_input_tokens */
+function extractContextFromAssistant(msg: Record<string, unknown>): number {
+  if (msg.type !== 'assistant') return 0;
+  if ((msg as { isSidechain?: boolean }).isSidechain) return 0;
+  const message = msg.message as { usage?: Record<string, number> } | undefined;
+  const usage = message?.usage;
+  if (!usage) return 0;
+  return (usage.input_tokens ?? 0)
+    + (usage.cache_creation_input_tokens ?? 0)
+    + (usage.cache_read_input_tokens ?? 0);
+}
+
+/** Extract context window size from a result message's modelUsage */
+function extractContextWindow(msg: Record<string, unknown>): number {
+  if (msg.type !== 'result') return 0;
+  const modelUsage = msg.modelUsage as Record<string, Record<string, number>> | undefined;
+  if (!modelUsage) return 0;
+  const model = Object.values(modelUsage)[0];
+  return model?.contextWindow ?? 0;
+}
+
+export function SessionView({ cardId, sessionId, accentColor }: Props) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -44,6 +67,7 @@ export function SessionView({ cardId, sessionId }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [contextTokens, setContextTokens] = useState(0);
+  const [contextWindow, setContextWindow] = useState(200_000);
   const [compacted, setCompacted] = useState(false);
 
   // Reset live state when switching cards
@@ -52,6 +76,7 @@ export function SessionView({ cardId, sessionId }: Props) {
     setSubscribing(false);
     seenIds.current.clear();
     setContextTokens(0);
+    setContextWindow(200_000);
     setCompacted(false);
   }, [cardId]);
 
@@ -98,11 +123,18 @@ export function SessionView({ cardId, sessionId }: Props) {
     })
   );
 
+  function addOptimisticUser(text: string) {
+    setLiveMessages((prev) => [...prev, { type: 'user', message: { role: 'user', content: text } }]);
+  }
+
   // Start mutation
   const startMutation = useMutation(
     trpc.claude.start.mutationOptions({
-      onSuccess: () => {
+      onMutate: ({ prompt }) => {
+        addOptimisticUser(prompt);
         setSubscribing(true);
+      },
+      onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
         moveMutation.mutate({ id: cardId, column: 'in_progress', position: 0 });
       },
@@ -112,11 +144,13 @@ export function SessionView({ cardId, sessionId }: Props) {
   // Send message mutation
   const sendMutation = useMutation(
     trpc.claude.sendMessage.mutationOptions({
-      onMutate: () => {
+      onMutate: ({ message }) => {
+        addOptimisticUser(message);
         setSubscribing(true);
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
+        moveMutation.mutate({ id: cardId, column: 'in_progress', position: 0 });
       },
     })
   );
@@ -149,11 +183,6 @@ export function SessionView({ cardId, sessionId }: Props) {
     }
   }, [sessionStatus, queryClient, trpc, sessionId]);
 
-  // Extract tool outputs for live streaming
-  const extractToolOutputs = useCallback((msg: Record<string, unknown>) => {
-    // handled by useMemo above for display, but we still need live messages in state
-  }, []);
-
   useSubscription(
     trpc.claude.onMessage.subscriptionOptions(
       { cardId },
@@ -165,19 +194,14 @@ export function SessionView({ cardId, sessionId }: Props) {
           seenIds.current.add(tracked.id);
           setLiveMessages((prev) => [...prev, tracked.data]);
 
-          // Extract context token usage
           const msg = tracked.data;
-          if (msg.type === 'assistant') {
-            const message = msg.message as { usage?: { input_tokens?: number } } | undefined;
-            if (message?.usage?.input_tokens) {
-              setContextTokens(message.usage.input_tokens);
-            }
-          } else if (msg.type === 'result') {
-            const usage = (msg as { usage?: { input_tokens?: number } }).usage;
-            if (usage?.input_tokens) {
-              setContextTokens(usage.input_tokens);
-            }
-          } else if (msg.type === 'system' && (msg as { subtype?: string }).subtype === 'compact_boundary') {
+          // Extract context fill from assistant messages (per-turn usage)
+          const ctx = extractContextFromAssistant(msg);
+          if (ctx > 0) setContextTokens(ctx);
+          // Extract context window size from result messages
+          const cw = extractContextWindow(msg);
+          if (cw > 0) setContextWindow(cw);
+          if (msg.type === 'system' && (msg as { subtype?: string }).subtype === 'compact_boundary') {
             setCompacted(true);
             setTimeout(() => setCompacted(false), 600);
           }
@@ -191,10 +215,11 @@ export function SessionView({ cardId, sessionId }: Props) {
     )
   );
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when new live messages arrive
   useEffect(() => {
+    if (liveMessages.length === 0) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [liveMessages]);
 
   // Scroll to bottom on initial load of history
   useEffect(() => {
@@ -207,34 +232,50 @@ export function SessionView({ cardId, sessionId }: Props) {
   // Extract initial context tokens from history
   useEffect(() => {
     if (!historyData || historyData.length === 0) return;
-    // Scan backwards for the last message with token usage
+    let foundTokens = false;
+    let foundWindow = false;
     for (let i = historyData.length - 1; i >= 0; i--) {
       const msg = historyData[i] as Record<string, unknown>;
-      if (msg.type === 'result') {
-        const usage = (msg as { usage?: { input_tokens?: number } }).usage;
-        if (usage?.input_tokens) {
-          setContextTokens(usage.input_tokens);
-          return;
-        }
+      if (!foundTokens) {
+        const ctx = extractContextFromAssistant(msg);
+        if (ctx > 0) { setContextTokens(ctx); foundTokens = true; }
       }
-      if (msg.type === 'assistant') {
-        const message = msg.message as { usage?: { input_tokens?: number } } | undefined;
-        if (message?.usage?.input_tokens) {
-          setContextTokens(message.usage.input_tokens);
-          return;
-        }
+      if (!foundWindow) {
+        const cw = extractContextWindow(msg);
+        if (cw > 0) { setContextWindow(cw); foundWindow = true; }
       }
+      if (foundTokens && foundWindow) return;
     }
   }, [historyData]);
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
-  const contextPercent = Math.min(100, contextTokens / 200_000 * 100);
+  const contextPercent = contextWindow > 0 ? Math.min(100, contextTokens / contextWindow * 100) : 0;
 
   return (
     <div className="flex flex-col flex-1 min-h-0 border-t border-border">
       {/* Status bar — only shown when there's activity */}
+      {/* Messages — scrollable middle area */}
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+        <div className="px-3 py-2 space-y-1">
+          {messages.map((msg, i) => (
+            <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} accentColor={accentColor} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+      </div>
+
+      {startMutation.isError && (
+        <div className="px-3 pt-2 shrink-0">
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>{startMutation.error.message}</AlertDescription>
+          </Alert>
+        </div>
+      )}
+
+      {/* Status bar — above prompt input */}
       {(isStreaming || messages.length > 0) && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-b border-border shrink-0">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0">
           <StatusBadge status={startMutation.isPending ? 'starting' : sessionStatus} />
           {showCounters && (
             <span className="text-[11px] text-muted-foreground">
@@ -253,25 +294,6 @@ export function SessionView({ cardId, sessionId }: Props) {
               Stop
             </Button>
           )}
-        </div>
-      )}
-
-      {/* Messages — scrollable middle area */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
-        <div className="px-3 py-2 space-y-1">
-          {messages.map((msg, i) => (
-            <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} />
-          ))}
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      {startMutation.isError && (
-        <div className="px-3 pt-2 shrink-0">
-          <Alert variant="destructive">
-            <AlertCircle className="size-4" />
-            <AlertDescription>{startMutation.error.message}</AlertDescription>
-          </Alert>
         </div>
       )}
 

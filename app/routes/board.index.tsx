@@ -33,7 +33,7 @@ type BoardContext = {
   startNewCard: (column: string) => void;
 };
 
-const ACTIVE_COLUMNS: ColumnId[] = ['ready', 'in_progress', 'review'];
+const ACTIVE_COLUMNS: ColumnId[] = ['ready', 'in_progress', 'review', 'done'];
 
 interface CardItem {
   id: number;
@@ -41,8 +41,7 @@ interface CardItem {
   description: string | null;
   column: string;
   position: number;
-  priority: string;
-  repoId: number | null;
+  projectId: number | null;
   prUrl: string | null;
   sessionId: string | null;
   worktreePath: string | null;
@@ -51,6 +50,7 @@ interface CardItem {
   turnsCompleted: number;
   createdAt: string;
   updatedAt: string;
+  color?: string | null;
 }
 
 type ColumnCards = Record<ColumnId, CardItem[]>;
@@ -62,6 +62,7 @@ function groupByColumn(items: CardItem[]): ColumnCards {
     in_progress: [],
     review: [],
     done: [],
+    archive: [],
   };
   for (const card of items) {
     const col = card.column as ColumnId;
@@ -94,6 +95,26 @@ export default function ActiveBoard() {
   const queryClient = useQueryClient();
 
   const { data: serverCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
+  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
+
+  // Build color map from projects
+  const colorMap = useMemo(() => {
+    if (!projectsList) return {};
+    const map: Record<number, string> = {};
+    for (const p of projectsList) {
+      if (p.color) map[p.id] = p.color;
+    }
+    return map;
+  }, [projectsList]);
+
+  // Enrich cards with project color
+  const enrichedCards = useMemo(() => {
+    if (!serverCards) return [];
+    return serverCards.map(c => ({
+      ...c,
+      color: c.projectId ? colorMap[c.projectId] ?? null : null,
+    }));
+  }, [serverCards, colorMap]);
 
   const startClaudeMutation = useMutation(
     trpc.claude.start.mutationOptions({})
@@ -115,7 +136,7 @@ export default function ActiveBoard() {
 
 
   const [columns, setColumns] = useState<ColumnCards>(() =>
-    groupByColumn(serverCards ?? [])
+    groupByColumn(enrichedCards)
   );
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const snapshotRef = useRef<ColumnCards | null>(null);
@@ -127,10 +148,10 @@ export default function ActiveBoard() {
 
   // Sync server data into local state when not dragging and no mutation in flight
   useEffect(() => {
-    if (serverCards && !activeId && !moveMutation.isPending) {
-      setColumns(groupByColumn(serverCards));
+    if (enrichedCards.length > 0 && !activeId && !moveMutation.isPending) {
+      setColumns(groupByColumn(enrichedCards));
     }
-  }, [serverCards, activeId, moveMutation.isPending]);
+  }, [enrichedCards, activeId, moveMutation.isPending]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -262,7 +283,7 @@ export default function ActiveBoard() {
       // Auto-start Claude when dragging to in_progress (after move completes)
       if (currentCol === 'in_progress') {
         const card = columns[currentCol].find((c) => c.id === active.id);
-        if (card && card.repoId && card.description?.trim() && !card.sessionId) {
+        if (card && card.projectId && card.description?.trim() && !card.sessionId) {
           pendingClaudeStart.current = { cardId: card.id, prompt: card.description.trim() };
         }
       }
@@ -335,7 +356,7 @@ export default function ActiveBoard() {
       {mounted && createPortal(
         <DragOverlay>
           {activeCard ? (
-            <CardOverlay title={activeCard.title} />
+            <CardOverlay title={activeCard.title} color={activeCard.color} />
           ) : null}
         </DragOverlay>,
         document.body

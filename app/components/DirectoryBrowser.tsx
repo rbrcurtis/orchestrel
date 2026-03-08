@@ -18,7 +18,7 @@ export default function DirectoryBrowser({ initialPath = '/home/ryan', onSelect,
   const [currentPath, setCurrentPath] = useState(initialPath);
   const trpc = useTRPC();
 
-  const { data, isLoading } = useQuery(trpc.repos.browse.queryOptions({ path: currentPath }));
+  const { data, isLoading } = useQuery(trpc.projects.browse.queryOptions({ path: currentPath }));
 
   const segments = currentPath.split('/').filter(Boolean);
 

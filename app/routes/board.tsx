@@ -1,17 +1,20 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router';
-import { Settings } from 'lucide-react';
+import { Settings, Palette } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
 import { CardDetail, NewCardDetail } from '~/components/CardDetail';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '~/components/ui/sheet';
+import IconsModal from '~/routes/icons';
+import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
+import { useTRPC } from '~/lib/trpc';
+import { useQuery } from '@tanstack/react-query';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
   { to: '/backlog', label: 'Backlog' },
-  { to: '/done', label: 'Done' },
+  { to: '/archive', label: 'Archive' },
 ] as const;
 
 function useIsDesktop() {
@@ -35,8 +38,21 @@ export default function BoardLayout() {
   const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
   const isDesktop = useIsDesktop();
 
+  const trpc = useTRPC();
+  const { data: allCards } = useQuery(trpc.cards.list.queryOptions());
+  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
+
   const selectedCardId = searchParams.get('card') ? Number(searchParams.get('card')) : null;
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
+  const [activeModal, setActiveModal] = useState<'icons' | 'settings' | null>(null);
+
+  // Derive divider color from selected card's project
+  const selectedCard = allCards?.find(c => c.id === selectedCardId);
+  const selectedProject = selectedCard?.projectId
+    ? projectsList?.find(p => p.id === selectedCard.projectId)
+    : null;
+  const dividerColor = selectedCardId ? (selectedProject?.color ?? null) : null;
+  const panelActive = !!(selectedCardId || newCardColumn);
 
   function selectCard(id: number | null) {
     setNewCardColumn(null);
@@ -66,18 +82,22 @@ export default function BoardLayout() {
         searchRef.current?.focus();
       }
       if (e.key === 'Escape') {
-        selectCard(null);
+        if (activeModal) {
+          setActiveModal(null);
+        } else {
+          selectCard(null);
+        }
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [activeModal]);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
-      <header className="shrink-0 px-4 sm:px-6 py-3 border-b border-gray-200 dark:border-gray-800 flex flex-wrap items-center justify-between gap-3">
+    <div className="h-screen flex flex-col bg-background">
+      <header className="shrink-0 px-4 sm:px-6 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Conductor</h1>
+          <h1 className="text-xl font-bold text-foreground">Dispatcher</h1>
           {/* Mobile: dropdown nav */}
           <Select value={location.pathname} onValueChange={(v) => navigate(v)}>
             <SelectTrigger size="sm" className="sm:hidden">
@@ -105,10 +125,11 @@ export default function BoardLayout() {
         </div>
         <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
-          <Button variant="ghost" size="icon" asChild className="shrink-0 text-muted-foreground">
-            <Link to="/settings/repos" title="Settings">
-              <Settings className="size-5" />
-            </Link>
+          <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" onClick={() => setActiveModal('icons')} title="Icon Colors">
+            <Palette className="size-5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" onClick={() => setActiveModal('settings')} title="Settings">
+            <Settings className="size-5" />
           </Button>
         </div>
       </header>
@@ -120,13 +141,26 @@ export default function BoardLayout() {
         </div>
 
         {/* Resize handle (desktop only) */}
-        <ResizeHandle onMouseDown={onMouseDown} />
+        <ResizeHandle onMouseDown={onMouseDown} color={dividerColor} />
 
-        {/* Right: detail panel (desktop only) */}
+        {/* Backdrop for mobile panel */}
+        {panelActive && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+            onClick={() => { selectCard(null); setNewCardColumn(null); }}
+          />
+        )}
+
+        {/* Detail panel — inline on desktop, fixed overlay on mobile */}
         <div
           ref={panelRef}
-          className="hidden lg:flex flex-col border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden"
-          style={{ width: initialWidth }}
+          className={[
+            'flex flex-col border-l border-border bg-card overflow-hidden',
+            panelActive
+              ? 'fixed top-0 right-0 bottom-0 z-40 w-full sm:w-[400px] lg:static lg:z-auto'
+              : 'hidden lg:flex',
+          ].join(' ')}
+          style={isDesktop ? { width: initialWidth } : undefined}
         >
           {newCardColumn ? (
             <NewCardDetail
@@ -144,26 +178,8 @@ export default function BoardLayout() {
         </div>
       </div>
 
-      {/* Mobile sheet (shown only on <lg when card or new-card is active) */}
-      {(selectedCardId || newCardColumn) && !isDesktop && (
-        <Sheet open={true} onOpenChange={() => { selectCard(null); setNewCardColumn(null); }}>
-          <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col" showCloseButton={false}>
-            <SheetHeader className="sr-only">
-              <SheetTitle>Card Detail</SheetTitle>
-              <SheetDescription>Card detail panel</SheetDescription>
-            </SheetHeader>
-            {newCardColumn ? (
-              <NewCardDetail
-                column={newCardColumn}
-                onCreated={(id) => selectCard(id)}
-                onClose={() => setNewCardColumn(null)}
-              />
-            ) : selectedCardId ? (
-              <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
-            ) : null}
-          </SheetContent>
-        </Sheet>
-      )}
+      {activeModal === 'icons' && <IconsModal onClose={() => setActiveModal(null)} />}
+      {activeModal === 'settings' && <SettingsProjectsModal onClose={() => setActiveModal(null)} />}
     </div>
   );
 }

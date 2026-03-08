@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { tracked } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
-import { cards } from '../db/schema';
+import { cards, projects } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { sessionManager } from '../claude/manager';
@@ -35,11 +35,18 @@ export const claudeRouter = router({
         });
       }
 
+      let projectName: string | undefined;
+      if (card.projectId) {
+        const [proj] = await ctx.db.select({ name: projects.name }).from(projects).where(eq(projects.id, card.projectId));
+        if (proj) projectName = proj.name.toLowerCase();
+      }
+
       const isResume = !!card.sessionId;
       const session = sessionManager.create(
         input.cardId,
         card.worktreePath,
         card.sessionId ?? undefined,
+        projectName,
       );
       // Register event handlers BEFORE starting
       session.on('message', async (msg: Record<string, unknown>) => {
@@ -104,7 +111,12 @@ export const claudeRouter = router({
         if (!card?.sessionId || !card.worktreePath) {
           throw new Error(`No session for card ${input.cardId}`);
         }
-        session = sessionManager.create(input.cardId, card.worktreePath, card.sessionId);
+        let projectName: string | undefined;
+        if (card.projectId) {
+          const [proj] = await ctx.db.select({ name: projects.name }).from(projects).where(eq(projects.id, card.projectId));
+          if (proj) projectName = proj.name.toLowerCase();
+        }
+        session = sessionManager.create(input.cardId, card.worktreePath, card.sessionId, projectName);
         session.promptsSent = card.promptsSent ?? 0;
         session.turnsCompleted = card.turnsCompleted ?? 0;
 
