@@ -34,8 +34,7 @@ interface CardItem {
   description: string | null;
   column: string;
   position: number;
-  priority: string;
-  repoId: number | null;
+  projectId: number | null;
   prUrl: string | null;
   sessionId: string | null;
   worktreePath: string | null;
@@ -44,6 +43,7 @@ interface CardItem {
   turnsCompleted: number;
   createdAt: string;
   updatedAt: string;
+  color?: string | null;
 }
 
 function calcPosition(items: { position: number }[], targetIndex: number): number {
@@ -59,6 +59,16 @@ export default function BacklogBoard() {
   const queryClient = useQueryClient();
 
   const { data: serverCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
+  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
+
+  const colorMap = useMemo(() => {
+    if (!projectsList) return {};
+    const map: Record<number, string> = {};
+    for (const p of projectsList) {
+      if (p.color) map[p.id] = p.color;
+    }
+    return map;
+  }, [projectsList]);
 
   const moveMutation = useMutation(
     trpc.cards.move.mutationOptions({
@@ -68,13 +78,13 @@ export default function BacklogBoard() {
     })
   );
 
-
   const backlogCards = useMemo(() => {
     if (!serverCards) return [];
     return serverCards
       .filter((c) => c.column === 'backlog')
+      .map(c => ({ ...c, color: c.projectId ? colorMap[c.projectId] ?? null : null }))
       .sort((a, b) => a.position - b.position);
-  }, [serverCards]);
+  }, [serverCards, colorMap]);
 
   const [cards, setCards] = useState<CardItem[]>(backlogCards);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
@@ -84,7 +94,6 @@ export default function BacklogBoard() {
     setMounted(true);
   }, []);
 
-  // Sync server data into local state when not dragging and no mutation in flight
   useEffect(() => {
     if (!activeId && !moveMutation.isPending) {
       setCards(backlogCards);
@@ -173,7 +182,7 @@ export default function BacklogBoard() {
       {mounted && createPortal(
         <DragOverlay>
           {activeCard ? (
-            <CardOverlay title={activeCard.title} />
+            <CardOverlay title={activeCard.title} color={activeCard.color} />
           ) : null}
         </DragOverlay>,
         document.body

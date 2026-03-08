@@ -1,9 +1,33 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Options as SDKOptions, Query } from '@anthropic-ai/claude-agent-sdk';
 import { EventEmitter } from 'events';
-import { appendFileSync, mkdirSync } from 'fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'fs';
+import { homedir } from 'os';
 import { join } from 'path';
 import type { SessionStatus } from './types';
+
+const MEMORY_MCP_BIN = '/home/ryan/Code/memory-mcp/dist/index.js';
+const DEFAULT_QDRANT_URL = 'http://localhost:6333';
+
+/** Read shared-memory MCP env from project .mcp.json, falling back to ~/.claude.json */
+function getMemoryMcpEnv(cwd: string): Record<string, string> {
+  // Try project-level .mcp.json first (mcpServers nested under root)
+  try {
+    const raw = readFileSync(join(cwd, '.mcp.json'), 'utf8');
+    const cfg = JSON.parse(raw) as { mcpServers?: Record<string, { env?: Record<string, string> }> };
+    const env = cfg.mcpServers?.['shared-memory']?.env;
+    if (env) return env;
+  } catch { /* not found or invalid */ }
+
+  // Fall back to user-level ~/.claude.json (mcpServers at root level)
+  try {
+    const raw = readFileSync(join(homedir(), '.claude.json'), 'utf8');
+    const cfg = JSON.parse(raw) as { mcpServers?: Record<string, { env?: Record<string, string> }> };
+    return cfg.mcpServers?.['shared-memory']?.env ?? {};
+  } catch {
+    return {};
+  }
+}
 
 const SESSIONS_DIR = join(process.cwd(), 'data', 'sessions');
 mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -22,6 +46,7 @@ export class ClaudeSession extends EventEmitter {
   constructor(
     private cwd: string,
     private resumeSessionId?: string,
+    private projectName?: string,
   ) {
     super();
   }
@@ -49,6 +74,22 @@ export class ClaudeSession extends EventEmitter {
 
     if (resumeId) {
       opts.resume = resumeId;
+    }
+
+    if (this.projectName) {
+      const mcpEnv = getMemoryMcpEnv(this.cwd);
+      opts.mcpServers = {
+        'shared-memory': {
+          command: 'node',
+          args: [MEMORY_MCP_BIN],
+          env: {
+            QDRANT_URL: mcpEnv.QDRANT_URL ?? DEFAULT_QDRANT_URL,
+            ...(mcpEnv.QDRANT_API_KEY ? { QDRANT_API_KEY: mcpEnv.QDRANT_API_KEY } : {}),
+            DEFAULT_AGENT: mcpEnv.DEFAULT_AGENT ?? 'claude-code',
+            DEFAULT_PROJECT: this.projectName,
+          },
+        },
+      };
     }
 
     this.queryInstance = query({ prompt, options: opts });

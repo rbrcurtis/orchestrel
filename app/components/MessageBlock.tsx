@@ -7,9 +7,10 @@ import { Alert, AlertTitle, AlertDescription } from '~/components/ui/alert';
 type Props = {
   message: Record<string, unknown>;
   toolOutputs: Map<string, string>;
+  accentColor?: string | null;
 };
 
-export function MessageBlock({ message, toolOutputs }: Props) {
+export function MessageBlock({ message, toolOutputs, accentColor }: Props) {
   const type = message.type as string;
 
   if (type === 'assistant') {
@@ -28,7 +29,7 @@ export function MessageBlock({ message, toolOutputs }: Props) {
     const subtype = message.subtype as string | undefined;
     if (subtype === 'init') {
       return (
-        <div className="text-xs text-gray-400 dark:text-gray-500 py-1">
+        <div className="text-xs text-muted-foreground py-1">
           Session started (model: {String((message as Record<string, unknown>).model ?? 'unknown')})
         </div>
       );
@@ -38,7 +39,7 @@ export function MessageBlock({ message, toolOutputs }: Props) {
   }
 
   if (type === 'user') {
-    return <UserBlock message={message} />;
+    return <UserBlock message={message} accentColor={accentColor} />;
   }
 
   // Skip other types
@@ -72,7 +73,7 @@ function AssistantBlock({
       {content.map((block, i) => {
         if (block.type === 'text' && block.text) {
           return (
-            <div key={i} className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+            <div key={i} className="text-sm text-foreground whitespace-pre-wrap">
               {block.text}
             </div>
           );
@@ -103,13 +104,13 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="text-xs text-gray-400 dark:text-gray-500">
-      <CollapsibleTrigger className="cursor-pointer hover:text-gray-600 dark:hover:text-gray-400 flex items-center gap-1">
+    <Collapsible open={open} onOpenChange={setOpen} className="text-xs text-muted-foreground">
+      <CollapsibleTrigger className="cursor-pointer hover:text-foreground flex items-center gap-1">
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         Thinking...
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-1 whitespace-pre-wrap pl-3 border-l border-gray-200 dark:border-gray-700">
+        <div className="mt-1 whitespace-pre-wrap pl-3 border-l border-border">
           {thinking}
         </div>
       </CollapsibleContent>
@@ -121,20 +122,20 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
 
 function ResultBlock({ message }: { message: Record<string, unknown> }) {
   const subtype = message.subtype as string;
-  const isSuccess = subtype === 'success';
+  const isSuccess = subtype === 'success' || subtype === 'error_max_turns';
   const cost = message.total_cost_usd as number | undefined;
   const durationMs = message.duration_ms as number | undefined;
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
 
   return (
     <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground">
-      <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
+      <div className="flex-1 border-t border-border" />
       <span className={isSuccess ? '' : 'text-destructive'}>
         {isSuccess ? 'Turn complete' : `Error: ${subtype}`}
         {cost != null && ` · $${cost.toFixed(4)}`}
         {durationSec != null && ` · ${durationSec}s`}
       </span>
-      <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
+      <div className="flex-1 border-t border-border" />
     </div>
   );
 }
@@ -146,7 +147,7 @@ function ToolProgressBlock({ message }: { message: Record<string, unknown> }) {
   const elapsed = message.elapsed_time_seconds as number;
 
   return (
-    <div className="text-xs text-gray-400 dark:text-gray-500 py-0.5 flex items-center gap-1.5">
+    <div className="text-xs text-muted-foreground py-0.5 flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
       {toolName} ({elapsed.toFixed(0)}s)
     </div>
@@ -155,7 +156,7 @@ function ToolProgressBlock({ message }: { message: Record<string, unknown> }) {
 
 // --- User message ---
 
-function UserBlock({ message }: { message: Record<string, unknown> }) {
+function UserBlock({ message, accentColor }: { message: Record<string, unknown>; accentColor?: string | null }) {
   const inner = message.message as { content?: unknown } | undefined;
   if (!inner?.content) return null;
 
@@ -178,9 +179,16 @@ function UserBlock({ message }: { message: Record<string, unknown> }) {
     return null;
   }
 
+  const borderColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
+
   return (
-    <div className="text-sm text-foreground whitespace-pre-wrap bg-blue-50 dark:bg-blue-950/30 rounded-lg px-3 py-2 my-2">
-      {text}
+    <div className="flex justify-end my-2">
+      <div
+        className="text-sm text-foreground whitespace-pre-wrap bg-elevated rounded-lg px-3 py-2 max-w-[85%] border-l-2"
+        style={{ borderLeftColor: borderColor }}
+      >
+        {text}
+      </div>
     </div>
   );
 }

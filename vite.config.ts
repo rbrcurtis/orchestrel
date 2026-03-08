@@ -12,8 +12,9 @@ export default defineConfig(({ isSsrBuild }) => ({
       : undefined,
   },
   server: {
+    port: 6194,
     host: '192.168.4.200',
-    hmr: { host: '192.168.4.200' },
+    allowedHosts: ['dispatch.rbrcurtis.com'],
   },
   plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
 }));

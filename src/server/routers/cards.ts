@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { router, publicProcedure } from '../trpc';
-import { cards, repos } from '../db/schema';
+import { cards, projects } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import type { InferInsertModel } from 'drizzle-orm';
 import { createWorktree, removeWorktree, runSetupCommands, slugify, worktreeExists } from '../worktree';
 
-const columnEnum = z.enum(['backlog', 'ready', 'in_progress', 'review', 'done']);
+const columnEnum = z.enum(['backlog', 'ready', 'in_progress', 'review', 'done', 'archive']);
 
 export const cardsRouter = router({
   list: publicProcedure.query(async ({ ctx }) => {
@@ -17,7 +17,7 @@ export const cardsRouter = router({
       title: z.string().min(1),
       description: z.string().optional(),
       column: columnEnum.optional(),
-      repoId: z.number().nullable().optional(),
+      projectId: z.number().nullable().optional(),
       useWorktree: z.boolean().optional(),
       sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
     }))
@@ -34,22 +34,22 @@ export const cardsRouter = router({
       const extra: Partial<InferInsertModel<typeof cards>> = {};
 
       // Set up working directory when creating directly into in_progress
-      if (col === 'in_progress' && input.repoId) {
+      if (col === 'in_progress' && input.projectId) {
         try {
-          const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, input.repoId));
-          if (repo) {
+          const [project] = await ctx.db.select().from(projects).where(eq(projects.id, input.projectId));
+          if (project) {
             if (!input.useWorktree) {
-              extra.worktreePath = repo.path;
+              extra.worktreePath = project.path;
             } else {
               const slug = slugify(input.title);
-              const wtPath = `${repo.path}/.worktrees/${slug}`;
+              const wtPath = `${project.path}/.worktrees/${slug}`;
               const branch = slug;
-              const source = input.sourceBranch ?? repo.defaultBranch ?? undefined;
+              const source = input.sourceBranch ?? project.defaultBranch ?? undefined;
 
               if (!worktreeExists(wtPath)) {
-                createWorktree(repo.path, wtPath, branch, source);
-                if (repo.setupCommands) {
-                  runSetupCommands(wtPath, repo.setupCommands);
+                createWorktree(project.path, wtPath, branch, source);
+                if (project.setupCommands) {
+                  runSetupCommands(wtPath, project.setupCommands);
                 }
               }
 
@@ -73,7 +73,7 @@ export const cardsRouter = router({
       id: z.number(),
       title: z.string().min(1).optional(),
       description: z.string().optional(),
-      repoId: z.number().nullable().optional(),
+      projectId: z.number().nullable().optional(),
       prUrl: z.string().nullable().optional(),
       useWorktree: z.boolean().optional(),
       sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
@@ -106,24 +106,22 @@ export const cardsRouter = router({
       };
 
       // Worktree / working directory setup when moving to in_progress
-      if (columnChanged && input.column === 'in_progress' && existing.repoId) {
+      if (columnChanged && input.column === 'in_progress' && existing.projectId) {
         try {
-          const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, existing.repoId));
-          if (repo) {
+          const [project] = await ctx.db.select().from(projects).where(eq(projects.id, existing.projectId));
+          if (project) {
             if (!existing.useWorktree) {
-              // Non-worktree mode: work directly in repo path
-              updates.worktreePath = repo.path;
+              updates.worktreePath = project.path;
             } else {
-              // Worktree mode
               const slug = existing.worktreeBranch || slugify(existing.title);
-              const wtPath = existing.worktreePath || `${repo.path}/.worktrees/${slug}`;
+              const wtPath = existing.worktreePath || `${project.path}/.worktrees/${slug}`;
               const branch = slug;
-              const source = existing.sourceBranch ?? repo.defaultBranch ?? undefined;
+              const source = existing.sourceBranch ?? project.defaultBranch ?? undefined;
 
               if (!worktreeExists(wtPath)) {
-                createWorktree(repo.path, wtPath, branch, source);
-                if (repo.setupCommands) {
-                  runSetupCommands(wtPath, repo.setupCommands);
+                createWorktree(project.path, wtPath, branch, source);
+                if (project.setupCommands) {
+                  runSetupCommands(wtPath, project.setupCommands);
                 }
               }
 
@@ -137,12 +135,12 @@ export const cardsRouter = router({
       }
 
       // Worktree removal when moving to done (preserve path/branch/session fields)
-      if (columnChanged && input.column === 'done' && existing.useWorktree && existing.worktreePath && existing.repoId) {
+      if (columnChanged && input.column === 'archive' && existing.useWorktree && existing.worktreePath && existing.projectId) {
         try {
-          const [repo] = await ctx.db.select().from(repos).where(eq(repos.id, existing.repoId));
-          if (repo && worktreeExists(existing.worktreePath)) {
+          const [project] = await ctx.db.select().from(projects).where(eq(projects.id, existing.projectId));
+          if (project && worktreeExists(existing.worktreePath)) {
             try {
-              removeWorktree(repo.path, existing.worktreePath);
+              removeWorktree(project.path, existing.worktreePath);
             } catch (err) {
               console.error(`Failed to remove worktree for card ${existing.id}:`, err);
             }

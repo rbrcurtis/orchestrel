@@ -5,9 +5,9 @@ import { Button } from '~/components/ui/button';
 import { Badge } from '~/components/ui/badge';
 import { Card } from './Card';
 
-export type ColumnId = 'backlog' | 'ready' | 'in_progress' | 'review' | 'done';
+export type ColumnId = 'backlog' | 'ready' | 'in_progress' | 'review' | 'done' | 'archive';
 
-export const ALL_COLUMNS: ColumnId[] = ['backlog', 'ready', 'in_progress', 'review', 'done'];
+export const ALL_COLUMNS: ColumnId[] = ['backlog', 'ready', 'in_progress', 'review', 'done', 'archive'];
 
 const displayNames: Record<ColumnId, string> = {
   backlog: 'Backlog',
@@ -15,12 +15,14 @@ const displayNames: Record<ColumnId, string> = {
   in_progress: 'In Progress',
   review: 'Review',
   done: 'Done',
+  archive: 'Archive',
 };
 
 interface CardItem {
   id: number;
   title: string;
   position: number;
+  color?: string | null;
 }
 
 interface StatusRowProps {
@@ -36,7 +38,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
   return (
     <div className="shrink-0">
       <div className="flex items-center gap-2 px-4 py-2">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+        <h2 className="text-sm font-semibold text-muted-foreground">
           {displayNames[id]}
         </h2>
         <Badge variant="secondary">{cards.length}</Badge>
@@ -55,11 +57,11 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
       >
         <SortableContext items={cards.map(c => c.id)} strategy={horizontalListSortingStrategy}>
           {cards.map(card => (
-            <Card key={card.id} id={card.id} title={card.title} onClick={onCardClick} />
+            <Card key={card.id} id={card.id} title={card.title} color={card.color} onClick={onCardClick} />
           ))}
         </SortableContext>
         {cards.length === 0 && (
-          <p className="text-xs text-gray-400 dark:text-gray-600 py-2">
+          <p className="text-xs text-muted-foreground py-2">
             No cards
           </p>
         )}

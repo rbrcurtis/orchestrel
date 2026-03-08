@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-const STORAGE_KEY = 'conductor-panel-width';
+const STORAGE_KEY = 'dispatcher-panel-width';
 const DEFAULT_WIDTH = 400;
 const MIN_WIDTH = 300;
 
@@ -58,11 +58,19 @@ export function useResizablePanel() {
   return { panelRef, initialWidth: widthRef.current, onMouseDown };
 }
 
-export function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+interface ResizeHandleProps {
+  onMouseDown: (e: React.MouseEvent) => void;
+  color?: string | null;
+}
+
+export function ResizeHandle({ onMouseDown, color }: ResizeHandleProps) {
   return (
     <div
       onMouseDown={onMouseDown}
-      className="w-1 hover:w-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-blue-400 dark:hover:bg-blue-500 cursor-col-resize transition-colors shrink-0 hidden lg:block"
+      className={`w-1 hover:w-1.5 cursor-col-resize transition-colors shrink-0 hidden lg:block ${
+        color ? '' : 'bg-border hover:bg-neon-cyan'
+      }`}
+      style={color ? { backgroundColor: `var(--${color})` } : undefined}
     />
   );
 }

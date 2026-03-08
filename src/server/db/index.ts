@@ -7,7 +7,7 @@ import { mkdirSync } from 'fs';
 const DB_DIR = join(process.cwd(), 'data');
 mkdirSync(DB_DIR, { recursive: true });
 
-const sqlite = new Database(join(DB_DIR, 'conductor.db'));
+const sqlite = new Database(join(DB_DIR, 'dispatcher.db'));
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 

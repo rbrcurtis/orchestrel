@@ -1,33 +1,33 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import RepoForm from '~/components/RepoForm';
+import ProjectForm from '~/components/ProjectForm';
 import { Button } from '~/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
-import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card';
-import { ArrowLeft, Pencil, Trash2, Plus } from 'lucide-react';
+import { Card, CardContent } from '~/components/ui/card';
+import { X, Pencil, Trash2, Plus } from 'lucide-react';
 
-interface Repo {
+interface Project {
   id: number;
   name: string;
   path: string;
   setupCommands: string | null;
   isGitRepo: boolean;
   defaultBranch: string | null;
+  color: string | null;
   createdAt: string;
 }
 
-export default function SettingsRepos() {
+export default function SettingsProjectsModal({ onClose }: { onClose: () => void }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const { data: repos, isLoading } = useQuery(trpc.repos.list.queryOptions());
-  const [editingRepo, setEditingRepo] = useState<Repo | null>(null);
+  const { data: projectsList, isLoading } = useQuery(trpc.projects.list.queryOptions());
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
-  const deleteMutation = useMutation(trpc.repos.delete.mutationOptions({
+  const deleteMutation = useMutation(trpc.projects.delete.mutationOptions({
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.repos.list.queryKey() });
+      queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryKey() });
     },
   }));
 
@@ -36,80 +36,89 @@ export default function SettingsRepos() {
   }
 
   function closeForm() {
-    setEditingRepo(null);
+    setEditingProject(null);
     setShowAddForm(false);
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      <div className="max-w-3xl mx-auto px-4 py-8">
+    <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background">
+      <div className="max-w-3xl mx-auto w-full px-4 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" asChild>
-              <Link to="/">
-                <ArrowLeft />
-              </Link>
-            </Button>
-            <h1 className="text-xl font-bold text-gray-900">Repository Settings</h1>
-          </div>
-          {!showAddForm && !editingRepo && (
+          <h1 className="text-xl font-bold text-foreground">Project Settings</h1>
+          <div className="flex items-center gap-2">
+          {!showAddForm && !editingProject && (
             <Button size="sm" onClick={() => setShowAddForm(true)}>
               <Plus />
-              Add Repository
+              Add Project
             </Button>
           )}
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 transition-colors hover:bg-white/10 text-muted-foreground"
+          >
+            <X className="size-6" />
+          </button>
+          </div>
         </div>
 
         {/* Add form */}
         {showAddForm && (
           <div className="mb-6">
-            <RepoForm onDone={closeForm} />
+            <ProjectForm onDone={closeForm} />
           </div>
         )}
 
         {/* Edit form */}
-        {editingRepo && (
+        {editingProject && (
           <div className="mb-6">
-            <RepoForm repo={editingRepo} onDone={closeForm} />
+            <ProjectForm project={editingProject} onDone={closeForm} />
           </div>
         )}
 
-        {/* Repo list */}
+        {/* Project list */}
         {isLoading && (
-          <p className="text-sm text-gray-500">Loading repositories...</p>
+          <p className="text-sm text-muted-foreground">Loading projects...</p>
         )}
 
-        {repos && repos.length === 0 && !showAddForm && (
-          <div className="text-center py-12 text-gray-500">
-            <p className="text-sm">No repositories configured yet.</p>
+        {projectsList && projectsList.length === 0 && !showAddForm && (
+          <div className="text-center py-12 text-muted-foreground">
+            <p className="text-sm">No projects configured yet.</p>
             <Button
               variant="link"
               onClick={() => setShowAddForm(true)}
               className="mt-2"
             >
-              Add your first repository
+              Add your first project
             </Button>
           </div>
         )}
 
-        {repos && repos.length > 0 && (
+        {projectsList && projectsList.length > 0 && (
           <Card>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Repository</TableHead>
+                    <TableHead>Project</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {repos.map((repo) => (
-                    <TableRow key={repo.id}>
+                  {projectsList.map((project) => (
+                    <TableRow key={project.id}>
                       <TableCell>
-                        <div className="min-w-0">
-                          <span className="font-medium text-sm">{repo.name}</span>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">{repo.path}</p>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {project.color && (
+                            <span
+                              className="w-3 h-3 rounded-full shrink-0"
+                              style={{ backgroundColor: `var(--${project.color})` }}
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <span className="font-medium text-sm">{project.name}</span>
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -119,7 +128,7 @@ export default function SettingsRepos() {
                             size="icon-xs"
                             onClick={() => {
                               setShowAddForm(false);
-                              setEditingRepo(repo as Repo);
+                              setEditingProject(project as Project);
                             }}
                           >
                             <Pencil />
@@ -127,7 +136,7 @@ export default function SettingsRepos() {
                           <Button
                             variant="ghost"
                             size="icon-xs"
-                            onClick={() => handleDelete(repo.id)}
+                            onClick={() => handleDelete(project.id)}
                             disabled={deleteMutation.isPending}
                             className="text-destructive hover:text-destructive"
                           >

@@ -16,19 +16,20 @@ type Props = {
   onClose: () => void;
 };
 
-const STATUSES = ['backlog', 'ready', 'in_progress', 'review', 'done'] as const;
+const STATUSES = ['backlog', 'ready', 'in_progress', 'review', 'done', 'archive'] as const;
 const statusLabels: Record<string, string> = {
   backlog: 'Backlog',
   ready: 'Ready',
   in_progress: 'In Progress',
   review: 'Review',
   done: 'Done',
+  archive: 'Archive',
 };
 
 type Draft = {
   title: string;
   description: string;
-  repoId: number | null;
+  projectId: number | null;
   useWorktree: boolean;
   sourceBranch: string | null;
 };
@@ -40,12 +41,12 @@ export function CardDetail({ cardId, onClose }: Props) {
   const { data: allCards } = useQuery(trpc.cards.list.queryOptions());
   const card = allCards?.find((c) => c.id === cardId);
 
-  const { data: repos } = useQuery(trpc.repos.list.queryOptions());
+  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
 
   const [draft, setDraft] = useState<Draft>({
     title: '',
     description: '',
-    repoId: null,
+    projectId: null,
     useWorktree: false,
     sourceBranch: null,
   });
@@ -58,7 +59,7 @@ export function CardDetail({ cardId, onClose }: Props) {
     setDraft({
       title: card.title,
       description: card.description ?? '',
-      repoId: card.repoId,
+      projectId: card.projectId,
       useWorktree: card.useWorktree,
       sourceBranch: card.sourceBranch,
     });
@@ -72,7 +73,7 @@ export function CardDetail({ cardId, onClose }: Props) {
     setDraft({
       title: card.title,
       description: card.description ?? '',
-      repoId: card.repoId,
+      projectId: card.projectId,
       useWorktree: card.useWorktree,
       sourceBranch: card.sourceBranch,
     });
@@ -81,7 +82,7 @@ export function CardDetail({ cardId, onClose }: Props) {
   const isDirty = card
     ? draft.title !== card.title ||
       draft.description !== (card.description ?? '') ||
-      draft.repoId !== card.repoId ||
+      draft.projectId !== card.projectId ||
       draft.useWorktree !== card.useWorktree ||
       draft.sourceBranch !== card.sourceBranch
     : false;
@@ -122,7 +123,7 @@ export function CardDetail({ cardId, onClose }: Props) {
         id: card.id,
         title: draft.title,
         description: draft.description,
-        repoId: draft.repoId,
+        projectId: draft.projectId,
         useWorktree: draft.useWorktree,
         sourceBranch: draft.sourceBranch,
       });
@@ -132,7 +133,7 @@ export function CardDetail({ cardId, onClose }: Props) {
 
   function handleStatusChange(newColumn: string) {
     if (!card || newColumn === card.column) return;
-    if (newColumn === 'in_progress' && card.repoId && card.description?.trim() && !card.sessionId) {
+    if (newColumn === 'in_progress' && card.projectId && card.description?.trim() && !card.sessionId) {
       pendingClaudeStart.current = { cardId: card.id, prompt: card.description.trim() };
     }
     moveMutation.mutate({ id: card.id, column: newColumn, position: 0 });
@@ -146,13 +147,13 @@ export function CardDetail({ cardId, onClose }: Props) {
     );
   }
 
-  const selectedRepo = repos?.find((r) => r.id === draft.repoId);
-  const cardRepo = repos?.find((r) => r.id === card.repoId);
+  const selectedProject = projectsList?.find((p) => p.id === draft.projectId);
+  const cardProject = projectsList?.find((p) => p.id === card.projectId);
   const col = card.column;
   const showSession =
     (col === 'in_progress' || col === 'review') &&
-    (card.repoId || card.worktreePath);
-  const repoLocked = !!card.repoId;
+    (card.projectId || card.worktreePath);
+  const projectLocked = !!card.projectId;
 
   return (
     <div className="flex flex-col h-full">
@@ -173,8 +174,14 @@ export function CardDetail({ cardId, onClose }: Props) {
           </SelectContent>
         </Select>
         <span className="text-sm font-medium truncate flex-1">{card.title}</span>
-        {cardRepo && (
-          <Badge variant="secondary" className="text-xs shrink-0">{cardRepo.name}</Badge>
+        {cardProject && (
+          <Badge
+            variant="secondary"
+            className="text-xs shrink-0"
+            style={cardProject.color ? { borderLeft: `3px solid var(--${cardProject.color})` } : undefined}
+          >
+            {cardProject.name}
+          </Badge>
         )}
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={onClose}>
           <X className="size-4" />
@@ -211,29 +218,39 @@ export function CardDetail({ cardId, onClose }: Props) {
               />
             </div>
 
-            {/* Repository — only editable if not yet saved */}
-            {!repoLocked && (
+            {/* Project — only editable if not yet saved */}
+            {!projectLocked && (
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Repository</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Project</label>
                 <Select
-                  value={draft.repoId != null ? String(draft.repoId) : '__none__'}
-                  onValueChange={(val) =>
+                  value={draft.projectId != null ? String(draft.projectId) : '__none__'}
+                  onValueChange={(val) => {
+                    const pid = val === '__none__' ? null : Number(val);
+                    const proj = projectsList?.find(p => p.id === pid);
                     setDraft((d) => ({
                       ...d,
-                      repoId: val === '__none__' ? null : Number(val),
-                      useWorktree: false,
+                      projectId: pid,
+                      useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
                       sourceBranch: null,
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
-                    {(repos ?? []).map((r) => (
-                      <SelectItem key={r.id} value={String(r.id)}>
-                        {r.name}
+                    {(projectsList ?? []).map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        <span className="flex items-center gap-2">
+                          {p.color && (
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: `var(--${p.color})` }}
+                            />
+                          )}
+                          {p.name}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -242,7 +259,7 @@ export function CardDetail({ cardId, onClose }: Props) {
             )}
 
             {/* Use Worktree */}
-            {selectedRepo?.isGitRepo && (
+            {selectedProject?.isGitRepo && (
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="useWorktree"
@@ -259,11 +276,11 @@ export function CardDetail({ cardId, onClose }: Props) {
             )}
 
             {/* Source Branch */}
-            {selectedRepo?.isGitRepo && draft.useWorktree && (
+            {selectedProject?.isGitRepo && draft.useWorktree && (
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
                 <Select
-                  value={draft.sourceBranch ?? selectedRepo.defaultBranch ?? ''}
+                  value={draft.sourceBranch ?? selectedProject.defaultBranch ?? ''}
                   onValueChange={(val) =>
                     setDraft((d) => ({ ...d, sourceBranch: val }))
                   }
@@ -284,7 +301,7 @@ export function CardDetail({ cardId, onClose }: Props) {
 
       {/* Session view */}
       {showSession && (
-        <SessionView cardId={card.id} sessionId={card.sessionId} />
+        <SessionView cardId={card.id} sessionId={card.sessionId} accentColor={cardProject?.color} />
       )}
     </div>
   );
@@ -301,12 +318,12 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
   const queryClient = useQueryClient();
   const titleRef = useRef<HTMLInputElement>(null);
 
-  const { data: repos } = useQuery(trpc.repos.list.queryOptions());
+  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
 
   const [draft, setDraft] = useState<Draft>({
     title: '',
     description: '',
-    repoId: null,
+    projectId: null,
     useWorktree: false,
     sourceBranch: null,
   });
@@ -323,7 +340,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     trpc.cards.create.mutationOptions({
       onSuccess: (card) => {
         queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        if (column === 'in_progress' && draft.repoId && draft.description.trim()) {
+        if (column === 'in_progress' && draft.projectId && draft.description.trim()) {
           startClaudeMutation.mutate({ cardId: card.id, prompt: draft.description.trim() });
         }
         onCreated(card.id);
@@ -337,13 +354,13 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
       title: draft.title,
       description: draft.description || undefined,
       column,
-      repoId: draft.repoId,
+      projectId: draft.projectId,
       useWorktree: draft.useWorktree,
       sourceBranch: draft.sourceBranch,
     });
   }
 
-  const selectedRepo = repos?.find((r) => r.id === draft.repoId);
+  const selectedProject = projectsList?.find((p) => p.id === draft.projectId);
 
   return (
     <div className="flex flex-col h-full">
@@ -372,6 +389,12 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
           <Textarea
             value={draft.description}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.shiftKey) {
+                e.preventDefault();
+                handleSave();
+              }
+            }}
             rows={4}
             placeholder="Add a description..."
             className="resize-y"
@@ -379,33 +402,43 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Repository</label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Project</label>
           <Select
-            value={draft.repoId != null ? String(draft.repoId) : '__none__'}
-            onValueChange={(val) =>
+            value={draft.projectId != null ? String(draft.projectId) : '__none__'}
+            onValueChange={(val) => {
+              const pid = val === '__none__' ? null : Number(val);
+              const proj = projectsList?.find(p => p.id === pid);
               setDraft((d) => ({
                 ...d,
-                repoId: val === '__none__' ? null : Number(val),
-                useWorktree: false,
+                projectId: pid,
+                useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
                 sourceBranch: null,
-              }))
-            }
+              }));
+            }}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__none__">None</SelectItem>
-              {(repos ?? []).map((r) => (
-                <SelectItem key={r.id} value={String(r.id)}>
-                  {r.name}
+              {(projectsList ?? []).map((p) => (
+                <SelectItem key={p.id} value={String(p.id)}>
+                  <span className="flex items-center gap-2">
+                    {p.color && (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: `var(--${p.color})` }}
+                      />
+                    )}
+                    {p.name}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
 
-        {selectedRepo?.isGitRepo && (
+        {selectedProject?.isGitRepo && (
           <div className="flex items-center gap-2">
             <Checkbox
               id="newUseWorktree"
@@ -420,11 +453,11 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
           </div>
         )}
 
-        {selectedRepo?.isGitRepo && draft.useWorktree && (
+        {selectedProject?.isGitRepo && draft.useWorktree && (
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
             <Select
-              value={draft.sourceBranch ?? selectedRepo.defaultBranch ?? ''}
+              value={draft.sourceBranch ?? selectedProject.defaultBranch ?? ''}
               onValueChange={(val) => setDraft((d) => ({ ...d, sourceBranch: val }))}
             >
               <SelectTrigger className="w-full">

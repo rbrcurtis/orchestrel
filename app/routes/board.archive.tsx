@@ -52,7 +52,7 @@ function calcPosition(items: { position: number }[], targetIndex: number): numbe
   return (items[targetIndex - 1].position + items[targetIndex].position) / 2;
 }
 
-export default function DoneBoard() {
+export default function ArchiveBoard() {
   const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -77,15 +77,15 @@ export default function DoneBoard() {
     })
   );
 
-  const doneCards = useMemo(() => {
+  const archiveCards = useMemo(() => {
     if (!serverCards) return [];
     return serverCards
-      .filter((c) => c.column === 'done')
+      .filter((c) => c.column === 'archive')
       .map(c => ({ ...c, color: c.projectId ? colorMap[c.projectId] ?? null : null }))
       .sort((a, b) => a.position - b.position);
   }, [serverCards, colorMap]);
 
-  const [cards, setCards] = useState<CardItem[]>(() => doneCards);
+  const [cards, setCards] = useState<CardItem[]>(() => archiveCards);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -94,10 +94,10 @@ export default function DoneBoard() {
   }, []);
 
   useEffect(() => {
-    if (doneCards && !activeId && !moveMutation.isPending) {
-      setCards(doneCards);
+    if (archiveCards && !activeId && !moveMutation.isPending) {
+      setCards(archiveCards);
     }
-  }, [doneCards, activeId, moveMutation.isPending]);
+  }, [archiveCards, activeId, moveMutation.isPending]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -127,14 +127,14 @@ export default function DoneBoard() {
       const finalIdx = reordered.findIndex((c) => c.id === active.id);
       const pos = calcPosition(others, finalIdx);
 
-      moveMutation.mutate({ id: active.id as number, column: 'done', position: pos });
+      moveMutation.mutate({ id: active.id as number, column: 'archive', position: pos });
     }
 
     setActiveId(null);
   }
 
   function handleDragCancel() {
-    setCards(doneCards);
+    setCards(archiveCards);
     setActiveId(null);
   }
 
@@ -171,10 +171,10 @@ export default function DoneBoard() {
     >
       <div className="flex flex-col gap-2 p-4">
         <StatusRow
-          id="done"
+          id="archive"
           cards={filteredCards}
           onCardClick={selectCard}
-          onAddCard={() => startNewCard('done')}
+          onAddCard={() => startNewCard('archive')}
         />
       </div>
       {mounted && createPortal(
