@@ -163,4 +163,25 @@ export const cardsRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ctx.db.delete(cards).where(eq(cards.id, input.id));
     }),
+
+  generateTitle: publicProcedure
+    .input(z.object({ description: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      const res = await fetch('http://localhost:11434/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gemma3:4b',
+          stream: false,
+          prompt: `Generate a concise kanban card title (under 60 characters) based on this description. Return only the title text, no quotes, no prefix like "Title:".\n\nDescription: ${input.description}`,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Ollama request failed: ${res.status} ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      return { title: (data.response as string).trim() };
+    }),
 });
