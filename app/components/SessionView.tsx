@@ -439,6 +439,7 @@ function PromptInput({
 }) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -457,6 +458,7 @@ function PromptInput({
   }
 
   function handlePaste(e: React.ClipboardEvent) {
+    if (!isRunning && !hasSession) return;
     const items = Array.from(e.clipboardData.items);
     const imageFiles = items
       .filter((item) => item.type.startsWith('image/'))
@@ -471,6 +473,7 @@ function PromptInput({
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
+    if (!isRunning && !hasSession) return;
     if (e.dataTransfer.files.length > 0) {
       addFiles(e.dataTransfer.files);
     }
@@ -481,12 +484,14 @@ function PromptInput({
     const trimmed = text.trim();
     if (!trimmed && files.length === 0) return;
 
+    setUploadError(null);
     if (isRunning || hasSession) {
       if (files.length > 0) {
         try {
           const refs = await uploadFiles(files);
           onSend(trimmed || 'Please review the attached files.', refs);
         } catch {
+          setUploadError('Failed to upload files');
           return;
         }
       } else {
@@ -536,6 +541,11 @@ function PromptInput({
           ))}
         </div>
       )}
+      {uploadError && (
+        <div className="text-xs text-destructive mb-1 text-right pr-[46px] sm:pr-[38px]">
+          {uploadError}
+        </div>
+      )}
       <div className={`flex gap-2 ${dragging ? 'ring-2 ring-neon-cyan/50 rounded-md' : ''}`}>
         <div className="relative flex-1">
           <Textarea
@@ -550,14 +560,16 @@ function PromptInput({
             className="resize-none min-h-[106px] sm:min-h-0 pr-10"
           />
           {/* Paperclip button - bottom right inside textarea */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="absolute bottom-2 right-2 text-muted-foreground hover:text-foreground transition-colors"
-            title="Attach files"
-          >
-            <Paperclip className="size-4" />
-          </button>
+          {(isRunning || hasSession) && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute bottom-2 right-2 text-muted-foreground hover:text-foreground transition-colors"
+              title="Attach files"
+            >
+              <Paperclip className="size-4" />
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"
