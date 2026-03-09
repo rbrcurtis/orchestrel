@@ -149,9 +149,10 @@ export class ClaudeSession extends EventEmitter {
     }
 
     // Buffer, persist, emit
-    this.messages.push(msg);
-    this.persistMessage(msg);
-    this.emit('message', msg);
+    const outMsg = msg.type === 'result' ? { ...msg, ts: new Date().toISOString() } : msg;
+    this.messages.push(outMsg);
+    this.persistMessage(outMsg);
+    this.emit('message', outMsg);
 
     if (msg.type === 'result') {
       this.turnsCompleted++;
