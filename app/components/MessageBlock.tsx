@@ -7,6 +7,54 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/component
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
+// Correct per-model pricing in USD per million tokens
+const MODEL_PRICING: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
+  'claude-sonnet-4-6': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  'claude-opus-4-6':   { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  'claude-haiku-4-5':  { input: 1, output: 5,  cacheWrite: 1.25, cacheRead: 0.1 },
+  'claude-haiku-3-5':  { input: 0.8, output: 4, cacheWrite: 1,   cacheRead: 0.08 },
+  'claude-sonnet-4-5': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  'claude-sonnet-3-7': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  'claude-sonnet-3-5': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+};
+
+function lookupPricing(model: string) {
+  // exact match first, then prefix match
+  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
+  for (const key of Object.keys(MODEL_PRICING)) {
+    if (model.startsWith(key)) return MODEL_PRICING[key];
+  }
+  return null;
+}
+
+type ModelUsageEntry = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  costUSD: number;
+};
+
+function calcCostFromModelUsage(
+  modelUsage: Record<string, ModelUsageEntry>,
+  fallback: number | undefined
+): number | undefined {
+  let total = 0;
+  let allKnown = true;
+  for (const [model, usage] of Object.entries(modelUsage)) {
+    const p = lookupPricing(model);
+    if (!p) { allKnown = false; total += usage.costUSD; continue; }
+    total +=
+      (usage.inputTokens * p.input +
+       usage.outputTokens * p.output +
+       (usage.cacheCreationInputTokens ?? 0) * p.cacheWrite +
+       (usage.cacheReadInputTokens ?? 0) * p.cacheRead) /
+      1_000_000;
+  }
+  if (!allKnown && fallback != null) return fallback; // unknown model, trust SDK
+  return Object.keys(modelUsage).length ? total : fallback;
+}
+
 /** Linkify URLs within plain text children (for code blocks) */
 function linkifyChildren(children: React.ReactNode, color: string): React.ReactNode {
   if (typeof children === 'string') {
@@ -281,7 +329,9 @@ function SystemBlock({ message }: { message: Record<string, unknown> }) {
 function ResultBlock({ message }: { message: Record<string, unknown> }) {
   const subtype = message.subtype as string;
   const isSuccess = subtype === 'success' || subtype === 'error_max_turns';
-  const cost = message.total_cost_usd as number | undefined;
+  const sdkCost = message.total_cost_usd as number | undefined;
+  const modelUsage = message.modelUsage as Record<string, ModelUsageEntry> | undefined;
+  const cost = modelUsage ? calcCostFromModelUsage(modelUsage, sdkCost) : sdkCost;
   const durationMs = message.duration_ms as number | undefined;
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
 
@@ -358,6 +408,17 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
 
   const accentVar = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
 
+  // Highlight any /slash-commands inline within the text
+  function renderWithSlashCommands(t: string) {
+    const parts = t.split(/(\/\S+)/g);
+    if (parts.length === 1) return t;
+    return parts.map((part, i) =>
+      /^\/\S+$/.test(part)
+        ? <span key={i} className="font-mono font-semibold text-neon-cyan">{part}</span>
+        : part
+    );
+  }
+
   return (
     <div className="flex justify-end my-2">
       <div
@@ -377,7 +438,7 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
             ))}
           </div>
         )}
-        {displayText && <Markdown text={displayText} linkColor={accentVar} />}
+        {displayText && <span className="whitespace-pre-wrap">{renderWithSlashCommands(displayText)}</span>}
       </div>
     </div>
   );
