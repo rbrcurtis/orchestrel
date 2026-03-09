@@ -16,6 +16,8 @@ export const projects = sqliteTable('projects', {
   isGitRepo: integer('is_git_repo', { mode: 'boolean' }).notNull().default(false),
   defaultBranch: text('default_branch', { enum: ['main', 'dev'] }),
   defaultWorktree: integer('default_worktree', { mode: 'boolean' }).notNull().default(false),
+  defaultModel: text('default_model', { enum: ['sonnet', 'opus'] }).notNull().default('sonnet'),
+  defaultThinkingLevel: text('default_thinking_level', { enum: ['off', 'low', 'medium', 'high'] }).notNull().default('high'),
   color: text('color'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
@@ -33,6 +35,8 @@ export const cards = sqliteTable('cards', {
   worktreeBranch: text('worktree_branch'),
   useWorktree: integer('use_worktree', { mode: 'boolean' }).notNull().default(true),
   sourceBranch: text('source_branch', { enum: ['main', 'dev'] }),
+  model: text('model', { enum: ['sonnet', 'opus'] }).notNull().default('sonnet'),
+  thinkingLevel: text('thinking_level', { enum: ['off', 'low', 'medium', 'high'] }).notNull().default('high'),
   promptsSent: integer('prompts_sent').notNull().default(0),
   turnsCompleted: integer('turns_completed').notNull().default(0),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
