@@ -83,7 +83,10 @@ export function Card({ id, title, color, onClick }: CardProps) {
       </div>
 
       <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent onOpenAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => archiveRef.current?.focus()); }}>
+        <AlertDialogContent
+          onOpenAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => archiveRef.current?.focus()); }}
+          onEscapeKeyDown={(e) => e.stopPropagation()}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Remove card?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -93,7 +96,8 @@ export function Card({ id, title, color, onClick }: CardProps) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <Button
-              variant="destructive"
+              variant="ghost"
+              className="border border-neon-magenta/40 bg-neon-magenta/10 text-neon-magenta hover:bg-neon-magenta/20 hover:text-neon-magenta"
               onClick={() => {
                 setOpen(false);
                 deleteMutation.mutate({ id });
@@ -103,6 +107,8 @@ export function Card({ id, title, color, onClick }: CardProps) {
             </Button>
             <Button
               ref={archiveRef}
+              variant="ghost"
+              className="border border-neon-lime/40 bg-neon-lime/10 text-neon-lime hover:bg-neon-lime/20 hover:text-neon-lime"
               onClick={() => {
                 setOpen(false);
                 archiveMutation.mutate({ id, column: 'archive', position: 0 });
