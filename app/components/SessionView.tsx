@@ -64,7 +64,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   const [liveMessages, setLiveMessages] = useState<Record<string, unknown>[]>([]);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
-  const seenIds = useRef(new Set<number>());
+  const seenIds = useRef(new Set<string>());
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [contextTokens, setContextTokens] = useState(0);
@@ -209,7 +209,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
       {
         enabled: shouldSubscribe,
         onData: (evt) => {
-          const tracked = evt as { data: Record<string, unknown>; id: number };
+          const tracked = evt as unknown as { data: Record<string, unknown>; id: string };
           if (seenIds.current.has(tracked.id)) return;
           seenIds.current.add(tracked.id);
           // Clear optimistic prompt once real data arrives (server now emits the user message)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch } from 'lucide-react';
 import { useTRPC } from '~/lib/trpc';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SessionView } from './SessionView';
@@ -116,7 +116,7 @@ export function CardDetail({ cardId, onClose }: Props) {
   );
 
   // Auto-save on change with debounce
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (!card || !isDirty) return;
     clearTimeout(saveTimer.current);
@@ -127,7 +127,7 @@ export function CardDetail({ cardId, onClose }: Props) {
         description: draft.description,
         projectId: draft.projectId,
         useWorktree: draft.useWorktree,
-        sourceBranch: draft.sourceBranch,
+        sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
       });
     }, 500);
     return () => clearTimeout(saveTimer.current);
@@ -139,7 +139,7 @@ export function CardDetail({ cardId, onClose }: Props) {
       pendingClaudeStart.current = { cardId: card.id, prompt: card.description.trim() };
     }
     moveMutation.mutate(
-      { id: card.id, column: newColumn, position: 0 },
+      { id: card.id, column: newColumn as 'backlog' | 'ready' | 'in_progress' | 'review' | 'done' | 'archive', position: 0 },
       {
         onSuccess: () => {
           if (newColumn === 'done' || newColumn === 'archive') {
@@ -171,7 +171,7 @@ export function CardDetail({ cardId, onClose }: Props) {
   const projectLocked = !!card.projectId;
 
   async function saveField(field: 'title' | 'description', val: string) {
-    await updateMutation.mutateAsync({ id: card.id, [field]: val });
+    await updateMutation.mutateAsync({ id: card!.id, [field]: val });
   }
 
   return (
@@ -206,6 +206,16 @@ export function CardDetail({ cardId, onClose }: Props) {
           <span className="text-sm font-medium truncate flex-1">{card.title}</span>
         )}
         {card.sessionId && <CopyResumeButton sessionId={card.sessionId} />}
+        <span
+          title={card.useWorktree ? 'Worktree enabled' : 'No worktree'}
+          className="flex items-center shrink-0"
+          style={card.useWorktree && cardProject?.color ? {
+            color: `var(--${cardProject.color})`,
+            filter: `drop-shadow(0 0 4px var(--${cardProject.color}))`,
+          } : undefined}
+        >
+          <GitBranch className={cn('size-3.5', !card.useWorktree && 'text-dim')} />
+        </span>
         {cardProject && (
           <Badge
             variant="secondary"
@@ -407,10 +417,10 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     createMutation.mutate({
       title: draft.title,
       description: draft.description || undefined,
-      column: selectedColumn,
+      column: selectedColumn as 'backlog' | 'ready' | 'in_progress' | 'review' | 'done' | 'archive',
       projectId: draft.projectId,
       useWorktree: draft.useWorktree,
-      sourceBranch: draft.sourceBranch,
+      sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
     });
   }
 

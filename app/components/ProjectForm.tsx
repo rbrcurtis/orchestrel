@@ -92,7 +92,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
       name: name.trim(),
       path: path.trim(),
       setupCommands: setupCommands || undefined,
-      defaultBranch: isGitRepo && defaultBranch ? defaultBranch : undefined,
+      defaultBranch: (isGitRepo && defaultBranch ? defaultBranch : undefined) as 'main' | 'dev' | undefined,
       defaultWorktree: isGitRepo ? defaultWorktree : undefined,
       color: color || undefined,
     };

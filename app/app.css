@@ -71,10 +71,13 @@
   --surface: #12121c;
   --elevated: #1a1a28;
   --hover: #222233;
-  --text-ghost: #33334a;
-  --text-muted: #55556a;
-  --border-subtle: #1e1e30;
-  --border-strong: #3a3a55;
+
+  /* Domain-agnostic color tokens (usable as text-*, bg-*, border-*, etc.) */
+  --void: #0a0a0f;
+  --dim: #55556a;
+  --ghost: #33334a;
+  --subtle: #1e1e30;
+  --strong: #3a3a55;
 }
 
 @theme inline {
@@ -125,9 +128,11 @@
   --color-surface: var(--surface);
   --color-elevated: var(--elevated);
   --color-hover: var(--hover);
-  --color-ghost: var(--text-ghost);
-  --color-subtle: var(--border-subtle);
-  --color-strong: var(--border-strong);
+  --color-void: var(--void);
+  --color-dim: var(--dim);
+  --color-ghost: var(--ghost);
+  --color-subtle: var(--subtle);
+  --color-strong: var(--strong);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

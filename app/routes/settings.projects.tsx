@@ -15,6 +15,7 @@ interface Project {
   setupCommands: string | null;
   isGitRepo: boolean;
   defaultBranch: string | null;
+  defaultWorktree: boolean;
   color: string | null;
   createdAt: string;
 }
