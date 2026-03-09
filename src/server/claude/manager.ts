@@ -4,13 +4,20 @@ import { ClaudeSession } from './protocol';
 class SessionManager extends EventEmitter {
   private sessions = new Map<string, ClaudeSession>();
 
-  create(cardId: number, cwd: string, resumeSessionId?: string, projectName?: string): ClaudeSession {
+  create(
+    cardId: number,
+    cwd: string,
+    resumeSessionId?: string,
+    projectName?: string,
+    model: 'sonnet' | 'opus' = 'sonnet',
+    thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
+  ): ClaudeSession {
     const key = `card-${cardId}`;
     const existing = this.sessions.get(key);
     if (existing && existing.status === 'running') {
       throw new Error(`Session already running for card ${cardId}`);
     }
-    const session = new ClaudeSession(cwd, resumeSessionId, projectName);
+    const session = new ClaudeSession(cwd, resumeSessionId, projectName, model, thinkingLevel);
     this.sessions.set(key, session);
     this.emit('session', cardId, session);
     return session;

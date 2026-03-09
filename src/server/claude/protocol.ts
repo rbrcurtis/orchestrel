@@ -47,6 +47,8 @@ export class ClaudeSession extends EventEmitter {
     private cwd: string,
     private resumeSessionId?: string,
     private projectName?: string,
+    private model: 'sonnet' | 'opus' = 'sonnet',
+    private thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
   ) {
     super();
   }
@@ -75,9 +77,9 @@ export class ClaudeSession extends EventEmitter {
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       settingSources: ['project', 'user', 'local'],
       includePartialMessages: false,
-      model: 'claude-sonnet-4-6',
-      thinking: { type: 'adaptive' },
-      effort: 'high',
+      model: this.model === 'opus' ? 'claude-opus-4-6' : 'claude-sonnet-4-6',
+      thinking: this.thinkingLevel === 'off' ? { type: 'disabled' } : { type: 'adaptive' },
+      effort: this.thinkingLevel === 'off' ? 'low' : this.thinkingLevel,
     };
 
     if (resumeId) {

@@ -36,6 +36,8 @@ interface Project {
   defaultBranch: string | null;
   defaultWorktree: boolean;
   color: string | null;
+  defaultModel: 'sonnet' | 'opus';
+  defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
 }
 
 interface ProjectFormProps {
@@ -51,6 +53,8 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
   const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? '');
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
   const [color, setColor] = useState(project?.color ?? '');
+  const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus'>(project?.defaultModel ?? 'sonnet');
+  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(project?.defaultThinkingLevel ?? 'high');
   const [showBrowser, setShowBrowser] = useState(false);
 
   const trpc = useTRPC();
@@ -95,6 +99,8 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
       defaultBranch: (isGitRepo && defaultBranch ? defaultBranch : undefined) as 'main' | 'dev' | undefined,
       defaultWorktree: isGitRepo ? defaultWorktree : undefined,
       color: color || undefined,
+      defaultModel,
+      defaultThinkingLevel,
     };
 
     if (project) {
@@ -210,6 +216,36 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
                   </label>
                 </div>
               )}
+
+              {/* Default Model */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Default Model</label>
+                <Select value={defaultModel} onValueChange={(v) => setDefaultModel(v as 'sonnet' | 'opus')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sonnet">Sonnet 4.6</SelectItem>
+                    <SelectItem value="opus">Opus 4.6</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Default Thinking */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Default Thinking</label>
+                <Select value={defaultThinkingLevel} onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="off">Off</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Error display */}

@@ -354,7 +354,13 @@ export function CardDetail({ cardId, onClose }: Props) {
 
       {/* Session view */}
       {showSession && (
-        <SessionView cardId={card.id} sessionId={card.sessionId} accentColor={cardProject?.color} />
+        <SessionView
+          cardId={card.id}
+          sessionId={card.sessionId}
+          accentColor={cardProject?.color}
+          model={card.model ?? 'sonnet'}
+          thinkingLevel={card.thinkingLevel ?? 'high'}
+        />
       )}
     </div>
   );
