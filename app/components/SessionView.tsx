@@ -14,6 +14,8 @@ type Props = {
   cardId: number;
   sessionId?: string | null;
   accentColor?: string | null;
+  model: 'sonnet' | 'opus';
+  thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
 type ToolResultBlock = {
@@ -44,7 +46,7 @@ function extractContextWindow(msg: Record<string, unknown>): number {
   return model?.contextWindow ?? 0;
 }
 
-export function SessionView({ cardId, sessionId, accentColor }: Props) {
+export function SessionView({ cardId, sessionId, accentColor, model, thinkingLevel }: Props) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -171,6 +173,14 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
       onSuccess: () => {
         setSubscribing(false);
         queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
+        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
+      },
+    })
+  );
+
+  const updateCardMutation = useMutation(
+    trpc.cards.update.mutationOptions({
+      onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
       },
     })
@@ -342,6 +352,24 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
               {turnsCompleted}/{promptsSent} turns
             </span>
           )}
+          <select
+            value={model}
+            onChange={(e) => updateCardMutation.mutate({ id: cardId, model: e.target.value as 'sonnet' | 'opus' })}
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
+          >
+            <option value="sonnet">Sonnet</option>
+            <option value="opus">Opus</option>
+          </select>
+          <select
+            value={thinkingLevel}
+            onChange={(e) => updateCardMutation.mutate({ id: cardId, thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
+          >
+            <option value="off">Off</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
           {isStreaming && (
             <Button
               variant="ghost"
