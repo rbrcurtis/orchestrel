@@ -169,6 +169,12 @@ export const claudeRouter = router({
         });
       }
 
+      const [freshCard] = await ctx.db.select({ model: cards.model, thinkingLevel: cards.thinkingLevel }).from(cards).where(eq(cards.id, input.cardId));
+      if (freshCard) {
+        session.model = freshCard.model;
+        session.thinkingLevel = freshCard.thinkingLevel;
+      }
+
       let prompt = input.message;
       if (input.files?.length) {
         for (const f of input.files) {

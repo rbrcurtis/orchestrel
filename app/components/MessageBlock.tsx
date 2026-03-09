@@ -339,16 +339,25 @@ function ResultBlock({ message }: { message: Record<string, unknown> }) {
     ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(rawTs))
     : null;
 
+  const errors = Array.isArray(message.errors) ? (message.errors as string[]) : [];
+
   return (
-    <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground">
-      <div className="flex-1 border-t border-border" />
-      <span className={isSuccess ? '' : 'text-destructive'}>
-        {isSuccess ? 'Turn complete' : `Error: ${subtype}`}
-        {cost != null && ` · $${cost.toFixed(4)}`}
-        {durationSec != null && ` · ${durationSec}s`}
-        {finishedAt != null && ` · ${finishedAt}`}
-      </span>
-      <div className="flex-1 border-t border-border" />
+    <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-2 w-full">
+        <div className="flex-1 border-t border-border" />
+        <span className={isSuccess ? '' : 'text-destructive'}>
+          {isSuccess ? 'Turn complete' : `Error: ${subtype}`}
+          {cost != null && ` · $${cost.toFixed(4)}`}
+          {durationSec != null && ` · ${durationSec}s`}
+          {finishedAt != null && ` · ${finishedAt}`}
+        </span>
+        <div className="flex-1 border-t border-border" />
+      </div>
+      {errors.length > 0 && (
+        <div className="text-destructive/80 text-[10px] max-w-md text-center">
+          {errors.join(' · ')}
+        </div>
+      )}
     </div>
   );
 }
@@ -413,15 +422,20 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
 
   const accentVar = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
 
-  // Highlight any /slash-commands inline within the text
+  // Highlight /slash-commands (only when preceded by whitespace or start of string)
   function renderWithSlashCommands(t: string) {
-    const parts = t.split(/(\/\S+)/g);
-    if (parts.length === 1) return t;
-    return parts.map((part, i) =>
-      /^\/\S+$/.test(part)
-        ? <span key={i} className="font-mono font-semibold text-neon-cyan">{part}</span>
-        : part
-    );
+    const re = /(?<![^\s])\/[a-zA-Z][a-zA-Z0-9-]*/g;
+    const result: React.ReactNode[] = [];
+    let last = 0;
+    for (const m of t.matchAll(re)) {
+      const idx = m.index!;
+      if (idx > last) result.push(t.slice(last, idx));
+      result.push(<span key={idx} className="font-mono font-semibold text-neon-cyan">{m[0]}</span>);
+      last = idx + m[0].length;
+    }
+    if (result.length === 0) return t;
+    if (last < t.length) result.push(t.slice(last));
+    return result;
   }
 
   return (

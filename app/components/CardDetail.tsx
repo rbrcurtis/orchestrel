@@ -65,8 +65,8 @@ export function CardDetail({ cardId, onClose }: Props) {
       useWorktree: card.useWorktree,
       sourceBranch: card.sourceBranch,
     });
-    // Auto-collapse for in_progress/review
-    setFormOpen(card.column !== 'in_progress' && card.column !== 'review' && card.column !== 'done' && card.column !== 'archive');
+    // Auto-collapse when session exists or card is active
+    setFormOpen(!card.sessionId && card.column !== 'in_progress' && card.column !== 'review' && card.column !== 'done' && card.column !== 'archive');
   }, [card?.id]);
 
   // Re-sync fields on update (but don't reset formOpen)
@@ -115,23 +115,17 @@ export function CardDetail({ cardId, onClose }: Props) {
     })
   );
 
-  // Auto-save on change with debounce
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => {
+  function saveAll() {
     if (!card || !isDirty) return;
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      updateMutation.mutate({
-        id: card.id,
-        title: draft.title,
-        description: draft.description,
-        projectId: draft.projectId,
-        useWorktree: draft.useWorktree,
-        sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
-      });
-    }, 500);
-    return () => clearTimeout(saveTimer.current);
-  }, [draft]);
+    updateMutation.mutate({
+      id: card.id,
+      title: draft.title,
+      description: draft.description,
+      projectId: draft.projectId,
+      useWorktree: draft.useWorktree,
+      sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
+    });
+  }
 
   function handleStatusChange(newColumn: string) {
     if (!card || newColumn === card.column) return;
@@ -167,7 +161,7 @@ export function CardDetail({ cardId, onClose }: Props) {
   const cardProject = projectsList?.find((p) => p.id === card.projectId);
   const col = card.column;
   const isActive = col === 'in_progress' || col === 'review' || col === 'done' || col === 'archive';
-  const showSession = isActive && (card.projectId || card.worktreePath);
+  const showSession = !!card.sessionId || (isActive && (card.projectId || card.worktreePath));
   const projectLocked = !!card.projectId;
 
   async function saveField(field: 'title' | 'description', val: string) {
@@ -245,6 +239,7 @@ export function CardDetail({ cardId, onClose }: Props) {
                 <Input
                   value={draft.title}
                   onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+                  onBlur={saveAll}
                 />
               </div>
             )}
@@ -263,10 +258,10 @@ export function CardDetail({ cardId, onClose }: Props) {
                 <Textarea
                   value={draft.description}
                   onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                  onBlur={saveAll}
                   rows={4}
                   placeholder="Add a description..."
                   className="resize-y"
-                  disabled={!!card.sessionId}
                 />
               )}
             </div>

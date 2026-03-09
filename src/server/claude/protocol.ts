@@ -47,8 +47,8 @@ export class ClaudeSession extends EventEmitter {
     private cwd: string,
     private resumeSessionId?: string,
     private projectName?: string,
-    private model: 'sonnet' | 'opus' = 'sonnet',
-    private thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
+    public model: 'sonnet' | 'opus' = 'sonnet',
+    public thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
   ) {
     super();
   }
