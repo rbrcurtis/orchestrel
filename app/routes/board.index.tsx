@@ -212,13 +212,16 @@ export default function ActiveBoard() {
     const { active, over } = e;
     if (!over) return;
 
-    const activeCol = findColumn(columns, active.id);
-    const overCol = findColumn(columns, over.id);
+    const activeCol = snapshotRef.current ? findColumn(snapshotRef.current, active.id) : findColumn(columns, active.id);
+    if (activeCol === 'in_progress') return;
 
-    if (!activeCol || !overCol || activeCol === overCol) return;
+    const overCol = findColumn(columns, over.id);
+    const currentCol = findColumn(columns, active.id);
+
+    if (!currentCol || !overCol || currentCol === overCol) return;
 
     setColumns((prev) => {
-      const sourceCards = [...prev[activeCol]];
+      const sourceCards = [...prev[currentCol]];
       const destCards = [...prev[overCol]];
 
       const activeIdx = sourceCards.findIndex((c) => c.id === active.id);
@@ -232,7 +235,7 @@ export default function ActiveBoard() {
 
       destCards.splice(insertIdx, 0, { ...moved, column: overCol });
 
-      return { ...prev, [activeCol]: sourceCards, [overCol]: destCards };
+      return { ...prev, [currentCol]: sourceCards, [overCol]: destCards };
     });
   }
 
@@ -251,6 +254,14 @@ export default function ActiveBoard() {
       : currentCol;
 
     if (!currentCol || !originalCol) {
+      setActiveId(null);
+      snapshotRef.current = null;
+      return;
+    }
+
+    // Snap back in_progress cards — session is running, moves not allowed
+    if (originalCol === 'in_progress') {
+      if (snapshotRef.current) setColumns(snapshotRef.current);
       setActiveId(null);
       snapshotRef.current = null;
       return;
