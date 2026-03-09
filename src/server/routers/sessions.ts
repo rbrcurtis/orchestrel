@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import { router, publicProcedure } from '../trpc';
 
 const SESSIONS_DIR = join(process.cwd(), 'data', 'sessions');
@@ -22,9 +22,16 @@ export const sessionsRouter = router({
       if (existsSync(localPath)) {
         const content = await readFile(localPath, 'utf-8');
         const messages = parseSessionFile(content);
-        return messages.filter(
+        const filtered = messages.filter(
           (m) => m.type === 'assistant' || m.type === 'user' || m.type === 'result' || m.type === 'system'
         );
+        // Inject file mtime as fallback timestamp on the last result message (for old sessions without ts)
+        const lastResult = [...filtered].reverse().find((m) => m.type === 'result' && !m.ts);
+        if (lastResult) {
+          const mtime = statSync(localPath).mtime.toISOString();
+          Object.assign(lastResult, { _mtime: mtime });
+        }
+        return filtered;
       }
 
       return [];

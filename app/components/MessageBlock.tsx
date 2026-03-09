@@ -334,6 +334,10 @@ function ResultBlock({ message }: { message: Record<string, unknown> }) {
   const cost = modelUsage ? calcCostFromModelUsage(modelUsage, sdkCost) : sdkCost;
   const durationMs = message.duration_ms as number | undefined;
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
+  const rawTs = (message.ts ?? message._mtime) as string | undefined;
+  const finishedAt = rawTs
+    ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(rawTs))
+    : null;
 
   return (
     <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground">
@@ -342,6 +346,7 @@ function ResultBlock({ message }: { message: Record<string, unknown> }) {
         {isSuccess ? 'Turn complete' : `Error: ${subtype}`}
         {cost != null && ` · $${cost.toFixed(4)}`}
         {durationSec != null && ` · ${durationSec}s`}
+        {finishedAt != null && ` · ${finishedAt}`}
       </span>
       <div className="flex-1 border-t border-border" />
     </div>
