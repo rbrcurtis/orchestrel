@@ -56,6 +56,8 @@ export const claudeRouter = router({
         card.worktreePath,
         card.sessionId ?? undefined,
         projectName,
+        card.model,
+        card.thinkingLevel,
       );
       // Register event handlers BEFORE starting
       session.on('message', async (msg: Record<string, unknown>) => {
@@ -129,7 +131,7 @@ export const claudeRouter = router({
           const [proj] = await ctx.db.select({ name: projects.name }).from(projects).where(eq(projects.id, card.projectId));
           if (proj) projectName = proj.name.toLowerCase();
         }
-        session = sessionManager.create(input.cardId, card.worktreePath, card.sessionId, projectName);
+        session = sessionManager.create(input.cardId, card.worktreePath, card.sessionId, projectName, card.model, card.thinkingLevel);
         session.promptsSent = card.promptsSent ?? 0;
         session.turnsCompleted = card.turnsCompleted ?? 0;
 
