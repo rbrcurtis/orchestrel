@@ -108,7 +108,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute bottom-1 right-1 p-1 rounded text-muted-foreground hover:text-foreground"
+      className="absolute top-2.5 right-1 p-1 rounded text-muted-foreground hover:text-foreground"
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
     </button>
@@ -361,7 +361,7 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
   return (
     <div className="flex justify-end my-2">
       <div
-        className="group relative text-sm text-foreground bg-elevated rounded-lg px-3 py-2 max-w-[85%] border-l-2"
+        className="group relative text-sm text-foreground bg-elevated rounded-lg pl-3 pr-8 py-2 max-w-[85%] border-l-2"
         style={{ borderLeftColor: accentVar }}
       >
         <CopyButton text={displayText || text} />

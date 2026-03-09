@@ -77,87 +77,89 @@ export default function SettingsProjectsModal({ onClose }: { onClose: () => void
           </div>
         )}
 
-        {/* Project list */}
-        {isLoading && (
-          <p className="text-sm text-muted-foreground">Loading projects...</p>
-        )}
+        {!showAddForm && !editingProject && (<>
+          {/* Project list */}
+          {isLoading && (
+            <p className="text-sm text-muted-foreground">Loading projects...</p>
+          )}
 
-        {projectsList && projectsList.length === 0 && !showAddForm && (
-          <div className="text-center py-12 text-muted-foreground">
-            <p className="text-sm">No projects configured yet.</p>
-            <Button
-              variant="link"
-              onClick={() => setShowAddForm(true)}
-              className="mt-2"
-            >
-              Add your first project
-            </Button>
-          </div>
-        )}
+          {projectsList && projectsList.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <p className="text-sm">No projects configured yet.</p>
+              <Button
+                variant="link"
+                onClick={() => setShowAddForm(true)}
+                className="mt-2"
+              >
+                Add your first project
+              </Button>
+            </div>
+          )}
 
-        {projectsList && projectsList.length > 0 && (
-          <Card>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Project</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {projectsList.map((project) => (
-                    <TableRow key={project.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2 min-w-0">
-                          {project.color && (
-                            <span
-                              className="w-3 h-3 rounded-full shrink-0"
-                              style={{ backgroundColor: `var(--${project.color})` }}
-                            />
-                          )}
-                          <div className="min-w-0">
-                            <span className="font-medium text-sm">{project.name}</span>
-                            <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => {
-                              setShowAddForm(false);
-                              setEditingProject(project as Project);
-                            }}
-                          >
-                            <Pencil />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => handleDelete(project.id)}
-                            disabled={deleteMutation.isPending}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 />
-                          </Button>
-                        </div>
-                      </TableCell>
+          {projectsList && projectsList.length > 0 && (
+            <Card>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
+                  </TableHeader>
+                  <TableBody>
+                    {projectsList.map((project) => (
+                      <TableRow key={project.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {project.color && (
+                              <span
+                                className="w-3 h-3 rounded-full shrink-0"
+                                style={{ backgroundColor: `var(--${project.color})` }}
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <span className="font-medium text-sm">{project.name}</span>
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => {
+                                setShowAddForm(false);
+                                setEditingProject(project as Project);
+                              }}
+                            >
+                              <Pencil />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => handleDelete(project.id)}
+                              disabled={deleteMutation.isPending}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
 
-        {/* Cache management */}
-        <div className="mt-6">
-          <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
-          <CacheSection />
-        </div>
+          {/* Cache management */}
+          <div className="mt-6">
+            <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
+            <CacheSection />
+          </div>
+        </>)}
       </div>
     </div>
   );

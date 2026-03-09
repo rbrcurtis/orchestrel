@@ -11,3 +11,4 @@ build/
 .react-router/
 data/
 .playwright-mcp/*
+.private-journal/*

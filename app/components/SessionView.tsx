@@ -54,7 +54,7 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
   });
 
   // Load historical session messages when not actively streaming
-  const { data: historyData } = useQuery(
+  const { data: historyData, isLoading: historyLoading } = useQuery(
     trpc.sessions.loadSession.queryOptions(
       { sessionId: sessionId! },
       { enabled: !!sessionId },
@@ -305,6 +305,14 @@ export function SessionView({ cardId, sessionId, accentColor }: Props) {
             <div ref={bottomRef} />
           </div>
         </div>
+        {historyLoading && messages.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <svg className="size-6 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </div>
+        )}
         {showScrollBtn && (
           <button
             type="button"
@@ -571,7 +579,7 @@ function PromptInput({
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
             maxLength={10000}
             rows={3}
-            className="resize-none min-h-[106px] sm:min-h-0 pr-10"
+            className="resize-none min-h-full pr-10"
           />
           {/* Paperclip button - bottom right inside textarea */}
           {(isRunning || hasSession) && (

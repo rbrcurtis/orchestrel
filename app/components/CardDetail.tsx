@@ -356,7 +356,7 @@ type NewCardProps = {
 export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const titleRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
 
@@ -369,7 +369,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
   });
 
   useEffect(() => {
-    titleRef.current?.focus();
+    descRef.current?.focus();
   }, []);
 
   const generateTitleMutation = useMutation(
@@ -427,7 +427,6 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
           <Input
-            ref={titleRef}
             value={draft.title}
             onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
             placeholder={generateTitleMutation.isPending ? 'Generating title...' : 'Card title'}
@@ -438,6 +437,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
           <Textarea
+            ref={descRef}
             value={draft.description}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
             onBlur={() => {
