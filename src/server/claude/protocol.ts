@@ -75,6 +75,9 @@ export class ClaudeSession extends EventEmitter {
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       settingSources: ['project', 'user', 'local'],
       includePartialMessages: false,
+      model: 'claude-sonnet-4-6',
+      thinking: { type: 'adaptive' },
+      effort: 'high',
     };
 
     if (resumeId) {
