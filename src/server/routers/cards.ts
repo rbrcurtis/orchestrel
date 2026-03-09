@@ -33,29 +33,41 @@ export const cardsRouter = router({
 
       const extra: Partial<InferInsertModel<typeof cards>> = {};
 
-      // Set up working directory when creating directly into in_progress
-      if (col === 'in_progress' && input.projectId) {
+      // Fetch project for defaults and worktree setup
+      let project: typeof projects.$inferSelect | undefined;
+      if (input.projectId) {
         try {
-          const [project] = await ctx.db.select().from(projects).where(eq(projects.id, input.projectId));
-          if (project) {
-            if (!input.useWorktree) {
-              extra.worktreePath = project.path;
-            } else {
-              const slug = slugify(input.title);
-              const wtPath = `${project.path}/.worktrees/${slug}`;
-              const branch = slug;
-              const source = input.sourceBranch ?? project.defaultBranch ?? undefined;
+          const [proj] = await ctx.db.select().from(projects).where(eq(projects.id, input.projectId));
+          if (proj) {
+            project = proj;
+            extra.model = proj.defaultModel;
+            extra.thinkingLevel = proj.defaultThinkingLevel;
+          }
+        } catch (err) {
+          console.error(`Failed to fetch project for card:`, err);
+        }
+      }
 
-              if (!worktreeExists(wtPath)) {
-                createWorktree(project.path, wtPath, branch, source);
-                if (project.setupCommands) {
-                  runSetupCommands(wtPath, project.setupCommands);
-                }
+      // Set up working directory when creating directly into in_progress
+      if (col === 'in_progress' && project) {
+        try {
+          if (!input.useWorktree) {
+            extra.worktreePath = project.path;
+          } else {
+            const slug = slugify(input.title);
+            const wtPath = `${project.path}/.worktrees/${slug}`;
+            const branch = slug;
+            const source = input.sourceBranch ?? project.defaultBranch ?? undefined;
+
+            if (!worktreeExists(wtPath)) {
+              createWorktree(project.path, wtPath, branch, source);
+              if (project.setupCommands) {
+                runSetupCommands(wtPath, project.setupCommands);
               }
-
-              extra.worktreePath = wtPath;
-              extra.worktreeBranch = branch;
             }
+
+            extra.worktreePath = wtPath;
+            extra.worktreeBranch = branch;
           }
         } catch (err) {
           console.error(`Failed to set up working directory for new card:`, err);
@@ -77,6 +89,8 @@ export const cardsRouter = router({
       prUrl: z.string().nullable().optional(),
       useWorktree: z.boolean().optional(),
       sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
+      model: z.enum(['sonnet', 'opus']).optional(),
+      thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;

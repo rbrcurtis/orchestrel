@@ -19,6 +19,8 @@ export const projectsRouter = router({
       defaultBranch: z.enum(['main', 'dev']).optional(),
       defaultWorktree: z.boolean().optional(),
       color: z.string().optional(),
+      defaultModel: z.enum(['sonnet', 'opus']).optional().default('sonnet'),
+      defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional().default('high'),
     }))
     .mutation(async ({ ctx, input }) => {
       const isGitRepo = existsSync(join(input.path, '.git'));
@@ -46,6 +48,8 @@ export const projectsRouter = router({
       defaultBranch: z.enum(['main', 'dev']).nullable().optional(),
       defaultWorktree: z.boolean().optional(),
       color: z.string().optional(),
+      defaultModel: z.enum(['sonnet', 'opus']).optional(),
+      defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
