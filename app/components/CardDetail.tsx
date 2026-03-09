@@ -11,6 +11,7 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
+import { cn } from '~/lib/utils';
 
 type Props = {
   cardId: number;
@@ -178,11 +179,13 @@ export function CardDetail({ cardId, onClose }: Props) {
       {/* Header bar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
         <Select value={col} onValueChange={handleStatusChange}>
-          <SelectTrigger className="w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0">
-            <Badge variant="outline" className="uppercase text-xs tracking-wide">
-              <SelectValue />
-            </Badge>
-          </SelectTrigger>
+          <div className={col === 'in_progress' ? 'cursor-not-allowed' : ''}>
+            <SelectTrigger className={cn('w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0', col === 'in_progress' && 'pointer-events-none')}>
+              <Badge variant="outline" className="uppercase text-xs tracking-wide">
+                <SelectValue />
+              </Badge>
+            </SelectTrigger>
+          </div>
           <SelectContent>
             {STATUSES.map((s) => (
               <SelectItem key={s} value={s}>
@@ -360,6 +363,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
 
   const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
 
+  const [selectedColumn, setSelectedColumn] = useState(column);
   const [draft, setDraft] = useState<Draft>({
     title: '',
     description: '',
@@ -388,7 +392,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     trpc.cards.create.mutationOptions({
       onSuccess: (card) => {
         queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        if (column === 'in_progress' && draft.projectId && draft.description.trim()) {
+        if (selectedColumn === 'in_progress' && draft.projectId && draft.description.trim()) {
           startClaudeMutation.mutate({ cardId: card.id, prompt: draft.description.trim() });
           onCreated(card.id);
         } else {
@@ -403,7 +407,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     createMutation.mutate({
       title: draft.title,
       description: draft.description || undefined,
-      column,
+      column: selectedColumn,
       projectId: draft.projectId,
       useWorktree: draft.useWorktree,
       sourceBranch: draft.sourceBranch,
@@ -415,9 +419,16 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <Badge variant="outline" className="uppercase text-xs tracking-wide">
-          {statusLabels[column] ?? column}
-        </Badge>
+        <Select value={selectedColumn} onValueChange={setSelectedColumn}>
+          <SelectTrigger size="sm" className="w-auto gap-1.5 border-border text-xs font-medium uppercase tracking-wide">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(statusLabels).filter(([k]) => k !== 'archive').map(([k, label]) => (
+              <SelectItem key={k} value={k} className="text-xs uppercase tracking-wide">{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}>
           <X className="size-4" />
         </Button>
