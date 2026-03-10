@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { observer } from 'mobx-react-lite';
 import { useOutletContext } from 'react-router';
-import { Loader2 } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -16,10 +16,10 @@ import {
   type UniqueIdentifier,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
-import { useTRPC } from '~/lib/trpc';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCardStore, useProjectStore } from '~/stores/context';
 import { StatusRow } from '~/components/StatusRow';
 import { CardOverlay } from '~/components/Card';
+import type { Card } from '../../src/shared/ws-protocol';
 
 type BoardContext = {
   search: string;
@@ -28,21 +28,7 @@ type BoardContext = {
   startNewCard: (column: string) => void;
 };
 
-interface CardItem {
-  id: number;
-  title: string;
-  description: string | null;
-  column: string;
-  position: number;
-  projectId: number | null;
-  prUrl: string | null;
-  sessionId: string | null;
-  worktreePath: string | null;
-  worktreeBranch: string | null;
-  promptsSent: number;
-  turnsCompleted: number;
-  createdAt: string;
-  updatedAt: string;
+interface CardItem extends Card {
   color?: string | null;
 }
 
@@ -53,52 +39,33 @@ function calcPosition(items: { position: number }[], targetIndex: number): numbe
   return (items[targetIndex - 1].position + items[targetIndex].position) / 2;
 }
 
-export default function BacklogBoard() {
+const BacklogBoard = observer(function BacklogBoard() {
   const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-
-  const { data: serverCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
-  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
+  const cardStore = useCardStore();
+  const projectStore = useProjectStore();
 
   const colorMap = useMemo(() => {
-    if (!projectsList) return {};
     const map: Record<number, string> = {};
-    for (const p of projectsList) {
+    for (const p of projectStore.all) {
       if (p.color) map[p.id] = p.color;
     }
     return map;
-  }, [projectsList]);
+  }, [projectStore.all]);
 
-  const moveMutation = useMutation(
-    trpc.cards.move.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-      },
-    })
-  );
+  // Read backlog cards from store (reactive)
+  const storeCards = useMemo((): CardItem[] => {
+    return cardStore.cardsByColumn('backlog').map(c => ({
+      ...c,
+      color: c.projectId ? colorMap[c.projectId] ?? null : null,
+    }));
+  }, [cardStore.cards, colorMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const backlogCards = useMemo(() => {
-    if (!serverCards) return [];
-    return serverCards
-      .filter((c) => c.column === 'backlog')
-      .map(c => ({ ...c, color: c.projectId ? colorMap[c.projectId] ?? null : null }))
-      .sort((a, b) => a.position - b.position);
-  }, [serverCards, colorMap]);
-
-  const [cards, setCards] = useState<CardItem[]>(backlogCards);
+  // Local override during drag only
+  const [dragOverride, setDragOverride] = useState<CardItem[] | null>(null);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [mounted] = useState(true);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!activeId && !moveMutation.isPending) {
-      setCards(backlogCards);
-    }
-  }, [backlogCards, activeId, moveMutation.isPending]);
+  const cards = dragOverride ?? storeCards;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -107,6 +74,7 @@ export default function BacklogBoard() {
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(e.active.id);
+    setDragOverride([...storeCards]);
   }
 
   function handleDragEnd(e: DragEndEvent) {
@@ -114,6 +82,7 @@ export default function BacklogBoard() {
 
     if (!over) {
       setActiveId(null);
+      setDragOverride(null);
       return;
     }
 
@@ -122,20 +91,23 @@ export default function BacklogBoard() {
 
     if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
       const reordered = arrayMove(cards, oldIdx, newIdx);
-      setCards(reordered);
+      setDragOverride(reordered);
 
       const others = reordered.filter((c) => c.id !== active.id);
       const finalIdx = reordered.findIndex((c) => c.id === active.id);
       const pos = calcPosition(others, finalIdx);
 
-      moveMutation.mutate({ id: active.id as number, column: 'backlog', position: pos });
+      cardStore.moveCard({ id: active.id as number, column: 'backlog', position: pos })
+        .finally(() => setDragOverride(null));
+    } else {
+      setDragOverride(null);
     }
 
     setActiveId(null);
   }
 
   function handleDragCancel() {
-    setCards(backlogCards);
+    setDragOverride(null);
     setActiveId(null);
   }
 
@@ -153,14 +125,6 @@ export default function BacklogBoard() {
     if (!activeId) return null;
     return cards.find((c) => c.id === activeId) ?? null;
   }, [activeId, cards]);
-
-  if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   return (
     <DndContext
@@ -189,4 +153,6 @@ export default function BacklogBoard() {
       )}
     </DndContext>
   );
-}
+});
+
+export default BacklogBoard;

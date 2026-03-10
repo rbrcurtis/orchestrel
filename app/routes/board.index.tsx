@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { observer } from 'mobx-react-lite';
 import { useOutletContext } from 'react-router';
-import { Loader2 } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -21,10 +21,10 @@ import {
   type UniqueIdentifier,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
-import { useTRPC } from '~/lib/trpc';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCardStore, useProjectStore, useSessionStore } from '~/stores/context';
 import { StatusRow, ALL_COLUMNS, type ColumnId } from '~/components/StatusRow';
 import { CardOverlay } from '~/components/Card';
+import type { Card } from '../../src/shared/ws-protocol';
 
 type BoardContext = {
   search: string;
@@ -55,25 +55,6 @@ interface CardItem {
 
 type ColumnCards = Record<ColumnId, CardItem[]>;
 
-function groupByColumn(items: CardItem[]): ColumnCards {
-  const groups: ColumnCards = {
-    backlog: [],
-    ready: [],
-    in_progress: [],
-    review: [],
-    done: [],
-    archive: [],
-  };
-  for (const card of items) {
-    const col = card.column as ColumnId;
-    if (groups[col]) groups[col].push(card);
-  }
-  for (const col of ALL_COLUMNS) {
-    groups[col].sort((a, b) => a.position - b.position);
-  }
-  return groups;
-}
-
 function calcPosition(items: { position: number }[], targetIndex: number): number {
   if (items.length === 0) return 1;
   if (targetIndex === 0) return items[0].position - 1;
@@ -81,77 +62,60 @@ function calcPosition(items: { position: number }[], targetIndex: number): numbe
   return (items[targetIndex - 1].position + items[targetIndex].position) / 2;
 }
 
-function findColumn(columns: ColumnCards, id: UniqueIdentifier): ColumnId | null {
+function findColumnInData(data: ColumnCards, id: UniqueIdentifier): ColumnId | null {
   if (ACTIVE_COLUMNS.includes(id as ColumnId)) return id as ColumnId;
   for (const col of ACTIVE_COLUMNS) {
-    if (columns[col].some((c) => c.id === id)) return col;
+    if (data[col].some((c) => c.id === id)) return col;
   }
   return null;
 }
 
-export default function ActiveBoard() {
-  const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
+function enrichCard(card: Card, colorMap: Record<number, string>): CardItem {
+  return {
+    ...card,
+    color: card.projectId ? colorMap[card.projectId] ?? null : null,
+  };
+}
 
-  const { data: serverCards, isLoading, isFetching } = useQuery(trpc.cards.list.queryOptions());
-  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
+const ActiveBoard = observer(function ActiveBoard() {
+  const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
+  const cardStore = useCardStore();
+  const projectStore = useProjectStore();
+  const sessionStore = useSessionStore();
 
   // Build color map from projects
   const colorMap = useMemo(() => {
-    if (!projectsList) return {};
     const map: Record<number, string> = {};
-    for (const p of projectsList) {
+    for (const p of projectStore.all) {
       if (p.color) map[p.id] = p.color;
     }
     return map;
-  }, [projectsList]);
+  }, [projectStore.all]);
 
-  // Enrich cards with project color
-  const enrichedCards = useMemo(() => {
-    if (!serverCards) return [];
-    return serverCards.map(c => ({
-      ...c,
-      color: c.projectId ? colorMap[c.projectId] ?? null : null,
-    }));
-  }, [serverCards, colorMap]);
+  // Read store cards per column (MobX reactive)
+  const storeColumns = useMemo((): ColumnCards => {
+    const result = {
+      backlog: [],
+      ready: [],
+      in_progress: [],
+      review: [],
+      done: [],
+      archive: [],
+    } as ColumnCards;
+    for (const col of ACTIVE_COLUMNS) {
+      result[col] = cardStore.cardsByColumn(col).map(c => enrichCard(c, colorMap));
+    }
+    return result;
+  }, [cardStore.cards, colorMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const startClaudeMutation = useMutation(
-    trpc.claude.start.mutationOptions({})
-  );
-
-  const pendingClaudeStart = useRef<{ cardId: number; prompt: string } | null>(null);
-
-  const moveMutation = useMutation(
-    trpc.cards.move.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        if (pendingClaudeStart.current) {
-          startClaudeMutation.mutate(pendingClaudeStart.current);
-          pendingClaudeStart.current = null;
-        }
-      },
-    })
-  );
-
-
-  const [columns, setColumns] = useState<ColumnCards>(() =>
-    groupByColumn(enrichedCards)
-  );
+  // During drag: local override; after drag ends: null → use storeColumns
+  const [dragOverride, setDragOverride] = useState<ColumnCards | null>(null);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const snapshotRef = useRef<ColumnCards | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [mounted] = useState(true);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Sync server data into local state when not dragging and no mutation/refetch in flight
-  useEffect(() => {
-    if (enrichedCards.length > 0 && !activeId && !moveMutation.isPending && !isFetching) {
-      setColumns(groupByColumn(enrichedCards));
-    }
-  }, [enrichedCards, activeId, moveMutation.isPending, isFetching]);
+  // Active columns data: override during drag, store otherwise
+  const columns = dragOverride ?? storeColumns;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -202,40 +166,45 @@ export default function ActiveBoard() {
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(e.active.id);
-    snapshotRef.current = { ...columns };
+    // Snapshot the store columns at drag start
+    const snap: ColumnCards = { ...storeColumns };
     for (const col of ACTIVE_COLUMNS) {
-      snapshotRef.current[col] = [...columns[col]];
+      snap[col] = [...storeColumns[col]];
     }
+    snapshotRef.current = snap;
+    setDragOverride(snap);
   }
 
   function handleDragOver(e: DragOverEvent) {
     const { active, over } = e;
     if (!over) return;
 
-    const activeCol = snapshotRef.current ? findColumn(snapshotRef.current, active.id) : findColumn(columns, active.id);
+    const activeCol = snapshotRef.current
+      ? findColumnInData(snapshotRef.current, active.id)
+      : findColumnInData(columns, active.id);
     if (activeCol === 'in_progress') return;
 
-    const overCol = findColumn(columns, over.id);
-    const currentCol = findColumn(columns, active.id);
+    const overCol = findColumnInData(columns, over.id);
+    const currentCol = findColumnInData(columns, active.id);
 
     if (!currentCol || !overCol || currentCol === overCol) return;
 
-    setColumns((prev) => {
-      const sourceCards = [...prev[currentCol]];
-      const destCards = [...prev[overCol]];
+    setDragOverride((prev) => {
+      const cur = prev ?? storeColumns;
+      const sourceCards = [...cur[currentCol]];
+      const destCards = [...cur[overCol]];
 
       const activeIdx = sourceCards.findIndex((c) => c.id === active.id);
       if (activeIdx === -1) return prev;
 
       const [moved] = sourceCards.splice(activeIdx, 1);
 
-      // Find insertion index in destination
       const overIdx = destCards.findIndex((c) => c.id === over.id);
       const insertIdx = overIdx === -1 ? destCards.length : overIdx;
 
       destCards.splice(insertIdx, 0, { ...moved, column: overCol });
 
-      return { ...prev, [currentCol]: sourceCards, [overCol]: destCards };
+      return { ...cur, [currentCol]: sourceCards, [overCol]: destCards };
     });
   }
 
@@ -244,24 +213,26 @@ export default function ActiveBoard() {
 
     if (!over) {
       setActiveId(null);
+      setDragOverride(null);
       snapshotRef.current = null;
       return;
     }
 
-    const currentCol = findColumn(columns, active.id);
+    const currentCol = findColumnInData(columns, active.id);
     const originalCol = snapshotRef.current
-      ? findColumn(snapshotRef.current, active.id)
+      ? findColumnInData(snapshotRef.current, active.id)
       : currentCol;
 
     if (!currentCol || !originalCol) {
       setActiveId(null);
+      setDragOverride(null);
       snapshotRef.current = null;
       return;
     }
 
     // Snap back in_progress cards — session is running, moves not allowed
     if (originalCol === 'in_progress') {
-      if (snapshotRef.current) setColumns(snapshotRef.current);
+      setDragOverride(null);
       setActiveId(null);
       snapshotRef.current = null;
       return;
@@ -275,13 +246,16 @@ export default function ActiveBoard() {
 
       if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
         const reordered = arrayMove(colCards, oldIdx, newIdx);
-        setColumns((prev) => ({ ...prev, [currentCol]: reordered }));
+        setDragOverride((prev) => ({ ...(prev ?? storeColumns), [currentCol]: reordered }));
 
         const others = reordered.filter((c) => c.id !== active.id);
         const finalIdx = reordered.findIndex((c) => c.id === active.id);
         const pos = calcPosition(others, finalIdx);
 
-        moveMutation.mutate({ id: active.id as number, column: currentCol, position: pos });
+        cardStore.moveCard({ id: active.id as number, column: currentCol, position: pos })
+          .finally(() => setDragOverride(null));
+      } else {
+        setDragOverride(null);
       }
     } else {
       // Cross-column move — handleDragOver already moved it visually, persist it
@@ -289,15 +263,18 @@ export default function ActiveBoard() {
       const insertIdx = columns[currentCol].findIndex((c) => c.id === active.id);
       const pos = calcPosition(destCards, insertIdx === -1 ? destCards.length : insertIdx);
 
-      moveMutation.mutate({ id: active.id as number, column: currentCol, position: pos });
+      const movePromise = cardStore.moveCard({ id: active.id as number, column: currentCol, position: pos });
 
-      // Auto-start Claude when dragging to in_progress (after move completes)
+      // Auto-start Claude when dragging to in_progress
       if (currentCol === 'in_progress') {
         const card = columns[currentCol].find((c) => c.id === active.id);
         if (card && card.projectId && card.description?.trim() && !card.sessionId) {
-          pendingClaudeStart.current = { cardId: card.id, prompt: card.description.trim() };
+          const { cardId, prompt } = { cardId: card.id, prompt: card.description.trim() };
+          movePromise.then(() => sessionStore.startSession(cardId, prompt)).catch(() => {});
         }
       }
+
+      movePromise.finally(() => setDragOverride(null));
     }
 
     setActiveId(null);
@@ -305,9 +282,7 @@ export default function ActiveBoard() {
   }
 
   function handleDragCancel() {
-    if (snapshotRef.current) {
-      setColumns(snapshotRef.current);
-    }
+    setDragOverride(null);
     setActiveId(null);
     snapshotRef.current = null;
   }
@@ -334,14 +309,6 @@ export default function ActiveBoard() {
     }
     return null;
   }, [activeId, columns]);
-
-  if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   return (
     <DndContext
@@ -374,4 +341,6 @@ export default function ActiveBoard() {
       )}
     </DndContext>
   );
-}
+});
+
+export default ActiveBoard;
