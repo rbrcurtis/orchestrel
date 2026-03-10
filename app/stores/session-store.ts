@@ -1,4 +1,4 @@
-import { makeAutoObservable, observable } from 'mobx'
+import { makeAutoObservable, observable, runInAction } from 'mobx'
 import type { ClaudeMessage, ClaudeStatus, FileRef } from '../../src/shared/ws-protocol'
 import type { WsClient } from '../lib/ws-client'
 import { uuid } from '../lib/utils'
@@ -76,35 +76,37 @@ export class SessionStore {
    * Hashes content for dedup — if already in conversation, skips silently.
    */
   ingest(cardId: number, msg: ClaudeMessage): void {
-    const s = this.getOrCreate(cardId)
-    const id = contentHashSync(msg.type, msg.message)
+    runInAction(() => {
+      const s = this.getOrCreate(cardId)
+      const id = contentHashSync(msg.type, msg.message)
 
-    if (s.conversationIds.has(id)) return // dedup
+      if (s.conversationIds.has(id)) return // dedup
 
-    const row: ConversationRow = {
-      id,
-      type: msg.type as ConversationRow['type'],
-      message: msg.message,
-      ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain }),
-      ...(msg.ts !== undefined && { ts: msg.ts }),
-    }
+      const row: ConversationRow = {
+        id,
+        type: msg.type as ConversationRow['type'],
+        message: msg.message,
+        ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain }),
+        ...(msg.ts !== undefined && { ts: msg.ts }),
+      }
 
-    s.conversation.push(row)
-    s.conversationIds.add(id)
+      s.conversation.push(row)
+      s.conversationIds.add(id)
 
-    // Extract context token usage from result messages
-    if (msg.type === 'result') {
-      const m = msg.message
-      if (typeof m.usage === 'object' && m.usage !== null) {
-        const usage = m.usage as Record<string, unknown>
-        if (typeof usage.input_tokens === 'number') {
-          s.contextTokens = usage.input_tokens
+      // Extract context token usage from result messages
+      if (msg.type === 'result') {
+        const m = msg.message
+        if (typeof m.usage === 'object' && m.usage !== null) {
+          const usage = m.usage as Record<string, unknown>
+          if (typeof usage.input_tokens === 'number') {
+            s.contextTokens = usage.input_tokens
+          }
+        }
+        if (typeof m.context_window === 'number') {
+          s.contextWindow = m.context_window
         }
       }
-      if (typeof m.context_window === 'number') {
-        s.contextWindow = m.context_window
-      }
-    }
+    })
   }
 
   /**
@@ -113,34 +115,34 @@ export class SessionStore {
    * Only runs once per card (guards with historyLoaded flag).
    */
   ingestBatch(cardId: number, messages: ClaudeMessage[]): void {
-    const s = this.getOrCreate(cardId)
+    runInAction(() => {
+      const s = this.getOrCreate(cardId)
 
-    // Skip if history was already loaded and session is actively running
-    // (live messages are already in conversation, don't re-prepend stale history)
-    if (s.historyLoaded && (s.status === 'running' || s.status === 'starting')) return
+      if (s.historyLoaded) return
 
-    const newRows: ConversationRow[] = []
+      const newRows: ConversationRow[] = []
 
-    for (const msg of messages) {
-      const id = contentHashSync(msg.type, msg.message)
-      if (s.conversationIds.has(id)) continue
+      for (const msg of messages) {
+        const id = contentHashSync(msg.type, msg.message)
+        if (s.conversationIds.has(id)) continue
 
-      newRows.push({
-        id,
-        type: msg.type as ConversationRow['type'],
-        message: msg.message,
-        ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain }),
-        ...(msg.ts !== undefined && { ts: msg.ts }),
-      })
-      s.conversationIds.add(id)
-    }
+        newRows.push({
+          id,
+          type: msg.type as ConversationRow['type'],
+          message: msg.message,
+          ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain }),
+          ...(msg.ts !== undefined && { ts: msg.ts }),
+        })
+        s.conversationIds.add(id)
+      }
 
-    if (newRows.length > 0) {
-      // Prepend history before any live messages
-      s.conversation.unshift(...newRows)
-    }
+      if (newRows.length > 0) {
+        // Prepend history before any live messages
+        s.conversation.unshift(...newRows)
+      }
 
-    s.historyLoaded = true
+      s.historyLoaded = true
+    })
   }
 
   /**
@@ -149,21 +151,22 @@ export class SessionStore {
   clearConversation(cardId: number): void {
     const s = this.sessions.get(cardId)
     if (!s) return
-    s.conversation = []
-    s.conversationIds = new Set()
+    s.conversation.splice(0)
+    s.conversationIds.clear()
     s.historyLoaded = false
     s.contextTokens = 0
     s.contextWindow = 200_000
   }
 
   handleClaudeStatus(data: ClaudeStatus) {
-    const s = this.getOrCreate(data.cardId)
-    s.active = data.active
-    s.status = data.status
-    s.sessionId = data.sessionId
-    s.promptsSent = data.promptsSent
-    s.turnsCompleted = data.turnsCompleted
-    // No liveMessages clearing needed — conversation array is append-only
+    runInAction(() => {
+      const s = this.getOrCreate(data.cardId)
+      s.active = data.active
+      s.status = data.status
+      s.sessionId = data.sessionId
+      s.promptsSent = data.promptsSent
+      s.turnsCompleted = data.turnsCompleted
+    })
   }
 
   // ── Mutations ───────────────────────────────────────────────────────────────

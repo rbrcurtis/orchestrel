@@ -87,35 +87,34 @@ export const SessionView = observer(function SessionView({
     }
   }, [sessionStatus]);
 
-  // Auto-scroll on new messages
-  useEffect(() => {
-    if (conversation.length === 0) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Scroll to bottom on initial history load
+  // Handle scroll + compaction on conversation changes
   const prevConvLen = useRef(0);
   useEffect(() => {
-    if (prevConvLen.current === 0 && conversation.length > 0) {
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
-    }
-    prevConvLen.current = conversation.length;
-  }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    const len = conversation.length;
+    if (len === 0) { prevConvLen.current = 0; return; }
 
-  // Compaction detection
-  useEffect(() => {
-    if (conversation.length === 0) return;
-    const last = conversation[conversation.length - 1];
+    // Initial history load: instant scroll to bottom
+    if (prevConvLen.current === 0 && len > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    } else {
+      // New messages: smooth scroll if near bottom
+      const el = scrollRef.current;
+      if (el) {
+        const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        if (nearBottom) {
+          bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    }
+
+    // Compaction detection
+    const last = conversation[len - 1];
     if (last.type === 'system' && (last.message as Record<string, unknown>).subtype === 'compact_boundary') {
       setCompacted(true);
-      const t = setTimeout(() => setCompacted(false), 600);
-      return () => clearTimeout(t);
+      setTimeout(() => setCompacted(false), 600);
     }
+
+    prevConvLen.current = len;
   }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show/hide scroll-to-bottom button based on scroll position
