@@ -50,6 +50,7 @@ export const SessionView = observer(function SessionView({
   const [isStarting, setIsStarting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const prevConvLen = useRef(0);
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
@@ -73,6 +74,7 @@ export const SessionView = observer(function SessionView({
     setStartError(null);
     setIsStarting(false);
     setCompacted(false);
+    prevConvLen.current = 0; // ensure scroll-to-bottom fires for the new card
   }, [cardId]);
 
   // Clear isStarting on status transition
@@ -87,22 +89,21 @@ export const SessionView = observer(function SessionView({
     }
   }, [sessionStatus]);
 
-  // Handle scroll + compaction on conversation changes
-  const prevConvLen = useRef(0);
+  // Scroll to bottom when conversation changes
   useEffect(() => {
     const len = conversation.length;
     if (len === 0) { prevConvLen.current = 0; return; }
 
-    // Initial history load: instant scroll to bottom
-    if (prevConvLen.current === 0 && len > 0) {
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    if (prevConvLen.current === 0) {
+      // Initial load / card switch: defer to next frame so DOM has rendered
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'instant' }), 0);
     } else {
       // New messages: smooth scroll if near bottom
       const el = scrollRef.current;
       if (el) {
         const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
         if (nearBottom) {
-          bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
         }
       }
     }
