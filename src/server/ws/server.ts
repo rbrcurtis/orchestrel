@@ -1,10 +1,12 @@
 import { WebSocketServer } from 'ws'
 import type { Server as HttpServer } from 'http'
 import type { Plugin } from 'vite'
+import { getRequestListener } from '@hono/node-server'
 import { ConnectionManager } from './connections'
 import { DbMutator } from '../db/mutator'
 import { validateCfAccess } from './auth'
 import { handleMessage } from './handlers'
+import { createRestApi } from '../api/rest'
 
 export const connections = new ConnectionManager()
 export const mutator = new DbMutator(connections)
@@ -59,6 +61,17 @@ export function wsServerPlugin(): Plugin {
         createWsServer(server.httpServer)
         console.log('[ws] WebSocket server attached to Vite dev server')
       }
+
+      const restApp = createRestApi(mutator)
+      const restHandler = getRequestListener(restApp.fetch)
+
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.startsWith('/api/cards')) {
+          restHandler(req, res)
+        } else {
+          next()
+        }
+      })
     },
   }
 }
