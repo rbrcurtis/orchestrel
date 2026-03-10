@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { observer } from 'mobx-react-lite';
 import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Settings, Palette } from 'lucide-react';
 import { Button } from '~/components/ui/button';
@@ -8,8 +9,7 @@ import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import IconsModal from '~/routes/icons';
 import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
-import { useTRPC } from '~/lib/trpc';
-import { useQuery } from '@tanstack/react-query';
+import { useStore, useCardStore, useProjectStore } from '~/stores/context';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -28,7 +28,7 @@ function useIsDesktop() {
   return isDesktop;
 }
 
-export default function BoardLayout() {
+const BoardLayout = observer(function BoardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -37,18 +37,22 @@ export default function BoardLayout() {
   const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
   const isDesktop = useIsDesktop();
 
-  const trpc = useTRPC();
-  const { data: allCards } = useQuery(trpc.cards.list.queryOptions());
-  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
+  const store = useStore();
+  const cardStore = useCardStore();
+  const projectStore = useProjectStore();
+
+  useEffect(() => {
+    store.subscribe(['backlog', 'ready', 'in_progress', 'review', 'done']);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedCardId = searchParams.get('card') ? Number(searchParams.get('card')) : null;
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<'icons' | 'settings' | null>(null);
 
   // Derive divider color from selected card's project
-  const selectedCard = allCards?.find(c => c.id === selectedCardId);
+  const selectedCard = selectedCardId ? cardStore.getCard(selectedCardId) : undefined;
   const selectedProject = selectedCard?.projectId
-    ? projectsList?.find(p => p.id === selectedCard.projectId)
+    ? projectStore.getProject(selectedCard.projectId)
     : null;
   const dividerColor = selectedCardId ? (selectedProject?.color ?? null) : null;
   const panelActive = !!(selectedCardId || newCardColumn);
@@ -182,4 +186,6 @@ export default function BoardLayout() {
       {activeModal === 'settings' && <SettingsProjectsModal onClose={() => setActiveModal(null)} />}
     </div>
   );
-}
+});
+
+export default BoardLayout;

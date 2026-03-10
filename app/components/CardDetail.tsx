@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { observer } from 'mobx-react-lite';
 import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch } from 'lucide-react';
-import { useTRPC } from '~/lib/trpc';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCardStore, useProjectStore } from '~/stores/context';
 import { SessionView } from './SessionView';
 import { InlineEdit } from './InlineEdit';
 import { Input } from '~/components/ui/input';
@@ -12,6 +12,7 @@ import { Button } from '~/components/ui/button';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import { cn } from '~/lib/utils';
+import type { Column } from '../../src/shared/ws-protocol';
 
 type Props = {
   cardId: number;
@@ -38,14 +39,11 @@ type Draft = {
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
-export function CardDetail({ cardId, onClose }: Props) {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
+export const CardDetail = observer(function CardDetail({ cardId, onClose }: Props) {
+  const cardStore = useCardStore();
+  const projectStore = useProjectStore();
 
-  const { data: allCards, isPending } = useQuery(trpc.cards.list.queryOptions());
-  const card = allCards?.find((c) => c.id === cardId);
-
-  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
+  const card = cardStore.getCard(cardId);
 
   const [draft, setDraft] = useState<Draft>({
     title: '',
@@ -99,25 +97,9 @@ export function CardDetail({ cardId, onClose }: Props) {
       draft.thinkingLevel !== card.thinkingLevel
     : false;
 
-  const updateMutation = useMutation(
-    trpc.cards.update.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-      },
-    })
-  );
-
-  const moveMutation = useMutation(
-    trpc.cards.move.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-      },
-    })
-  );
-
-  function saveAll() {
+  async function saveAll() {
     if (!card || !isDirty) return;
-    updateMutation.mutate({
+    await cardStore.updateCard({
       id: card.id,
       title: draft.title,
       description: draft.description,
@@ -129,35 +111,27 @@ export function CardDetail({ cardId, onClose }: Props) {
     });
   }
 
-  function handleStatusChange(newColumn: string) {
+  async function handleStatusChange(newColumn: string) {
     if (!card || newColumn === card.column) return;
-    moveMutation.mutate(
-      { id: card.id, column: newColumn as 'backlog' | 'ready' | 'in_progress' | 'review' | 'done' | 'archive', position: 0 },
-      {
-        onSuccess: () => {
-          if (newColumn === 'done' || newColumn === 'archive') {
-            onClose();
-          }
-        },
-      }
-    );
+    await cardStore.moveCard({ id: card.id, column: newColumn as Column, position: 0 });
+    if (newColumn === 'done' || newColumn === 'archive') {
+      onClose();
+    }
   }
 
   if (!card) {
     return (
       <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        {isPending ? (
-          <svg className="size-6 animate-spin" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        ) : 'Card not found'}
+        <svg className="size-6 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
       </div>
     );
   }
 
-  const selectedProject = projectsList?.find((p) => p.id === draft.projectId);
-  const cardProject = projectsList?.find((p) => p.id === card.projectId);
+  const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
+  const cardProject = card.projectId != null ? projectStore.getProject(card.projectId) : undefined;
   const col = card.column;
   const hasSession = !!card.sessionId || col === 'in_progress';
   const showSession = hasSession;
@@ -167,7 +141,7 @@ export function CardDetail({ cardId, onClose }: Props) {
   const projectLocked = !!card.projectId;
 
   async function saveField(field: 'title' | 'description', val: string) {
-    await updateMutation.mutateAsync({ id: card!.id, [field]: val });
+    await cardStore.updateCard({ id: card!.id, [field]: val });
   }
 
   return (
@@ -276,7 +250,7 @@ export function CardDetail({ cardId, onClose }: Props) {
                   value={draft.projectId != null ? String(draft.projectId) : '__none__'}
                   onValueChange={(val) => {
                     const pid = val === '__none__' ? null : Number(val);
-                    const proj = projectsList?.find(p => p.id === pid);
+                    const proj = pid != null ? projectStore.getProject(pid) : undefined;
                     setDraft((d) => ({
                       ...d,
                       projectId: pid,
@@ -292,7 +266,7 @@ export function CardDetail({ cardId, onClose }: Props) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
-                    {(projectsList ?? []).map((p) => (
+                    {projectStore.all.map((p) => (
                       <SelectItem key={p.id} value={String(p.id)}>
                         <span className="flex items-center gap-2">
                           {p.color && (
@@ -402,7 +376,7 @@ export function CardDetail({ cardId, onClose }: Props) {
       )}
     </div>
   );
-}
+});
 
 type NewCardProps = {
   column: string;
@@ -410,12 +384,10 @@ type NewCardProps = {
   onClose: () => void;
 };
 
-export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
+export const NewCardDetail = observer(function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
+  const cardStore = useCardStore();
+  const projectStore = useProjectStore();
   const descRef = useRef<HTMLTextAreaElement>(null);
-
-  const { data: projectsList } = useQuery(trpc.projects.list.queryOptions());
 
   const [selectedColumn, setSelectedColumn] = useState(column);
   const [draft, setDraft] = useState<Draft>({
@@ -427,47 +399,37 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     model: 'sonnet',
     thinkingLevel: 'high',
   });
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     descRef.current?.focus();
   }, []);
 
-  const generateTitleMutation = useMutation(
-    trpc.cards.generateTitle.mutationOptions({
-      onSuccess: (result) => {
-        setDraft((d) => ({ ...d, title: result.title }));
-      },
-    })
-  );
-
-  const createMutation = useMutation(
-    trpc.cards.create.mutationOptions({
-      onSuccess: (card) => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        if (selectedColumn === 'in_progress' && draft.projectId && draft.description.trim()) {
-          onCreated(card.id);
-        } else {
-          onClose();
-        }
-      },
-    })
-  );
-
-  function handleSave() {
+  async function handleSave() {
     if (!draft.title.trim()) return;
-    createMutation.mutate({
-      title: draft.title,
-      description: draft.description || undefined,
-      column: selectedColumn as 'backlog' | 'ready' | 'in_progress' | 'review' | 'done' | 'archive',
-      projectId: draft.projectId,
-      useWorktree: draft.useWorktree,
-      sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
-      model: draft.model,
-      thinkingLevel: draft.thinkingLevel,
-    });
+    setCreating(true);
+    try {
+      const card = await cardStore.createCard({
+        title: draft.title,
+        description: draft.description || undefined,
+        column: selectedColumn as Column,
+        projectId: draft.projectId,
+        useWorktree: draft.useWorktree,
+        sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
+        model: draft.model,
+        thinkingLevel: draft.thinkingLevel,
+      });
+      if (selectedColumn === 'in_progress' && draft.projectId && draft.description.trim()) {
+        onCreated(card.id);
+      } else {
+        onClose();
+      }
+    } finally {
+      setCreating(false);
+    }
   }
 
-  const selectedProject = projectsList?.find((p) => p.id === draft.projectId);
+  const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
 
   return (
     <div className="flex flex-col h-full">
@@ -493,8 +455,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
           <Input
             value={draft.title}
             onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-            placeholder={generateTitleMutation.isPending ? 'Generating title...' : 'Card title'}
-            disabled={generateTitleMutation.isPending}
+            placeholder="Card title"
           />
         </div>
 
@@ -505,9 +466,9 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
             value={draft.description}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
             onBlur={() => {
-              if (!draft.title.trim() && draft.description.trim()) {
-                generateTitleMutation.mutate({ description: draft.description.trim() });
-              }
+              // Auto-title generation for new cards requires an existing card ID
+              // (server protocol card:generateTitle only accepts {id}).
+              // Title must be entered manually for new cards.
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && e.shiftKey) {
@@ -527,7 +488,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
             value={draft.projectId != null ? String(draft.projectId) : '__none__'}
             onValueChange={(val) => {
               const pid = val === '__none__' ? null : Number(val);
-              const proj = projectsList?.find(p => p.id === pid);
+              const proj = pid != null ? projectStore.getProject(pid) : undefined;
               setDraft((d) => ({
                 ...d,
                 projectId: pid,
@@ -543,7 +504,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__none__">None</SelectItem>
-              {(projectsList ?? []).map((p) => (
+              {projectStore.all.map((p) => (
                 <SelectItem key={p.id} value={String(p.id)}>
                   <span className="flex items-center gap-2">
                     {p.color && (
@@ -630,15 +591,15 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
 
         <Button
           className="w-full"
-          disabled={!draft.title.trim() || generateTitleMutation.isPending || createMutation.isPending}
+          disabled={!draft.title.trim() || creating}
           onClick={handleSave}
         >
-          {createMutation.isPending ? 'Creating...' : 'Save'}
+          {creating ? 'Creating...' : 'Save'}
         </Button>
       </div>
     </div>
   );
-}
+});
 
 function CopyResumeButton({ sessionId }: { sessionId: string }) {
   const [copied, setCopied] = useState(false);

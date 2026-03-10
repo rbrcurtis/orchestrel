@@ -6,10 +6,9 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
-import { QueryClient } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { TRPCProvider, makeTRPCClient } from '~/lib/trpc';
-import { persister } from '~/lib/query-persist';
+import { RootStore } from './stores/root-store';
+import { StoreProvider } from './stores/context';
+import { persistStore } from './lib/store-persist';
 
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -76,21 +75,22 @@ if (import.meta.hot) {
   });
 }
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { gcTime: Infinity } },
-});
-const trpcClient = makeTRPCClient();
+// Module-level singleton (survives HMR)
+let rootStore: RootStore;
+if (!(globalThis as Record<string, unknown>).__rootStore) {
+  rootStore = new RootStore();
+  persistStore(rootStore.cards, 'dispatcher:cards');
+  persistStore(rootStore.projects, 'dispatcher:projects');
+  (globalThis as Record<string, unknown>).__rootStore = rootStore;
+} else {
+  rootStore = (globalThis as Record<string, unknown>).__rootStore as RootStore;
+}
 
 export default function App() {
   return (
-    <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
-      <PersistQueryClientProvider
-        client={queryClient}
-        persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}
-      >
-        <Outlet />
-      </PersistQueryClientProvider>
-    </TRPCProvider>
+    <StoreProvider store={rootStore}>
+      <Outlet />
+    </StoreProvider>
   );
 }
 
