@@ -2,6 +2,7 @@ import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { wsServerPlugin } from "./src/server/ws/server";
 
 function pwaLogPlugin(): Plugin {
   return {
@@ -43,5 +44,5 @@ export default defineConfig(({ isSsrBuild }) => ({
     host: '192.168.4.200',
     allowedHosts: ['dispatch.rbrcurtis.com'],
   },
-  plugins: [pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],
+  plugins: [wsServerPlugin(), pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],
 }));
