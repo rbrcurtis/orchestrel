@@ -13,6 +13,59 @@ import { sessionManager } from '../../claude/manager'
 const LEGACY_SESSIONS_DIR = join(process.cwd(), 'data', 'sessions')
 const ACTIVE_THRESHOLD = 5 * 60_000 // 5 minutes
 
+function injectTurnDividers(parsed: Record<string, unknown>[]): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = []
+  let lastAssistant: Record<string, unknown> | null = null
+  let addedInit = false
+
+  // Get model from first assistant message for the session-started header
+  const firstAssistant = parsed.find(m => m.type === 'assistant')
+  const initModel = (firstAssistant?.message as { model?: string } | undefined)?.model ?? null
+
+  for (const msg of parsed) {
+    // Inject a synthetic system init before the first user message
+    if (msg.type === 'user' && !addedInit && initModel) {
+      result.push({ type: 'system', message: { subtype: 'init', model: initModel } })
+      addedInit = true
+    }
+
+    if (msg.type === 'assistant') {
+      lastAssistant = msg
+      result.push(msg)
+    } else if (msg.type === 'last-prompt') {
+      // Synthesize a result divider using data from the preceding assistant message
+      if (lastAssistant) {
+        const inner = lastAssistant.message as { model?: string; usage?: Record<string, number> } | undefined
+        const model = inner?.model
+        const usage = inner?.usage
+        const synthetic: Record<string, unknown> = {
+          type: 'result',
+          subtype: 'success',
+          ts: (lastAssistant.timestamp as string | undefined) ?? new Date().toISOString(),
+        }
+        if (model && usage) {
+          synthetic.modelUsage = {
+            [model]: {
+              inputTokens: usage.input_tokens ?? 0,
+              outputTokens: usage.output_tokens ?? 0,
+              cacheReadInputTokens: usage.cache_read_input_tokens ?? 0,
+              cacheCreationInputTokens: usage.cache_creation_input_tokens ?? 0,
+              costUSD: 0,
+            },
+          }
+        }
+        result.push(synthetic)
+        lastAssistant = null
+      }
+      // Don't push the last-prompt itself — it's not displayed
+    } else {
+      result.push(msg)
+    }
+  }
+
+  return result
+}
+
 function parseSessionFile(content: string): Record<string, unknown>[] {
   return content
     .split('\n')
@@ -59,7 +112,8 @@ export async function handleSessionLoad(
     try {
       const content = await readFile(filePath, 'utf-8')
       const parsed = parseSessionFile(content)
-      const filtered = parsed.filter(
+      const withDividers = injectTurnDividers(parsed)
+      const filtered = withDividers.filter(
         m => m.type === 'assistant' || m.type === 'user' || m.type === 'result' || m.type === 'system'
       )
 

@@ -47,11 +47,12 @@ export class DbMutator {
     return updated as Card
   }
 
-  moveCard(id: number, column: Column, position: number): Card {
+  moveCard(id: number, column: Column, position: number, extraData?: Record<string, unknown>): Card {
     const prev = db.select().from(cards).where(eq(cards.id, id)).get()
     const prevCol = prev?.column
     const updated = db.update(cards)
-      .set({ column, position, updatedAt: new Date().toISOString() })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .set({ ...extraData, column, position, updatedAt: new Date().toISOString() } as any)
       .where(eq(cards.id, id))
       .returning().get()
     const cols = prevCol && prevCol !== column ? [prevCol, column] : [column]

@@ -158,13 +158,10 @@ export async function handleCardMove(
       // Do NOT null worktreePath, worktreeBranch, or sessionId — needed for resumption
     }
 
-    // Apply extra updates (worktree fields) then do the move
-    if (Object.keys(updates).length > 0) {
-      mutator.updateCard(input.id, updates)
-    }
-
+    // Merge worktree field updates into the move to avoid an intermediate broadcast
+    // (a separate updateCard would broadcast the old column, causing a visible flash)
     const position = input.position ?? 0
-    const card = mutator.moveCard(input.id, input.column, position)
+    const card = mutator.moveCard(input.id, input.column, position, Object.keys(updates).length > 0 ? updates : undefined)
     connections.send(ws, { type: 'mutation:ok', requestId, data: card })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)

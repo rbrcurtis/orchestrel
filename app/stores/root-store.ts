@@ -49,7 +49,7 @@ export class RootStore {
         break
 
       case 'claude:message':
-        this.sessions.handleClaudeMessage(msg.cardId, msg.data)
+        this.sessions.ingest(msg.cardId, msg.data)
         break
 
       case 'claude:status':
@@ -57,7 +57,7 @@ export class RootStore {
         break
 
       case 'session:history':
-        this.sessions.setHistory(msg.cardId, msg.messages)
+        this.sessions.ingestBatch(msg.cardId, msg.messages)
         break
 
       // page:result, search:result, project:browse:result — not routed to stores;

@@ -25,29 +25,6 @@ type ToolResultBlock = {
   content: Array<{ type: string; text: string }>;
 };
 
-/** Extract context fill from an assistant message's per-turn usage.
- *  Context = input_tokens + cache_creation_input_tokens + cache_read_input_tokens */
-function extractContextFromAssistant(msg: Record<string, unknown>): number {
-  if (msg.type !== 'assistant') return 0;
-  if ((msg as { isSidechain?: boolean }).isSidechain) return 0;
-  const message = msg.message as { usage?: Record<string, number> } | undefined;
-  const usage = message?.usage;
-  if (!usage) return 0;
-  return (usage.input_tokens ?? 0)
-    + (usage.cache_creation_input_tokens ?? 0)
-    + (usage.cache_read_input_tokens ?? 0);
-}
-
-/** Extract context window size from a result message's modelUsage */
-function extractContextWindow(msg: Record<string, unknown>): number {
-  if (msg.type !== 'result') return 0;
-  const inner = (msg.message ?? msg) as Record<string, unknown>;
-  const modelUsage = inner.modelUsage as Record<string, Record<string, number>> | undefined;
-  if (!modelUsage) return 0;
-  const model = Object.values(modelUsage)[0];
-  return model?.contextWindow ?? 0;
-}
-
 export const SessionView = observer(function SessionView({
   cardId,
   sessionId,
@@ -60,157 +37,86 @@ export const SessionView = observer(function SessionView({
   const cardStore = useCardStore();
 
   const session = sessionStore.getSession(cardId);
-
+  const conversation = session?.conversation ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
   const promptsSent = session?.promptsSent ?? 0;
   const turnsCompleted = session?.turnsCompleted ?? 0;
-  const liveMessages = session?.liveMessages ?? [];
-  const history = session?.history ?? [];
+  const sessionStoreId = session?.sessionId ?? null;
+  const contextTokens = session?.contextTokens ?? 0;
+  const contextWindow = session?.contextWindow ?? 200_000;
 
-  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [contextTokens, setContextTokens] = useState(0);
-  const [contextWindow, setContextWindow] = useState(200_000);
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const prevStatus = useRef(sessionStatus);
 
-  // Reset live state when switching cards
-  useEffect(() => {
-    setPendingPrompt(null);
-    setStartError(null);
-    setIsStarting(false);
-    setContextTokens(0);
-    setContextWindow(200_000);
-    setCompacted(false);
-  }, [cardId]);
+  const isStreaming = sessionActive || isStarting;
 
-  // Load session history when sessionId is available
+  // Load history once on mount / when sessionId becomes available
   useEffect(() => {
-    if (!sessionId) return;
-    setHistoryLoading(true);
-    sessionStore.loadHistory(cardId, sessionId).finally(() => setHistoryLoading(false));
-  }, [cardId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-load history when session completes (live messages get cleared, need fresh history)
-  useEffect(() => {
-    if (sessionId && sessionStatus === 'completed' && prevStatus.current !== 'completed') {
-      sessionStore.loadHistory(cardId, sessionId)
+    const sid = sessionStoreId ?? sessionId;
+    if (sid && !session?.historyLoaded) {
+      sessionStore.loadHistory(cardId, sid);
     }
-  }, [sessionStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cardId, sessionStoreId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Request status on mount
   useEffect(() => {
     sessionStore.requestStatus(cardId);
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isStreaming = sessionActive || isStarting;
-
-  // Merge: history + optimistic pending prompt + live messages
-  const messages = useMemo(() => {
-    const result = [...history] as Record<string, unknown>[];
-    if (pendingPrompt) {
-      result.push({ type: 'user', message: { role: 'user', content: pendingPrompt } });
-    }
-    result.push(...(liveMessages as Record<string, unknown>[]));
-    return result;
-  }, [history, liveMessages.length, pendingPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Extract tool outputs from all messages
-  const toolOutputs = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const msg of messages) {
-      if (msg.type !== 'user') continue;
-      const inner = msg.message as { content?: unknown } | undefined;
-      if (!inner?.content || !Array.isArray(inner.content)) continue;
-
-      for (const block of inner.content as ToolResultBlock[]) {
-        if (block.type === 'tool_result' && block.tool_use_id) {
-          const text = Array.isArray(block.content)
-            ? block.content.map((c) => c.text).filter(Boolean).join('\n')
-            : typeof block.content === 'string' ? block.content : '';
-          if (text) map.set(block.tool_use_id, text);
-        }
-      }
-    }
-    return map;
-  }, [messages]);
-
-  function addOptimisticUser(text: string) {
-    setPendingPrompt(text);
-  }
-
-  // Auto-start session when mounted with autoStartPrompt
+  // Card switch reset
   useEffect(() => {
-    if (autoStartPrompt) {
-      addOptimisticUser(autoStartPrompt);
-      setIsStarting(true);
-      setStartError(null);
-      cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
-      sessionStore.startSession(cardId, autoStartPrompt).catch((err) => {
-        setStartError(err instanceof Error ? err.message : String(err));
-        setIsStarting(false);
-      });
-    }
-  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
+    setStartError(null);
+    setIsStarting(false);
+    setCompacted(false);
+  }, [cardId]);
 
-  // Clear pending prompt once live messages arrive
-  const prevLiveLen = useRef(0);
+  // Clear isStarting on status transition
   useEffect(() => {
-    if (liveMessages.length > prevLiveLen.current && pendingPrompt) {
-      setPendingPrompt(null);
-    }
-    prevLiveLen.current = liveMessages.length;
-  }, [liveMessages.length, pendingPrompt]);
-
-  // Clear pending prompt and isStarting when session becomes non-streaming
-  useEffect(() => {
-    if (prevStatus.current !== sessionStatus) {
-      prevStatus.current = sessionStatus;
-      if (sessionStatus === 'completed' || sessionStatus === 'errored' || sessionStatus === 'stopped') {
-        setIsStarting(false);
-        setPendingPrompt(null);
-      }
+    if (
+      sessionStatus === 'running' ||
+      sessionStatus === 'completed' ||
+      sessionStatus === 'errored' ||
+      sessionStatus === 'stopped'
+    ) {
+      setIsStarting(false);
     }
   }, [sessionStatus]);
 
-  // Extract context tokens from live messages as they arrive
+  // Auto-scroll on new messages
   useEffect(() => {
-    if (liveMessages.length === 0) return;
-    const last = liveMessages[liveMessages.length - 1] as Record<string, unknown>;
-    const ctx = extractContextFromAssistant(last);
-    if (ctx > 0) setContextTokens(ctx);
-    const cw = extractContextWindow(last);
-    if (cw > 0) setContextWindow(cw);
-    const lastInner = (last.message ?? last) as Record<string, unknown>;
-    if (last.type === 'system' && lastInner.subtype === 'compact_boundary') {
-      setCompacted(true);
-      setTimeout(() => setCompacted(false), 600);
-    }
-  }, [liveMessages.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-scroll to bottom when new live messages or pending prompt arrive (only if near bottom)
-  useEffect(() => {
-    if (liveMessages.length === 0 && !pendingPrompt) return;
+    if (conversation.length === 0) return;
     const el = scrollRef.current;
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (nearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [liveMessages.length, pendingPrompt]);
+  }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scroll to bottom on initial load of history
+  // Scroll to bottom on initial history load
+  const prevConvLen = useRef(0);
   useEffect(() => {
-    if (history.length > 0 && liveMessages.length === 0) {
+    if (prevConvLen.current === 0 && conversation.length > 0) {
       bottomRef.current?.scrollIntoView({ behavior: 'instant' });
     }
-  }, [history.length, liveMessages.length]);
+    prevConvLen.current = conversation.length;
+  }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Compaction detection
+  useEffect(() => {
+    if (conversation.length === 0) return;
+    const last = conversation[conversation.length - 1];
+    if (last.type === 'system' && (last.message as Record<string, unknown>).subtype === 'compact_boundary') {
+      setCompacted(true);
+      const t = setTimeout(() => setCompacted(false), 600);
+      return () => clearTimeout(t);
+    }
+  }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show/hide scroll-to-bottom button based on scroll position
   useEffect(() => {
@@ -224,32 +130,44 @@ export const SessionView = observer(function SessionView({
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
-  }, [messages.length]);
+  }, [conversation.length]);
 
-  // Extract initial context tokens from history
+  // Auto-start session when mounted with autoStartPrompt
   useEffect(() => {
-    if (!history || history.length === 0) return;
-    let foundTokens = false;
-    let foundWindow = false;
-    for (let i = history.length - 1; i >= 0; i--) {
-      const msg = history[i] as Record<string, unknown>;
-      if (!foundTokens) {
-        const ctx = extractContextFromAssistant(msg);
-        if (ctx > 0) { setContextTokens(ctx); foundTokens = true; }
-      }
-      if (!foundWindow) {
-        const cw = extractContextWindow(msg);
-        if (cw > 0) { setContextWindow(cw); foundWindow = true; }
-      }
-      if (foundTokens && foundWindow) return;
+    if (autoStartPrompt) {
+      setIsStarting(true);
+      setStartError(null);
+      cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
+      sessionStore.startSession(cardId, autoStartPrompt).catch((err) => {
+        setStartError(err instanceof Error ? err.message : String(err));
+        setIsStarting(false);
+      });
     }
-  }, [history]);
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Extract tool outputs from conversation
+  const toolOutputs = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of conversation) {
+      if (row.type !== 'user') continue;
+      const content = row.message.content;
+      if (!Array.isArray(content)) continue;
+      for (const block of content as ToolResultBlock[]) {
+        if (block.type === 'tool_result' && block.tool_use_id) {
+          const text = Array.isArray(block.content)
+            ? block.content.map((c) => c.text).filter(Boolean).join('\n')
+            : typeof block.content === 'string' ? block.content : '';
+          if (text) map.set(block.tool_use_id, text);
+        }
+      }
+    }
+    return map;
+  }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, contextTokens / contextWindow * 100) : 0;
 
   async function handleStart(prompt: string) {
-    addOptimisticUser(prompt);
     setIsStarting(true);
     setStartError(null);
     cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
@@ -262,7 +180,6 @@ export const SessionView = observer(function SessionView({
   }
 
   async function handleSend(message: string, files?: FileRef[]) {
-    addOptimisticUser(message);
     cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
     await sessionStore.sendMessage(cardId, message, files);
   }
@@ -282,13 +199,18 @@ export const SessionView = observer(function SessionView({
       <div className="relative flex-1 min-h-0 min-w-0">
         <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden">
           <div className="px-3 py-2 space-y-1 min-w-0">
-            {messages.map((msg, i) => (
-              <MessageBlock key={i} message={msg} toolOutputs={toolOutputs} accentColor={accentColor} />
+            {conversation.map((row) => (
+              <MessageBlock
+                key={row.id}
+                message={{ type: row.type, message: row.message, isSidechain: row.isSidechain, ts: row.ts }}
+                toolOutputs={toolOutputs}
+                accentColor={accentColor}
+              />
             ))}
             <div ref={bottomRef} />
           </div>
         </div>
-        {historyLoading && messages.length === 0 && (
+        {!session?.historyLoaded && conversation.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
             <svg className="size-6 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
@@ -317,7 +239,7 @@ export const SessionView = observer(function SessionView({
       )}
 
       {/* Status bar — above prompt input */}
-      {(isStreaming || messages.length > 0) && (
+      {(isStreaming || conversation.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0">
           <StatusBadge status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus} />
           {showCounters && (

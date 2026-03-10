@@ -43,10 +43,16 @@ function registerHandlers(
     const knownTypes = new Set(['user', 'assistant', 'result', 'system'])
     if (!knownTypes.has(msg.type as string)) return
 
-    // Forward every message to the WS client, wrapping raw SDK message
+    // Forward every message to the WS client.
+    // SDK assistant/user messages already have a nested `message` object ({role, content}).
+    // Use that inner object as ClaudeMessage.message to match history format.
+    // For flat messages (result, system), wrap the whole msg.
+    const innerMsg = (msg.message && typeof msg.message === 'object')
+      ? msg.message as Record<string, unknown>
+      : msg
     const wrapped: ClaudeMessage = {
       type: msg.type as ClaudeMessage['type'],
-      message: msg,
+      message: innerMsg,
       ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain as boolean }),
       ...(msg.ts !== undefined && { ts: msg.ts as string }),
     }
@@ -170,11 +176,13 @@ export async function handleClaudeSend(
   const { requestId, data: { cardId, message, files } } = msg
 
   try {
+    // Always look up card so we have sessionId available for status messages
+    const card = db.select().from(cards).where(eq(cards.id, cardId)).get()
+
     let session = sessionManager.get(cardId)
 
     // If no in-memory session, recreate from DB (e.g. after server restart)
     if (!session) {
-      const card = db.select().from(cards).where(eq(cards.id, cardId)).get()
       if (!card?.sessionId || !card.worktreePath) {
         throw new Error(`No session for card ${cardId}`)
       }
@@ -186,8 +194,12 @@ export async function handleClaudeSend(
       session = sessionManager.create(cardId, card.worktreePath, card.sessionId, projectName, card.model, card.thinkingLevel)
       session.promptsSent = card.promptsSent ?? 0
       session.turnsCompleted = card.turnsCompleted ?? 0
-
-      // Re-register event handlers (same as start)
+      registerHandlers(session, cardId, ws, connections, mutator)
+    } else if (session.status !== 'running') {
+      // Session exists but is not running — re-register handlers so messages go to
+      // the current WS connection (old handlers may point to a stale/closed socket)
+      session.removeAllListeners('message')
+      session.removeAllListeners('exit')
       registerHandlers(session, cardId, ws, connections, mutator)
     }
 
@@ -215,6 +227,20 @@ export async function handleClaudeSend(
     await session.sendUserMessage(prompt)
 
     mutator.updateCard(cardId, { promptsSent: session.promptsSent })
+
+    // Notify client session is now running (triggers status transition completed→running so
+    // the history reload effect fires when session completes)
+    connections.send(ws, {
+      type: 'claude:status',
+      data: {
+        cardId,
+        active: true,
+        status: 'running',
+        sessionId: card?.sessionId ?? null,
+        promptsSent: session.promptsSent,
+        turnsCompleted: session.turnsCompleted,
+      },
+    })
 
     connections.send(ws, { type: 'mutation:ok', requestId })
   } catch (err) {
