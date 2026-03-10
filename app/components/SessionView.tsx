@@ -41,7 +41,8 @@ function extractContextFromAssistant(msg: Record<string, unknown>): number {
 /** Extract context window size from a result message's modelUsage */
 function extractContextWindow(msg: Record<string, unknown>): number {
   if (msg.type !== 'result') return 0;
-  const modelUsage = msg.modelUsage as Record<string, Record<string, number>> | undefined;
+  const inner = (msg.message ?? msg) as Record<string, unknown>;
+  const modelUsage = inner.modelUsage as Record<string, Record<string, number>> | undefined;
   if (!modelUsage) return 0;
   const model = Object.values(modelUsage)[0];
   return model?.contextWindow ?? 0;
@@ -179,7 +180,8 @@ export const SessionView = observer(function SessionView({
     if (ctx > 0) setContextTokens(ctx);
     const cw = extractContextWindow(last);
     if (cw > 0) setContextWindow(cw);
-    if (last.type === 'system' && (last as { subtype?: string }).subtype === 'compact_boundary') {
+    const lastInner = (last.message ?? last) as Record<string, unknown>;
+    if (last.type === 'system' && lastInner.subtype === 'compact_boundary') {
       setCompacted(true);
       setTimeout(() => setCompacted(false), 600);
     }

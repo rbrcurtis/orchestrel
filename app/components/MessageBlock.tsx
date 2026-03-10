@@ -280,18 +280,19 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
 // --- System message ---
 
 function SystemBlock({ message }: { message: Record<string, unknown> }) {
-  const subtype = message.subtype as string | undefined;
+  const inner = (message.message ?? message) as Record<string, unknown>;
+  const subtype = inner.subtype as string | undefined;
 
   if (subtype === 'init') {
     return (
       <div className="text-xs text-muted-foreground py-1">
-        Session started (model: {String(message.model ?? 'unknown')})
+        Session started (model: {String(inner.model ?? 'unknown')})
       </div>
     );
   }
 
   if (subtype === 'compact_boundary') {
-    const meta = message.compact_metadata as { pre_tokens?: number; trigger?: string } | undefined;
+    const meta = inner.compact_metadata as { pre_tokens?: number; trigger?: string } | undefined;
     return (
       <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground">
         <div className="flex-1 border-t border-neon-amber/30" />
@@ -305,7 +306,7 @@ function SystemBlock({ message }: { message: Record<string, unknown> }) {
   }
 
   if (subtype === 'local_command_output') {
-    const content = message.content as string | undefined;
+    const content = inner.content as string | undefined;
     if (!content) return null;
     return (
       <div className="text-xs text-muted-foreground whitespace-pre-wrap py-1 pl-3 border-l-2 border-neon-violet/40">
@@ -315,7 +316,7 @@ function SystemBlock({ message }: { message: Record<string, unknown> }) {
   }
 
   // Show any other system message as plain text
-  const content = message.content as string | undefined;
+  const content = inner.content as string | undefined;
   if (!content) return null;
   return (
     <div className="text-xs text-muted-foreground py-1">
@@ -327,26 +328,27 @@ function SystemBlock({ message }: { message: Record<string, unknown> }) {
 // --- Result message ---
 
 function ResultBlock({ message }: { message: Record<string, unknown> }) {
-  const subtype = message.subtype as string;
+  const inner = (message.message ?? message) as Record<string, unknown>;
+  const subtype = inner.subtype as string | undefined;
   const isSuccess = subtype === 'success' || subtype === 'error_max_turns';
-  const sdkCost = message.total_cost_usd as number | undefined;
-  const modelUsage = message.modelUsage as Record<string, ModelUsageEntry> | undefined;
+  const sdkCost = inner.total_cost_usd as number | undefined;
+  const modelUsage = inner.modelUsage as Record<string, ModelUsageEntry> | undefined;
   const cost = modelUsage ? calcCostFromModelUsage(modelUsage, sdkCost) : sdkCost;
-  const durationMs = message.duration_ms as number | undefined;
+  const durationMs = inner.duration_ms as number | undefined;
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
-  const rawTs = (message.ts ?? message._mtime) as string | undefined;
+  const rawTs = (message.ts ?? inner.ts ?? inner._mtime) as string | undefined;
   const finishedAt = rawTs
     ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(rawTs))
     : null;
 
-  const errors = Array.isArray(message.errors) ? (message.errors as string[]) : [];
+  const errors = Array.isArray(inner.errors) ? (inner.errors as string[]) : [];
 
   return (
     <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground">
       <div className="flex items-center gap-2 w-full">
         <div className="flex-1 border-t border-border" />
         <span className={isSuccess ? '' : 'text-destructive'}>
-          {isSuccess ? 'Turn complete' : `Error: ${subtype}`}
+          {isSuccess ? 'Turn complete' : `Error: ${subtype ?? 'unknown'}`}
           {cost != null && ` · $${cost.toFixed(4)}`}
           {durationSec != null && ` · ${durationSec}s`}
           {finishedAt != null && ` · ${finishedAt}`}
@@ -365,13 +367,14 @@ function ResultBlock({ message }: { message: Record<string, unknown> }) {
 // --- Tool progress ---
 
 function ToolProgressBlock({ message }: { message: Record<string, unknown> }) {
-  const toolName = message.tool_name as string;
-  const elapsed = message.elapsed_time_seconds as number;
+  const inner = (message.message ?? message) as Record<string, unknown>;
+  const toolName = inner.tool_name as string;
+  const elapsed = inner.elapsed_time_seconds as number | undefined;
 
   return (
     <div className="text-xs text-muted-foreground py-0.5 flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-      {toolName} ({elapsed.toFixed(0)}s)
+      {toolName} {elapsed != null && `(${elapsed.toFixed(0)}s)`}
     </div>
   );
 }
