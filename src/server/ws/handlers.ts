@@ -11,6 +11,7 @@ import {
   handleCardMove,
   handleCardDelete,
   handleCardGenerateTitle,
+  handleCardSuggestTitle,
 } from './handlers/cards'
 import {
   handleProjectCreate,
@@ -118,6 +119,10 @@ export function handleMessage(
 
     case 'card:generateTitle':
       void handleCardGenerateTitle(ws, msg, connections, mutator)
+      break
+
+    case 'card:suggestTitle':
+      void handleCardSuggestTitle(ws, msg, connections)
       break
 
     case 'project:create':

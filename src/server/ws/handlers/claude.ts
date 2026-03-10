@@ -39,6 +39,10 @@ function registerHandlers(
   mutator: DbMutator,
 ) {
   session.on('message', async (msg: Record<string, unknown>) => {
+    // Only forward message types the client knows how to handle
+    const knownTypes = new Set(['user', 'assistant', 'result', 'system'])
+    if (!knownTypes.has(msg.type as string)) return
+
     // Forward every message to the WS client, wrapping raw SDK message
     const wrapped: ClaudeMessage = {
       type: msg.type as ClaudeMessage['type'],

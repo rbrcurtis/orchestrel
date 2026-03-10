@@ -78,6 +78,7 @@ export const SessionView = observer(function SessionView({
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const prevStatus = useRef(sessionStatus);
 
   // Reset live state when switching cards
   useEffect(() => {
@@ -96,6 +97,13 @@ export const SessionView = observer(function SessionView({
     sessionStore.loadHistory(cardId, sessionId).finally(() => setHistoryLoading(false));
   }, [cardId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-load history when session completes (live messages get cleared, need fresh history)
+  useEffect(() => {
+    if (sessionId && sessionStatus === 'completed' && prevStatus.current !== 'completed') {
+      sessionStore.loadHistory(cardId, sessionId)
+    }
+  }, [sessionStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Request status on mount
   useEffect(() => {
     sessionStore.requestStatus(cardId);
@@ -111,7 +119,7 @@ export const SessionView = observer(function SessionView({
     }
     result.push(...(liveMessages as Record<string, unknown>[]));
     return result;
-  }, [history, liveMessages, pendingPrompt]);
+  }, [history, liveMessages.length, pendingPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Extract tool outputs from all messages
   const toolOutputs = useMemo(() => {
@@ -161,7 +169,6 @@ export const SessionView = observer(function SessionView({
   }, [liveMessages.length, pendingPrompt]);
 
   // Clear pending prompt and isStarting when session becomes non-streaming
-  const prevStatus = useRef(sessionStatus);
   useEffect(() => {
     if (prevStatus.current !== sessionStatus) {
       prevStatus.current = sessionStatus;

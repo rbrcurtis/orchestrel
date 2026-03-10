@@ -188,6 +188,21 @@ export function handleCardDelete(
   }
 }
 
+async function ollamaSuggestTitle(description: string): Promise<string> {
+  const res = await fetch('http://localhost:11434/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gemma3:4b',
+      stream: false,
+      prompt: `Generate a kanban card title of 3 words or fewer based on this description. Return only the title text, no quotes, no prefix.\n\nDescription: ${description}`,
+    }),
+  })
+  if (!res.ok) throw new Error(`Ollama request failed: ${res.status} ${res.statusText}`)
+  const data = await res.json() as { response: string }
+  return data.response.trim()
+}
+
 export async function handleCardGenerateTitle(
   ws: WebSocket,
   msg: Extract<ClientMessage, { type: 'card:generateTitle' }>,
@@ -200,25 +215,24 @@ export async function handleCardGenerateTitle(
     if (!card) throw new Error(`Card ${msg.data.id} not found`)
     if (!card.description) throw new Error('Card has no description to generate title from')
 
-    const res = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gemma3:4b',
-        stream: false,
-        prompt: `Generate a kanban card title of 3 words or fewer based on this description. Return only the title text, no quotes, no prefix.\n\nDescription: ${card.description}`,
-      }),
-    })
-
-    if (!res.ok) {
-      throw new Error(`Ollama request failed: ${res.status} ${res.statusText}`)
-    }
-
-    const data = await res.json() as { response: string }
-    const title = data.response.trim()
-
+    const title = await ollamaSuggestTitle(card.description)
     const updated = mutator.updateCard(card.id, { title })
     connections.send(ws, { type: 'mutation:ok', requestId, data: updated })
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    connections.send(ws, { type: 'mutation:error', requestId, error })
+  }
+}
+
+export async function handleCardSuggestTitle(
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'card:suggestTitle' }>,
+  connections: ConnectionManager,
+): Promise<void> {
+  const { requestId } = msg
+  try {
+    const title = await ollamaSuggestTitle(msg.data.description)
+    connections.send(ws, { type: 'mutation:ok', requestId, data: title })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     connections.send(ws, { type: 'mutation:error', requestId, error })

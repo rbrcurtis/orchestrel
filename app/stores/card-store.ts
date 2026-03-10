@@ -152,4 +152,10 @@ export class CardStore {
     const requestId = uuid()
     await ws().mutate({ type: 'card:generateTitle', requestId, data: { id } })
   }
+
+  async suggestTitle(description: string): Promise<string | null> {
+    const requestId = uuid()
+    const res = await ws().mutate({ type: 'card:suggestTitle', requestId, data: { description } })
+    return typeof res === 'string' ? res : null
+  }
 }

@@ -234,7 +234,12 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                 <Textarea
                   value={draft.description}
                   onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                  onBlur={saveAll}
+                  onBlur={async () => {
+                    await saveAll()
+                    if (draft.description && (!draft.title || draft.title === 'New Card')) {
+                      cardStore.generateTitle(card.id)
+                    }
+                  }}
                   rows={4}
                   placeholder="Add a description..."
                   className="resize-y max-h-40 overflow-y-auto"
@@ -400,6 +405,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
     thinkingLevel: 'high',
   });
   const [creating, setCreating] = useState(false);
+  const [generatingTitle, setGeneratingTitle] = useState(false);
 
   useEffect(() => {
     descRef.current?.focus();
@@ -455,7 +461,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
           <Input
             value={draft.title}
             onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-            placeholder="Card title"
+            placeholder={generatingTitle ? 'Generating title...' : 'Card title'}
           />
         </div>
 
@@ -465,10 +471,16 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
             ref={descRef}
             value={draft.description}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-            onBlur={() => {
-              // Auto-title generation for new cards requires an existing card ID
-              // (server protocol card:generateTitle only accepts {id}).
-              // Title must be entered manually for new cards.
+            onBlur={async () => {
+              if (draft.description && (!draft.title || draft.title === 'New Card')) {
+                setGeneratingTitle(true)
+                try {
+                  const title = await cardStore.suggestTitle(draft.description)
+                  if (title) setDraft((d) => ({ ...d, title }))
+                } finally {
+                  setGeneratingTitle(false)
+                }
+              }
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && e.shiftKey) {

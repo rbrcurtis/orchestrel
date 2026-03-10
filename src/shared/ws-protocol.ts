@@ -88,7 +88,7 @@ export const claudeStatusSchema = z.object({
 })
 
 export const claudeMessageSchema = z.object({
-  type: z.enum(['user', 'assistant', 'result', 'system']),
+  type: z.string(),
   message: z.record(z.string(), z.unknown()),
   isSidechain: z.boolean().optional(),
   ts: z.string().optional(),
@@ -112,6 +112,7 @@ export const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('card:move'), requestId: z.string(), data: cardMoveSchema }),
   z.object({ type: z.literal('card:delete'), requestId: z.string(), data: z.object({ id: z.number() }) }),
   z.object({ type: z.literal('card:generateTitle'), requestId: z.string(), data: z.object({ id: z.number() }) }),
+  z.object({ type: z.literal('card:suggestTitle'), requestId: z.string(), data: z.object({ description: z.string() }) }),
 
   z.object({ type: z.literal('project:create'), requestId: z.string(), data: projectCreateSchema }),
   z.object({ type: z.literal('project:update'), requestId: z.string(), data: projectUpdateSchema }),
