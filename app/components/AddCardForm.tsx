@@ -1,7 +1,7 @@
-import { useTRPC } from '~/lib/trpc';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, useEffect } from 'react';
 import { Input } from '~/components/ui/input';
+import { useCardStore } from '~/stores/context';
+import type { Column } from '../../src/shared/ws-protocol';
 
 interface AddCardFormProps {
   column: string;
@@ -10,25 +10,25 @@ interface AddCardFormProps {
 
 export function AddCardForm({ column, onClose }: AddCardFormProps) {
   const [title, setTitle] = useState('');
+  const [pending, setPending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-
-  const createMutation = useMutation(trpc.cards.create.mutationOptions({
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-      setTitle('');
-    },
-  }));
+  const cards = useCardStore();
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  function submit() {
+  async function submit() {
     const trimmed = title.trim();
     if (!trimmed) return;
-    createMutation.mutate({ title: trimmed, column: column as 'backlog' | 'ready' | 'in_progress' | 'review' | 'done' });
+    setPending(true);
+    try {
+      await cards.createCard({ title: trimmed, column: column as Column });
+      setTitle('');
+      onClose();
+    } finally {
+      setPending(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -50,7 +50,7 @@ export function AddCardForm({ column, onClose }: AddCardFormProps) {
         onKeyDown={handleKeyDown}
         onBlur={onClose}
         placeholder="Card title..."
-        disabled={createMutation.isPending}
+        disabled={pending}
       />
     </div>
   );

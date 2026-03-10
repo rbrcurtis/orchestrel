@@ -1,12 +1,16 @@
-import { useState } from 'react';
-import { useTRPC } from '~/lib/trpc';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useProjectStore } from '~/stores/context';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '~/components/ui/dialog';
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from '~/components/ui/breadcrumb';
-import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { Folder } from 'lucide-react';
+
+interface DirEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
 
 interface DirectoryBrowserProps {
   initialPath?: string;
@@ -16,11 +20,21 @@ interface DirectoryBrowserProps {
 
 export default function DirectoryBrowser({ initialPath = '/home/ryan', onSelect, onCancel }: DirectoryBrowserProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
-  const trpc = useTRPC();
-
-  const { data, isLoading } = useQuery(trpc.projects.browse.queryOptions({ path: currentPath }));
+  const [dirs, setDirs] = useState<DirEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const projects = useProjectStore();
 
   const segments = currentPath.split('/').filter(Boolean);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    projects.browse(currentPath)
+      .then((data) => setDirs(data as DirEntry[]))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Error loading directory'))
+      .finally(() => setLoading(false));
+  }, [currentPath]);
 
   function navigateTo(path: string) {
     setCurrentPath(path);
@@ -61,27 +75,21 @@ export default function DirectoryBrowser({ initialPath = '/home/ryan', onSelect,
               ))}
             </BreadcrumbList>
           </Breadcrumb>
-          {data?.isGitRepo && (
-            <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 w-fit">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-              Git Repository
-            </Badge>
-          )}
         </DialogHeader>
 
         {/* Directory list */}
         <ScrollArea className="flex-1 min-h-0">
           <div className="max-h-64">
-            {isLoading && (
+            {loading && (
               <div className="p-4 text-sm text-muted-foreground">Loading...</div>
             )}
-            {data?.error && (
-              <div className="p-4 text-sm text-destructive">{data.error}</div>
+            {error && (
+              <div className="p-4 text-sm text-destructive">{error}</div>
             )}
-            {data && !data.error && data.dirs.length === 0 && (
+            {!loading && !error && dirs.length === 0 && (
               <div className="p-4 text-sm text-muted-foreground">No subdirectories</div>
             )}
-            {data?.dirs.map((dir) => (
+            {dirs.map((dir) => (
               <Button
                 key={dir.path}
                 variant="ghost"
@@ -101,7 +109,7 @@ export default function DirectoryBrowser({ initialPath = '/home/ryan', onSelect,
             Cancel
           </Button>
           <Button
-            onClick={() => onSelect(currentPath, data?.isGitRepo ?? false)}
+            onClick={() => onSelect(currentPath, false)}
           >
             Select
           </Button>

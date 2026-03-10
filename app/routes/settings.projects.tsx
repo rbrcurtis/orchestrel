@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useTRPC } from '~/lib/trpc';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useProjectStore } from '~/stores/context';
+import { observer } from 'mobx-react-lite';
 import ProjectForm from '~/components/ProjectForm';
 import { Button } from '~/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Card, CardContent } from '~/components/ui/card';
 import { X, Pencil, Trash2, Plus } from 'lucide-react';
-import { getCacheSize, clearCache } from '~/lib/query-persist';
+import { del, get, createStore } from 'idb-keyval';
 
 interface Project {
   id: number;
@@ -20,21 +20,22 @@ interface Project {
   createdAt: string;
 }
 
-export default function SettingsProjectsModal({ onClose }: { onClose: () => void }) {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-  const { data: projectsList, isLoading } = useQuery(trpc.projects.list.queryOptions());
+const SettingsProjectsModal = observer(function SettingsProjectsModal({ onClose }: { onClose: () => void }) {
+  const projectStore = useProjectStore();
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [deletePending, setDeletePending] = useState<number | null>(null);
 
-  const deleteMutation = useMutation(trpc.projects.delete.mutationOptions({
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryKey() });
-    },
-  }));
+  const projectsList = projectStore.all;
+  const isLoading = projectsList.length === 0;
 
-  function handleDelete(id: number) {
-    deleteMutation.mutate({ id });
+  async function handleDelete(id: number) {
+    setDeletePending(id);
+    try {
+      await projectStore.deleteProject(id);
+    } finally {
+      setDeletePending(null);
+    }
   }
 
   function closeForm() {
@@ -84,7 +85,7 @@ export default function SettingsProjectsModal({ onClose }: { onClose: () => void
             <p className="text-sm text-muted-foreground">Loading projects...</p>
           )}
 
-          {projectsList && projectsList.length === 0 && (
+          {projectsList.length === 0 && !isLoading && (
             <div className="text-center py-12 text-muted-foreground">
               <p className="text-sm">No projects configured yet.</p>
               <Button
@@ -97,7 +98,7 @@ export default function SettingsProjectsModal({ onClose }: { onClose: () => void
             </div>
           )}
 
-          {projectsList && projectsList.length > 0 && (
+          {projectsList.length > 0 && (
             <Card>
               <CardContent>
                 <Table>
@@ -140,7 +141,7 @@ export default function SettingsProjectsModal({ onClose }: { onClose: () => void
                               variant="ghost"
                               size="icon-xs"
                               onClick={() => handleDelete(project.id)}
-                              disabled={deleteMutation.isPending}
+                              disabled={deletePending === project.id}
                               className="text-destructive hover:text-destructive"
                             >
                               <Trash2 />
@@ -164,14 +165,29 @@ export default function SettingsProjectsModal({ onClose }: { onClose: () => void
       </div>
     </div>
   );
-}
+});
+
+export default SettingsProjectsModal;
+
+const CACHE_STORE = createStore('dispatcher-cache', 'store-cache');
+const CACHE_KEYS = ['dispatcher:cards', 'dispatcher:projects'];
 
 function CacheSection() {
   const [size, setSize] = useState<number | null>(null);
   const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
-    getCacheSize().then(setSize);
+    async function measure() {
+      let total = 0;
+      for (const key of CACHE_KEYS) {
+        const data = await get(key);
+        if (data) {
+          total += new Blob([JSON.stringify(data)]).size;
+        }
+      }
+      setSize(total);
+    }
+    measure();
   }, []);
 
   function formatBytes(bytes: number): string {
@@ -182,7 +198,9 @@ function CacheSection() {
 
   async function handleClear() {
     setClearing(true);
-    await clearCache();
+    for (const key of CACHE_KEYS) {
+      await del(key, CACHE_STORE);
+    }
     setSize(0);
     setClearing(false);
   }
