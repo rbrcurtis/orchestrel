@@ -54,6 +54,28 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Prevent Vite from reloading the page when the HMR WebSocket reconnects
+// after iOS suspends the PWA. The reload is triggered at
+// node_modules/vite/dist/client/client.mjs:870 after notifyListeners resolves.
+// Returning a never-resolving promise from our listener causes Promise.allSettled
+// to hang, so the reload code is never reached.
+if (import.meta.hot) {
+  const sendLog = (msg: string) => {
+    navigator.sendBeacon('/api/pwa-log', JSON.stringify({ msg, ts: new Date().toISOString() }));
+  };
+  sendLog('hmr client initialized');
+  import.meta.hot.on('vite:ws:disconnect', () => {
+    sendLog('vite:ws:disconnect intercepted, blocking reload');
+    return new Promise(() => {});
+  });
+  import.meta.hot.on('vite:ws:connect', () => {
+    sendLog('vite:ws:connect');
+  });
+  import.meta.hot.on('vite:beforeFullReload', () => {
+    sendLog('vite:beforeFullReload triggered');
+  });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { gcTime: Infinity } },
 });

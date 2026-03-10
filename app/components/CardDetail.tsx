@@ -34,6 +34,8 @@ type Draft = {
   projectId: number | null;
   useWorktree: boolean;
   sourceBranch: string | null;
+  model: 'sonnet' | 'opus';
+  thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
 export function CardDetail({ cardId, onClose }: Props) {
@@ -51,6 +53,8 @@ export function CardDetail({ cardId, onClose }: Props) {
     projectId: null,
     useWorktree: false,
     sourceBranch: null,
+    model: 'sonnet',
+    thinkingLevel: 'high',
   });
 
   const [formOpen, setFormOpen] = useState(true);
@@ -64,9 +68,11 @@ export function CardDetail({ cardId, onClose }: Props) {
       projectId: card.projectId,
       useWorktree: card.useWorktree,
       sourceBranch: card.sourceBranch,
+      model: card.model,
+      thinkingLevel: card.thinkingLevel,
     });
-    // Auto-collapse when session exists or card is active
-    setFormOpen(!card.sessionId && card.column !== 'in_progress' && card.column !== 'review' && card.column !== 'done' && card.column !== 'archive');
+    // Auto-collapse when session exists
+    setFormOpen(!card.sessionId && card.column !== 'in_progress');
   }, [card?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-sync fields on update (but don't reset formOpen) — keyed on updatedAt to avoid resetting collapse state
@@ -78,6 +84,8 @@ export function CardDetail({ cardId, onClose }: Props) {
       projectId: card.projectId,
       useWorktree: card.useWorktree,
       sourceBranch: card.sourceBranch,
+      model: card.model,
+      thinkingLevel: card.thinkingLevel,
     });
   }, [card?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -86,7 +94,9 @@ export function CardDetail({ cardId, onClose }: Props) {
       draft.description !== (card.description ?? '') ||
       draft.projectId !== card.projectId ||
       draft.useWorktree !== card.useWorktree ||
-      draft.sourceBranch !== card.sourceBranch
+      draft.sourceBranch !== card.sourceBranch ||
+      draft.model !== card.model ||
+      draft.thinkingLevel !== card.thinkingLevel
     : false;
 
   const updateMutation = useMutation(
@@ -97,20 +107,10 @@ export function CardDetail({ cardId, onClose }: Props) {
     })
   );
 
-  const startClaudeMutation = useMutation(
-    trpc.claude.start.mutationOptions({})
-  );
-
-  const pendingClaudeStart = useRef<{ cardId: number; prompt: string } | null>(null);
-
   const moveMutation = useMutation(
     trpc.cards.move.mutationOptions({
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        if (pendingClaudeStart.current) {
-          startClaudeMutation.mutate(pendingClaudeStart.current);
-          pendingClaudeStart.current = null;
-        }
       },
     })
   );
@@ -124,14 +124,13 @@ export function CardDetail({ cardId, onClose }: Props) {
       projectId: draft.projectId,
       useWorktree: draft.useWorktree,
       sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
+      model: draft.model,
+      thinkingLevel: draft.thinkingLevel,
     });
   }
 
   function handleStatusChange(newColumn: string) {
     if (!card || newColumn === card.column) return;
-    if (newColumn === 'in_progress' && card.projectId && card.description?.trim() && !card.sessionId) {
-      pendingClaudeStart.current = { cardId: card.id, prompt: card.description.trim() };
-    }
     moveMutation.mutate(
       { id: card.id, column: newColumn as 'backlog' | 'ready' | 'in_progress' | 'review' | 'done' | 'archive', position: 0 },
       {
@@ -160,8 +159,11 @@ export function CardDetail({ cardId, onClose }: Props) {
   const selectedProject = projectsList?.find((p) => p.id === draft.projectId);
   const cardProject = projectsList?.find((p) => p.id === card.projectId);
   const col = card.column;
-  const isActive = col === 'in_progress' || col === 'review' || col === 'done' || col === 'archive';
-  const showSession = !!card.sessionId || (isActive && (card.projectId || card.worktreePath));
+  const hasSession = !!card.sessionId || col === 'in_progress';
+  const showSession = hasSession;
+  const autoStartPrompt = col === 'in_progress' && !card.sessionId && card.projectId && card.description?.trim()
+    ? card.description.trim()
+    : undefined;
   const projectLocked = !!card.projectId;
 
   async function saveField(field: 'title' | 'description', val: string) {
@@ -188,7 +190,7 @@ export function CardDetail({ cardId, onClose }: Props) {
             ))}
           </SelectContent>
         </Select>
-        {isActive ? (
+        {hasSession ? (
           <InlineEdit
             value={card.title}
             onSave={(v) => saveField('title', v)}
@@ -233,7 +235,7 @@ export function CardDetail({ cardId, onClose }: Props) {
         <CollapsibleContent>
           <div className="px-4 pb-4 space-y-4">
             {/* Title */}
-            {!isActive && (
+            {!hasSession && (
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
                 <Input
@@ -247,7 +249,7 @@ export function CardDetail({ cardId, onClose }: Props) {
             {/* Description */}
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
-              {isActive ? (
+              {hasSession ? (
                 <InlineEdit
                   value={card.description ?? ''}
                   onSave={(v) => saveField('description', v)}
@@ -261,7 +263,7 @@ export function CardDetail({ cardId, onClose }: Props) {
                   onBlur={saveAll}
                   rows={4}
                   placeholder="Add a description..."
-                  className="resize-y"
+                  className="resize-y max-h-40 overflow-y-auto"
                 />
               )}
             </div>
@@ -280,6 +282,8 @@ export function CardDetail({ cardId, onClose }: Props) {
                       projectId: pid,
                       useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
                       sourceBranch: null,
+                      model: proj?.defaultModel ?? d.model,
+                      thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
                     }));
                   }}
                 >
@@ -343,6 +347,44 @@ export function CardDetail({ cardId, onClose }: Props) {
                 </Select>
               </div>
             )}
+
+            {/* Model & Thinking */}
+            {!hasSession && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
+                  <Select
+                    value={draft.model}
+                    onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' }))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sonnet">Sonnet</SelectItem>
+                      <SelectItem value="opus">Opus</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
+                  <Select
+                    value={draft.thinkingLevel}
+                    onValueChange={(val) => setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">Off</SelectItem>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -352,6 +394,7 @@ export function CardDetail({ cardId, onClose }: Props) {
         <SessionView
           cardId={card.id}
           sessionId={card.sessionId}
+          autoStartPrompt={autoStartPrompt}
           accentColor={cardProject?.color}
           model={card.model ?? 'sonnet'}
           thinkingLevel={card.thinkingLevel ?? 'high'}
@@ -381,6 +424,8 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     projectId: null,
     useWorktree: false,
     sourceBranch: null,
+    model: 'sonnet',
+    thinkingLevel: 'high',
   });
 
   useEffect(() => {
@@ -395,16 +440,11 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
     })
   );
 
-  const startClaudeMutation = useMutation(
-    trpc.claude.start.mutationOptions({})
-  );
-
   const createMutation = useMutation(
     trpc.cards.create.mutationOptions({
       onSuccess: (card) => {
         queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
         if (selectedColumn === 'in_progress' && draft.projectId && draft.description.trim()) {
-          startClaudeMutation.mutate({ cardId: card.id, prompt: draft.description.trim() });
           onCreated(card.id);
         } else {
           onClose();
@@ -422,6 +462,8 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
       projectId: draft.projectId,
       useWorktree: draft.useWorktree,
       sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
+      model: draft.model,
+      thinkingLevel: draft.thinkingLevel,
     });
   }
 
@@ -475,7 +517,7 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
             }}
             rows={4}
             placeholder="Add a description..."
-            className="resize-y"
+            className="resize-y max-h-40 overflow-y-auto"
           />
         </div>
 
@@ -491,6 +533,8 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
                 projectId: pid,
                 useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
                 sourceBranch: null,
+                model: proj?.defaultModel ?? d.model,
+                thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
               }));
             }}
           >
@@ -548,6 +592,41 @@ export function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
             </Select>
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
+            <Select
+              value={draft.model}
+              onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' }))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sonnet">Sonnet</SelectItem>
+                <SelectItem value="opus">Opus</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
+            <Select
+              value={draft.thinkingLevel}
+              onValueChange={(val) => setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">Off</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
 
         <Button
           className="w-full"

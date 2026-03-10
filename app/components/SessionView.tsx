@@ -13,6 +13,7 @@ import { ContextGauge } from './ContextGauge';
 type Props = {
   cardId: number;
   sessionId?: string | null;
+  autoStartPrompt?: string;
   accentColor?: string | null;
   model: 'sonnet' | 'opus';
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
@@ -46,7 +47,7 @@ function extractContextWindow(msg: Record<string, unknown>): number {
   return model?.contextWindow ?? 0;
 }
 
-export function SessionView({ cardId, sessionId, accentColor, model, thinkingLevel }: Props) {
+export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, model, thinkingLevel }: Props) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
@@ -151,6 +152,14 @@ export function SessionView({ cardId, sessionId, accentColor, model, thinkingLev
       },
     })
   );
+
+  // Auto-start session when mounted for a card that needs an immediate start
+  // (e.g., new card created as in_progress, or card moved to in_progress)
+  useEffect(() => {
+    if (autoStartPrompt) {
+      startMutation.mutate({ cardId, prompt: autoStartPrompt });
+    }
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Send message mutation — delay subscribing until server confirms
   // to avoid replaying messages from the previous query

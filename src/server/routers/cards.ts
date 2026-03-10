@@ -20,6 +20,8 @@ export const cardsRouter = router({
       projectId: z.number().nullable().optional(),
       useWorktree: z.boolean().optional(),
       sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
+      model: z.enum(['sonnet', 'opus']).optional(),
+      thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const col = input.column ?? 'backlog';
@@ -40,8 +42,8 @@ export const cardsRouter = router({
           const [proj] = await ctx.db.select().from(projects).where(eq(projects.id, input.projectId));
           if (proj) {
             project = proj;
-            extra.model = proj.defaultModel;
-            extra.thinkingLevel = proj.defaultThinkingLevel;
+            extra.model = input.model ?? proj.defaultModel;
+            extra.thinkingLevel = input.thinkingLevel ?? proj.defaultThinkingLevel;
           }
         } catch (err) {
           console.error(`Failed to fetch project for card:`, err);

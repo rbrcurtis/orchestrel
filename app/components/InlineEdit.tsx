@@ -161,7 +161,7 @@ export function InlineEdit({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={saving}
-          className={[sharedInputClass, "min-h-[100px] resize-y"].join(" ")}
+          className={[sharedInputClass, "min-h-[100px] max-h-40 resize-y overflow-y-auto"].join(" ")}
           placeholder={placeholder}
         />
       ) : (
