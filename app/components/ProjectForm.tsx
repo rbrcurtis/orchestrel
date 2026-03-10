@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useTRPC } from '~/lib/trpc';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useProjectStore } from '~/stores/context';
 import DirectoryBrowser from './DirectoryBrowser';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
@@ -56,41 +55,19 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
   const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus'>(project?.defaultModel ?? 'sonnet');
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(project?.defaultThinkingLevel ?? 'high');
   const [showBrowser, setShowBrowser] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-
-  const { data: freshProject } = useQuery(
-    trpc.projects.get.queryOptions(
-      { id: project?.id ?? 0 },
-      { enabled: !!project }
-    )
-  );
-
-  useEffect(() => {
-    if (freshProject) setIsGitRepo(freshProject.isGitRepo);
-  }, [freshProject]);
-
-  const createMutation = useMutation(trpc.projects.create.mutationOptions({
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryKey() });
-      onDone();
-    },
-  }));
-
-  const updateMutation = useMutation(trpc.projects.update.mutationOptions({
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.projects.list.queryKey() });
-      onDone();
-    },
-  }));
+  const projects = useProjectStore();
 
   const isValid = name.trim() && path.trim() && (!isGitRepo || defaultBranch);
-  const isPending = createMutation.isPending || updateMutation.isPending;
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!isValid) return;
+
+    setError(null);
+    setPending(true);
 
     const data = {
       name: name.trim(),
@@ -103,10 +80,17 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
       defaultThinkingLevel,
     };
 
-    if (project) {
-      updateMutation.mutate({ id: project.id, ...data });
-    } else {
-      createMutation.mutate(data);
+    try {
+      if (project) {
+        await projects.updateProject({ id: project.id, ...data });
+      } else {
+        await projects.createProject(data);
+      }
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save project');
+    } finally {
+      setPending(false);
     }
   }
 
@@ -249,12 +233,10 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
             </div>
 
             {/* Error display */}
-            {(createMutation.error || updateMutation.error) && (
+            {error && (
               <Alert variant="destructive" className="mt-3">
                 <AlertCircle className="size-4" />
-                <AlertDescription>
-                  {createMutation.error?.message || updateMutation.error?.message}
-                </AlertDescription>
+                <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
 
@@ -263,8 +245,8 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               <Button type="button" variant="outline" onClick={onDone}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={!isValid || isPending}>
-                {isPending ? 'Saving...' : 'Save'}
+              <Button type="submit" disabled={!isValid || pending}>
+                {pending ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </form>

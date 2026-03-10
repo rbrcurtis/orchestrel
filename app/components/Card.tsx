@@ -12,8 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '~/components/ui/alert-dialog';
-import { useTRPC } from '~/lib/trpc';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCardStore } from '~/stores/context';
 
 interface CardProps {
   id: number;
@@ -24,7 +23,10 @@ interface CardProps {
 
 export function Card({ id, title, color, onClick }: CardProps) {
   const [open, setOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [archivePending, setArchivePending] = useState(false);
   const archiveRef = useRef<HTMLButtonElement>(null);
+  const cards = useCardStore();
 
   const {
     attributes,
@@ -34,21 +36,6 @@ export function Card({ id, title, color, onClick }: CardProps) {
     transition,
     isDragging,
   } = useSortable({ id });
-
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
-
-  const deleteMutation = useMutation(trpc.cards.delete.mutationOptions({
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-    },
-  }));
-
-  const archiveMutation = useMutation(trpc.cards.move.mutationOptions({
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-    },
-  }));
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -98,9 +85,15 @@ export function Card({ id, title, color, onClick }: CardProps) {
             <Button
               variant="ghost"
               className="border border-neon-magenta/40 bg-neon-magenta/10 text-neon-magenta hover:bg-neon-magenta/20 hover:text-neon-magenta"
-              onClick={() => {
-                setOpen(false);
-                deleteMutation.mutate({ id });
+              disabled={deletePending}
+              onClick={async () => {
+                setDeletePending(true);
+                try {
+                  await cards.deleteCard(id);
+                } finally {
+                  setDeletePending(false);
+                  setOpen(false);
+                }
               }}
             >
               Delete
@@ -109,9 +102,15 @@ export function Card({ id, title, color, onClick }: CardProps) {
               ref={archiveRef}
               variant="ghost"
               className="border border-neon-lime/40 bg-neon-lime/10 text-neon-lime hover:bg-neon-lime/20 hover:text-neon-lime"
-              onClick={() => {
-                setOpen(false);
-                archiveMutation.mutate({ id, column: 'archive', position: 0 });
+              disabled={archivePending}
+              onClick={async () => {
+                setArchivePending(true);
+                try {
+                  await cards.moveCard({ id, column: 'archive', position: 0 });
+                } finally {
+                  setArchivePending(false);
+                  setOpen(false);
+                }
               }}
             >
               Archive
