@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { observer } from 'mobx-react-lite';
 import { Send, Square, AlertCircle, ChevronDown, Paperclip } from 'lucide-react';
-import { useTRPC } from '~/lib/trpc';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSubscription } from '@trpc/tanstack-react-query';
 import { MessageBlock } from './MessageBlock';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { ContextGauge } from './ContextGauge';
+import { useSessionStore, useCardStore } from '~/stores/context';
+import type { FileRef } from '../../src/shared/ws-protocol';
 
 type Props = {
   cardId: number;
@@ -47,62 +47,70 @@ function extractContextWindow(msg: Record<string, unknown>): number {
   return model?.contextWindow ?? 0;
 }
 
-export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, model, thinkingLevel }: Props) {
-  const trpc = useTRPC();
-  const queryClient = useQueryClient();
+export const SessionView = observer(function SessionView({
+  cardId,
+  sessionId,
+  autoStartPrompt,
+  accentColor,
+  model,
+  thinkingLevel,
+}: Props) {
+  const sessionStore = useSessionStore();
+  const cardStore = useCardStore();
 
-  const { data: statusData } = useQuery({
-    ...trpc.claude.status.queryOptions({ cardId }),
-    refetchInterval: 3000,
-  });
+  const session = sessionStore.getSession(cardId);
 
-  // Load historical session messages when not actively streaming
-  const { data: historyData, isLoading: historyLoading } = useQuery(
-    trpc.sessions.loadSession.queryOptions(
-      { sessionId: sessionId! },
-      { enabled: !!sessionId },
-    )
-  );
+  const sessionActive = session?.active ?? false;
+  const sessionStatus = session?.status ?? 'completed';
+  const promptsSent = session?.promptsSent ?? 0;
+  const turnsCompleted = session?.turnsCompleted ?? 0;
+  const liveMessages = session?.liveMessages ?? [];
+  const history = session?.history ?? [];
 
-  const [liveMessages, setLiveMessages] = useState<Record<string, unknown>[]>([]);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
-  const [subscribing, setSubscribing] = useState(false);
-  const seenIds = useRef(new Set<string>());
+  const [startError, setStartError] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [contextTokens, setContextTokens] = useState(0);
   const [contextWindow, setContextWindow] = useState(200_000);
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Reset live state when switching cards
   useEffect(() => {
-    setLiveMessages([]);
     setPendingPrompt(null);
-    setSubscribing(false);
-    seenIds.current.clear();
+    setStartError(null);
+    setIsStarting(false);
     setContextTokens(0);
     setContextWindow(200_000);
     setCompacted(false);
   }, [cardId]);
 
-  const sessionActive = statusData?.active ?? false;
-  const sessionStatus = statusData?.status ?? 'completed';
-  const promptsSent = statusData?.promptsSent ?? 0;
-  const turnsCompleted = statusData?.turnsCompleted ?? 0;
+  // Load session history when sessionId is available
+  useEffect(() => {
+    if (!sessionId) return;
+    setHistoryLoading(true);
+    sessionStore.loadHistory(cardId, sessionId).finally(() => setHistoryLoading(false));
+  }, [cardId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isStreaming = sessionActive || subscribing;
+  // Request status on mount
+  useEffect(() => {
+    sessionStore.requestStatus(cardId);
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Merge: history + optimistic pending prompt + live subscription data
+  const isStreaming = sessionActive || isStarting;
+
+  // Merge: history + optimistic pending prompt + live messages
   const messages = useMemo(() => {
-    const history = (historyData as Record<string, unknown>[] | undefined) ?? [];
-    const result = [...history];
+    const result = [...history] as Record<string, unknown>[];
     if (pendingPrompt) {
       result.push({ type: 'user', message: { role: 'user', content: pendingPrompt } });
     }
-    result.push(...liveMessages);
+    result.push(...(liveMessages as Record<string, unknown>[]));
     return result;
-  }, [historyData, liveMessages, pendingPrompt]);
+  }, [history, liveMessages, pendingPrompt]);
 
   // Extract tool outputs from all messages
   const toolOutputs = useMemo(() => {
@@ -124,137 +132,58 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
     return map;
   }, [messages]);
 
-  // Move card to in_progress when starting a session
-  const moveMutation = useMutation(
-    trpc.cards.move.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-      },
-    })
-  );
-
   function addOptimisticUser(text: string) {
     setPendingPrompt(text);
-    setLiveMessages([]);
-    seenIds.current.clear();
   }
 
-  // Start mutation
-  const startMutation = useMutation(
-    trpc.claude.start.mutationOptions({
-      onMutate: ({ prompt }) => {
-        addOptimisticUser(prompt);
-        setSubscribing(true);
-      },
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
-        moveMutation.mutate({ id: cardId, column: 'in_progress', position: 0 });
-      },
-    })
-  );
-
-  // Auto-start session when mounted for a card that needs an immediate start
-  // (e.g., new card created as in_progress, or card moved to in_progress)
+  // Auto-start session when mounted with autoStartPrompt
   useEffect(() => {
     if (autoStartPrompt) {
-      startMutation.mutate({ cardId, prompt: autoStartPrompt });
+      addOptimisticUser(autoStartPrompt);
+      setIsStarting(true);
+      setStartError(null);
+      cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
+      sessionStore.startSession(cardId, autoStartPrompt).catch((err) => {
+        setStartError(err instanceof Error ? err.message : String(err));
+        setIsStarting(false);
+      });
     }
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Send message mutation — delay subscribing until server confirms
-  // to avoid replaying messages from the previous query
-  const sendMutation = useMutation(
-    trpc.claude.sendMessage.mutationOptions({
-      onMutate: ({ message }) => {
-        addOptimisticUser(message);
-      },
-      onSuccess: () => {
-        setSubscribing(true);
-        queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
-        moveMutation.mutate({ id: cardId, column: 'in_progress', position: 0 });
-      },
-    })
-  );
-
-  // Stop mutation
-  const stopMutation = useMutation(
-    trpc.claude.stop.mutationOptions({
-      onSuccess: () => {
-        setSubscribing(false);
-        queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-      },
-    })
-  );
-
-  const updateCardMutation = useMutation(
-    trpc.cards.update.mutationOptions({
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-      },
-    })
-  );
-
-  const shouldSubscribe = sessionActive || subscribing;
-
-  // Clean up stale live data on streaming → idle transition
-  const wasStreaming = useRef(false);
+  // Clear pending prompt once live messages arrive
+  const prevLiveLen = useRef(0);
   useEffect(() => {
-    if (wasStreaming.current && !isStreaming) {
-      setLiveMessages([]);
+    if (liveMessages.length > prevLiveLen.current && pendingPrompt) {
       setPendingPrompt(null);
     }
-    wasStreaming.current = isStreaming;
-  }, [isStreaming]);
+    prevLiveLen.current = liveMessages.length;
+  }, [liveMessages.length, pendingPrompt]);
 
-  // Invalidate cards when session completes (covers both manual start and auto-start)
+  // Clear pending prompt and isStarting when session becomes non-streaming
   const prevStatus = useRef(sessionStatus);
   useEffect(() => {
     if (prevStatus.current !== sessionStatus) {
       prevStatus.current = sessionStatus;
-      if (sessionStatus === 'completed' || sessionStatus === 'errored') {
-        setSubscribing(false);
-        queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
-        if (sessionId) {
-          queryClient.invalidateQueries({ queryKey: trpc.sessions.loadSession.queryKey({ sessionId }) });
-        }
+      if (sessionStatus === 'completed' || sessionStatus === 'errored' || sessionStatus === 'stopped') {
+        setIsStarting(false);
+        setPendingPrompt(null);
       }
     }
-  }, [sessionStatus, queryClient, trpc, sessionId]);
+  }, [sessionStatus]);
 
-  useSubscription(
-    trpc.claude.onMessage.subscriptionOptions(
-      { cardId },
-      {
-        enabled: shouldSubscribe,
-        onData: (evt) => {
-          const tracked = evt as unknown as { data: Record<string, unknown>; id: string };
-          if (seenIds.current.has(tracked.id)) return;
-          seenIds.current.add(tracked.id);
-          // Clear optimistic prompt once real data arrives (server now emits the user message)
-          setPendingPrompt(null);
-          setLiveMessages((prev) => [...prev, tracked.data]);
-
-          const msg = tracked.data;
-          // Extract context fill from assistant messages (per-turn usage)
-          const ctx = extractContextFromAssistant(msg);
-          if (ctx > 0) setContextTokens(ctx);
-          // Extract context window size from result messages
-          const cw = extractContextWindow(msg);
-          if (cw > 0) setContextWindow(cw);
-          if (msg.type === 'system' && (msg as { subtype?: string }).subtype === 'compact_boundary') {
-            setCompacted(true);
-            setTimeout(() => setCompacted(false), 600);
-          }
-        },
-        onError: (err) => {
-          console.error('Subscription error:', err);
-          setSubscribing(false);
-          queryClient.invalidateQueries({ queryKey: trpc.claude.status.queryKey({ cardId }) });
-        },
-      }
-    )
-  );
+  // Extract context tokens from live messages as they arrive
+  useEffect(() => {
+    if (liveMessages.length === 0) return;
+    const last = liveMessages[liveMessages.length - 1] as Record<string, unknown>;
+    const ctx = extractContextFromAssistant(last);
+    if (ctx > 0) setContextTokens(ctx);
+    const cw = extractContextWindow(last);
+    if (cw > 0) setContextWindow(cw);
+    if (last.type === 'system' && (last as { subtype?: string }).subtype === 'compact_boundary') {
+      setCompacted(true);
+      setTimeout(() => setCompacted(false), 600);
+    }
+  }, [liveMessages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom when new live messages or pending prompt arrive (only if near bottom)
   useEffect(() => {
@@ -265,15 +194,14 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
     if (nearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [liveMessages, pendingPrompt]);
+  }, [liveMessages.length, pendingPrompt]);
 
   // Scroll to bottom on initial load of history
   useEffect(() => {
-    if (historyData && historyData.length > 0 && liveMessages.length === 0) {
-      // Use instant scroll for initial load
+    if (history.length > 0 && liveMessages.length === 0) {
       bottomRef.current?.scrollIntoView({ behavior: 'instant' });
     }
-  }, [historyData, liveMessages.length]);
+  }, [history.length, liveMessages.length]);
 
   // Show/hide scroll-to-bottom button based on scroll position
   useEffect(() => {
@@ -284,18 +212,18 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
       const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       setShowScrollBtn(!nearBottom);
     }
-    onScroll(); // check initial position
+    onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, [messages.length]);
 
   // Extract initial context tokens from history
   useEffect(() => {
-    if (!historyData || historyData.length === 0) return;
+    if (!history || history.length === 0) return;
     let foundTokens = false;
     let foundWindow = false;
-    for (let i = historyData.length - 1; i >= 0; i--) {
-      const msg = historyData[i] as Record<string, unknown>;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i] as Record<string, unknown>;
       if (!foundTokens) {
         const ctx = extractContextFromAssistant(msg);
         if (ctx > 0) { setContextTokens(ctx); foundTokens = true; }
@@ -306,14 +234,41 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
       }
       if (foundTokens && foundWindow) return;
     }
-  }, [historyData]);
+  }, [history]);
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, contextTokens / contextWindow * 100) : 0;
 
+  async function handleStart(prompt: string) {
+    addOptimisticUser(prompt);
+    setIsStarting(true);
+    setStartError(null);
+    cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
+    try {
+      await sessionStore.startSession(cardId, prompt);
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : String(err));
+      setIsStarting(false);
+    }
+  }
+
+  async function handleSend(message: string, files?: FileRef[]) {
+    addOptimisticUser(message);
+    cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
+    await sessionStore.sendMessage(cardId, message, files);
+  }
+
+  async function handleStop() {
+    await sessionStore.stopSession(cardId);
+    setIsStarting(false);
+  }
+
+  async function handleUpdateCard(data: { model?: 'sonnet' | 'opus'; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' }) {
+    await cardStore.updateCard({ id: cardId, ...data });
+  }
+
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border">
-      {/* Status bar — only shown when there's activity */}
       {/* Messages — scrollable middle area */}
       <div className="relative flex-1 min-h-0 min-w-0">
         <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden">
@@ -343,11 +298,11 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
         )}
       </div>
 
-      {startMutation.isError && (
+      {startError && (
         <div className="px-3 pt-2 shrink-0">
           <Alert variant="destructive">
             <AlertCircle className="size-4" />
-            <AlertDescription>{startMutation.error.message}</AlertDescription>
+            <AlertDescription>{startError}</AlertDescription>
           </Alert>
         </div>
       )}
@@ -355,7 +310,7 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
       {/* Status bar — above prompt input */}
       {(isStreaming || messages.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0">
-          <StatusBadge status={startMutation.isPending ? 'starting' : sessionStatus} />
+          <StatusBadge status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus} />
           {showCounters && (
             <span className="text-[11px] text-muted-foreground">
               {turnsCompleted}/{promptsSent} turns
@@ -363,7 +318,7 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
           )}
           <select
             value={model}
-            onChange={(e) => updateCardMutation.mutate({ id: cardId, model: e.target.value as 'sonnet' | 'opus' })}
+            onChange={(e) => handleUpdateCard({ model: e.target.value as 'sonnet' | 'opus' })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
           >
             <option value="sonnet">Sonnet</option>
@@ -371,7 +326,7 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
           </select>
           <select
             value={thinkingLevel}
-            onChange={(e) => updateCardMutation.mutate({ id: cardId, thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
+            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
           >
             <option value="off">Off</option>
@@ -384,8 +339,7 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
               variant="ghost"
               size="sm"
               className="ml-auto h-6 px-2 text-xs text-muted-foreground"
-              onClick={() => stopMutation.mutate({ cardId })}
-              disabled={stopMutation.isPending}
+              onClick={handleStop}
             >
               <Square className="size-3 fill-current" />
               Stop
@@ -399,16 +353,16 @@ export function SessionView({ cardId, sessionId, autoStartPrompt, accentColor, m
         cardId={cardId}
         isRunning={isStreaming}
         hasSession={!!sessionId}
-        isPending={startMutation.isPending}
-        onStart={(prompt) => startMutation.mutate({ cardId, prompt })}
-        onSend={(message, files) => sendMutation.mutate({ cardId, message, files })}
-        sendPending={sendMutation.isPending}
+        isPending={isStarting}
+        onStart={handleStart}
+        onSend={handleSend}
+        sendPending={false}
         contextPercent={contextPercent}
         compacted={compacted}
       />
     </div>
   );
-}
+});
 
 // --- Status badge ---
 
@@ -439,14 +393,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // --- File upload helpers ---
-
-type FileRef = {
-  id: string;
-  name: string;
-  mimeType: string;
-  path: string;
-  size: number;
-};
 
 async function uploadFiles(files: File[], sessionId?: string): Promise<FileRef[]> {
   const form = new FormData();
