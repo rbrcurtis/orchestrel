@@ -19,6 +19,12 @@ import {
   handleProjectBrowse,
 } from './handlers/projects'
 import { handleSessionLoad } from './handlers/sessions'
+import {
+  handleClaudeStart,
+  handleClaudeSend,
+  handleClaudeStop,
+  handleClaudeStatus,
+} from './handlers/claude'
 
 const PAGE_SIZE = 20
 
@@ -134,12 +140,29 @@ export function handleMessage(
       void handleSessionLoad(ws, msg, connections)
       break
 
-    default:
-      // Claude messages handled elsewhere (claude:start, claude:send, claude:stop, claude:status)
+    case 'claude:start':
+      void handleClaudeStart(ws, msg, connections, mutator)
+      break
+
+    case 'claude:send':
+      void handleClaudeSend(ws, msg, connections, mutator)
+      break
+
+    case 'claude:stop':
+      void handleClaudeStop(ws, msg, connections, mutator)
+      break
+
+    case 'claude:status':
+      void handleClaudeStatus(ws, msg, connections, mutator)
+      break
+
+    default: {
+      const exhausted = msg as { type: string; requestId?: string }
       connections.send(ws, {
         type: 'mutation:error',
-        requestId: (msg as { requestId?: string }).requestId ?? 'unknown',
-        error: `Handler not implemented: ${(msg as { type: string }).type}`,
+        requestId: exhausted.requestId ?? 'unknown',
+        error: `Handler not implemented: ${exhausted.type}`,
       })
+    }
   }
 }
