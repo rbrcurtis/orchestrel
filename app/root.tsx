@@ -33,9 +33,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#0a0a0f" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href="/manifest.json" crossOrigin="use-credentials" />
         <link rel="icon" href="/favicon.ico" sizes="32x32" />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
@@ -89,10 +89,7 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
-  if (!rootStore) {
-    // SSR: render empty shell, client will hydrate with store
-    return <div id="ssr-shell" />;
-  }
+  if (!rootStore) return null;
   return (
     <StoreProvider store={rootStore}>
       <Outlet />

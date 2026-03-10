@@ -27,18 +27,22 @@ self.addEventListener('fetch', (e) => {
   // Skip Vite HMR internals
   if (url.pathname.startsWith('/@') || url.pathname.startsWith('/__vite')) return;
 
+  // Skip manifest (doesn't need caching, causes CORS errors behind CF Access)
+  if (url.pathname === '/manifest.json') return;
+
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const cached = await cache.match(request);
       const fresh = fetch(request).then((res) => {
-        if (res.ok) cache.put(request, res.clone());
+        // Don't cache redirects (e.g. CF Access login redirects)
+        if (res.ok && !res.redirected) cache.put(request, res.clone());
         return res;
       });
       if (cached) {
         fresh.catch(() => {}); // revalidate in background, swallow errors
         return cached;
       }
-      return fresh;
+      return fresh.catch(() => Response.error());
     })
   );
 });
