@@ -75,19 +75,6 @@ describe('clientMessage', () => {
     if (result.success) expect(result.data.type).toBe('search')
   })
 
-  it('parses card:move', () => {
-    const msg = {
-      type: 'card:move',
-      requestId: 'r1',
-      data: { id: 5, column: 'running', position: 2.0 },
-    }
-    const result = clientMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) {
-      expect(result.data.type).toBe('card:move')
-    }
-  })
-
   it('rejects unknown type', () => {
     const msg = { type: 'unknown:action', data: {} }
     const result = clientMessage.safeParse(msg)

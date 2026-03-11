@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
-import { cardCreateSchema, cardMoveSchema, cardUpdateSchema } from '../../shared/ws-protocol'
+import { cardCreateSchema, cardUpdateSchema } from '../../shared/ws-protocol'
 import type { DbMutator } from '../db/mutator'
 
 export function createRestApi(mutator: DbMutator) {
@@ -16,13 +16,6 @@ export function createRestApi(mutator: DbMutator) {
     const id = Number(c.req.param('id'))
     const data = c.req.valid('json')
     const card = mutator.updateCard(id, data)
-    return c.json(card)
-  })
-
-  app.post('/api/cards/:id/move', zValidator('json', cardMoveSchema.omit({ id: true })), (c) => {
-    const id = Number(c.req.param('id'))
-    const data = c.req.valid('json')
-    const card = mutator.moveCard(id, data.column, data.position ?? 0)
     return c.json(card)
   })
 
