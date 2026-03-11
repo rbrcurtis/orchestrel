@@ -7,13 +7,12 @@ import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { ContextGauge } from './ContextGauge';
-import { useSessionStore, useCardStore } from '~/stores/context';
+import { useSessionStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
 
 type Props = {
   cardId: number;
   sessionId?: string | null;
-  autoStartPrompt?: string;
   accentColor?: string | null;
   model: 'sonnet' | 'opus';
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
@@ -28,13 +27,11 @@ type ToolResultBlock = {
 export const SessionView = observer(function SessionView({
   cardId,
   sessionId,
-  autoStartPrompt,
   accentColor,
   model,
   thinkingLevel,
 }: Props) {
   const sessionStore = useSessionStore();
-  const cardStore = useCardStore();
 
   const session = sessionStore.getSession(cardId);
   const conversation = session?.conversation ?? [];
@@ -132,19 +129,6 @@ export const SessionView = observer(function SessionView({
     return () => el.removeEventListener('scroll', onScroll);
   }, [conversation.length]);
 
-  // Auto-start session when mounted with autoStartPrompt
-  useEffect(() => {
-    if (autoStartPrompt) {
-      setIsStarting(true);
-      setStartError(null);
-      cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
-      sessionStore.startSession(cardId, autoStartPrompt).catch((err) => {
-        setStartError(err instanceof Error ? err.message : String(err));
-        setIsStarting(false);
-      });
-    }
-  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Extract tool outputs from conversation
   const toolOutputs = useMemo(() => {
     const map = new Map<string, string>();
@@ -167,21 +151,12 @@ export const SessionView = observer(function SessionView({
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, contextTokens / contextWindow * 100) : 0;
 
-  async function handleStart(prompt: string) {
-    setIsStarting(true);
-    setStartError(null);
-    cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
+  async function handleSend(message: string, files?: FileRef[]) {
     try {
-      await sessionStore.startSession(cardId, prompt);
+      await sessionStore.sendMessage(cardId, message, files);
     } catch (err) {
       setStartError(err instanceof Error ? err.message : String(err));
-      setIsStarting(false);
     }
-  }
-
-  async function handleSend(message: string, files?: FileRef[]) {
-    cardStore.moveCard({ id: cardId, column: 'in_progress', position: 0 });
-    await sessionStore.sendMessage(cardId, message, files);
   }
 
   async function handleStop() {
@@ -283,9 +258,8 @@ export const SessionView = observer(function SessionView({
       <PromptInput
         cardId={cardId}
         isRunning={isStreaming}
-        hasSession={!!sessionId}
+        hasSession={!!sessionId || sessionActive}
         isPending={isStarting}
-        onStart={handleStart}
         onSend={handleSend}
         sendPending={false}
         contextPercent={contextPercent}
@@ -343,7 +317,6 @@ function PromptInput({
   isRunning,
   hasSession,
   isPending,
-  onStart,
   onSend,
   sendPending,
   contextPercent,
@@ -353,7 +326,6 @@ function PromptInput({
   isRunning: boolean;
   hasSession: boolean;
   isPending: boolean;
-  onStart: (prompt: string) => void;
   onSend: (message: string, files?: FileRef[]) => void;
   sendPending: boolean;
   contextPercent: number;
@@ -421,20 +393,16 @@ function PromptInput({
     if (!trimmed && files.length === 0) return;
 
     setUploadError(null);
-    if (isRunning || hasSession) {
-      if (files.length > 0) {
-        try {
-          const refs = await uploadFiles(files);
-          onSend(trimmed || 'Please review the attached files.', refs);
-        } catch {
-          setUploadError('Failed to upload files');
-          return;
-        }
-      } else {
-        onSend(trimmed);
+    if (files.length > 0) {
+      try {
+        const refs = await uploadFiles(files);
+        onSend(trimmed || 'Please review the attached files.', refs);
+      } catch {
+        setUploadError('Failed to upload files');
+        return;
       }
     } else {
-      onStart(trimmed);
+      onSend(trimmed);
     }
     updateText('');
     setFiles([]);

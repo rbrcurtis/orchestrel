@@ -116,25 +116,6 @@ export class CardStore {
     }
   }
 
-  async moveCard(data: { id: number; column: Column; position?: number }): Promise<void> {
-    const existing = this.cards.get(data.id)
-    if (existing) {
-      this.cards.set(data.id, {
-        ...existing,
-        column: data.column,
-        position: data.position ?? existing.position,
-      })
-    }
-
-    const requestId = uuid()
-    try {
-      await ws().mutate({ type: 'card:move', requestId, data })
-    } catch (err) {
-      if (existing) this.cards.set(data.id, existing)
-      throw err
-    }
-  }
-
   async deleteCard(id: number): Promise<void> {
     const existing = this.cards.get(id)
     this.cards.delete(id)

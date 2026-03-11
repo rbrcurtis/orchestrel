@@ -211,25 +211,6 @@ export class SessionStore {
 
   // ── Mutations ───────────────────────────────────────────────────────────────
 
-  async startSession(cardId: number, prompt: string): Promise<void> {
-    const s = this.getOrCreate(cardId)
-    s.active = true
-    s.status = 'starting'
-
-    // Optimistic: add user message to conversation immediately
-    this.ingest(cardId, {
-      type: 'user',
-      message: { role: 'user', content: prompt },
-    })
-
-    const requestId = uuid()
-    await ws().mutate({
-      type: 'claude:start',
-      requestId,
-      data: { cardId, prompt },
-    })
-  }
-
   async sendMessage(cardId: number, message: string, files?: FileRef[]): Promise<void> {
     // Only add optimistic message when no files (file prompts get augmented server-side)
     if (!files?.length) {
