@@ -16,10 +16,12 @@ class SessionManager extends EventEmitter {
   ): ClaudeSession {
     const key = `card-${cardId}`;
     const existing = this.sessions.get(key);
-    if (existing && existing.status === 'running') {
-      throw new Error(`Session already running for card ${cardId}`);
+    if (existing && (existing.status === 'running' || existing.status === 'starting')) {
+      console.log(`[session:${cardId}] blocked: session already ${existing.status}`);
+      throw new Error(`Session already ${existing.status} for card ${cardId}`);
     }
     const session = new ClaudeSession(cwd, resumeSessionId, projectName, model, thinkingLevel);
+    console.log(`[session:${cardId}] created, model=${model}, thinking=${thinkingLevel}, resume=${!!resumeSessionId}`);
     this.sessions.set(key, session);
     this.emit('session', cardId, session);
     return session;
@@ -33,6 +35,7 @@ class SessionManager extends EventEmitter {
     const key = `card-${cardId}`;
     const session = this.sessions.get(key);
     if (session) {
+      console.log(`[session:${cardId}] kill() called`);
       await session.kill();
       this.sessions.delete(key);
     }

@@ -51,6 +51,7 @@ export class ClaudeSession extends EventEmitter {
   }
 
   async start(prompt: string): Promise<void> {
+    console.log(`[session] start() called, cwd=${this.cwd}, prompt length=${prompt.length}`);
     // Buffer initial prompt as a user message (like sendUserMessage does for follow-ups)
     const msg = { type: 'user', message: { role: 'user', content: prompt } };
     this.messages.push(msg);
@@ -116,6 +117,7 @@ export class ClaudeSession extends EventEmitter {
         this.handleMessage(msg as Record<string, unknown>);
       }
       this.status = 'completed';
+      console.log(`[session] completed normally, turns=${this.turnsCompleted}`);
       this.emit('exit', 0);
     } catch (err: unknown) {
       // AbortError means we called interrupt/abort — treat as clean exit
@@ -123,7 +125,7 @@ export class ClaudeSession extends EventEmitter {
         this.status = 'completed';
         this.emit('exit', 0);
       } else {
-        console.error('[ClaudeSession] SDK query error:', err);
+        console.error('[session] SDK query error:', err);
         this.status = 'errored';
         this.emit('exit', 1);
       }
@@ -140,6 +142,7 @@ export class ClaudeSession extends EventEmitter {
         this.sessionId = msg.session_id;
       }
       this.status = 'running';
+      console.log(`[session] status → running, sessionId=${this.sessionId ?? this.resumeSessionId}`);
     }
 
     // Buffer and emit
@@ -153,6 +156,7 @@ export class ClaudeSession extends EventEmitter {
   }
 
   async sendUserMessage(content: string): Promise<void> {
+    console.log(`[session] sendUserMessage, length=${content.length}, promptsSent=${this.promptsSent + 1}`);
     this.promptsSent++;
     // Set queryStartIndex BEFORE push so subscription replay includes this user message
     // (needed for file attachment prefix to render in chat)
