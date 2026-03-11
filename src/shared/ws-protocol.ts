@@ -12,7 +12,7 @@ export type Project = z.infer<typeof projectSchema>
 
 // ── Column enum ──────────────────────────────────────────────────────────────
 
-export const columnEnum = z.enum(['backlog', 'ready', 'in_progress', 'review', 'done', 'archive'])
+export const columnEnum = z.enum(['backlog', 'ready', 'running', 'review', 'done', 'archive'])
 export type Column = z.infer<typeof columnEnum>
 
 // ── Mutation input schemas ───────────────────────────────────────────────────
@@ -30,13 +30,7 @@ export const cardCreateSchema = cardInsertSchema.pick({
   sourceBranch: true,
 })
 
-export const cardUpdateSchema = z.object({ id: z.number() }).merge(cardCreateSchema.partial())
-
-export const cardMoveSchema = z.object({
-  id: z.number(),
-  column: columnEnum,
-  position: z.number().optional(),
-})
+export const cardUpdateSchema = z.object({ id: z.number(), position: z.number().optional() }).merge(cardCreateSchema.partial())
 
 const projectInsertSchema = createInsertSchema(projects)
 
@@ -66,11 +60,6 @@ export const fileRefSchema = z.object({
 export type FileRef = z.infer<typeof fileRefSchema>
 
 // ── Claude schemas ───────────────────────────────────────────────────────────
-
-export const claudeStartSchema = z.object({
-  cardId: z.number(),
-  prompt: z.string().min(1),
-})
 
 export const claudeSendSchema = z.object({
   cardId: z.number(),
@@ -109,7 +98,6 @@ export const clientMessage = z.discriminatedUnion('type', [
 
   z.object({ type: z.literal('card:create'), requestId: z.string(), data: cardCreateSchema }),
   z.object({ type: z.literal('card:update'), requestId: z.string(), data: cardUpdateSchema }),
-  z.object({ type: z.literal('card:move'), requestId: z.string(), data: cardMoveSchema }),
   z.object({ type: z.literal('card:delete'), requestId: z.string(), data: z.object({ id: z.number() }) }),
   z.object({ type: z.literal('card:generateTitle'), requestId: z.string(), data: z.object({ id: z.number() }) }),
   z.object({ type: z.literal('card:suggestTitle'), requestId: z.string(), data: z.object({ description: z.string() }) }),
@@ -119,7 +107,6 @@ export const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('project:delete'), requestId: z.string(), data: z.object({ id: z.number() }) }),
   z.object({ type: z.literal('project:browse'), requestId: z.string(), data: z.object({ path: z.string() }) }),
 
-  z.object({ type: z.literal('claude:start'), requestId: z.string(), data: claudeStartSchema }),
   z.object({ type: z.literal('claude:send'), requestId: z.string(), data: claudeSendSchema }),
   z.object({ type: z.literal('claude:stop'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
   z.object({ type: z.literal('claude:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),

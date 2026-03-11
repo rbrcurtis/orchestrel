@@ -26,7 +26,7 @@ export const cards = sqliteTable('cards', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   title: text('title').notNull(),
   description: text('description').default(''),
-  column: text('column', { enum: ['backlog', 'ready', 'in_progress', 'review', 'done', 'archive'] }).notNull().default('backlog'),
+  column: text('column', { enum: ['backlog', 'ready', 'running', 'review', 'done', 'archive'] }).notNull().default('backlog'),
   position: real('position').notNull().default(0),
   projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
   prUrl: text('pr_url'),
