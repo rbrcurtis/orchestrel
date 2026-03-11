@@ -32,8 +32,6 @@ export const cardCreateSchema = cardInsertSchema.pick({
 
 export const cardUpdateSchema = z.object({ id: z.number(), position: z.number().optional() }).merge(cardCreateSchema.partial())
 
-export const cardMoveSchema = z.object({ id: z.number(), column: columnEnum, position: z.number().optional() })
-
 const projectInsertSchema = createInsertSchema(projects)
 
 export const projectCreateSchema = projectInsertSchema.pick({
