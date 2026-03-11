@@ -50,6 +50,14 @@
   --neon-coral: #ff6b6b;
   --neon-electric: #4d4dff;
   --neon-plasma: #ff5e00;
+  --neon-ice: #a0f0ff;
+  --neon-rose: #ff3d8a;
+  --neon-teal: #00e5bf;
+  --neon-gold: #ffd700;
+  --neon-indigo: #7b61ff;
+  --neon-acid: #ccff00;
+  --neon-crimson: #dc143c;
+  --neon-sky: #00c8ff;
 
   /* Glows */
   --glow-cyan: 0 0 8px #00f0ff44, 0 0 20px #00f0ff22;
@@ -121,6 +129,14 @@
   --color-neon-coral: var(--neon-coral);
   --color-neon-electric: var(--neon-electric);
   --color-neon-plasma: var(--neon-plasma);
+  --color-neon-ice: var(--neon-ice);
+  --color-neon-rose: var(--neon-rose);
+  --color-neon-teal: var(--neon-teal);
+  --color-neon-gold: var(--neon-gold);
+  --color-neon-indigo: var(--neon-indigo);
+  --color-neon-acid: var(--neon-acid);
+  --color-neon-crimson: var(--neon-crimson);
+  --color-neon-sky: var(--neon-sky);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);

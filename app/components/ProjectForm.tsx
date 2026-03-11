@@ -13,6 +13,8 @@ import { AlertCircle } from 'lucide-react';
 const NEON_COLORS = [
   'neon-cyan', 'neon-magenta', 'neon-violet', 'neon-amber',
   'neon-lime', 'neon-coral', 'neon-electric', 'neon-plasma',
+  'neon-ice', 'neon-rose', 'neon-teal', 'neon-gold',
+  'neon-indigo', 'neon-acid', 'neon-crimson', 'neon-sky',
 ] as const;
 
 const COLOR_LABELS: Record<string, string> = {
@@ -24,6 +26,14 @@ const COLOR_LABELS: Record<string, string> = {
   'neon-coral': 'Coral',
   'neon-electric': 'Electric',
   'neon-plasma': 'Plasma',
+  'neon-ice': 'Ice',
+  'neon-rose': 'Rose',
+  'neon-teal': 'Teal',
+  'neon-gold': 'Gold',
+  'neon-indigo': 'Indigo',
+  'neon-acid': 'Acid',
+  'neon-crimson': 'Crimson',
+  'neon-sky': 'Sky',
 };
 
 interface Project {
