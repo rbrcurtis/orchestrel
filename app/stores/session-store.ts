@@ -1,5 +1,5 @@
 import { makeAutoObservable, observable, runInAction } from 'mobx'
-import type { ClaudeMessage, ClaudeStatus, FileRef } from '../../src/shared/ws-protocol'
+import type { AgentMessage, AgentStatus, FileRef } from '../../src/shared/ws-protocol'
 import type { WsClient } from '../lib/ws-client'
 import { uuid } from '../lib/utils'
 import { contentHashSync } from '../lib/content-hash'
@@ -15,12 +15,8 @@ function ws(): WsClient {
   return _ws
 }
 
-export interface ConversationRow {
-  id: string                              // content hash for dedup
-  type: 'user' | 'assistant' | 'result' | 'system'
-  message: Record<string, unknown>
-  isSidechain?: boolean
-  ts?: string
+export interface ConversationRow extends AgentMessage {
+  id: string  // content hash for dedup
 }
 
 export interface SessionState {
@@ -74,47 +70,31 @@ export class SessionStore {
   /**
    * Ingest a single message (live stream or optimistic send).
    * Hashes content for dedup — if already in conversation, skips silently.
+   * Timestamp is excluded from hash (varies between history/live).
    */
-  ingest(cardId: number, msg: ClaudeMessage): void {
+  ingest(cardId: number, msg: AgentMessage): void {
     runInAction(() => {
       const s = this.getOrCreate(cardId)
-      const id = contentHashSync(msg.type, msg.message)
+      const { timestamp, ...stable } = msg
+      const id = contentHashSync(msg.type, stable)
 
       if (s.conversationIds.has(id)) return // dedup
 
-      const row: ConversationRow = {
-        id,
-        type: msg.type as ConversationRow['type'],
-        message: msg.message,
-        ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain }),
-        ...(msg.ts !== undefined && { ts: msg.ts }),
-      }
-
-      s.conversation.push(row)
+      s.conversation.push({ ...msg, id })
       s.conversationIds.add(id)
 
-      // Extract context fill from assistant messages (skip sidechain)
-      if (msg.type === 'assistant' && !msg.isSidechain) {
-        const m = msg.message
-        if (typeof m.usage === 'object' && m.usage !== null) {
-          const u = m.usage as Record<string, unknown>
-          const input = typeof u.input_tokens === 'number' ? u.input_tokens : 0
-          const cacheCreate = typeof u.cache_creation_input_tokens === 'number' ? u.cache_creation_input_tokens : 0
-          const cacheRead = typeof u.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : 0
-          s.contextTokens = input + cacheCreate + cacheRead
-        }
+      // Extract context fill from text messages (skip sidechain)
+      if (msg.type === 'text' && msg.usage && !msg.meta?.isSidechain) {
+        const u = msg.usage
+        const input = u.inputTokens ?? 0
+        const cacheCreate = u.cacheWrite ?? 0
+        const cacheRead = u.cacheRead ?? 0
+        s.contextTokens = input + cacheCreate + cacheRead
       }
 
-      // Extract context window size from result messages
-      if (msg.type === 'result') {
-        const m = msg.message
-        if (typeof m.modelUsage === 'object' && m.modelUsage !== null) {
-          const modelUsage = m.modelUsage as Record<string, Record<string, unknown>>
-          const first = Object.values(modelUsage)[0]
-          if (first && typeof first.contextWindow === 'number') {
-            s.contextWindow = first.contextWindow
-          }
-        }
+      // Extract context window size from turn_end messages
+      if (msg.type === 'turn_end' && msg.usage?.contextWindow !== undefined) {
+        s.contextWindow = msg.usage.contextWindow
       }
     })
   }
@@ -124,7 +104,7 @@ export class SessionStore {
    * Prepends any messages not already in conversation (history comes first).
    * Only runs once per card (guards with historyLoaded flag).
    */
-  ingestBatch(cardId: number, messages: ClaudeMessage[]): void {
+  ingestBatch(cardId: number, messages: AgentMessage[]): void {
     runInAction(() => {
       const s = this.getOrCreate(cardId)
 
@@ -133,16 +113,11 @@ export class SessionStore {
       const newRows: ConversationRow[] = []
 
       for (const msg of messages) {
-        const id = contentHashSync(msg.type, msg.message)
+        const { timestamp, ...stable } = msg
+        const id = contentHashSync(msg.type, stable)
         if (s.conversationIds.has(id)) continue
 
-        newRows.push({
-          id,
-          type: msg.type as ConversationRow['type'],
-          message: msg.message,
-          ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain }),
-          ...(msg.ts !== undefined && { ts: msg.ts }),
-        })
+        newRows.push({ ...msg, id })
         s.conversationIds.add(id)
       }
 
@@ -156,26 +131,16 @@ export class SessionStore {
       let foundWindow = false
       for (let i = s.conversation.length - 1; i >= 0; i--) {
         const row = s.conversation[i]
-        if (!foundTokens && row.type === 'assistant' && !row.isSidechain) {
-          const m = row.message
-          if (typeof m.usage === 'object' && m.usage !== null) {
-            const u = m.usage as Record<string, unknown>
-            const input = typeof u.input_tokens === 'number' ? u.input_tokens : 0
-            const cacheCreate = typeof u.cache_creation_input_tokens === 'number' ? u.cache_creation_input_tokens : 0
-            const cacheRead = typeof u.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : 0
-            s.contextTokens = input + cacheCreate + cacheRead
-          }
+        if (!foundTokens && row.type === 'text' && row.usage && !row.meta?.isSidechain) {
+          const u = row.usage
+          const input = u.inputTokens ?? 0
+          const cacheCreate = u.cacheWrite ?? 0
+          const cacheRead = u.cacheRead ?? 0
+          s.contextTokens = input + cacheCreate + cacheRead
           foundTokens = true
         }
-        if (!foundWindow && row.type === 'result') {
-          const m = row.message
-          if (typeof m.modelUsage === 'object' && m.modelUsage !== null) {
-            const modelUsage = m.modelUsage as Record<string, Record<string, unknown>>
-            const first = Object.values(modelUsage)[0]
-            if (first && typeof first.contextWindow === 'number') {
-              s.contextWindow = first.contextWindow
-            }
-          }
+        if (!foundWindow && row.type === 'turn_end' && row.usage?.contextWindow !== undefined) {
+          s.contextWindow = row.usage.contextWindow
           foundWindow = true
         }
         if (foundTokens && foundWindow) break
@@ -198,7 +163,7 @@ export class SessionStore {
     s.contextWindow = 200_000
   }
 
-  handleClaudeStatus(data: ClaudeStatus) {
+  handleAgentStatus(data: AgentStatus) {
     runInAction(() => {
       const s = this.getOrCreate(data.cardId)
       s.active = data.active
@@ -216,13 +181,15 @@ export class SessionStore {
     if (!files?.length) {
       this.ingest(cardId, {
         type: 'user',
-        message: { role: 'user', content: message },
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
       })
     }
 
     const requestId = uuid()
     await ws().mutate({
-      type: 'claude:send',
+      type: 'agent:send',
       requestId,
       data: { cardId, message, files },
     })
@@ -231,7 +198,7 @@ export class SessionStore {
   async stopSession(cardId: number): Promise<void> {
     const requestId = uuid()
     await ws().mutate({
-      type: 'claude:stop',
+      type: 'agent:stop',
       requestId,
       data: { cardId },
     })
@@ -240,7 +207,7 @@ export class SessionStore {
   async requestStatus(cardId: number): Promise<void> {
     const requestId = uuid()
     await ws().mutate({
-      type: 'claude:status',
+      type: 'agent:status',
       requestId,
       data: { cardId },
     })

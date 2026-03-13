@@ -48,12 +48,12 @@ export class RootStore {
         this.projects.handleDeleted(msg.data.id)
         break
 
-      case 'claude:message':
+      case 'agent:message':
         this.sessions.ingest(msg.cardId, msg.data)
         break
 
-      case 'claude:status':
-        this.sessions.handleClaudeStatus(msg.data)
+      case 'agent:status':
+        this.sessions.handleAgentStatus(msg.data)
         break
 
       case 'session:history':
