@@ -12,6 +12,8 @@ export class KiroSession extends AgentSession {
 
   /** When true, emit messages from stdio. Set to false when tailer is active (Stage 3). */
   emitFromStdio = true
+  /** Suppress notifications during session/load (replay of prior conversation). */
+  private loading = false
   private proc: ChildProcess | null = null
   private buffer = ''
   private rpcId = 0
@@ -29,6 +31,7 @@ export class KiroSession extends AgentSession {
       cwd: this.cwd,
       env: { ...process.env, HOME: this.agentProfile },
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
     })
 
     this.proc.stdout!.on('data', (chunk: Buffer) => {
@@ -62,7 +65,13 @@ export class KiroSession extends AgentSession {
 
     // Create or load session
     if (this.resumeSessionId) {
-      const loadResult = await this.rpc('session/load', { sessionId: this.resumeSessionId })
+      this.loading = true
+      const loadResult = await this.rpc('session/load', {
+        sessionId: this.resumeSessionId,
+        cwd: this.cwd,
+        mcpServers: [],
+      })
+      this.loading = false
       this.sessionId = this.resumeSessionId
       console.log('[kiro] session loaded:', JSON.stringify(loadResult))
     } else {
@@ -117,7 +126,11 @@ export class KiroSession extends AgentSession {
       this.rpcFire('session/cancel', { sessionId: this.sessionId })
     } catch { /* ignore EPIPE */ }
     this.status = 'stopped'
-    this.proc.kill('SIGTERM')
+    // Kill the entire process group (kiro-cli spawns child processes)
+    const pid = this.proc.pid
+    if (pid) {
+      try { process.kill(-pid, 'SIGTERM') } catch { /* ignore */ }
+    }
     this.proc = null
   }
 
@@ -190,7 +203,7 @@ export class KiroSession extends AgentSession {
       const params = msg.params as Record<string, unknown> | undefined
       if (!params) return
       const agentMsg = normalizeKiroMessage(params)
-      if (agentMsg && this.emitFromStdio) {
+      if (agentMsg && this.emitFromStdio && !this.loading) {
         this.emit('message', agentMsg)
       }
       return

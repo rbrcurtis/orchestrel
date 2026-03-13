@@ -198,6 +198,10 @@ export function normalizeKiroMessage(params: Record<string, unknown>): AgentMess
       }
     }
 
+    // Replay events emitted during session/load — ignore silently
+    case 'user_message_chunk':
+      return null
+
     default:
       if (eventType) {
         console.debug(`[kiro] unrecognized event type: ${eventType}`)
