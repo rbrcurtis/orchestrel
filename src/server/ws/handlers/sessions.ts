@@ -28,7 +28,7 @@ export async function handleSessionLoad(
 
   try {
     const session = await sdk.session.get({ path: { id: sessionId } })
-    if (!session) {
+    if (!session || (session as { success?: boolean }).success === false) {
       connections.send(ws, {
         type: 'session:history',
         requestId,
@@ -39,7 +39,10 @@ export async function handleSessionLoad(
     }
 
     const rawMessages = await sdk.session.messages({ path: { id: sessionId } })
-    const msgList = rawMessages.data ?? rawMessages ?? []
+    const msgData = (rawMessages as { success?: boolean }).success === false
+      ? []
+      : rawMessages.data ?? rawMessages ?? []
+    const msgList = Array.isArray(msgData) ? msgData : []
 
     const normalized: AgentMessage[] = []
     for (const m of msgList) {

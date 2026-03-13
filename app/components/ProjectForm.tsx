@@ -65,7 +65,6 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
   const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus'>(project?.defaultModel ?? 'sonnet');
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(project?.defaultThinkingLevel ?? 'high');
   const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
-  const [showBrowser, setShowBrowser] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,23 +130,13 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               {/* Path */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Path</label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="text"
-                    value={path}
-                    readOnly
-                    placeholder="No directory selected"
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowBrowser(true)}
-                  >
-                    Browse
-                  </Button>
-                </div>
+                <Input
+                  type="text"
+                  value={path}
+                  onChange={e => setPath(e.target.value)}
+                  placeholder="/home/ryan/Code/my-project"
+                  className="font-mono"
+                />
               </div>
 
               {/* Provider */}
@@ -279,18 +268,6 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
           </form>
         </CardContent>
       </Card>
-
-      {showBrowser && (
-        <DirectoryBrowser
-          initialPath={path || '/home/ryan'}
-          onSelect={(selected, gitRepo) => {
-            setPath(selected);
-            setIsGitRepo(gitRepo);
-            setShowBrowser(false);
-          }}
-          onCancel={() => setShowBrowser(false)}
-        />
-      )}
 
     </>
   );
