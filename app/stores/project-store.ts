@@ -122,4 +122,9 @@ export class ProjectStore {
     const requestId = uuid()
     return ws().mutate({ type: 'project:browse', requestId, data: { path } })
   }
+
+  async mkdir(path: string): Promise<unknown> {
+    const requestId = uuid()
+    return ws().mutate({ type: 'project:mkdir', requestId, data: { path } })
+  }
 }

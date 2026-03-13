@@ -3,7 +3,7 @@ import type { ClientMessage } from '../../../shared/ws-protocol'
 import type { ConnectionManager } from '../connections'
 import type { DbMutator } from '../../db/mutator'
 import { existsSync } from 'fs'
-import { readdir } from 'fs/promises'
+import { readdir, mkdir } from 'fs/promises'
 import { join } from 'path'
 
 export async function handleProjectCreate(
@@ -90,5 +90,20 @@ export async function handleProjectBrowse(
       requestId,
       data: [],
     })
+  }
+}
+
+export async function handleProjectMkdir(
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'project:mkdir' }>,
+  connections: ConnectionManager,
+): Promise<void> {
+  const { requestId, data: { path } } = msg
+  try {
+    await mkdir(path, { recursive: true })
+    connections.send(ws, { type: 'mutation:ok', requestId, data: { success: true } })
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err)
+    connections.send(ws, { type: 'mutation:error', requestId, error })
   }
 }

@@ -17,6 +17,7 @@ import {
   handleProjectUpdate,
   handleProjectDelete,
   handleProjectBrowse,
+  handleProjectMkdir,
 } from './handlers/projects'
 import { handleSessionLoad } from './handlers/sessions'
 import {
@@ -133,6 +134,10 @@ export function handleMessage(
 
     case 'project:browse':
       void handleProjectBrowse(ws, msg, connections)
+      break
+
+    case 'project:mkdir':
+      void handleProjectMkdir(ws, msg, connections)
       break
 
     case 'session:load':
