@@ -3,11 +3,10 @@ import { db } from '../db/index'
 import { cards, projects } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { sessionManager } from './manager'
-import type { ClaudeSession } from './protocol'
+import type { AgentSession, AgentMessage, SessionStatus } from './types'
 import type { ConnectionManager } from '../ws/connections'
 import type { DbMutator } from '../db/mutator'
-import type { SessionStatus } from './types'
-import type { ClaudeMessage } from '../../shared/ws-protocol'
+import type { CreateSessionOpts } from './factory'
 import {
   createWorktree,
   runSetupCommands,
@@ -15,52 +14,27 @@ import {
   worktreeExists,
 } from '../worktree'
 
-function waitForInit(s: ClaudeSession): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Timed out waiting for session init')), 30_000)
-    const onMessage = () => {
-      if (s.sessionId) {
-        clearTimeout(timeout)
-        s.off('message', onMessage)
-        resolve()
-      }
-    }
-    s.on('message', onMessage)
-    s.on('exit', () => {
-      clearTimeout(timeout)
-      s.off('message', onMessage)
-      reject(new Error('Session exited before init'))
-    })
-  })
-}
+const DISPLAY_TYPES = new Set([
+  'user', 'text', 'tool_call', 'tool_result', 'tool_progress', 'thinking', 'system', 'turn_end', 'error',
+])
 
 function registerHandlers(
-  session: ClaudeSession,
+  session: AgentSession,
   cardId: number,
   ws: WebSocket,
   connections: ConnectionManager,
   mutator: DbMutator,
 ) {
-  session.on('message', async (msg: Record<string, unknown>) => {
-    const knownTypes = new Set(['user', 'assistant', 'result', 'system'])
-    if (!knownTypes.has(msg.type as string)) return
+  session.on('message', async (msg: AgentMessage) => {
+    if (!DISPLAY_TYPES.has(msg.type)) return
 
-    const innerMsg = (msg.message && typeof msg.message === 'object')
-      ? msg.message as Record<string, unknown>
-      : msg
-    const wrapped: ClaudeMessage = {
-      type: msg.type as ClaudeMessage['type'],
-      message: innerMsg,
-      ...(msg.isSidechain !== undefined && { isSidechain: msg.isSidechain as boolean }),
-      ...(msg.ts !== undefined && { ts: msg.ts as string }),
-    }
     connections.send(ws, {
-      type: 'claude:message',
+      type: 'agent:message',
       cardId,
-      data: wrapped,
+      data: msg,
     })
 
-    if (msg.type === 'result') {
+    if (msg.type === 'turn_end') {
       try {
         mutator.updateCard(cardId, {
           promptsSent: session.promptsSent,
@@ -85,7 +59,7 @@ function registerHandlers(
       console.error(`[session:${cardId}] failed to auto-move to review:`, err)
     }
     connections.send(ws, {
-      type: 'claude:status',
+      type: 'agent:status',
       data: {
         cardId,
         active: false,
@@ -163,12 +137,12 @@ export async function beginSession(
     existingSession.model = card.model
     existingSession.thinkingLevel = card.thinkingLevel
 
-    await existingSession.sendUserMessage(message)
+    await existingSession.sendMessage(message)
 
     mutator.updateCard(cardId, { promptsSent: existingSession.promptsSent })
 
     connections.send(ws, {
-      type: 'claude:status',
+      type: 'agent:status',
       data: {
         cardId,
         active: true,
@@ -186,20 +160,26 @@ export async function beginSession(
     const cwd = ensureWorktree(card, mutator)
 
     let projectName: string | undefined
+    let agentType: 'claude' | 'kiro' = 'claude'
+
     if (card.projectId) {
-      const proj = db.select({ name: projects.name }).from(projects).where(eq(projects.id, card.projectId)).get()
-      if (proj) projectName = proj.name.toLowerCase()
+      const proj = db.select().from(projects).where(eq(projects.id, card.projectId)).get()
+      if (proj) {
+        projectName = proj.name.toLowerCase()
+        agentType = (proj.agentType as 'claude' | 'kiro') ?? 'claude'
+      }
     }
 
     const isResume = !!card.sessionId
-    const session = sessionManager.create(
-      cardId,
+    const opts: CreateSessionOpts = {
+      agentType,
       cwd,
-      card.sessionId ?? undefined,
+      resumeSessionId: card.sessionId ?? undefined,
       projectName,
-      card.model,
-      card.thinkingLevel,
-    )
+      model: card.model,
+      thinkingLevel: card.thinkingLevel,
+    }
+    const session = sessionManager.create(cardId, opts)
 
     // Restore counters from DB for resumed sessions (e.g. after server restart)
     if (isResume) {
@@ -211,7 +191,7 @@ export async function beginSession(
 
     session.promptsSent++
     await session.start(prompt)
-    await waitForInit(session)
+    await session.waitForReady()
 
     if (!isResume) {
       mutator.updateCard(cardId, {
@@ -222,7 +202,7 @@ export async function beginSession(
     }
 
     connections.send(ws, {
-      type: 'claude:status',
+      type: 'agent:status',
       data: {
         cardId,
         active: true,

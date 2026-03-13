@@ -1,10 +1,11 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Options as SDKOptions, Query } from '@anthropic-ai/claude-agent-sdk';
-import { EventEmitter } from 'events';
 import { readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import type { SessionStatus } from './types';
+import { AgentSession } from '../types';
+import type { SessionStatus, AgentMessage } from '../types';
+import { normalizeClaudeMessage } from './messages';
 
 const MEMORY_MCP_BIN = '/home/ryan/Code/memory-mcp/dist/index.js';
 const DEFAULT_QDRANT_URL = 'http://localhost:6333';
@@ -29,33 +30,39 @@ function getMemoryMcpEnv(cwd: string): Record<string, string> {
   }
 }
 
-export class ClaudeSession extends EventEmitter {
+export class ClaudeSession extends AgentSession {
   sessionId: string | null = null;
   status: SessionStatus = 'starting';
-  messages: Record<string, unknown>[] = [];
   promptsSent = 0;
   turnsCompleted = 0;
 
   private queryInstance: Query | null = null;
   private abortController: AbortController | null = null;
-  queryStartIndex = 0;
+  private resumeSessionId: string | undefined;
 
   constructor(
     private cwd: string,
-    private resumeSessionId?: string,
+    resumeSessionId?: string,
     private projectName?: string,
-    public model: 'sonnet' | 'opus' = 'sonnet',
-    public thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
+    model: 'sonnet' | 'opus' = 'sonnet',
+    thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
   ) {
     super();
+    this.resumeSessionId = resumeSessionId;
+    this.model = model;
+    this.thinkingLevel = thinkingLevel;
+
+    // For resumed sessions, set sessionId immediately so waitForReady resolves
+    if (resumeSessionId) {
+      this.sessionId = resumeSessionId;
+    }
   }
 
   async start(prompt: string): Promise<void> {
     console.log(`[session] start() called, cwd=${this.cwd}, prompt length=${prompt.length}`);
-    // Buffer initial prompt as a user message (like sendUserMessage does for follow-ups)
-    const msg = { type: 'user', message: { role: 'user', content: prompt } };
-    this.messages.push(msg);
-    this.emit('message', msg);
+    // Emit normalized user message
+    const msgs = normalizeClaudeMessage({ type: 'user', message: { role: 'user', content: prompt } });
+    for (const m of msgs) this.emit('message', m);
     await this.runQuery(prompt, this.resumeSessionId);
   }
 
@@ -76,7 +83,7 @@ export class ClaudeSession extends EventEmitter {
       includePartialMessages: false,
       model: this.model === 'opus' ? 'claude-opus-4-6' : 'claude-sonnet-4-6',
       thinking: this.thinkingLevel === 'off' ? { type: 'disabled' } : { type: 'adaptive' },
-      effort: this.thinkingLevel === 'off' ? 'low' : this.thinkingLevel,
+      effort: this.thinkingLevel === 'off' ? 'low' : this.thinkingLevel as 'low' | 'medium' | 'high',
     };
 
     if (resumeId) {
@@ -145,25 +152,23 @@ export class ClaudeSession extends EventEmitter {
       console.log(`[session] status → running, sessionId=${this.sessionId ?? this.resumeSessionId}`);
     }
 
-    // Buffer and emit
-    const outMsg = msg.type === 'result' ? { ...msg, ts: new Date().toISOString() } : msg;
-    this.messages.push(outMsg);
-    this.emit('message', outMsg);
+    const normalized = normalizeClaudeMessage(msg);
+    for (const m of normalized) {
+      this.emit('message', m);
+    }
 
     if (msg.type === 'result') {
       this.turnsCompleted++;
     }
   }
 
-  async sendUserMessage(content: string): Promise<void> {
-    console.log(`[session] sendUserMessage, length=${content.length}, promptsSent=${this.promptsSent + 1}`);
+  async sendMessage(content: string): Promise<void> {
+    console.log(`[session] sendMessage, length=${content.length}, promptsSent=${this.promptsSent + 1}`);
     this.promptsSent++;
-    // Set queryStartIndex BEFORE push so subscription replay includes this user message
-    // (needed for file attachment prefix to render in chat)
-    this.queryStartIndex = this.messages.length;
-    const msg = { type: 'user', message: { role: 'user', content } };
-    this.messages.push(msg);
-    this.emit('message', msg);
+    // Set queryStartIndex BEFORE emitting so subscription replay includes this user message
+    this.queryStartIndex = 0;
+    const msgs = normalizeClaudeMessage({ type: 'user', message: { role: 'user', content } });
+    for (const m of msgs) this.emit('message', m);
 
     // Interrupt running query if any, then resume with new prompt
     if (this.queryInstance) {
@@ -182,5 +187,37 @@ export class ClaudeSession extends EventEmitter {
     if (this.queryInstance) {
       try { await this.queryInstance.interrupt(); } catch { /* ignore */ }
     }
+  }
+
+  waitForReady(): Promise<void> {
+    // For resumed sessions, sessionId is already set — resolve immediately
+    if (this.sessionId) return Promise.resolve();
+
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.off('message', onMessage);
+        this.off('exit', onExit);
+        reject(new Error('Timed out waiting for session init'));
+      }, 30_000);
+
+      const onMessage = (_msg: AgentMessage) => {
+        if (this.sessionId) {
+          clearTimeout(timeout);
+          this.off('message', onMessage);
+          this.off('exit', onExit);
+          resolve();
+        }
+      };
+
+      const onExit = () => {
+        clearTimeout(timeout);
+        this.off('message', onMessage);
+        this.off('exit', onExit);
+        reject(new Error('Session exited before init'));
+      };
+
+      this.on('message', onMessage);
+      this.on('exit', onExit);
+    });
   }
 }

@@ -1,33 +1,28 @@
 import { EventEmitter } from 'events';
-import { ClaudeSession } from './protocol';
+import type { AgentSession } from './types';
+import { createAgentSession } from './factory';
+import type { CreateSessionOpts } from './factory';
 import { SessionTailer } from './tailer';
 
 class SessionManager extends EventEmitter {
-  private sessions = new Map<string, ClaudeSession>();
+  private sessions = new Map<string, AgentSession>();
   private tailers = new Map<string, SessionTailer>();
 
-  create(
-    cardId: number,
-    cwd: string,
-    resumeSessionId?: string,
-    projectName?: string,
-    model: 'sonnet' | 'opus' = 'sonnet',
-    thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
-  ): ClaudeSession {
+  create(cardId: number, opts: CreateSessionOpts): AgentSession {
     const key = `card-${cardId}`;
     const existing = this.sessions.get(key);
     if (existing && (existing.status === 'running' || existing.status === 'starting')) {
       console.log(`[session:${cardId}] blocked: session already ${existing.status}`);
       throw new Error(`Session already ${existing.status} for card ${cardId}`);
     }
-    const session = new ClaudeSession(cwd, resumeSessionId, projectName, model, thinkingLevel);
-    console.log(`[session:${cardId}] created, model=${model}, thinking=${thinkingLevel}, resume=${!!resumeSessionId}`);
+    const session = createAgentSession(opts);
+    console.log(`[session:${cardId}] created, agent=${opts.agentType}, model=${opts.model}, thinking=${opts.thinkingLevel}, resume=${!!opts.resumeSessionId}`);
     this.sessions.set(key, session);
     this.emit('session', cardId, session);
     return session;
   }
 
-  get(cardId: number): ClaudeSession | undefined {
+  get(cardId: number): AgentSession | undefined {
     return this.sessions.get(`card-${cardId}`);
   }
 
