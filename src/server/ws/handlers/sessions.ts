@@ -1,6 +1,8 @@
 import type { WebSocket } from 'ws'
 import type { ClientMessage, AgentMessage } from '../../../shared/ws-protocol'
 import type { ConnectionManager } from '../connections'
+import type { DbMutator } from '../../db/mutator'
+import { subscribeToSession } from '../../agents/begin-session'
 import { readFile } from 'fs/promises'
 import { existsSync, statSync } from 'fs'
 import { join } from 'path'
@@ -107,6 +109,7 @@ export async function handleSessionLoad(
   ws: WebSocket,
   msg: Extract<ClientMessage, { type: 'session:load' }>,
   connections: ConnectionManager,
+  mutator: DbMutator,
 ): Promise<void> {
   const { requestId, data: { sessionId, cardId } } = msg
 
@@ -235,4 +238,22 @@ export async function handleSessionLoad(
     type: 'mutation:ok',
     requestId,
   })
+
+  // If there's an active managed session for this card, subscribe this connection
+  // to live updates (supports multi-device viewing)
+  const activeSession = sessionManager.get(cardId)
+  if (activeSession) {
+    subscribeToSession(activeSession, cardId, ws, connections, mutator)
+    connections.send(ws, {
+      type: 'agent:status',
+      data: {
+        cardId,
+        active: true,
+        status: activeSession.status as 'running' | 'starting',
+        sessionId: activeSession.sessionId,
+        promptsSent: activeSession.promptsSent,
+        turnsCompleted: activeSession.turnsCompleted,
+      },
+    })
+  }
 }

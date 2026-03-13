@@ -20,22 +20,22 @@ const DISPLAY_TYPES = new Set([
   'user', 'text', 'tool_call', 'tool_result', 'tool_progress', 'thinking', 'system', 'turn_end', 'error',
 ])
 
-function registerHandlers(
+type HandlerPair = { message: (msg: AgentMessage) => void; exit: () => void }
+const wsHandlers = new Map<number, Map<WebSocket, HandlerPair>>()
+
+export function subscribeToSession(
   session: AgentSession,
   cardId: number,
   ws: WebSocket,
   connections: ConnectionManager,
   mutator: DbMutator,
-) {
-  session.on('message', async (msg: AgentMessage) => {
+): void {
+  // Remove existing handlers for this specific WS on this card (idempotent re-subscribe)
+  unsubscribeFromSession(cardId, ws)
+
+  const messageHandler = (msg: AgentMessage) => {
     if (!DISPLAY_TYPES.has(msg.type)) return
-
-    connections.send(ws, {
-      type: 'agent:message',
-      cardId,
-      data: msg,
-    })
-
+    connections.send(ws, { type: 'agent:message', cardId, data: msg })
     if (msg.type === 'turn_end') {
       try {
         mutator.updateCard(cardId, {
@@ -46,19 +46,20 @@ function registerHandlers(
         console.error(`[session:${cardId}] failed to persist counters:`, err)
       }
     }
-  })
+  }
 
-  session.on('exit', async () => {
+  const exitHandler = () => {
     console.log(`[session:${cardId}] exit, status=${session.status}`)
-    if (session.status !== 'completed' && session.status !== 'errored') return
-    try {
-      mutator.updateCard(cardId, {
-        column: 'review',
-        promptsSent: session.promptsSent,
-        turnsCompleted: session.turnsCompleted,
-      })
-    } catch (err) {
-      console.error(`[session:${cardId}] failed to auto-move to review:`, err)
+    if (session.status === 'completed' || session.status === 'errored') {
+      try {
+        mutator.updateCard(cardId, {
+          column: 'review',
+          promptsSent: session.promptsSent,
+          turnsCompleted: session.turnsCompleted,
+        })
+      } catch (err) {
+        console.error(`[session:${cardId}] failed to auto-move to review:`, err)
+      }
     }
     connections.send(ws, {
       type: 'agent:status',
@@ -71,7 +72,33 @@ function registerHandlers(
         turnsCompleted: session.turnsCompleted,
       },
     })
-  })
+  }
+
+  session.on('message', messageHandler)
+  session.on('exit', exitHandler)
+
+  if (!wsHandlers.has(cardId)) wsHandlers.set(cardId, new Map())
+  wsHandlers.get(cardId)!.set(ws, { message: messageHandler, exit: exitHandler })
+}
+
+function unsubscribeFromSession(cardId: number, ws: WebSocket): void {
+  const handlers = wsHandlers.get(cardId)?.get(ws)
+  if (!handlers) return
+  const session = sessionManager.get(cardId)
+  if (session) {
+    session.removeListener('message', handlers.message)
+    session.removeListener('exit', handlers.exit)
+  }
+  wsHandlers.get(cardId)!.delete(ws)
+  if (wsHandlers.get(cardId)!.size === 0) wsHandlers.delete(cardId)
+}
+
+/** Remove all session subscriptions for a closing WS connection */
+export function unsubscribeAllSessions(ws: WebSocket): void {
+  for (const [cardId] of wsHandlers) {
+    if (!wsHandlers.get(cardId)?.has(ws)) continue
+    unsubscribeFromSession(cardId, ws)
+  }
 }
 
 function ensureWorktree(card: {
@@ -130,10 +157,8 @@ export async function beginSession(
     if (!message) throw new Error(`No message to send to existing session for card ${cardId}`)
     console.log(`[session:${cardId}] existing session, sending follow-up`)
 
-    // Re-register handlers to current WS connection
-    existingSession.removeAllListeners('message')
-    existingSession.removeAllListeners('exit')
-    registerHandlers(existingSession, cardId, ws, connections, mutator)
+    // Subscribe this WS to the existing session
+    subscribeToSession(existingSession, cardId, ws, connections, mutator)
 
     // Refresh model/thinkingLevel from DB
     existingSession.model = card.model
@@ -191,7 +216,7 @@ export async function beginSession(
       session.turnsCompleted = card.turnsCompleted ?? 0
     }
 
-    registerHandlers(session, cardId, ws, connections, mutator)
+    subscribeToSession(session, cardId, ws, connections, mutator)
 
     session.promptsSent++
     await session.start(prompt)

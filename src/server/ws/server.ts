@@ -7,6 +7,7 @@ import { ConnectionManager } from './connections'
 import { DbMutator } from '../db/mutator'
 import { validateCfAccess } from './auth'
 import { handleMessage } from './handlers'
+import { unsubscribeAllSessions } from '../agents/begin-session'
 import { createRestApi } from '../api/rest'
 
 export const connections = new ConnectionManager()
@@ -44,6 +45,7 @@ export function createWsServer(httpServer: HttpServer | Http2SecureServer) {
     })
 
     ws.on('close', () => {
+      unsubscribeAllSessions(ws)
       connections.remove(ws)
     })
   })
