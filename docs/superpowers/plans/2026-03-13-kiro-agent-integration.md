@@ -1112,11 +1112,11 @@ const filePath = findSessionFile(sessionId, card?.worktreePath ?? null, agentPro
 5. For Kiro sessions, the normalization pipeline is different — Kiro JSONL events use ACP format, not Claude SDK format. Discriminate on `agentType`, not `agentProfile`:
 
 ```typescript
-if (agentType === 'kiro' && filePath) {
+if (agentType === 'kiro' && agentProfile && filePath) {
   // Kiro session — use Kiro normalizer
   const { KiroSessionTailer } = await import('../../agents/kiro/tailer')
   const { getKiroSessionDir } = await import('../../agents/kiro/session-path')
-  const sessionDir = getKiroSessionDir(agentProfile!, sessionId)
+  const sessionDir = getKiroSessionDir(agentProfile, sessionId)
   const tailer = new KiroSessionTailer(filePath, sessionDir, cardId)
   messages = tailer.readHistory()
 } else if (filePath) {
