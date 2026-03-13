@@ -6,7 +6,6 @@ import { sessionManager } from './manager'
 import type { AgentSession, AgentMessage, SessionStatus, AgentType } from './types'
 import type { ConnectionManager } from '../ws/connections'
 import type { DbMutator } from '../db/mutator'
-import type { CreateSessionOpts } from './factory'
 import {
   createWorktree,
   runSetupCommands,

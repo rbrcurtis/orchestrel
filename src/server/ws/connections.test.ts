@@ -9,27 +9,31 @@ function mockWs(): WebSocket {
 
 const syncMsg: ServerMessage = {
   type: 'sync',
-  data: { cards: [], projects: [] },
+  cards: [],
+  projects: [],
 }
 
 const cardUpdatedMsg: ServerMessage = {
   type: 'card:updated',
   data: {
-    card: {
-      id: 1,
-      title: 'Test',
-      description: null,
-      column: 'ready',
-      position: 0,
-      projectId: null,
-      model: null,
-      thinkingLevel: null,
-      useWorktree: false,
-      sourceBranch: null,
-      worktreePath: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
+    id: 1,
+    title: 'Test',
+    description: null,
+    column: 'ready',
+    position: 0,
+    projectId: null,
+    prUrl: null,
+    sessionId: null,
+    worktreePath: null,
+    worktreeBranch: null,
+    useWorktree: false,
+    sourceBranch: null,
+    model: 'sonnet',
+    thinkingLevel: 'high',
+    promptsSent: 0,
+    turnsCompleted: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
 }
 

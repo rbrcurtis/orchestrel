@@ -106,7 +106,7 @@ export function Card({ id, title, color, onClick }: CardProps) {
               onClick={async () => {
                 setArchivePending(true);
                 try {
-                  await cards.moveCard({ id, column: 'archive', position: 0 });
+                  await cards.updateCard({ id, column: 'archive', position: 0 });
                 } finally {
                   setArchivePending(false);
                   setOpen(false);

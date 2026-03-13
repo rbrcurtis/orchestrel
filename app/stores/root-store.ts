@@ -2,7 +2,7 @@ import { WsClient } from '../lib/ws-client'
 import { CardStore, setCardStoreWs } from './card-store'
 import { ProjectStore, setProjectStoreWs } from './project-store'
 import { SessionStore, setSessionStoreWs } from './session-store'
-import type { ServerMessage } from '../../src/shared/ws-protocol'
+import type { Column, ServerMessage } from '../../src/shared/ws-protocol'
 
 export class RootStore {
   readonly cards: CardStore
@@ -22,7 +22,7 @@ export class RootStore {
   }
 
   subscribe(columns: string[]) {
-    this.ws.subscribe(columns)
+    this.ws.subscribe(columns as Column[])
   }
 
   private handleMessage(msg: ServerMessage) {
@@ -67,6 +67,11 @@ export class RootStore {
       case 'project:browse:result':
         // These are request/response patterns handled at the call site via mutate()
         // They arrive as entity messages only if no requestId was tracked (shouldn't happen)
+        break
+
+      case 'mutation:ok':
+      case 'mutation:error':
+        // handled in WsClient.handleRaw — should not reach here
         break
 
       default: {

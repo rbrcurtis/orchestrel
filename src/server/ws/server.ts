@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws'
 import type { Server as HttpServer } from 'http'
+import type { Http2SecureServer } from 'http2'
 import type { Plugin } from 'vite'
 import { getRequestListener } from '@hono/node-server'
 import { ConnectionManager } from './connections'
@@ -11,7 +12,7 @@ import { createRestApi } from '../api/rest'
 export const connections = new ConnectionManager()
 export const mutator = new DbMutator(connections)
 
-export function createWsServer(httpServer: HttpServer) {
+export function createWsServer(httpServer: HttpServer | Http2SecureServer) {
   const wss = new WebSocketServer({ noServer: true })
 
   httpServer.on('upgrade', async (req, socket, head) => {

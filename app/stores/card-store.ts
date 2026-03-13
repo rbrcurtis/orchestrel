@@ -92,6 +92,7 @@ export class CardStore {
     title?: string
     description?: string | null
     column?: Column
+    position?: number
     projectId?: number | null
     model?: 'sonnet' | 'opus'
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high'

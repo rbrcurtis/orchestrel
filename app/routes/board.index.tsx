@@ -243,7 +243,7 @@ const ActiveBoard = observer(function ActiveBoard() {
 
         const others = reordered.filter((c) => c.id !== active.id);
         const finalIdx = reordered.findIndex((c) => c.id === active.id);
-        const pos = calcPosition(others, finalIdx);
+        const _pos = calcPosition(others, finalIdx);
 
         cardStore.updateCard({ id: active.id as number, column: currentCol })
           .finally(() => setDragOverride(null));
@@ -254,7 +254,7 @@ const ActiveBoard = observer(function ActiveBoard() {
       // Cross-column move — handleDragOver already moved it visually, persist it
       const destCards = columns[currentCol].filter((c) => c.id !== active.id);
       const insertIdx = columns[currentCol].findIndex((c) => c.id === active.id);
-      const pos = calcPosition(destCards, insertIdx === -1 ? destCards.length : insertIdx);
+      const _pos = calcPosition(destCards, insertIdx === -1 ? destCards.length : insertIdx);
 
       cardStore.updateCard({ id: active.id as number, column: currentCol })
         .finally(() => setDragOverride(null));

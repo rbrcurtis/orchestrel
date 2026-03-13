@@ -17,7 +17,7 @@ export class DbMutator {
   }
 
   createCard(data: Record<string, unknown>): Card {
-    const col = (data.column as string) || 'backlog'
+    const col = ((data.column as string) || 'backlog') as Column
     const maxPos = db.select({ max: sql<number>`max(position)` })
       .from(cards).where(eq(cards.column, col)).get()
     const position = (maxPos?.max ?? -1) + 1

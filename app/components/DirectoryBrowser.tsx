@@ -34,7 +34,7 @@ export default function DirectoryBrowser({ initialPath = '/home/ryan', onSelect,
       .then((data) => setDirs(data as DirEntry[]))
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Error loading directory'))
       .finally(() => setLoading(false));
-  }, [currentPath]);
+  }, [currentPath, projects]);
 
   function navigateTo(path: string) {
     setCurrentPath(path);

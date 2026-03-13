@@ -97,7 +97,7 @@ const BacklogBoard = observer(function BacklogBoard() {
       const finalIdx = reordered.findIndex((c) => c.id === active.id);
       const pos = calcPosition(others, finalIdx);
 
-      cardStore.moveCard({ id: active.id as number, column: 'backlog', position: pos })
+      cardStore.updateCard({ id: active.id as number, column: 'backlog', position: pos })
         .finally(() => setDragOverride(null));
     } else {
       setDragOverride(null);
