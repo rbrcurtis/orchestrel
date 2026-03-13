@@ -1,10 +1,32 @@
 import { spawn, execFileSync, type ChildProcess } from 'child_process'
 import { createOpencodeClient } from '@opencode-ai/sdk'
 import { resolve } from 'path'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
 
 const OPENCODE_PORT = Number(process.env.OPENCODE_PORT ?? 4097)
 const CONFIG_PATH = resolve('data/opencode.json')
 const MAX_RETRIES = 5
+
+/** Resolve opencode binary — check common install locations if not on PATH */
+function findOpencodeBinary(): string {
+  // Check PATH first
+  try {
+    return execFileSync('which', ['opencode'], { encoding: 'utf-8' }).trim()
+  } catch {
+    // Not on PATH
+  }
+  // Check common install locations
+  const candidates = [
+    join(homedir(), '.opencode', 'bin', 'opencode'),
+    '/usr/local/bin/opencode',
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  throw new Error('opencode binary not found. Install it: curl -fsSL https://opencode.ai/install | bash')
+}
 const HEALTH_POLL_MS = 500
 const HEALTH_TIMEOUT_MS = 30_000
 
@@ -18,13 +40,11 @@ export class OpenCodeServer {
   /** Optional callback — set by ws/server.ts to notify clients on crash */
   onCrash?: () => void
 
-  async start(): Promise<void> {
-    try {
-      execFileSync('which', ['opencode'], { stdio: 'ignore' })
-    } catch {
-      throw new Error('opencode binary not found on PATH. Install it before starting Dispatcher.')
-    }
+  private binaryPath = ''
 
+  async start(): Promise<void> {
+    this.binaryPath = findOpencodeBinary()
+    console.log(`[opencode] using binary: ${this.binaryPath}`)
     await this.spawn()
     this.client = createOpencodeClient({ baseUrl: `http://localhost:${OPENCODE_PORT}` })
     await this.waitForHealthy()
@@ -33,7 +53,7 @@ export class OpenCodeServer {
 
   private spawn(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.proc = spawn('opencode', ['serve'], {
+      this.proc = spawn(this.binaryPath, ['serve'], {
         env: {
           ...process.env,
           OPENCODE_PORT: String(OPENCODE_PORT),
