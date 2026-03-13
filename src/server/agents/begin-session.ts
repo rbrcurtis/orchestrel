@@ -3,7 +3,7 @@ import { db } from '../db/index'
 import { cards, projects } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { sessionManager } from './manager'
-import type { AgentSession, AgentMessage, SessionStatus, AgentType } from './types'
+import type { AgentSession, AgentMessage, SessionStatus } from './types'
 import type { ConnectionManager } from '../ws/connections'
 import type { DbMutator } from '../db/mutator'
 import {
@@ -12,9 +12,7 @@ import {
   slugify,
   worktreeExists,
 } from '../worktree'
-import { getKiroSessionDir, getKiroSessionLogPath } from './kiro/session-path'
-import { KiroSessionTailer } from './kiro/tailer'
-import { KiroSession } from './kiro/session'
+import { OpenCodeSession } from './opencode/session'
 
 const DISPLAY_TYPES = new Set([
   'user', 'text', 'tool_call', 'tool_result', 'tool_progress', 'thinking', 'system', 'turn_end', 'error',
@@ -30,7 +28,6 @@ export function subscribeToSession(
   connections: ConnectionManager,
   mutator: DbMutator,
 ): void {
-  // Remove existing handlers for this specific WS on this card (idempotent re-subscribe)
   unsubscribeFromSession(cardId, ws)
 
   const messageHandler = (msg: AgentMessage) => {
@@ -93,7 +90,6 @@ function unsubscribeFromSession(cardId: number, ws: WebSocket): void {
   if (wsHandlers.get(cardId)!.size === 0) wsHandlers.delete(cardId)
 }
 
-/** Remove all session subscriptions for a closing WS connection */
 export function unsubscribeAllSessions(ws: WebSocket): void {
   for (const [cardId] of wsHandlers) {
     if (!wsHandlers.get(cardId)?.has(ws)) continue
@@ -150,22 +146,16 @@ export async function beginSession(
   if (!card.description) throw new Error(`Card ${cardId} has no description`)
 
   const existingSession = sessionManager.get(cardId)
-  console.log(`[session:${cardId}] beginSession called, existingSession=${!!existingSession}, message=${!!message}`)
 
   if (existingSession) {
-    // Existing session — send follow-up
     if (!message) throw new Error(`No message to send to existing session for card ${cardId}`)
-    console.log(`[session:${cardId}] existing session, sending follow-up`)
-
-    // Subscribe this WS to the existing session
     subscribeToSession(existingSession, cardId, ws, connections, mutator)
 
-    // Refresh model/thinkingLevel from DB
-    existingSession.model = card.model
-    existingSession.thinkingLevel = card.thinkingLevel
+    if (existingSession instanceof OpenCodeSession) {
+      existingSession.updateModel(card.model, card.thinkingLevel)
+    }
 
     await existingSession.sendMessage(message)
-
     mutator.updateCard(cardId, { promptsSent: existingSession.promptsSent })
 
     connections.send(ws, {
@@ -180,37 +170,30 @@ export async function beginSession(
       },
     })
   } else {
-    // New session
     const prompt = message ? card.description + '\n' + message : card.description
-    console.log(`[session:${cardId}] no session, creating. prompt length=${prompt.length}`)
-
     const cwd = ensureWorktree(card, mutator)
 
+    let providerID = 'anthropic'
     let projectName: string | undefined
-    let agentType: AgentType = 'claude'
-    let agentProfile: string | undefined
 
     if (card.projectId) {
       const proj = db.select().from(projects).where(eq(projects.id, card.projectId)).get()
       if (proj) {
         projectName = proj.name.toLowerCase()
-        agentType = (proj.agentType as AgentType) ?? 'claude'
-        agentProfile = proj.agentProfile ?? undefined
+        providerID = proj.providerID ?? 'anthropic'
       }
     }
 
     const isResume = !!card.sessionId
     const session = sessionManager.create(cardId, {
-      agentType,
-      agentProfile,
       cwd,
+      providerID,
+      model: (card.model ?? 'sonnet') as 'sonnet' | 'opus',
+      thinkingLevel: (card.thinkingLevel ?? 'high') as 'off' | 'low' | 'medium' | 'high',
       resumeSessionId: card.sessionId ?? undefined,
       projectName,
-      model: card.model,
-      thinkingLevel: card.thinkingLevel,
     })
 
-    // Restore counters from DB for resumed sessions (e.g. after server restart)
     if (isResume) {
       session.promptsSent = card.promptsSent ?? 0
       session.turnsCompleted = card.turnsCompleted ?? 0
@@ -218,27 +201,8 @@ export async function beginSession(
 
     subscribeToSession(session, cardId, ws, connections, mutator)
 
-    session.promptsSent++
     await session.start(prompt)
     await session.waitForReady()
-
-    // Start Kiro log tailer as the sole event source (per spec: no dual-streaming)
-    if (agentType === 'kiro' && session.sessionId && agentProfile) {
-      // Disable stdio message emission — tailer is the sole source
-      const kiroSession = session as KiroSession
-      kiroSession.emitFromStdio = false
-
-      // Use dynamic log path resolver (scans for .jsonl file).
-      // If file doesn't exist yet, pass the session dir to the tailer and let it poll.
-      const sessionDir = getKiroSessionDir(agentProfile)
-      const logPath = getKiroSessionLogPath(agentProfile, session.sessionId)
-
-      const tailer = new KiroSessionTailer(logPath, sessionDir, session.sessionId, cardId)
-      // Forward tailer messages through the session's event emitter
-      tailer.on('message', (msg: AgentMessage) => session.emit('message', msg))
-      tailer.start() // Polls for file creation if logPath is null
-      session.on('exit', () => tailer.stop())
-    }
 
     if (!isResume) {
       mutator.updateCard(cardId, {
