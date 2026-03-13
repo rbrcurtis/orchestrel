@@ -9,6 +9,7 @@ import { validateCfAccess } from './auth'
 import { handleMessage } from './handlers'
 import { unsubscribeAllSessions } from '../agents/begin-session'
 import { createRestApi } from '../api/rest'
+import { openCodeServer } from '../opencode/server'
 
 export const connections = new ConnectionManager()
 export const mutator = new DbMutator(connections)
@@ -63,6 +64,19 @@ export function wsServerPlugin(): Plugin {
       if (server.httpServer) {
         createWsServer(server.httpServer)
         console.log('[ws] WebSocket server attached to Vite dev server')
+
+        // Start OpenCode server
+        openCodeServer.onCrash = () => {
+          connections.broadcast({
+            type: 'agent:message',
+            cardId: -1,
+            data: { type: 'error', role: 'system', content: 'OpenCode server crashed, restarting...', timestamp: Date.now() },
+          })
+        }
+
+        openCodeServer.start().catch((err) => {
+          console.error('[opencode] failed to start:', err)
+        })
       }
 
       const restApp = createRestApi(mutator)
