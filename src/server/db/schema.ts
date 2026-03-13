@@ -18,8 +18,7 @@ export const projects = sqliteTable('projects', {
   defaultWorktree: integer('default_worktree', { mode: 'boolean' }).notNull().default(false),
   defaultModel: text('default_model', { enum: ['sonnet', 'opus'] }).notNull().default('sonnet'),
   defaultThinkingLevel: text('default_thinking_level', { enum: ['off', 'low', 'medium', 'high'] }).notNull().default('high'),
-  agentType: text('agent_type', { enum: ['claude', 'kiro'] }).notNull().default('claude'),
-  agentProfile: text('agent_profile'),
+  providerID: text('provider_id').notNull().default('anthropic'),
   color: text('color'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
