@@ -18,11 +18,6 @@ type Props = {
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
-type ToolResultBlock = {
-  type: 'tool_result';
-  tool_use_id: string;
-  content: Array<{ type: string; text: string }>;
-};
 
 export const SessionView = observer(function SessionView({
   cardId,
@@ -107,7 +102,7 @@ export const SessionView = observer(function SessionView({
 
     // Compaction detection
     const last = conversation[len - 1];
-    if (last.type === 'system' && (last.message as Record<string, unknown>).subtype === 'compact_boundary') {
+    if (last.type === 'system' && last.meta?.subtype === 'compact_boundary') {
       setCompacted(true);
       setTimeout(() => setCompacted(false), 600);
     }
@@ -133,16 +128,9 @@ export const SessionView = observer(function SessionView({
   const toolOutputs = useMemo(() => {
     const map = new Map<string, string>();
     for (const row of conversation) {
-      if (row.type !== 'user') continue;
-      const content = row.message.content;
-      if (!Array.isArray(content)) continue;
-      for (const block of content as ToolResultBlock[]) {
-        if (block.type === 'tool_result' && block.tool_use_id) {
-          const text = Array.isArray(block.content)
-            ? block.content.map((c) => c.text).filter(Boolean).join('\n')
-            : typeof block.content === 'string' ? block.content : '';
-          if (text) map.set(block.tool_use_id, text);
-        }
+      if (row.type !== 'tool_result' || !row.toolResult) continue;
+      if (row.toolResult.output) {
+        map.set(row.toolResult.id, row.toolResult.output);
       }
     }
     return map;
@@ -177,7 +165,7 @@ export const SessionView = observer(function SessionView({
             {conversation.map((row) => (
               <MessageBlock
                 key={row.id}
-                message={{ type: row.type, message: row.message, isSidechain: row.isSidechain, ts: row.ts }}
+                message={row}
                 toolOutputs={toolOutputs}
                 accentColor={accentColor}
               />

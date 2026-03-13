@@ -4,6 +4,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ToolUseBlock } from './ToolUseBlock';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
+import type { AgentMessage } from '../../src/shared/ws-protocol';
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
@@ -19,7 +20,6 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cacheWrite:
 };
 
 function lookupPricing(model: string) {
-  // exact match first, then prefix match
   if (MODEL_PRICING[model]) return MODEL_PRICING[model];
   for (const key of Object.keys(MODEL_PRICING)) {
     if (model.startsWith(key)) return MODEL_PRICING[key];
@@ -51,7 +51,7 @@ function calcCostFromModelUsage(
        (usage.cacheReadInputTokens ?? 0) * p.cacheRead) /
       1_000_000;
   }
-  if (!allKnown && fallback != null) return fallback; // unknown model, trust SDK
+  if (!allKnown && fallback != null) return fallback;
   return Object.keys(modelUsage).length ? total : fallback;
 }
 
@@ -163,100 +163,6 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-type Props = {
-  message: Record<string, unknown>;
-  toolOutputs: Map<string, string>;
-  accentColor?: string | null;
-};
-
-export function MessageBlock({ message, toolOutputs, accentColor }: Props) {
-  const type = message.type as string;
-
-  if (type === 'assistant') {
-    return <AssistantBlock message={message} toolOutputs={toolOutputs} accentColor={accentColor} />;
-  }
-
-  if (type === 'result') {
-    return <ResultBlock message={message} />;
-  }
-
-  if (type === 'tool_progress') {
-    return <ToolProgressBlock message={message} />;
-  }
-
-  if (type === 'system') {
-    return <SystemBlock message={message} />;
-  }
-
-  if (type === 'user') {
-    return <UserBlock message={message} accentColor={accentColor} />;
-  }
-
-  // Skip other types
-  return null;
-}
-
-// --- Assistant message ---
-
-type ContentBlock = {
-  type: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  thinking?: string;
-};
-
-function AssistantBlock({
-  message,
-  toolOutputs,
-  accentColor,
-}: {
-  message: Record<string, unknown>;
-  toolOutputs: Map<string, string>;
-  accentColor?: string | null;
-}) {
-  const inner = message.message as { content?: ContentBlock[] } | undefined;
-  const content = inner?.content;
-  if (!content || !Array.isArray(content)) return null;
-  const linkColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
-
-  const copyText = content
-    .filter((b) => b.type === 'text' && b.text)
-    .map((b) => b.text!)
-    .join('\n\n');
-
-  return (
-    <div className="group relative space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
-      {copyText && <CopyButton text={copyText} />}
-      {content.map((block, i) => {
-        if (block.type === 'text' && block.text) {
-          return (
-            <div key={i} className="text-sm text-foreground min-w-0 break-words">
-              <Markdown text={block.text} linkColor={linkColor} />
-            </div>
-          );
-        }
-        if (block.type === 'tool_use' && block.name && block.input) {
-          const output = block.id ? toolOutputs.get(block.id) : undefined;
-          return (
-            <ToolUseBlock
-              key={block.id ?? i}
-              name={block.name}
-              input={block.input}
-              output={output}
-            />
-          );
-        }
-        if (block.type === 'thinking' && block.thinking) {
-          return <ThinkingBlock key={i} thinking={block.thinking} />;
-        }
-        return null;
-      })}
-    </div>
-  );
-}
-
 // --- Thinking block (collapsible) ---
 
 function ThinkingBlock({ thinking }: { thinking: string }) {
@@ -277,22 +183,94 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
   );
 }
 
-// --- System message ---
+// --- Props ---
 
-function SystemBlock({ message }: { message: Record<string, unknown> }) {
-  const inner = (message.message ?? message) as Record<string, unknown>;
-  const subtype = inner.subtype as string | undefined;
+type Props = {
+  message: AgentMessage & { id: string };
+  toolOutputs: Map<string, string>;
+  accentColor?: string | null;
+};
+
+export function MessageBlock({ message, toolOutputs, accentColor }: Props) {
+  switch (message.type) {
+    case 'text':
+      return <TextBlock message={message} accentColor={accentColor} />;
+    case 'tool_call':
+      return <ToolCallBlock message={message} toolOutputs={toolOutputs} />;
+    case 'tool_result':
+      return null; // consumed by toolOutputs map
+    case 'tool_progress':
+      return <ToolProgressBlock message={message} />;
+    case 'thinking':
+      return <ThinkingBlock thinking={message.content} />;
+    case 'system':
+      return <SystemBlock message={message} />;
+    case 'turn_end':
+      return <TurnEndBlock message={message} />;
+    case 'user':
+      return <UserBlock message={message} accentColor={accentColor} />;
+    default:
+      return null;
+  }
+}
+
+// --- Text block ---
+
+function TextBlock({ message, accentColor }: { message: AgentMessage; accentColor?: string | null }) {
+  const linkColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
+  return (
+    <div className="group relative space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
+      <CopyButton text={message.content} />
+      <div className="text-sm text-foreground min-w-0 break-words">
+        <Markdown text={message.content} linkColor={linkColor} />
+      </div>
+    </div>
+  );
+}
+
+// --- Tool call block ---
+
+function ToolCallBlock({ message, toolOutputs }: { message: AgentMessage; toolOutputs: Map<string, string> }) {
+  if (!message.toolCall) return null;
+  const output = message.toolCall.id ? toolOutputs.get(message.toolCall.id) : undefined;
+  return (
+    <div className="py-1">
+      <ToolUseBlock
+        name={message.toolCall.name}
+        input={message.toolCall.params ?? {}}
+        output={output}
+      />
+    </div>
+  );
+}
+
+// --- Tool progress block ---
+
+function ToolProgressBlock({ message }: { message: AgentMessage }) {
+  const elapsed = message.meta?.elapsedSeconds as number | undefined;
+  return (
+    <div className="text-xs text-muted-foreground py-0.5 flex items-center gap-1.5">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+      {message.content} {elapsed != null && `(${elapsed.toFixed(0)}s)`}
+    </div>
+  );
+}
+
+// --- System block ---
+
+function SystemBlock({ message }: { message: AgentMessage }) {
+  const subtype = message.meta?.subtype as string | undefined;
 
   if (subtype === 'init') {
     return (
       <div className="text-xs text-muted-foreground py-1">
-        Session started (model: {String(inner.model ?? 'unknown')})
+        Session started (model: {String(message.meta?.model ?? 'unknown')})
       </div>
     );
   }
 
   if (subtype === 'compact_boundary') {
-    const meta = inner.compact_metadata as { pre_tokens?: number; trigger?: string } | undefined;
+    const meta = message.meta?.compactMetadata as { pre_tokens?: number } | undefined;
     return (
       <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground">
         <div className="flex-1 border-t border-neon-amber/30" />
@@ -305,43 +283,38 @@ function SystemBlock({ message }: { message: Record<string, unknown> }) {
     );
   }
 
-  if (subtype === 'local_command_output') {
-    const content = inner.content as string | undefined;
-    if (!content) return null;
+  if (subtype === 'local_command_output' && message.content) {
     return (
       <div className="text-xs text-muted-foreground whitespace-pre-wrap py-1 pl-3 border-l-2 border-neon-violet/40">
-        {content}
+        {message.content}
       </div>
     );
   }
 
-  // Show any other system message as plain text
-  const content = inner.content as string | undefined;
-  if (!content) return null;
+  if (!message.content) return null;
   return (
     <div className="text-xs text-muted-foreground py-1">
-      {content}
+      {message.content}
     </div>
   );
 }
 
-// --- Result message ---
+// --- Turn end block ---
 
-function ResultBlock({ message }: { message: Record<string, unknown> }) {
-  const inner = (message.message ?? message) as Record<string, unknown>;
-  const subtype = inner.subtype as string | undefined;
+function TurnEndBlock({ message }: { message: AgentMessage }) {
+  const subtype = message.meta?.subtype as string | undefined;
   const isSuccess = subtype === 'success' || subtype === 'error_max_turns';
-  const sdkCost = inner.total_cost_usd as number | undefined;
-  const modelUsage = inner.modelUsage as Record<string, ModelUsageEntry> | undefined;
-  const cost = modelUsage ? calcCostFromModelUsage(modelUsage, sdkCost) : sdkCost;
-  const durationMs = inner.duration_ms as number | undefined;
+  const sdkCost = message.meta?.totalCostUsd as number | undefined;
+  const cost = message.modelUsage
+    ? calcCostFromModelUsage(message.modelUsage as Record<string, ModelUsageEntry>, sdkCost)
+    : sdkCost;
+  const durationMs = message.meta?.durationMs as number | undefined;
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
-  const rawTs = (message.ts ?? inner.ts ?? inner._mtime) as string | undefined;
-  const finishedAt = rawTs
-    ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(rawTs))
+  const finishedAt = message.timestamp
+    ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(message.timestamp))
     : null;
 
-  const errors = Array.isArray(inner.errors) ? (inner.errors as string[]) : [];
+  const errors = Array.isArray(message.meta?.errors) ? (message.meta!.errors as string[]) : [];
 
   return (
     <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground">
@@ -364,42 +337,13 @@ function ResultBlock({ message }: { message: Record<string, unknown> }) {
   );
 }
 
-// --- Tool progress ---
+// --- User block ---
 
-function ToolProgressBlock({ message }: { message: Record<string, unknown> }) {
-  const inner = (message.message ?? message) as Record<string, unknown>;
-  const toolName = inner.tool_name as string;
-  const elapsed = inner.elapsed_time_seconds as number | undefined;
-
-  return (
-    <div className="text-xs text-muted-foreground py-0.5 flex items-center gap-1.5">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-      {toolName} {elapsed != null && `(${elapsed.toFixed(0)}s)`}
-    </div>
-  );
-}
-
-// --- User message ---
-
-function UserBlock({ message, accentColor }: { message: Record<string, unknown>; accentColor?: string | null }) {
-  const inner = message.message as { content?: unknown } | undefined;
-  if (!inner?.content) return null;
-
-  let text: string | null = null;
-  if (typeof inner.content === 'string') {
-    text = inner.content;
-  } else if (Array.isArray(inner.content)) {
-    const parts = (inner.content as Array<{ type: string; text?: string }>)
-      .filter((b) => b.type === 'text' && b.text)
-      .map((b) => b.text!);
-    if (parts.length > 0) text = parts.join('\n');
-  }
-
+function UserBlock({ message, accentColor }: { message: AgentMessage; accentColor?: string | null }) {
+  const text = message.content;
   if (!text) return null;
 
-  if (text.includes('<command-name>') || text.includes('<local-command-') || text.includes('<system-reminder>')) {
-    return null;
-  }
+  if (text.includes('<command-name>') || text.includes('<local-command-') || text.includes('<system-reminder>')) return null;
 
   if (text.startsWith('# ') && (text.includes('## Instructions') || text.includes('## Arguments'))) {
     return (
@@ -425,7 +369,6 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
 
   const accentVar = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
 
-  // Highlight /slash-commands (only when preceded by whitespace or start of string)
   function renderWithSlashCommands(t: string) {
     const re = /(?<![^\s])\/[a-zA-Z][a-zA-Z0-9-]*/g;
     const result: React.ReactNode[] = [];
