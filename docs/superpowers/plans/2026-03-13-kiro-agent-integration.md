@@ -864,8 +864,9 @@ Create `src/server/agents/kiro/tailer.ts`. This extends the base `SessionTailer`
 
 ```typescript
 import { EventEmitter } from 'events'
-import { watch, openSync, readSync, closeSync, statSync, existsSync, readFileSync } from 'fs'
+import { watch, openSync, readSync, closeSync, statSync, existsSync, readFileSync, readdirSync } from 'fs'
 import type { FSWatcher } from 'fs'
+import { join } from 'path'
 import { normalizeKiroMessage } from './messages'
 import type { AgentMessage } from '../types'
 
@@ -879,17 +880,24 @@ export class KiroSessionTailer extends EventEmitter {
   private staleTimer: NodeJS.Timeout | null = null
   private partial = ''
   private pollTimer: NodeJS.Timeout | null = null
+  private resolvedPath: string | null
 
   constructor(
-    public readonly filePath: string,
+    filePath: string | null,
+    private readonly sessionDir: string,
     public readonly cardId: number,
   ) {
     super()
+    this.resolvedPath = filePath
+  }
+
+  get filePath(): string | null {
+    return this.resolvedPath
   }
 
   /** Start tailing — polls for file creation if it doesn't exist yet */
   start(): void {
-    if (existsSync(this.filePath)) {
+    if (this.resolvedPath && existsSync(this.resolvedPath)) {
       this.beginTailing()
     } else {
       this.pollForFile()
@@ -899,12 +907,20 @@ export class KiroSessionTailer extends EventEmitter {
   private pollForFile(): void {
     const started = Date.now()
     this.pollTimer = setInterval(() => {
-      if (existsSync(this.filePath)) {
+      // If we don't have a resolved path yet, scan the session dir for a .jsonl file
+      if (!this.resolvedPath && existsSync(this.sessionDir)) {
+        try {
+          const files = readdirSync(this.sessionDir)
+          const jsonl = files.find(f => f.endsWith('.jsonl'))
+          if (jsonl) this.resolvedPath = join(this.sessionDir, jsonl)
+        } catch { /* dir may not exist yet */ }
+      }
+      if (this.resolvedPath && existsSync(this.resolvedPath)) {
         if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null }
         this.beginTailing()
       } else if (Date.now() - started > FILE_POLL_TIMEOUT) {
         if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null }
-        console.error(`[KiroTailer:${this.cardId}] file not created within ${FILE_POLL_TIMEOUT}ms: ${this.filePath}`)
+        console.error(`[KiroTailer:${this.cardId}] file not created within ${FILE_POLL_TIMEOUT}ms in ${this.sessionDir}`)
         this.emit('stale')
       }
     }, FILE_POLL_INTERVAL)
@@ -916,7 +932,7 @@ export class KiroSessionTailer extends EventEmitter {
     this.offset = 0
     this.readNewLines() // Emit any events already written
     this.resetStaleTimer()
-    this.watcher = watch(this.filePath, () => {
+    this.watcher = watch(this.resolvedPath!, () => {
       this.readNewLines()
       this.resetStaleTimer()
     })
@@ -924,9 +940,9 @@ export class KiroSessionTailer extends EventEmitter {
 
   /** Read full file and normalize all events (for history replay) */
   readHistory(): AgentMessage[] {
-    if (!existsSync(this.filePath)) return []
+    if (!this.resolvedPath || !existsSync(this.resolvedPath)) return []
     try {
-      const content = readFileSync(this.filePath, 'utf-8')
+      const content = readFileSync(this.resolvedPath, 'utf-8')
       const messages: AgentMessage[] = []
       for (const line of content.split('\n')) {
         if (!line.trim()) continue
@@ -943,11 +959,12 @@ export class KiroSessionTailer extends EventEmitter {
   }
 
   private readNewLines(): void {
+    if (!this.resolvedPath) return
     try {
-      const size = statSync(this.filePath).size
+      const size = statSync(this.resolvedPath).size
       if (size <= this.offset) return
 
-      const fd = openSync(this.filePath, 'r')
+      const fd = openSync(this.resolvedPath, 'r')
       const len = size - this.offset
       const buf = Buffer.alloc(len)
       readSync(fd, buf, 0, len, this.offset)
@@ -1014,9 +1031,8 @@ git commit -m "feat: add KiroSessionTailer with file-creation polling"
 In `src/server/agents/begin-session.ts`, after the `await session.waitForReady()` line (line 195), add Kiro tailer setup. Import what's needed at the top:
 
 ```typescript
-import { getKiroSessionDir } from './kiro/session-path'
+import { getKiroSessionDir, getKiroSessionLogPath } from './kiro/session-path'
 import { KiroSessionTailer } from './kiro/tailer'
-import { join } from 'path'
 ```
 
 After `await session.waitForReady()`:
@@ -1024,19 +1040,19 @@ After `await session.waitForReady()`:
 ```typescript
 // Start Kiro log tailer as the sole event source (per spec: no dual-streaming)
 if (agentType === 'kiro' && session.sessionId && agentProfile) {
-  // Construct the expected log file path — don't check existence, let the tailer poll.
-  // Kiro may create the file lazily after the first turn.
-  const sessionDir = getKiroSessionDir(agentProfile, session.sessionId)
-  const logPath = join(sessionDir, 'events.jsonl') // filename TBD — adjust after inspecting actual output
-
   // Disable stdio message emission — tailer is the sole source
   const kiroSession = session as import('./kiro/session').KiroSession
   kiroSession.emitFromStdio = false
 
-  const tailer = new KiroSessionTailer(logPath, cardId)
+  // Use dynamic log path resolver (scans for .jsonl file).
+  // If file doesn't exist yet, pass the session dir to the tailer and let it poll.
+  const sessionDir = getKiroSessionDir(agentProfile, session.sessionId)
+  const logPath = getKiroSessionLogPath(agentProfile, session.sessionId)
+
+  const tailer = new KiroSessionTailer(logPath, sessionDir, cardId)
   // Forward tailer messages through the session's event emitter
   tailer.on('message', (msg: AgentMessage) => session.emit('message', msg))
-  tailer.start() // Polls for file creation if it doesn't exist yet
+  tailer.start() // Polls for file creation if logPath is null
   session.on('exit', () => tailer.stop())
 }
 ```
@@ -1099,7 +1115,9 @@ const filePath = findSessionFile(sessionId, card?.worktreePath ?? null, agentPro
 if (agentType === 'kiro' && filePath) {
   // Kiro session — use Kiro normalizer
   const { KiroSessionTailer } = await import('../../agents/kiro/tailer')
-  const tailer = new KiroSessionTailer(filePath, cardId)
+  const { getKiroSessionDir } = await import('../../agents/kiro/session-path')
+  const sessionDir = getKiroSessionDir(agentProfile!, sessionId)
+  const tailer = new KiroSessionTailer(filePath, sessionDir, cardId)
   messages = tailer.readHistory()
 } else if (filePath) {
   // Claude session — existing normalization pipeline
