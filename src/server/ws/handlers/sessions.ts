@@ -134,8 +134,8 @@ export async function handleSessionLoad(
     // Kiro session — use Kiro normalizer
     const { KiroSessionTailer } = await import('../../agents/kiro/tailer')
     const { getKiroSessionDir } = await import('../../agents/kiro/session-path')
-    const sessionDir = getKiroSessionDir(agentProfile, sessionId)
-    const tailer = new KiroSessionTailer(filePath, sessionDir, cardId)
+    const sessionDir = getKiroSessionDir(agentProfile)
+    const tailer = new KiroSessionTailer(filePath, sessionDir, sessionId, cardId)
     messages = tailer.readHistory()
   } else if (filePath) {
     try {

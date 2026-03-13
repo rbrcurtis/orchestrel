@@ -53,8 +53,11 @@ export class KiroSession extends AgentSession {
       this.emit('exit')
     })
 
-    // Initialize
-    const initResult = await this.rpc('initialize', {})
+    // Initialize — ACP requires protocolVersion and clientInfo
+    const initResult = await this.rpc('initialize', {
+      protocolVersion: '1.0',
+      clientInfo: { name: 'dispatcher', version: '1.0.0' },
+    })
     console.log('[kiro] initialized:', JSON.stringify(initResult))
 
     // Create or load session
@@ -63,22 +66,46 @@ export class KiroSession extends AgentSession {
       this.sessionId = this.resumeSessionId
       console.log('[kiro] session loaded:', JSON.stringify(loadResult))
     } else {
-      const newResult = await this.rpc('session/new', {}) as Record<string, unknown>
-      // Extract sessionId — field name TBD, try common variants
+      const newResult = await this.rpc('session/new', {
+        cwd: this.cwd,
+        mcpServers: [],
+      }) as Record<string, unknown>
       this.sessionId = (newResult.sessionId ?? newResult.session_id ?? newResult.id ?? null) as string | null
       console.log(`[kiro] new session created, id=${this.sessionId}`)
     }
 
     this.status = 'running'
 
-    // Send first prompt
-    await this.rpc('session/prompt', { message: prompt })
+    // Send first prompt — don't await; the RPC resolves when the turn ends.
+    // Streaming notifications arrive via processBuffer() in the meantime.
+    this.sendPrompt(prompt)
   }
 
   async sendMessage(content: string): Promise<void> {
     if (!this.proc || this.proc.killed) throw new Error('Kiro process not running')
     this.promptsSent++
-    await this.rpc('session/prompt', { message: content })
+    this.sendPrompt(content)
+  }
+
+  /** Fire prompt RPC and emit turn_end when it resolves. */
+  private sendPrompt(text: string): void {
+    this.rpc('session/prompt', {
+      sessionId: this.sessionId,
+      prompt: [{ type: 'text', text }],
+    }).then(() => {
+      this.turnsCompleted++
+      const turnEnd: AgentMessage = {
+        type: 'turn_end',
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+      }
+      if (this.emitFromStdio) {
+        this.emit('message', turnEnd)
+      }
+    }).catch((err) => {
+      console.error('[kiro] prompt RPC failed:', err)
+    })
   }
 
   async kill(): Promise<void> {
@@ -87,7 +114,7 @@ export class KiroSession extends AgentSession {
       return
     }
     try {
-      this.rpcFire('session/cancel', {})
+      this.rpcFire('session/cancel', { sessionId: this.sessionId })
     } catch { /* ignore EPIPE */ }
     this.status = 'stopped'
     this.proc.kill('SIGTERM')
@@ -159,17 +186,12 @@ export class KiroSession extends AgentSession {
     // In Stage 2 (before tailer), emit messages from stdio.
     // In Stage 3, the tailer becomes the sole event source and
     // this.emitFromStdio is set to false by begin-session.ts.
-    if ('method' in msg && msg.method === 'session/notification') {
+    if ('method' in msg && (msg.method === 'session/update' || msg.method === 'session/notification')) {
       const params = msg.params as Record<string, unknown> | undefined
       if (!params) return
       const agentMsg = normalizeKiroMessage(params)
-      if (agentMsg) {
-        if (agentMsg.type === 'turn_end') {
-          this.turnsCompleted++
-        }
-        if (this.emitFromStdio) {
-          this.emit('message', agentMsg)
-        }
+      if (agentMsg && this.emitFromStdio) {
+        this.emit('message', agentMsg)
       }
       return
     }

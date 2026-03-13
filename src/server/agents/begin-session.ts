@@ -205,10 +205,10 @@ export async function beginSession(
 
       // Use dynamic log path resolver (scans for .jsonl file).
       // If file doesn't exist yet, pass the session dir to the tailer and let it poll.
-      const sessionDir = getKiroSessionDir(agentProfile, session.sessionId)
+      const sessionDir = getKiroSessionDir(agentProfile)
       const logPath = getKiroSessionLogPath(agentProfile, session.sessionId)
 
-      const tailer = new KiroSessionTailer(logPath, sessionDir, cardId)
+      const tailer = new KiroSessionTailer(logPath, sessionDir, session.sessionId, cardId)
       // Forward tailer messages through the session's event emitter
       tailer.on('message', (msg: AgentMessage) => session.emit('message', msg))
       tailer.start() // Polls for file creation if logPath is null

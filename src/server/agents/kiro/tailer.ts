@@ -1,8 +1,8 @@
 import { EventEmitter } from 'events'
-import { watch, openSync, readSync, closeSync, statSync, existsSync, readFileSync, readdirSync } from 'fs'
+import { watch, openSync, readSync, closeSync, statSync, existsSync, readFileSync } from 'fs'
 import type { FSWatcher } from 'fs'
 import { join } from 'path'
-import { normalizeKiroMessage } from './messages'
+import { normalizeKiroLogEntry } from './messages'
 import type { AgentMessage } from '../types'
 
 const STALE_TIMEOUT = 120_000
@@ -20,6 +20,7 @@ export class KiroSessionTailer extends EventEmitter {
   constructor(
     filePath: string | null,
     private readonly sessionDir: string,
+    private readonly sessionId: string,
     public readonly cardId: number,
   ) {
     super()
@@ -42,13 +43,10 @@ export class KiroSessionTailer extends EventEmitter {
   private pollForFile(): void {
     const started = Date.now()
     this.pollTimer = setInterval(() => {
-      // If we don't have a resolved path yet, scan the session dir for a .jsonl file
-      if (!this.resolvedPath && existsSync(this.sessionDir)) {
-        try {
-          const files = readdirSync(this.sessionDir)
-          const jsonl = files.find(f => f.endsWith('.jsonl'))
-          if (jsonl) this.resolvedPath = join(this.sessionDir, jsonl)
-        } catch { /* dir may not exist yet */ }
+      // Check for flat file: {sessionDir}/{sessionId}.jsonl
+      if (!this.resolvedPath) {
+        const candidate = join(this.sessionDir, `${this.sessionId}.jsonl`)
+        if (existsSync(candidate)) this.resolvedPath = candidate
       }
       if (this.resolvedPath && existsSync(this.resolvedPath)) {
         if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null }
@@ -63,9 +61,8 @@ export class KiroSessionTailer extends EventEmitter {
 
   private beginTailing(): void {
     // Start from offset 0 — this tailer is the sole event source for Kiro sessions.
-    // All events since session start must be emitted.
     this.offset = 0
-    this.readNewLines() // Emit any events already written
+    this.readNewLines()
     this.resetStaleTimer()
     this.watcher = watch(this.resolvedPath!, () => {
       this.readNewLines()
@@ -83,8 +80,8 @@ export class KiroSessionTailer extends EventEmitter {
         if (!line.trim()) continue
         try {
           const raw = JSON.parse(line) as Record<string, unknown>
-          const msg = normalizeKiroMessage(raw)
-          if (msg) messages.push(msg)
+          const msgs = normalizeKiroLogEntry(raw)
+          messages.push(...msgs)
         } catch { /* skip bad lines */ }
       }
       return messages
@@ -114,8 +111,8 @@ export class KiroSessionTailer extends EventEmitter {
         if (!line) continue
         try {
           const raw = JSON.parse(line) as Record<string, unknown>
-          const msg = normalizeKiroMessage(raw)
-          if (msg) this.emit('message', msg)
+          const msgs = normalizeKiroLogEntry(raw)
+          for (const msg of msgs) this.emit('message', msg)
         } catch { /* skip bad lines */ }
       }
     } catch (err) {
