@@ -61,7 +61,7 @@ export function normalizeKiroLogEntry(entry: Record<string, unknown>): AgentMess
         }
       }
       // Add a turn_end after each assistant message
-      messages.push({ type: 'turn_end', role: 'assistant', content: '', timestamp: ts })
+      messages.push({ type: 'turn_end', role: 'assistant', content: '', meta: { subtype: 'success' }, timestamp: ts })
       break
 
     case 'ToolResults':
@@ -194,6 +194,7 @@ export function normalizeKiroMessage(params: Record<string, unknown>): AgentMess
         type: 'turn_end',
         role: 'assistant',
         content: '',
+        meta: { subtype: 'success' },
         timestamp: ts,
       }
     }

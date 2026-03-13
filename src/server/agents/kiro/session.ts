@@ -43,6 +43,17 @@ export class KiroSession extends AgentSession {
       console.error(`[kiro:stderr] ${chunk.toString().trim()}`)
     })
 
+    this.proc.on('error', (err) => {
+      console.error(`[kiro] spawn error:`, err)
+      this.status = 'errored'
+      // Reject any pending RPCs
+      for (const [, { reject }] of this.pendingRpc) {
+        reject(new Error(`Kiro spawn error: ${err.message}`))
+      }
+      this.pendingRpc.clear()
+      this.emit('exit')
+    })
+
     this.proc.on('exit', (code) => {
       console.log(`[kiro] process exited code=${code}`)
       // Reject any pending RPCs — process died before responding
@@ -107,6 +118,7 @@ export class KiroSession extends AgentSession {
         type: 'turn_end',
         role: 'assistant',
         content: '',
+        meta: { subtype: 'success' },
         timestamp: Date.now(),
       }
       if (this.emitFromStdio) {
@@ -130,6 +142,10 @@ export class KiroSession extends AgentSession {
     const pid = this.proc.pid
     if (pid) {
       try { process.kill(-pid, 'SIGTERM') } catch { /* ignore */ }
+      // SIGKILL after brief grace period — kiro-cli-chat may ignore SIGTERM
+      setTimeout(() => {
+        try { process.kill(-pid, 'SIGKILL') } catch { /* ignore */ }
+      }, 500)
     }
     this.proc = null
   }

@@ -141,7 +141,7 @@ export function handleMessage(
       break
 
     case 'session:load':
-      void handleSessionLoad(ws, msg, connections)
+      void handleSessionLoad(ws, msg, connections, mutator)
       break
 
     case 'agent:send':
