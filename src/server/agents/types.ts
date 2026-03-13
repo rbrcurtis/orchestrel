@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events'
 
-export type AgentType = 'claude' | 'kiro'
+export type AgentType = 'opencode'
 
 export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped'
 
@@ -42,11 +42,6 @@ export abstract class AgentSession extends EventEmitter {
   abstract status: SessionStatus
   abstract promptsSent: number
   abstract turnsCompleted: number
-
-  model?: string
-  thinkingLevel?: string
-
-  queryStartIndex = 0
 
   abstract start(prompt: string): Promise<void>
   abstract sendMessage(content: string): Promise<void>
