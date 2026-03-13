@@ -113,27 +113,32 @@ export class OpenCodeSession extends AgentSession {
         for await (const event of events.stream) {
           if (this.abortController?.signal.aborted) break
 
-          const sessionId = (event.properties as any)?.sessionId ?? (event.properties as any)?.session_id
-          if (sessionId && sessionId !== this.sessionId) continue
+          // Filter events to this session — parts carry sessionID directly
+          const sessionID =
+            (event.properties as any)?.sessionID ??
+            (event.properties as any)?.part?.sessionID ??
+            (event.properties as any)?.info?.sessionID
+          if (sessionID && sessionID !== this.sessionId) continue
 
           const msg = normalizeOpenCodeEvent(event)
           if (msg) this.emit('message', msg)
 
-          if (event.type === 'message.completed') {
-            const role = (event.properties as any)?.role
-            if (role === 'assistant') {
-              this.turnsCompleted++
-              this.emit('message', {
-                type: 'turn_end',
-                role: 'system',
-                content: '',
-                timestamp: Date.now(),
-              } satisfies AgentMessage)
-            }
+          // session.idle = assistant finished responding (turn complete)
+          if (event.type === 'session.idle') {
+            this.turnsCompleted++
+            this.status = 'completed'
+            this.emit('message', {
+              type: 'turn_end',
+              role: 'system',
+              content: '',
+              timestamp: Date.now(),
+            } satisfies AgentMessage)
+            this.emit('exit')
+            break
           }
 
-          if (event.type === 'session.completed' || event.type === 'session.error') {
-            this.status = event.type === 'session.error' ? 'errored' : 'completed'
+          if (event.type === 'session.error') {
+            this.status = 'errored'
             this.emit('exit')
             break
           }
