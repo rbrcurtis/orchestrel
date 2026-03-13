@@ -65,6 +65,8 @@ export class ProjectStore {
     defaultModel?: 'sonnet' | 'opus'
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high'
     color?: string | null
+    agentType?: 'claude' | 'kiro'
+    agentProfile?: string | null
   }): Promise<Project> {
     const requestId = uuid()
     const project = await ws().mutate<Project>({
@@ -86,6 +88,8 @@ export class ProjectStore {
     defaultModel?: 'sonnet' | 'opus'
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high'
     color?: string | null
+    agentType?: 'claude' | 'kiro'
+    agentProfile?: string | null
   }): Promise<Project> {
     const existing = this.projects.get(data.id)
     if (existing) this.projects.set(data.id, { ...existing, ...data } as Project)
