@@ -71,7 +71,9 @@ function normalizeSessionMessage(msg: Record<string, unknown>): AgentMessage[] {
   const results: AgentMessage[] = []
   const role = msg.role as string
   const parts = (msg.parts ?? []) as Array<Record<string, unknown>>
-  const ts = msg.createdAt ? new Date(msg.createdAt as string).getTime() : Date.now()
+  const ts = typeof msg.time === 'object' && msg.time
+    ? ((msg.time as { created?: number }).created ?? Date.now())
+    : Date.now()
 
   for (const part of parts) {
     const partType = part.type as string
@@ -85,39 +87,51 @@ function normalizeSessionMessage(msg: Record<string, unknown>): AgentMessage[] {
       })
     }
 
-    if (partType === 'thinking' || partType === 'reasoning') {
+    if (partType === 'reasoning') {
       results.push({
         type: 'thinking',
         role: 'assistant',
-        content: (part.text as string) ?? (part.content as string) ?? '',
+        content: (part.text as string) ?? '',
         timestamp: ts,
       })
     }
 
-    if (partType === 'tool-invocation') {
-      const inv = part.toolInvocation as Record<string, unknown> | undefined
-      if (inv) {
+    if (partType === 'tool') {
+      const state = part.state as { status: string; input?: Record<string, unknown>; output?: string; error?: string; title?: string } | undefined
+      if (state) {
         results.push({
           type: 'tool_call',
           role: 'assistant',
-          content: '',
+          content: state.title ?? '',
           toolCall: {
-            id: inv.toolCallId as string,
-            name: inv.toolName as string,
-            params: inv.args as Record<string, unknown>,
+            id: (part.callID as string) ?? (part.id as string),
+            name: (part.tool as string) ?? 'unknown',
+            params: state.input,
           },
           timestamp: ts,
         })
-        if (inv.state === 'result') {
-          const output = typeof inv.result === 'string' ? inv.result : JSON.stringify(inv.result)
+        if (state.status === 'completed') {
           results.push({
             type: 'tool_result',
             role: 'assistant',
-            content: output,
+            content: state.output ?? '',
             toolResult: {
-              id: inv.toolCallId as string,
-              output,
+              id: (part.callID as string) ?? (part.id as string),
+              output: state.output ?? '',
               isError: false,
+            },
+            timestamp: ts,
+          })
+        }
+        if (state.status === 'error') {
+          results.push({
+            type: 'tool_result',
+            role: 'assistant',
+            content: state.error ?? 'Tool error',
+            toolResult: {
+              id: (part.callID as string) ?? (part.id as string),
+              output: state.error ?? 'Tool error',
+              isError: true,
             },
             timestamp: ts,
           })
