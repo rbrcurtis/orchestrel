@@ -42,6 +42,8 @@ export const projectCreateSchema = projectInsertSchema.pick({
   defaultWorktree: true,
   defaultModel: true,
   defaultThinkingLevel: true,
+  agentType: true,
+  agentProfile: true,
   color: true,
 })
 
