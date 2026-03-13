@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useProjectStore } from '~/stores/context';
-import DirectoryBrowser from './DirectoryBrowser';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
@@ -47,8 +46,7 @@ interface Project {
   color: string | null;
   defaultModel: 'sonnet' | 'opus';
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
-  agentType: 'claude' | 'kiro';
-  agentProfile: string | null;
+  providerID: string;
 }
 
 interface ProjectFormProps {
@@ -66,16 +64,14 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
   const [color, setColor] = useState(project?.color ?? '');
   const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus'>(project?.defaultModel ?? 'sonnet');
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(project?.defaultThinkingLevel ?? 'high');
-  const [agentType, setAgentType] = useState<'claude' | 'kiro'>(project?.agentType ?? 'claude');
-  const [agentProfile, setAgentProfile] = useState(project?.agentProfile ?? '');
+  const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
   const [showBrowser, setShowBrowser] = useState(false);
-  const [showHomeBrowser, setShowHomeBrowser] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const projects = useProjectStore();
 
-  const isValid = name.trim() && path.trim() && (!isGitRepo || defaultBranch) && (agentType !== 'kiro' || agentProfile.trim());
+  const isValid = name.trim() && path.trim() && (!isGitRepo || defaultBranch);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,8 +89,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
       color: color || undefined,
       defaultModel,
       defaultThinkingLevel,
-      agentType,
-      agentProfile: agentType === 'kiro' ? agentProfile.trim() : undefined,
+      providerID,
     };
 
     try {
@@ -155,47 +150,20 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
                 </div>
               </div>
 
-              {/* Agent Type */}
+              {/* Provider */}
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Agent</label>
-                <Select value={agentType} onValueChange={(v) => {
-                  setAgentType(v as 'claude' | 'kiro')
-                  if (v === 'claude') setAgentProfile('')
-                }}>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
+                <Select value={providerID} onValueChange={setProviderID}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="claude">Claude Code</SelectItem>
-                    <SelectItem value="kiro">Kiro</SelectItem>
+                    <SelectItem value="anthropic">Anthropic</SelectItem>
+                    <SelectItem value="kiro-okkanti">Kiro — Okkanti</SelectItem>
+                    <SelectItem value="kiro-trackable">Kiro — Trackable</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* Kiro HOME */}
-              {agentType === 'kiro' && (
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Kiro HOME</label>
-                  <p className="text-xs text-muted-foreground mb-1.5">Auth & config directory for this Kiro instance</p>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="text"
-                      value={agentProfile}
-                      readOnly
-                      placeholder="No directory selected"
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowHomeBrowser(true)}
-                    >
-                      Browse
-                    </Button>
-                  </div>
-                </div>
-              )}
 
               {/* Color */}
               <div>
@@ -324,16 +292,6 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
         />
       )}
 
-      {showHomeBrowser && (
-        <DirectoryBrowser
-          initialPath={agentProfile || '/home/ryan'}
-          onSelect={(selected) => {
-            setAgentProfile(selected);
-            setShowHomeBrowser(false);
-          }}
-          onCancel={() => setShowHomeBrowser(false)}
-        />
-      )}
     </>
   );
 }
