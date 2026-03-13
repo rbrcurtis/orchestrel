@@ -1014,8 +1014,9 @@ git commit -m "feat: add KiroSessionTailer with file-creation polling"
 In `src/server/agents/begin-session.ts`, after the `await session.waitForReady()` line (line 195), add Kiro tailer setup. Import what's needed at the top:
 
 ```typescript
-import { getKiroSessionLogPath } from './kiro/session-path'
+import { getKiroSessionDir } from './kiro/session-path'
 import { KiroSessionTailer } from './kiro/tailer'
+import { join } from 'path'
 ```
 
 After `await session.waitForReady()`:
@@ -1023,18 +1024,20 @@ After `await session.waitForReady()`:
 ```typescript
 // Start Kiro log tailer as the sole event source (per spec: no dual-streaming)
 if (agentType === 'kiro' && session.sessionId && agentProfile) {
-  const logPath = getKiroSessionLogPath(agentProfile, session.sessionId)
-  if (logPath) {
-    // Disable stdio message emission — tailer is the sole source
-    const kiroSession = session as import('./kiro/session').KiroSession
-    kiroSession.emitFromStdio = false
+  // Construct the expected log file path — don't check existence, let the tailer poll.
+  // Kiro may create the file lazily after the first turn.
+  const sessionDir = getKiroSessionDir(agentProfile, session.sessionId)
+  const logPath = join(sessionDir, 'events.jsonl') // filename TBD — adjust after inspecting actual output
 
-    const tailer = new KiroSessionTailer(logPath, cardId)
-    // Forward tailer messages through the session's event emitter
-    tailer.on('message', (msg: AgentMessage) => session.emit('message', msg))
-    tailer.start()
-    session.on('exit', () => tailer.stop())
-  }
+  // Disable stdio message emission — tailer is the sole source
+  const kiroSession = session as import('./kiro/session').KiroSession
+  kiroSession.emitFromStdio = false
+
+  const tailer = new KiroSessionTailer(logPath, cardId)
+  // Forward tailer messages through the session's event emitter
+  tailer.on('message', (msg: AgentMessage) => session.emit('message', msg))
+  tailer.start() // Polls for file creation if it doesn't exist yet
+  session.on('exit', () => tailer.stop())
 }
 ```
 
@@ -1074,21 +1077,26 @@ if (agentProfile) {
 }
 ```
 
-4. At the call site, look up the project to get agentProfile:
+4. At the call site, look up the project to get agentType and agentProfile:
 
 ```typescript
 let agentProfile: string | null = null
+let agentType: string | null = null
 if (card?.projectId) {
-  const proj = db.select({ agentProfile: projects.agentProfile }).from(projects).where(eq(projects.id, card.projectId)).get()
+  const proj = db.select({
+    agentType: projects.agentType,
+    agentProfile: projects.agentProfile,
+  }).from(projects).where(eq(projects.id, card.projectId)).get()
+  agentType = proj?.agentType ?? null
   agentProfile = proj?.agentProfile ?? null
 }
 const filePath = findSessionFile(sessionId, card?.worktreePath ?? null, agentProfile)
 ```
 
-5. For Kiro sessions, the normalization pipeline is different — Kiro JSONL events use ACP format, not Claude SDK format. Add a branch in the history loading:
+5. For Kiro sessions, the normalization pipeline is different — Kiro JSONL events use ACP format, not Claude SDK format. Discriminate on `agentType`, not `agentProfile`:
 
 ```typescript
-if (agentProfile && filePath) {
+if (agentType === 'kiro' && filePath) {
   // Kiro session — use Kiro normalizer
   const { KiroSessionTailer } = await import('../../agents/kiro/tailer')
   const tailer = new KiroSessionTailer(filePath, cardId)
