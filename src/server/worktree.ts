@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, copyFileSync } from 'fs';
 
 export function createWorktree(
   repoPath: string,
@@ -51,4 +51,10 @@ export function slugify(title: string): string {
 
 export function worktreeExists(worktreePath: string): boolean {
   return existsSync(worktreePath);
+}
+
+export function copyOpencodeConfig(srcDir: string, destDir: string): void {
+  const src = `${srcDir}/opencode.json`
+  if (!existsSync(src)) return
+  copyFileSync(src, `${destDir}/opencode.json`)
 }

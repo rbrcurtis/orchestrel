@@ -7,6 +7,7 @@ interface SdkClient {
   session: {
     create(opts: { body: { title: string }; query: { directory: string } }): Promise<{ data?: { id: string }; id?: string }>
     prompt(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
+    promptAsync(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
     abort(opts: { path: { id: string } }): Promise<void>
   }
   event: {
@@ -22,6 +23,7 @@ export class OpenCodeSession extends AgentSession {
 
   private abortController: AbortController | null = null
   private sseCleanup: (() => void) | null = null
+  private sseAlive = false
 
   constructor(
     private client: unknown,
@@ -52,7 +54,7 @@ export class OpenCodeSession extends AgentSession {
     this.subscribeToEvents()
 
     this.promptsSent++
-    await sdk.session.prompt({
+    await sdk.session.promptAsync({
       path: { id: this.sessionId! },
       body: {
         parts: [{ type: 'text', text: prompt }],
@@ -67,15 +69,15 @@ export class OpenCodeSession extends AgentSession {
     if (!this.sessionId) throw new Error('No active session')
     const sdk = this.client as unknown as SdkClient
 
-    // Re-subscribe if SSE was lost (e.g. after error recovery)
-    if (!this.abortController || this.abortController.signal.aborted) {
+    // Re-subscribe if SSE was lost (stream ended or aborted)
+    if (!this.sseAlive) {
       this.subscribeToEvents()
     }
 
     this.promptsSent++
     this.status = 'running'
 
-    await sdk.session.prompt({
+    await sdk.session.promptAsync({
       path: { id: this.sessionId },
       body: {
         parts: [{ type: 'text', text: content }],
@@ -100,15 +102,17 @@ export class OpenCodeSession extends AgentSession {
     if (!this.sessionId) return
     const sdk = this.client as unknown as SdkClient
 
+    // Disconnect SSE before aborting so the session.error event doesn't surface
+    this.sseCleanup?.()
+    this.abortController?.abort()
+    this.status = 'stopped'
+
     try {
       await sdk.session.abort({ path: { id: this.sessionId } })
     } catch (err) {
       console.error(`[opencode-session:${this.sessionId}] abort error:`, err)
     }
 
-    this.sseCleanup?.()
-    this.abortController?.abort()
-    this.status = 'stopped'
     this.emit('exit')
   }
 
@@ -125,6 +129,7 @@ export class OpenCodeSession extends AgentSession {
   private subscribeToEvents(): void {
     const sdk = this.client as unknown as SdkClient
     this.abortController = new AbortController()
+    this.sseAlive = true
 
     const subscribe = async () => {
       try {
@@ -180,6 +185,8 @@ export class OpenCodeSession extends AgentSession {
           timestamp: Date.now(),
         } satisfies AgentMessage)
         this.emit('exit')
+      } finally {
+        this.sseAlive = false
       }
     }
 
