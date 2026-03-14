@@ -13,6 +13,7 @@ interface SdkClient {
   event: {
     subscribe(opts: { signal: AbortSignal; headers: Record<string, string> }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
   }
+  postSessionIdPermissionsPermissionId(opts: { path: { id: string; permissionID: string }; body: { response: 'once' | 'always' | 'reject' } }): Promise<unknown>
 }
 
 export class OpenCodeSession extends AgentSession {
@@ -47,6 +48,7 @@ export class OpenCodeSession extends AgentSession {
     const sdk = this.client as unknown as SdkClient
 
     if (!this.sessionId) {
+      console.log(`[opencode-session:${this.sessionId}] → session.create`)
       const res = await sdk.session.create({
         body: { title: prompt.slice(0, 100) },
         query: { directory: this.cwd },
@@ -65,6 +67,7 @@ export class OpenCodeSession extends AgentSession {
     await this.subscribeToEvents()
 
     this.promptsSent++
+    console.log(`[opencode-session:${this.sessionId}] → session.prompt text_length=${prompt.length}`)
     await sdk.session.promptAsync({
       path: { id: this.sessionId! },
       body: {
@@ -88,6 +91,7 @@ export class OpenCodeSession extends AgentSession {
     this.promptsSent++
     this.status = 'running'
 
+    console.log(`[opencode-session:${this.sessionId}] → session.prompt text_length=${content.length}`)
     await sdk.session.promptAsync({
       path: { id: this.sessionId },
       body: {
@@ -119,6 +123,7 @@ export class OpenCodeSession extends AgentSession {
     this.status = 'stopped'
 
     try {
+      console.log(`[opencode-session:${this.sessionId}] → session.abort`)
       await sdk.session.abort({ path: { id: this.sessionId } })
     } catch (err) {
       console.error(`[opencode-session:${this.sessionId}] abort error:`, err)
@@ -174,6 +179,24 @@ export class OpenCodeSession extends AgentSession {
               props.info?.sessionID
             if (sessionID && sessionID !== this.sessionId) {
               console.log(`[opencode-session:${this.sessionId}] skipping event for session ${sessionID}`)
+              continue
+            }
+
+            // Auto-approve ALL permission requests (Dispatcher runs in full-trust mode)
+            if (event.type === 'permission.asked' || event.type === 'permission.updated') {
+              const perm = event.properties as { id?: string; sessionID?: string; type?: string; title?: string }
+              const permSessionId = perm.sessionID ?? this.sessionId!
+              if (perm.id) {
+                console.log(`[opencode-session:${this.sessionId}] auto-approving permission ${perm.id} (type=${perm.type}, session=${perm.sessionID}, title=${perm.title})`)
+                sdk.postSessionIdPermissionsPermissionId({
+                  path: { id: permSessionId, permissionID: perm.id },
+                  body: { response: 'always' },
+                }).then(() => {
+                  console.log(`[opencode-session:${this.sessionId}] permission ${perm.id} approved OK`)
+                }).catch(err => console.error(`[opencode-session:${this.sessionId}] permission approve failed:`, err))
+              } else {
+                console.log(`[opencode-session:${this.sessionId}] permission event without id:`, JSON.stringify(event.properties))
+              }
               continue
             }
 
