@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { Card, CardSubscriber } from './Card'
+import { Project, ProjectSubscriber } from './Project'
 
 const DB_DIR = join(process.cwd(), 'data')
 mkdirSync(DB_DIR, { recursive: true })
@@ -9,8 +10,8 @@ mkdirSync(DB_DIR, { recursive: true })
 export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
   database: join(DB_DIR, 'dispatcher.db'),
-  entities: [Card],
-  subscribers: [CardSubscriber],
+  entities: [Card, Project],
+  subscribers: [CardSubscriber, ProjectSubscriber],
   synchronize: false,
 })
 
