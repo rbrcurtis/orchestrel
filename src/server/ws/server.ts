@@ -4,21 +4,20 @@ import type { Http2SecureServer } from 'http2'
 import type { Plugin } from 'vite'
 import { getRequestListener } from '@hono/node-server'
 import { ConnectionManager } from './connections'
-import { DbMutator } from '../db/mutator'
+import { clientSubs } from './subscriptions'
+import { messageBus } from '../bus'
+import { initDatabase } from '../models/index'
 import { validateCfAccess } from './auth'
 import { handleMessage } from './handlers'
-import { unsubscribeAllSessions } from '../agents/begin-session'
 import { createRestApi } from '../api/rest'
 import { openCodeServer } from '../opencode/server'
 
 export const connections = new ConnectionManager()
-export const mutator = new DbMutator(connections)
 
 export function createWsServer(httpServer: HttpServer | Http2SecureServer) {
   const wss = new WebSocketServer({ noServer: true })
 
   httpServer.on('upgrade', async (req, socket, head) => {
-    // Only handle /ws path
     if (req.url !== '/ws') return
 
     const valid = await validateCfAccess(req)
@@ -39,14 +38,14 @@ export function createWsServer(httpServer: HttpServer | Http2SecureServer) {
     ws.on('message', (raw) => {
       try {
         const data = JSON.parse(raw.toString())
-        handleMessage(ws, data, connections, mutator)
+        handleMessage(ws, data, connections)
       } catch (err) {
         console.error('WS message parse error:', err)
       }
     })
 
     ws.on('close', () => {
-      unsubscribeAllSessions(ws)
+      clientSubs.unsubscribeAll(ws)
       connections.remove(ws)
     })
   })
@@ -54,23 +53,23 @@ export function createWsServer(httpServer: HttpServer | Http2SecureServer) {
   return wss
 }
 
-/**
- * Vite plugin to attach WS server to dev server's HTTP server.
- */
 export function wsServerPlugin(): Plugin {
   return {
     name: 'dispatcher-ws',
     configureServer(server) {
       if (server.httpServer) {
-        createWsServer(server.httpServer)
-        console.log('[ws] WebSocket server attached to Vite dev server')
+        // Initialize TypeORM DataSource before accepting connections
+        initDatabase().then(() => {
+          createWsServer(server.httpServer!)
+          console.log('[ws] WebSocket server attached to Vite dev server')
+        }).catch((err) => {
+          console.error('[db] failed to initialize database:', err)
+        })
 
-        // Start OpenCode server
+        // Publish OpenCode crash to bus — all connected clients get notified
         openCodeServer.onCrash = () => {
-          connections.broadcast({
-            type: 'agent:message',
-            cardId: -1,
-            data: { type: 'error', role: 'system', content: 'OpenCode server crashed, restarting...', timestamp: Date.now() },
+          messageBus.publish('system:error', {
+            message: 'OpenCode server crashed, restarting...',
           })
         }
 
@@ -79,7 +78,7 @@ export function wsServerPlugin(): Plugin {
         })
       }
 
-      const restApp = createRestApi(mutator)
+      const restApp = createRestApi()
       const restHandler = getRequestListener(restApp.fetch)
 
       server.middlewares.use((req, res, next) => {
