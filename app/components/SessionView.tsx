@@ -149,9 +149,13 @@ export const SessionView = observer(function SessionView({
     prevConvLen.current = len;
   }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Card switch: reset near-bottom so next content triggers instant scroll
+  // Card switch: reset near-bottom so next content triggers instant scroll,
+  // and scroll to bottom immediately if conversation is already loaded
   useEffect(() => {
     nearBottomRef.current = true;
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    });
   }, [cardId]);
 
   // Extract tool outputs from conversation
