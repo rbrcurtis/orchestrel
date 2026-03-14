@@ -298,6 +298,7 @@ function StatusBadge({ status }: { status: string }) {
       label = status === 'starting' ? 'Starting...' : 'Running';
       break;
     case 'completed':
+    case 'stopped':
       variant = 'secondary';
       label = 'Completed';
       break;

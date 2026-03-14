@@ -25,6 +25,7 @@ export class OpenCodeSession extends AgentSession {
   private sseCleanup: (() => void) | null = null
   private sseAlive = false
   private turnCost = 0
+  private userMessageIds = new Set<string>()
 
   constructor(
     private client: unknown,
@@ -175,12 +176,22 @@ export class OpenCodeSession extends AgentSession {
               continue
             }
 
-            // Track cost from message.updated events for assistant messages
+            // Track cost and user message IDs from message.updated events
             if (event.type === 'message.updated') {
-              const info = event.properties.info as { role?: string; cost?: number }
+              const info = event.properties.info as { role?: string; cost?: number; id?: string; messageID?: string }
               if (info?.role === 'assistant' && typeof info.cost === 'number') {
                 this.turnCost = info.cost
               }
+              if (info?.role === 'user') {
+                const msgId = info.id ?? info.messageID
+                if (msgId) this.userMessageIds.add(msgId)
+              }
+            }
+
+            // Skip message.part.updated events that belong to user messages
+            if (event.type === 'message.part.updated') {
+              const part = (event.properties as { part?: { messageID?: string } }).part
+              if (part?.messageID && this.userMessageIds.has(part.messageID)) continue
             }
 
             const msg = normalizeOpenCodeEvent(event)
@@ -211,6 +222,8 @@ export class OpenCodeSession extends AgentSession {
             if (event.type === 'session.error') {
               const sid = (event.properties as { sessionID?: string }).sessionID
               if (sid && sid !== this.sessionId) continue
+              // Ignore errors caused by our own abort (user hit stop)
+              if (this.status === 'stopped') break
               this.status = 'errored'
               this.emit('exit')
               break
@@ -221,7 +234,7 @@ export class OpenCodeSession extends AgentSession {
             resolved = true
             resolveConnected()
           }
-          if (this.abortController?.signal.aborted) return
+          if (this.abortController?.signal.aborted || this.status === 'stopped') return
           console.error(`[opencode-session:${this.sessionId}] SSE error:`, err)
           this.status = 'errored'
           this.emit('message', {
