@@ -55,18 +55,19 @@ export function Card({ id, title, color, onClick }: CardProps) {
         onClick={() => onClick?.(id)}
         className={`group relative w-full sm:w-56 sm:shrink-0 rounded bg-card border border-border px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${color ? 'border-l-3' : ''}`}
       >
-        <p className="text-sm text-foreground truncate">{title}</p>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="absolute top-1 right-1 hidden group-hover:flex text-muted-foreground"
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpen(true);
-          }}
-        >
-          <X className="size-3" />
-        </Button>
+        <div className="flex items-stretch gap-1">
+          <p className="text-sm text-foreground truncate flex-1 min-w-0 self-center">{title}</p>
+          <button
+            type="button"
+            className="shrink-0 flex sm:hidden sm:group-hover:flex items-center px-1 -my-2 -mr-3 rounded-r text-muted-foreground/60 hover:text-neon-magenta hover:bg-neon-magenta/10 active:bg-neon-magenta/20"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
       </div>
 
       <AlertDialog open={open} onOpenChange={setOpen}>

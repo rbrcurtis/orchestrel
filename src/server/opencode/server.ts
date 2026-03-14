@@ -44,8 +44,22 @@ export class OpenCodeServer {
   async start(): Promise<void> {
     this.binaryPath = findOpencodeBinary()
     console.log(`[opencode] using binary: ${this.binaryPath}`)
+
+    // Check if OpenCode is already running (survives Vite HMR restarts)
+    const client = createOpencodeClient({ baseUrl: `http://localhost:${OPENCODE_PORT}` })
+    try {
+      const res = await fetch(`http://localhost:${OPENCODE_PORT}/api/health`)
+      if (res.ok) {
+        console.log(`[opencode] already running on port ${OPENCODE_PORT}, reusing`)
+        this.client = client
+        return
+      }
+    } catch {
+      // Not running, spawn it
+    }
+
     await this.spawn()
-    this.client = createOpencodeClient({ baseUrl: `http://localhost:${OPENCODE_PORT}` })
+    this.client = client
     await this.waitForHealthy()
     console.log(`[opencode] server ready on port ${OPENCODE_PORT}`)
   }

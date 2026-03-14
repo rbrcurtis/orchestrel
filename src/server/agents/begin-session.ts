@@ -7,6 +7,7 @@ import type { AgentSession, AgentMessage, SessionStatus } from './types'
 import type { ConnectionManager } from '../ws/connections'
 import type { DbMutator } from '../db/mutator'
 import {
+  copyOpencodeConfig,
   createWorktree,
   runSetupCommands,
   slugify,
@@ -36,6 +37,7 @@ export function subscribeToSession(
     if (msg.type === 'turn_end') {
       try {
         mutator.updateCard(cardId, {
+          column: 'review',
           promptsSent: session.promptsSent,
           turnsCompleted: session.turnsCompleted,
         })
@@ -129,6 +131,7 @@ function ensureWorktree(card: {
     if (proj.setupCommands) {
       runSetupCommands(wtPath, proj.setupCommands)
     }
+    copyOpencodeConfig(proj.path, wtPath)
   }
 
   mutator.updateCard(card.id, { worktreePath: wtPath, worktreeBranch: branch })
