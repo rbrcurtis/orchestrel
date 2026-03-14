@@ -25,6 +25,7 @@ export class OpenCodeSession extends AgentSession {
   private sseCleanup: (() => void) | null = null
   private sseAlive = false
   private turnCost = 0
+  private turnTokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null = null
   private userMessageIds = new Set<string>()
 
   constructor(
@@ -178,9 +179,20 @@ export class OpenCodeSession extends AgentSession {
 
             // Track cost and user message IDs from message.updated events
             if (event.type === 'message.updated') {
-              const info = event.properties.info as { role?: string; cost?: number; id?: string; messageID?: string }
-              if (info?.role === 'assistant' && typeof info.cost === 'number') {
-                this.turnCost = info.cost
+              const info = event.properties.info as { role?: string; cost?: number; id?: string; messageID?: string; tokens?: { input?: number; output?: number; cache?: { read?: number; write?: number } } }
+              if (info?.role === 'assistant') {
+                if (typeof info.cost === 'number') {
+                  this.turnCost = info.cost
+                }
+                const tokens = info.tokens
+                if (tokens) {
+                  this.turnTokens = {
+                    input: tokens.input ?? 0,
+                    output: tokens.output ?? 0,
+                    cacheRead: tokens.cache?.read ?? 0,
+                    cacheWrite: tokens.cache?.write ?? 0,
+                  }
+                }
               }
               if (info?.role === 'user') {
                 const msgId = info.id ?? info.messageID
@@ -214,9 +226,16 @@ export class OpenCodeSession extends AgentSession {
                   totalCostUsd: this.turnCost,
                   turnNumber: this.turnsCompleted,
                 },
+                usage: this.turnTokens ? {
+                  inputTokens: this.turnTokens.input,
+                  outputTokens: this.turnTokens.output,
+                  cacheRead: this.turnTokens.cacheRead,
+                  cacheWrite: this.turnTokens.cacheWrite,
+                } : undefined,
                 timestamp: Date.now(),
               } satisfies AgentMessage)
               this.turnCost = 0
+              this.turnTokens = null
             }
 
             if (event.type === 'session.error') {
