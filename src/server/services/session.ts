@@ -84,6 +84,7 @@ class SessionService {
 
       const card = await Card.findOneByOrFail({ id: cardId })
       card.promptsSent = existing.promptsSent
+      if (card.column !== 'running') card.column = 'running'
       card.updatedAt = new Date().toISOString()
       await card.save()
       return

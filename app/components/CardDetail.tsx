@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch } from 'lucide-react';
-import { useCardStore, useProjectStore } from '~/stores/context';
+import { useCardStore, useProjectStore, useSessionStore } from '~/stores/context';
 import { SessionView } from './SessionView';
 import { InlineEdit } from './InlineEdit';
 import { Input } from '~/components/ui/input';
@@ -51,6 +51,7 @@ type Draft = {
 export const CardDetail = observer(function CardDetail({ cardId, onClose }: Props) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
+  const sessionStore = useSessionStore();
 
   const card = cardStore.getCard(cardId);
 
@@ -167,6 +168,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
   const cardProject = card.projectId != null ? projectStore.getProject(card.projectId) : undefined;
   const col = card.column;
+  const sessionActive = sessionStore.getSession(cardId)?.active ?? false;
   const hasSession = !!card.sessionId || col === 'running';
   const showSession = hasSession;
   const projectLocked = !!card.projectId;
@@ -181,11 +183,11 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
         {/* Header bar */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
           <Select value={col} onValueChange={handleStatusChange}>
-            <div className={col === 'running' ? 'cursor-not-allowed' : ''}>
+            <div className={sessionActive ? 'cursor-not-allowed' : ''}>
               <SelectTrigger
                 className={cn(
                   'w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0',
-                  col === 'running' && 'pointer-events-none',
+                  sessionActive && 'pointer-events-none',
                 )}
               >
                 <Badge variant="outline" className="uppercase text-xs tracking-wide">

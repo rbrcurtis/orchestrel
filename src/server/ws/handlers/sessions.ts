@@ -36,9 +36,10 @@ export async function handleSessionLoad(
     // Subscribe to status updates (prompts/turns counters, sessionId)
     clientSubs.subscribe(ws, `card:${cardId}:status`, (payload) => {
       const card = payload as import('../../models/Card').Card
+      const live = sessionService.getStatus(cardId)
       connections.send(ws, {
         type: 'agent:status',
-        data: {
+        data: live ?? {
           cardId,
           active: false,
           status: 'completed',

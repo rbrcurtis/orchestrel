@@ -266,6 +266,7 @@ export class OpenCodeSession extends AgentSession {
               if (sid && sid !== this.sessionId) continue
               // Ignore errors caused by our own abort (user hit stop)
               if (this.status === 'stopped') break
+              console.error(`[opencode-session:${this.sessionId}] session.error:`, JSON.stringify(event.properties))
               this.status = 'errored'
               this.emit('exit')
               break

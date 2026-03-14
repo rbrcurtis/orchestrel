@@ -57,6 +57,7 @@ function defaultSession(): SessionState {
 
 export class SessionStore {
   sessions = observable.map<number, SessionState>();
+  subscribedCards = new Set<number>();
 
   constructor() {
     makeAutoObservable(this);
@@ -219,6 +220,12 @@ export class SessionStore {
       });
     }
 
+    // Optimistically set status to running so Stop button appears immediately
+    const s = this.getOrCreate(cardId);
+    s.active = true;
+    s.status = 'running';
+    s.promptsSent = (s.promptsSent ?? 0) + 1;
+
     const requestId = uuid();
     await ws().mutate({
       type: 'agent:send',
@@ -246,6 +253,7 @@ export class SessionStore {
   }
 
   async loadHistory(cardId: number, sessionId?: string | null): Promise<void> {
+    this.subscribedCards.add(cardId);
     const requestId = uuid();
     await ws().mutate({
       type: 'session:load',
@@ -254,5 +262,16 @@ export class SessionStore {
     });
     // History arrives via session:history server message, routed to ingestBatch()
     // If sessionId was null, bus subscriptions are still set up for live messages.
+  }
+
+  async resubscribeAll(): Promise<void> {
+    for (const cardId of this.subscribedCards) {
+      const requestId = uuid();
+      ws().mutate({
+        type: 'session:load',
+        requestId,
+        data: { cardId },
+      }).catch((err) => console.warn('[ws] resubscribe failed for card', cardId, err));
+    }
   }
 }

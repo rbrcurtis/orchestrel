@@ -19,6 +19,8 @@ export class RootStore {
     setCardStoreWs(this.ws)
     setProjectStoreWs(this.ws)
     setSessionStoreWs(this.ws)
+
+    this.ws.onReconnect(() => this.sessions.resubscribeAll())
   }
 
   subscribe(columns: string[]) {

@@ -1,4 +1,4 @@
-import { makeAutoObservable } from 'mobx';
+import { makeAutoObservable, runInAction } from 'mobx';
 import type { Card, Column } from '../../src/shared/ws-protocol';
 import type { WsClient } from '../lib/ws-client';
 import { uuid } from '../lib/utils';
@@ -88,7 +88,7 @@ export class CardStore {
         sourceBranch: data.sourceBranch,
       },
     });
-    this.cards.set(card.id, card);
+    runInAction(() => this.cards.set(card.id, card));
     return card;
   }
 
@@ -117,10 +117,10 @@ export class CardStore {
           description: data.description ?? undefined,
         },
       });
-      this.cards.set(card.id, card);
+      runInAction(() => this.cards.set(card.id, card));
       return card;
     } catch (err) {
-      if (existing) this.cards.set(data.id, existing);
+      runInAction(() => { if (existing) this.cards.set(data.id, existing); });
       throw err;
     }
   }
@@ -133,7 +133,7 @@ export class CardStore {
     try {
       await ws().mutate({ type: 'card:delete', requestId, data: { id } });
     } catch (err) {
-      if (existing) this.cards.set(id, existing);
+      runInAction(() => { if (existing) this.cards.set(id, existing); });
       throw err;
     }
   }
