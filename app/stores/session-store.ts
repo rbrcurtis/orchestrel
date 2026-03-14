@@ -33,7 +33,7 @@ export interface SessionState {
 }
 
 function extractContextTokens(msg: AgentMessage): number | null {
-  if (msg.type !== 'text' || !msg.usage || msg.meta?.isSidechain) return null
+  if ((msg.type !== 'text' && msg.type !== 'turn_end') || !msg.usage || msg.meta?.isSidechain) return null
   const u = msg.usage
   return (u.inputTokens ?? 0) + (u.cacheWrite ?? 0) + (u.cacheRead ?? 0)
 }
