@@ -13,8 +13,10 @@ export async function handleSessionLoad(
   const { requestId } = msg
 
   try {
-    const messages = await sessionService.getHistory(sessionId, cardId)
-    connections.send(ws, { type: 'session:history', requestId, cardId, messages })
+    if (sessionId) {
+      const messages = await sessionService.getHistory(sessionId, cardId)
+      connections.send(ws, { type: 'session:history', requestId, cardId, messages })
+    }
     connections.send(ws, { type: 'mutation:ok', requestId })
 
     // Subscribe to live agent messages for this card

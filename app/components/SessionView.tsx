@@ -50,12 +50,14 @@ export const SessionView = observer(function SessionView({
 
   const isStreaming = sessionActive || isStarting;
 
-  // Load history once on mount / when sessionId becomes available
+  // Load history / set up bus subscriptions on mount and when sessionId becomes available.
+  // Called without sessionId on first render to register card-level bus subscriptions
+  // immediately (avoiding the race where messages arrive before sessionId is known).
+  // Called again once sessionId is available to actually load history.
   useEffect(() => {
     const sid = sessionStoreId ?? sessionId;
-    if (sid && !session?.historyLoaded) {
-      sessionStore.loadHistory(cardId, sid);
-    }
+    if (sid && session?.historyLoaded) return; // history already loaded — nothing to do
+    sessionStore.loadHistory(cardId, sid ?? undefined);
   }, [cardId, sessionStoreId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Request status on mount

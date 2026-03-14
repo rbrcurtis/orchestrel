@@ -66,9 +66,9 @@ class CardService {
 
     // Auto-start session when creating directly into running
     if (col === 'running') {
-      // Lazy import to avoid circular dep — SessionService imports CardService
-      const { sessionService } = await import('./session')
-      await sessionService.startSession(card.id, undefined)
+      import('./session').then(({ sessionService }) =>
+        sessionService.startSession(card.id, undefined)
+      ).catch(err => console.error(`[card:${card.id}] failed to auto-start session:`, err))
     }
 
     return card
@@ -105,8 +105,9 @@ class CardService {
 
     // Auto-start session when moving to running
     if (movingToRunning) {
-      const { sessionService } = await import('./session')
-      await sessionService.startSession(card.id, undefined)
+      import('./session').then(({ sessionService }) =>
+        sessionService.startSession(card.id, undefined)
+      ).catch(err => console.error(`[card:${id}] failed to auto-start session:`, err))
     }
 
     return card

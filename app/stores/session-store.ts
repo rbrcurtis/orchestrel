@@ -245,13 +245,14 @@ export class SessionStore {
     });
   }
 
-  async loadHistory(cardId: number, sessionId: string): Promise<void> {
+  async loadHistory(cardId: number, sessionId?: string | null): Promise<void> {
     const requestId = uuid();
     await ws().mutate({
       type: 'session:load',
       requestId,
-      data: { cardId, sessionId },
+      data: { cardId, ...(sessionId ? { sessionId } : {}) },
     });
     // History arrives via session:history server message, routed to ingestBatch()
+    // If sessionId was null, bus subscriptions are still set up for live messages.
   }
 }

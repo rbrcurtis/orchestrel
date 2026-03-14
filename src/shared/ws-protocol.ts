@@ -2,6 +2,9 @@ import { z } from 'zod'
 
 // ── Entity schemas (standalone Zod — no Drizzle dependency) ──────────────────
 
+// SQLite stores booleans as 0/1 integers; coerce to real booleans at parse time
+const sqliteBool = z.union([z.boolean(), z.number()]).transform(v => !!v)
+
 export const cardSchema = z.object({
   id: z.number(),
   title: z.string(),
@@ -13,7 +16,7 @@ export const cardSchema = z.object({
   sessionId: z.string().nullable(),
   worktreePath: z.string().nullable(),
   worktreeBranch: z.string().nullable(),
-  useWorktree: z.boolean(),
+  useWorktree: sqliteBool,
   sourceBranch: z.enum(['main', 'dev']).nullable(),
   model: z.enum(['sonnet', 'opus', 'auto']),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
@@ -28,9 +31,9 @@ export const projectSchema = z.object({
   name: z.string(),
   path: z.string(),
   setupCommands: z.string(),
-  isGitRepo: z.boolean(),
+  isGitRepo: sqliteBool,
   defaultBranch: z.enum(['main', 'dev']).nullable(),
-  defaultWorktree: z.boolean(),
+  defaultWorktree: sqliteBool,
   defaultModel: z.enum(['sonnet', 'opus', 'auto']),
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
   providerID: z.string(),
@@ -167,7 +170,7 @@ export const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('agent:stop'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
   z.object({ type: z.literal('agent:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
 
-  z.object({ type: z.literal('session:load'), requestId: z.string(), data: z.object({ sessionId: z.string(), cardId: z.number() }) }),
+  z.object({ type: z.literal('session:load'), requestId: z.string(), data: z.object({ sessionId: z.string().optional(), cardId: z.number() }) }),
 ])
 
 export type ClientMessage = z.infer<typeof clientMessage>
