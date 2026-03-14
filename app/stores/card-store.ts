@@ -79,7 +79,7 @@ export class CardStore {
       requestId,
       data: {
         title: data.title,
-        description: data.description,
+        description: data.description ?? undefined,
         column: data.column ?? undefined,
         projectId: data.projectId,
         model: data.model,
@@ -112,7 +112,10 @@ export class CardStore {
       const card = await ws().mutate<Card>({
         type: 'card:update',
         requestId,
-        data,
+        data: {
+          ...data,
+          description: data.description ?? undefined,
+        },
       });
       this.cards.set(card.id, card);
       return card;

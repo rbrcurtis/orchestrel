@@ -23,6 +23,7 @@
       "~/*": ["./app/*"]
     },
     "esModuleInterop": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "experimentalDecorators": true
   }
 }

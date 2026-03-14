@@ -29,7 +29,7 @@ class ProjectService {
     const proj = Project.create({
       ...data,
       createdAt: new Date().toISOString(),
-    })
+    } as Partial<Project>) as Project
     await proj.save()
     return proj
   }
