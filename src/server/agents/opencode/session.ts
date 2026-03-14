@@ -3,6 +3,17 @@ import type { SessionStatus, AgentMessage } from '../types'
 import { normalizeOpenCodeEvent } from './messages'
 import { resolveModelID } from './models'
 
+interface SdkClient {
+  session: {
+    create(opts: { body: { title: string }; query: { directory: string } }): Promise<{ data?: { id: string }; id?: string }>
+    prompt(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string } }; query: { directory: string } }): Promise<void>
+    abort(opts: { path: { id: string } }): Promise<void>
+  }
+  event: {
+    subscribe(opts: { signal: AbortSignal }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
+  }
+}
+
 export class OpenCodeSession extends AgentSession {
   sessionId: string | null = null
   status: SessionStatus = 'starting'
@@ -27,21 +38,21 @@ export class OpenCodeSession extends AgentSession {
 
   async start(prompt: string): Promise<void> {
     this.status = 'running'
-    const sdk = this.client as any
+    const sdk = this.client as unknown as SdkClient
 
     if (!this.sessionId) {
       const res = await sdk.session.create({
         body: { title: prompt.slice(0, 100) },
         query: { directory: this.cwd },
       })
-      this.sessionId = res.data?.id ?? res.id
+      this.sessionId = res.data?.id ?? res.id ?? null
     }
 
     this.subscribeToEvents()
 
     this.promptsSent++
     await sdk.session.prompt({
-      path: { id: this.sessionId },
+      path: { id: this.sessionId! },
       body: {
         parts: [{ type: 'text', text: prompt }],
         model: { providerID: this.providerID, modelID: this.modelID },
@@ -52,7 +63,7 @@ export class OpenCodeSession extends AgentSession {
 
   async sendMessage(content: string): Promise<void> {
     if (!this.sessionId) throw new Error('No active session')
-    const sdk = this.client as any
+    const sdk = this.client as unknown as SdkClient
 
     // Re-subscribe if SSE was lost (e.g. after error recovery)
     if (!this.abortController || this.abortController.signal.aborted) {
@@ -81,7 +92,7 @@ export class OpenCodeSession extends AgentSession {
 
   async kill(): Promise<void> {
     if (!this.sessionId) return
-    const sdk = this.client as any
+    const sdk = this.client as unknown as SdkClient
 
     try {
       await sdk.session.abort({ path: { id: this.sessionId } })
@@ -106,7 +117,7 @@ export class OpenCodeSession extends AgentSession {
   }
 
   private subscribeToEvents(): void {
-    const sdk = this.client as any
+    const sdk = this.client as unknown as SdkClient
     this.abortController = new AbortController()
 
     const subscribe = async () => {
@@ -119,10 +130,11 @@ export class OpenCodeSession extends AgentSession {
           if (this.abortController?.signal.aborted) break
 
           // Filter events to this session — parts carry sessionID directly
+          const props = event.properties as { sessionID?: string; part?: { sessionID?: string }; info?: { sessionID?: string } }
           const sessionID =
-            (event.properties as any)?.sessionID ??
-            (event.properties as any)?.part?.sessionID ??
-            (event.properties as any)?.info?.sessionID
+            props.sessionID ??
+            props.part?.sessionID ??
+            props.info?.sessionID
           if (sessionID && sessionID !== this.sessionId) continue
 
           const msg = normalizeOpenCodeEvent(event)
@@ -131,7 +143,7 @@ export class OpenCodeSession extends AgentSession {
           // session.idle = assistant finished one response cycle (turn complete)
           // Session stays alive for follow-up messages — don't break or emit exit
           if (event.type === 'session.idle') {
-            const sid = (event.properties as any)?.sessionID
+            const sid = (event.properties as { sessionID?: string }).sessionID
             if (sid && sid !== this.sessionId) continue
             this.turnsCompleted++
             this.status = 'running'
@@ -144,7 +156,7 @@ export class OpenCodeSession extends AgentSession {
           }
 
           if (event.type === 'session.error') {
-            const sid = (event.properties as any)?.sessionID
+            const sid = (event.properties as { sessionID?: string }).sessionID
             if (sid && sid !== this.sessionId) continue
             this.status = 'errored'
             this.emit('exit')

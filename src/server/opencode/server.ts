@@ -119,9 +119,16 @@ export class OpenCodeServer {
     this.stopping = true
     if (this.client) {
       try {
-        const sdk = this.client as any
+        interface SdkSession { id: string; status: string }
+        interface SdkClient {
+          session: {
+            list(): Promise<{ data?: SdkSession[] } | SdkSession[]>
+            abort(opts: { path: { id: string } }): Promise<void>
+          }
+        }
+        const sdk = this.client as unknown as SdkClient
         const sessions = await sdk.session.list()
-        const list = sessions.data ?? sessions ?? []
+        const list: SdkSession[] = (sessions as { data?: SdkSession[] }).data ?? (sessions as SdkSession[]) ?? []
         for (const s of list) {
           if (s.status === 'active' || s.status === 'running') {
             await sdk.session.abort({ path: { id: s.id } }).catch(() => {})

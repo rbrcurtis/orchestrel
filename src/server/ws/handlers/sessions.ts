@@ -24,7 +24,13 @@ export async function handleSessionLoad(
     return
   }
 
-  const sdk = openCodeServer.client as any
+  interface SdkClient {
+    session: {
+      get(opts: { path: { id: string } }): Promise<unknown>
+      messages(opts: { path: { id: string } }): Promise<unknown>
+    }
+  }
+  const sdk = openCodeServer.client as unknown as SdkClient
 
   try {
     const session = await sdk.session.get({ path: { id: sessionId } })
@@ -39,10 +45,11 @@ export async function handleSessionLoad(
     }
 
     const rawMessages = await sdk.session.messages({ path: { id: sessionId } })
-    const msgData = (rawMessages as { success?: boolean }).success === false
+    const rawMsgs = rawMessages as { success?: boolean; data?: unknown[] } | unknown[]
+    const msgData = (rawMsgs as { success?: boolean }).success === false
       ? []
-      : rawMessages.data ?? rawMessages ?? []
-    const msgList = Array.isArray(msgData) ? msgData : []
+      : (rawMsgs as { data?: unknown[] }).data ?? (Array.isArray(rawMsgs) ? rawMsgs : [])
+    const msgList: Record<string, unknown>[] = (Array.isArray(msgData) ? msgData : []) as Record<string, unknown>[]
 
     const normalized: AgentMessage[] = []
     for (const m of msgList) {
