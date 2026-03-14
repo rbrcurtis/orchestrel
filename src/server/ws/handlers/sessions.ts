@@ -81,11 +81,14 @@ export async function handleSessionLoad(
 
 function normalizeSessionMessage(msg: Record<string, unknown>): AgentMessage[] {
   const results: AgentMessage[] = []
-  const role = msg.role as string
+  const info = msg.info as { role?: string; time?: { created?: number } } | undefined
+  const role = info?.role ?? (msg.role as string)
   const parts = (msg.parts ?? []) as Array<Record<string, unknown>>
-  const ts = typeof msg.time === 'object' && msg.time
-    ? ((msg.time as { created?: number }).created ?? Date.now())
-    : Date.now()
+  const infoTime = info?.time?.created
+  const msgTime = typeof msg.time === 'object' && msg.time
+    ? (msg.time as { created?: number }).created
+    : undefined
+  const ts = infoTime ?? msgTime ?? Date.now()
 
   for (const part of parts) {
     const partType = part.type as string
