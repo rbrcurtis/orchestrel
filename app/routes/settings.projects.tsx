@@ -19,6 +19,7 @@ interface Project {
   defaultModel: 'sonnet' | 'opus';
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   color: string | null;
+  providerID: string;
   createdAt: string;
 }
 
