@@ -28,8 +28,8 @@ export class RootStore {
   private handleMessage(msg: ServerMessage) {
     switch (msg.type) {
       case 'sync':
-        this.cards.hydrate(msg.cards)
-        this.projects.hydrate(msg.projects)
+        this.cards.hydrate(msg.cards, true)
+        this.projects.hydrate(msg.projects, true)
         break
 
       case 'card:updated':

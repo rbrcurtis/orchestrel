@@ -45,6 +45,8 @@ export function handleMessage(
   }
 
   const msg = parsed.data
+  const rid = 'requestId' in msg ? (msg as { requestId?: string }).requestId : undefined
+  if (rid) console.log(`[ws] → ${msg.type} requestId=${rid}`)
 
   switch (msg.type) {
     case 'subscribe': {

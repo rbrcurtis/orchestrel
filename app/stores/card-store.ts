@@ -35,7 +35,8 @@ export class CardStore {
 
   // ── Hydration ───────────────────────────────────────────────────────────────
 
-  hydrate(items: unknown[]) {
+  hydrate(items: unknown[], replace = false) {
+    if (replace) this.cards.clear()
     for (const c of items) {
       const card = c as Card
       this.cards.set(card.id, card)

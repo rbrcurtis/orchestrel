@@ -33,7 +33,8 @@ export class ProjectStore {
 
   // ── Hydration ───────────────────────────────────────────────────────────────
 
-  hydrate(items: unknown[]) {
+  hydrate(items: unknown[], replace = false) {
+    if (replace) this.projects.clear()
     for (const p of items) {
       const project = p as Project
       this.projects.set(project.id, project)

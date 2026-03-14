@@ -11,7 +11,7 @@ interface SdkClient {
     abort(opts: { path: { id: string } }): Promise<void>
   }
   event: {
-    subscribe(opts: { signal: AbortSignal }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
+    subscribe(opts: { signal: AbortSignal; headers: Record<string, string> }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
   }
 }
 
@@ -24,6 +24,7 @@ export class OpenCodeSession extends AgentSession {
   private abortController: AbortController | null = null
   private sseCleanup: (() => void) | null = null
   private sseAlive = false
+  private turnCost = 0
 
   constructor(
     private client: unknown,
@@ -51,7 +52,15 @@ export class OpenCodeSession extends AgentSession {
       this.sessionId = res.data?.id ?? res.id ?? null
     }
 
-    this.subscribeToEvents()
+    this.emit('message', {
+      type: 'system',
+      role: 'system',
+      content: '',
+      meta: { subtype: 'init', model: this.modelID },
+      timestamp: Date.now(),
+    } satisfies AgentMessage)
+
+    await this.subscribeToEvents()
 
     this.promptsSent++
     await sdk.session.promptAsync({
@@ -71,7 +80,7 @@ export class OpenCodeSession extends AgentSession {
 
     // Re-subscribe if SSE was lost (stream ended or aborted)
     if (!this.sseAlive) {
-      this.subscribeToEvents()
+      await this.subscribeToEvents()
     }
 
     this.promptsSent++
@@ -126,71 +135,109 @@ export class OpenCodeSession extends AgentSession {
     if (!this.sessionId) throw new Error('Session did not become ready within 30s')
   }
 
-  private subscribeToEvents(): void {
+  private subscribeToEvents(): Promise<void> {
     const sdk = this.client as unknown as SdkClient
     this.abortController = new AbortController()
     this.sseAlive = true
 
-    const subscribe = async () => {
-      try {
-        const events = await sdk.event.subscribe({
-          signal: this.abortController!.signal,
-        })
+    return new Promise<void>((resolveConnected) => {
+      let resolved = false
 
-        for await (const event of events.stream) {
-          if (this.abortController?.signal.aborted) break
+      const subscribe = async () => {
+        try {
+          const events = await sdk.event.subscribe({
+            signal: this.abortController!.signal,
+            headers: { 'x-opencode-directory': encodeURIComponent(this.cwd) },
+          })
 
-          // Filter events to this session — parts carry sessionID directly
-          const props = event.properties as { sessionID?: string; part?: { sessionID?: string }; info?: { sessionID?: string } }
-          const sessionID =
-            props.sessionID ??
-            props.part?.sessionID ??
-            props.info?.sessionID
-          if (sessionID && sessionID !== this.sessionId) continue
-
-          const msg = normalizeOpenCodeEvent(event)
-          if (msg) this.emit('message', msg)
-
-          // session.idle = assistant finished one response cycle (turn complete)
-          // Session stays alive for follow-up messages — don't break or emit exit
-          if (event.type === 'session.idle') {
-            const sid = (event.properties as { sessionID?: string }).sessionID
-            if (sid && sid !== this.sessionId) continue
-            this.turnsCompleted++
-            this.status = 'running'
-            this.emit('message', {
-              type: 'turn_end',
-              role: 'system',
-              content: '',
-              timestamp: Date.now(),
-            } satisfies AgentMessage)
+          // Resolve immediately once SSE connection is established
+          // Don't wait for first event — that would deadlock if no other sessions are active
+          if (!resolved) {
+            resolved = true
+            resolveConnected()
           }
 
-          if (event.type === 'session.error') {
-            const sid = (event.properties as { sessionID?: string }).sessionID
-            if (sid && sid !== this.sessionId) continue
-            this.status = 'errored'
-            this.emit('exit')
-            break
+          let eventCount = 0
+          for await (const event of events.stream) {
+            eventCount++
+            console.log(`[opencode-session:${this.sessionId}] SSE event #${eventCount}: ${event.type}`)
+
+            if (this.abortController?.signal.aborted) break
+
+            // Filter events to this session — parts carry sessionID directly
+            const props = event.properties as { sessionID?: string; part?: { sessionID?: string }; info?: { sessionID?: string } }
+            const sessionID =
+              props.sessionID ??
+              props.part?.sessionID ??
+              props.info?.sessionID
+            if (sessionID && sessionID !== this.sessionId) {
+              console.log(`[opencode-session:${this.sessionId}] skipping event for session ${sessionID}`)
+              continue
+            }
+
+            // Track cost from message.updated events for assistant messages
+            if (event.type === 'message.updated') {
+              const info = event.properties.info as { role?: string; cost?: number }
+              if (info?.role === 'assistant' && typeof info.cost === 'number') {
+                this.turnCost = info.cost
+              }
+            }
+
+            const msg = normalizeOpenCodeEvent(event)
+            if (msg) this.emit('message', msg)
+
+            // session.idle = assistant finished one response cycle (turn complete)
+            // Session stays alive for follow-up messages — don't break or emit exit
+            if (event.type === 'session.idle') {
+              console.log(`[opencode-session:${this.sessionId}] session.idle received!`)
+              const sid = (event.properties as { sessionID?: string }).sessionID
+              if (sid && sid !== this.sessionId) continue
+              this.turnsCompleted++
+              this.status = 'completed'
+              this.emit('message', {
+                type: 'turn_end',
+                role: 'system',
+                content: '',
+                meta: {
+                  subtype: 'success',
+                  totalCostUsd: this.turnCost,
+                  turnNumber: this.turnsCompleted,
+                },
+                timestamp: Date.now(),
+              } satisfies AgentMessage)
+              this.turnCost = 0
+            }
+
+            if (event.type === 'session.error') {
+              const sid = (event.properties as { sessionID?: string }).sessionID
+              if (sid && sid !== this.sessionId) continue
+              this.status = 'errored'
+              this.emit('exit')
+              break
+            }
           }
+        } catch (err) {
+          if (!resolved) {
+            resolved = true
+            resolveConnected()
+          }
+          if (this.abortController?.signal.aborted) return
+          console.error(`[opencode-session:${this.sessionId}] SSE error:`, err)
+          this.status = 'errored'
+          this.emit('message', {
+            type: 'error',
+            role: 'system',
+            content: `SSE stream error: ${err}`,
+            timestamp: Date.now(),
+          } satisfies AgentMessage)
+          this.emit('exit')
+        } finally {
+          this.sseAlive = false
         }
-      } catch (err) {
-        if (this.abortController?.signal.aborted) return
-        console.error(`[opencode-session:${this.sessionId}] SSE error:`, err)
-        this.status = 'errored'
-        this.emit('message', {
-          type: 'error',
-          role: 'system',
-          content: `SSE stream error: ${err}`,
-          timestamp: Date.now(),
-        } satisfies AgentMessage)
-        this.emit('exit')
-      } finally {
-        this.sseAlive = false
       }
-    }
 
-    subscribe()
-    this.sseCleanup = () => this.abortController?.abort()
+      subscribe()
+      this.sseCleanup = () => this.abortController?.abort()
+    })
   }
 }

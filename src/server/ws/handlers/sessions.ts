@@ -41,6 +41,7 @@ export async function handleSessionLoad(
         cardId,
         messages: [],
       })
+      connections.send(ws, { type: 'mutation:ok', requestId })
       return
     }
 
@@ -62,6 +63,7 @@ export async function handleSessionLoad(
       cardId,
       messages: normalized,
     })
+    connections.send(ws, { type: 'mutation:ok', requestId })
 
     const liveSession = sessionManager.get(cardId)
     if (liveSession) {

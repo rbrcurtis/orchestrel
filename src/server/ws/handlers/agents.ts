@@ -48,9 +48,24 @@ export async function handleAgentSend(
       prompt = `I've attached the following files for you to review. Use the Read tool to read them:\n${fileList}\n\n${prompt}`
     }
 
-    await beginSession(cardId, prompt, ws, connections, mutator)
-
+    // Respond immediately — beginSession runs in background
     connections.send(ws, { type: 'mutation:ok', requestId })
+
+    beginSession(cardId, prompt, ws, connections, mutator).catch((err) => {
+      const error = err instanceof Error ? err.message : String(err)
+      console.error(`[session:${cardId}] beginSession error:`, error)
+      connections.send(ws, {
+        type: 'agent:status',
+        data: {
+          cardId,
+          active: false,
+          status: 'errored' as SessionStatus,
+          sessionId: null,
+          promptsSent: 0,
+          turnsCompleted: 0,
+        },
+      })
+    })
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     console.error(`[session:${cardId}] agent:send error:`, error)

@@ -44,6 +44,17 @@ export function subscribeToSession(
       } catch (err) {
         console.error(`[session:${cardId}] failed to persist counters:`, err)
       }
+      connections.send(ws, {
+        type: 'agent:status',
+        data: {
+          cardId,
+          active: true,
+          status: 'completed' as SessionStatus,
+          sessionId: session.sessionId,
+          promptsSent: session.promptsSent,
+          turnsCompleted: session.turnsCompleted,
+        },
+      })
     }
   }
 
@@ -109,6 +120,7 @@ function ensureWorktree(card: {
   sourceBranch: string | null
   title: string
 }, mutator: DbMutator): string {
+  console.log(`[session:${card.id}] ensureWorktree: worktreePath=${card.worktreePath}, useWorktree=${card.useWorktree}, projectId=${card.projectId}`)
   if (card.worktreePath) return card.worktreePath
 
   if (!card.projectId) throw new Error(`Card ${card.id} has no project`)
@@ -129,9 +141,13 @@ function ensureWorktree(card: {
     console.log(`[session:${card.id}] worktree setup at ${wtPath}`)
     createWorktree(proj.path, wtPath, branch, source ?? undefined)
     if (proj.setupCommands) {
+      console.log(`[session:${card.id}] running setup commands...`)
       runSetupCommands(wtPath, proj.setupCommands)
+      console.log(`[session:${card.id}] setup commands done`)
     }
     copyOpencodeConfig(proj.path, wtPath)
+  } else {
+    console.log(`[session:${card.id}] worktree already exists at ${wtPath}`)
   }
 
   mutator.updateCard(card.id, { worktreePath: wtPath, worktreeBranch: branch })
@@ -175,7 +191,9 @@ export async function beginSession(
     })
   } else {
     const prompt = message ? card.description + '\n' + message : card.description
+    console.log(`[session:${cardId}] beginSession: new session, calling ensureWorktree`)
     const cwd = ensureWorktree(card, mutator)
+    console.log(`[session:${cardId}] beginSession: worktree ready at ${cwd}`)
 
     let providerID = 'anthropic'
     let projectName: string | undefined
@@ -188,6 +206,7 @@ export async function beginSession(
       }
     }
 
+    console.log(`[session:${cardId}] beginSession: creating session, provider=${providerID}, resume=${!!card.sessionId}`)
     const isResume = !!card.sessionId
     const session = sessionManager.create(cardId, {
       cwd,
@@ -205,8 +224,11 @@ export async function beginSession(
 
     subscribeToSession(session, cardId, ws, connections, mutator)
 
+    console.log(`[session:${cardId}] beginSession: calling session.start()`)
     await session.start(prompt)
+    console.log(`[session:${cardId}] beginSession: start() done, calling waitForReady()`)
     await session.waitForReady()
+    console.log(`[session:${cardId}] beginSession: session ready, sessionId=${session.sessionId}`)
 
     if (!isResume) {
       mutator.updateCard(cardId, {

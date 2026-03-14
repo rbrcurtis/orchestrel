@@ -6,10 +6,7 @@ import { db } from '../../db/index'
 import { cards, projects } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import {
-  createWorktree,
   removeWorktree,
-  runSetupCommands,
-  slugify,
   worktreeExists,
 } from '../../worktree'
 import { beginSession } from '../../agents/begin-session'
@@ -41,31 +38,7 @@ export async function handleCardCreate(
           extra.model = input.model ?? proj.defaultModel
           extra.thinkingLevel = input.thinkingLevel ?? proj.defaultThinkingLevel
 
-          // Set up working directory when creating directly into running
-          if (col === 'running') {
-            try {
-              if (!input.useWorktree) {
-                extra.worktreePath = proj.path
-              } else {
-                const slug = slugify(input.title)
-                const wtPath = `${proj.path}/.worktrees/${slug}`
-                const branch = slug
-                const source = input.sourceBranch ?? proj.defaultBranch ?? undefined
-
-                if (!worktreeExists(wtPath)) {
-                  createWorktree(proj.path, wtPath, branch, source ?? undefined)
-                  if (proj.setupCommands) {
-                    runSetupCommands(wtPath, proj.setupCommands)
-                  }
-                }
-
-                extra.worktreePath = wtPath
-                extra.worktreeBranch = branch
-              }
-            } catch (err) {
-              console.error('Failed to set up working directory for new card:', err)
-            }
-          }
+          // Worktree setup is handled by beginSession → ensureWorktree (async, non-blocking)
         }
       } catch (err) {
         console.error('Failed to fetch project for card:', err)
@@ -109,35 +82,8 @@ export async function handleCardUpdate(
       if (!desc?.trim()) throw new Error('Description is required for running')
     }
 
-    // Worktree setup when moving to running
+    // Worktree setup is handled by beginSession → ensureWorktree (async, non-blocking)
     const updates: Record<string, unknown> = { ...data }
-    if (movingToRunning && existing.projectId) {
-      try {
-        const proj = db.select().from(projects).where(eq(projects.id, existing.projectId)).get()
-        if (proj) {
-          if (!existing.useWorktree) {
-            updates.worktreePath = proj.path
-          } else {
-            const slug = existing.worktreeBranch || slugify(existing.title)
-            const wtPath = existing.worktreePath || `${proj.path}/.worktrees/${slug}`
-            const branch = slug
-            const source = existing.sourceBranch ?? proj.defaultBranch ?? undefined
-
-            if (!worktreeExists(wtPath)) {
-              createWorktree(proj.path, wtPath, branch, source ?? undefined)
-              if (proj.setupCommands) {
-                runSetupCommands(wtPath, proj.setupCommands)
-              }
-            }
-
-            updates.worktreePath = wtPath
-            updates.worktreeBranch = branch
-          }
-        }
-      } catch (err) {
-        console.error(`[card:${id}] failed to set up worktree:`, err)
-      }
-    }
 
     // Worktree removal when moving to archive
     if (
