@@ -72,7 +72,10 @@ export class ProjectStore {
     const project = await ws().mutate<Project>({
       type: 'project:create',
       requestId,
-      data,
+      data: {
+        ...data,
+        setupCommands: data.setupCommands ?? undefined,
+      },
     })
     this.projects.set(project.id, project)
     return project
@@ -98,7 +101,10 @@ export class ProjectStore {
       const project = await ws().mutate<Project>({
         type: 'project:update',
         requestId,
-        data,
+        data: {
+          ...data,
+          setupCommands: data.setupCommands ?? undefined,
+        },
       })
       this.projects.set(project.id, project)
       return project

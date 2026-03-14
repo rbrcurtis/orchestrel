@@ -24,7 +24,7 @@ import {
   handleAgentStop,
   handleAgentStatus,
 } from './handlers/agents'
-import type { Card } from '../../shared/ws-protocol'
+import type { Card, Project } from '../../shared/ws-protocol'
 import type { Card as CardEntity } from '../models/Card'
 
 export function handleMessage(
@@ -55,7 +55,7 @@ export function handleMessage(
         cardService.listCards(cols.length > 0 ? cols : undefined),
         projectService.listProjects(),
       ]).then(([syncCards, syncProjects]) => {
-        connections.send(ws, { type: 'sync', cards: syncCards as Card[], projects: syncProjects as Card[] })
+        connections.send(ws, { type: 'sync', cards: syncCards as unknown as Card[], projects: syncProjects as unknown as Project[] })
       }).catch(err => console.error('[ws] subscribe sync error:', err))
 
       // Subscribe to board:changed — forward card:updated for cards in subscribed columns

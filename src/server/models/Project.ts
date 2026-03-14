@@ -1,6 +1,7 @@
 import {
   Entity, PrimaryGeneratedColumn, Column, BaseEntity,
-  EventSubscriber, EntitySubscriberInterface,
+  EventSubscriber,
+  type EntitySubscriberInterface,
   type InsertEvent, type UpdateEvent, type RemoveEvent,
 } from 'typeorm'
 import { messageBus } from '../bus'

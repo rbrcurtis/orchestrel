@@ -5,7 +5,7 @@ import { z } from 'zod'
 export const cardSchema = z.object({
   id: z.number(),
   title: z.string(),
-  description: z.string().nullable(),
+  description: z.string(),
   column: z.enum(['backlog', 'ready', 'running', 'review', 'done', 'archive']),
   position: z.number(),
   projectId: z.number().nullable(),
@@ -27,7 +27,7 @@ export const projectSchema = z.object({
   id: z.number(),
   name: z.string(),
   path: z.string(),
-  setupCommands: z.string().nullable(),
+  setupCommands: z.string(),
   isGitRepo: z.boolean(),
   defaultBranch: z.enum(['main', 'dev']).nullable(),
   defaultWorktree: z.boolean(),
@@ -50,7 +50,7 @@ export type Column = z.infer<typeof columnEnum>
 
 export const cardCreateSchema = z.object({
   title: z.string(),
-  description: z.string().nullable().optional(),
+  description: z.string().optional(),
   column: columnEnum.optional(),
   projectId: z.number().nullable().optional(),
   model: z.enum(['sonnet', 'opus', 'auto']).optional(),
@@ -65,7 +65,7 @@ export const cardUpdateSchema = z.object({ id: z.number(), position: z.number().
 export const projectCreateSchema = z.object({
   name: z.string(),
   path: z.string(),
-  setupCommands: z.string().nullable().optional(),
+  setupCommands: z.string().optional(),
   defaultBranch: z.enum(['main', 'dev']).nullable().optional(),
   defaultWorktree: z.boolean().optional(),
   defaultModel: z.enum(['sonnet', 'opus', 'auto']).optional(),
