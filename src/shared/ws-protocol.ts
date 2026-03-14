@@ -1,11 +1,42 @@
 import { z } from 'zod'
-import { createSelectSchema, createInsertSchema } from 'drizzle-zod'
-import { cards, projects } from '../server/db/schema'
 
-// ── Entity schemas derived from Drizzle ──────────────────────────────────────
+// ── Entity schemas (standalone Zod — no Drizzle dependency) ──────────────────
 
-export const cardSchema = createSelectSchema(cards)
-export const projectSchema = createSelectSchema(projects)
+export const cardSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  description: z.string().nullable(),
+  column: z.enum(['backlog', 'ready', 'running', 'review', 'done', 'archive']),
+  position: z.number(),
+  projectId: z.number().nullable(),
+  prUrl: z.string().nullable(),
+  sessionId: z.string().nullable(),
+  worktreePath: z.string().nullable(),
+  worktreeBranch: z.string().nullable(),
+  useWorktree: z.boolean(),
+  sourceBranch: z.enum(['main', 'dev']).nullable(),
+  model: z.enum(['sonnet', 'opus', 'auto']),
+  thinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
+  promptsSent: z.number(),
+  turnsCompleted: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+export const projectSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  path: z.string(),
+  setupCommands: z.string().nullable(),
+  isGitRepo: z.boolean(),
+  defaultBranch: z.enum(['main', 'dev']).nullable(),
+  defaultWorktree: z.boolean(),
+  defaultModel: z.enum(['sonnet', 'opus', 'auto']),
+  defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
+  providerID: z.string(),
+  color: z.string().nullable(),
+  createdAt: z.string(),
+})
 
 export type Card = z.infer<typeof cardSchema>
 export type Project = z.infer<typeof projectSchema>
@@ -17,33 +48,30 @@ export type Column = z.infer<typeof columnEnum>
 
 // ── Mutation input schemas ───────────────────────────────────────────────────
 
-const cardInsertSchema = createInsertSchema(cards)
-
-export const cardCreateSchema = cardInsertSchema.pick({
-  title: true,
-  description: true,
-  column: true,
-  projectId: true,
-  model: true,
-  thinkingLevel: true,
-  useWorktree: true,
-  sourceBranch: true,
+export const cardCreateSchema = z.object({
+  title: z.string(),
+  description: z.string().nullable().optional(),
+  column: columnEnum.optional(),
+  projectId: z.number().nullable().optional(),
+  model: z.enum(['sonnet', 'opus', 'auto']).optional(),
+  thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
+  useWorktree: z.boolean().optional(),
+  sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
 })
 
-export const cardUpdateSchema = z.object({ id: z.number(), position: z.number().optional() }).merge(cardCreateSchema.partial())
+export const cardUpdateSchema = z.object({ id: z.number(), position: z.number().optional() })
+  .merge(cardCreateSchema.partial())
 
-const projectInsertSchema = createInsertSchema(projects)
-
-export const projectCreateSchema = projectInsertSchema.pick({
-  name: true,
-  path: true,
-  setupCommands: true,
-  defaultBranch: true,
-  defaultWorktree: true,
-  defaultModel: true,
-  defaultThinkingLevel: true,
-  providerID: true,
-  color: true,
+export const projectCreateSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  setupCommands: z.string().nullable().optional(),
+  defaultBranch: z.enum(['main', 'dev']).nullable().optional(),
+  defaultWorktree: z.boolean().optional(),
+  defaultModel: z.enum(['sonnet', 'opus', 'auto']).optional(),
+  defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
+  providerID: z.string().optional(),
+  color: z.string().nullable().optional(),
 })
 
 export const projectUpdateSchema = z.object({ id: z.number() }).merge(projectCreateSchema.partial())
