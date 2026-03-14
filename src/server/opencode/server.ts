@@ -69,8 +69,8 @@ export class OpenCodeServer {
       this.proc = spawn(this.binaryPath, ['serve', '--port', String(OPENCODE_PORT)], {
         env: {
           ...process.env,
-          KIROCLI_DB_PATH: process.env.KIROCLI_DB_PATH
-            ?? join(homedir(), 'OK_HOME', '.local', 'share', 'kiro-cli', 'data.sqlite3'),
+          KIROCLI_DB_PATH_OKKANTI: join(homedir(), 'OK_HOME', '.local', 'share', 'kiro-cli', 'data.sqlite3'),
+          KIROCLI_DB_PATH_TRACKABLE: join(homedir(), '.local', 'share', 'kiro-cli', 'data.sqlite3'),
         },
         cwd: resolvePath('.'),
         stdio: ['ignore', 'pipe', 'pipe'],

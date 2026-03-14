@@ -1,24 +1,25 @@
-import { makeAutoObservable } from 'mobx'
-import type { Card, Column } from '../../src/shared/ws-protocol'
-import type { WsClient } from '../lib/ws-client'
-import { uuid } from '../lib/utils'
+import { makeAutoObservable } from 'mobx';
+import type { Card, Column } from '../../src/shared/ws-protocol';
+import type { WsClient } from '../lib/ws-client';
+import { uuid } from '../lib/utils';
 
-let _ws: WsClient | null = null
+let _ws: WsClient | null = null;
 
 export function setCardStoreWs(ws: WsClient) {
-  _ws = ws
+  _ws = ws;
 }
 
 function ws(): WsClient {
-  if (!_ws) throw new Error('WsClient not set')
-  return _ws
+  if (!_ws) throw new Error('WsClient not set');
+  return _ws;
 }
 
 export class CardStore {
-  cards = new Map<number, Card>()
+  cards = new Map<number, Card>();
+  hydrated = false;
 
   constructor() {
-    makeAutoObservable(this)
+    makeAutoObservable(this);
   }
 
   // ── Computed views ──────────────────────────────────────────────────────────
@@ -26,50 +27,53 @@ export class CardStore {
   cardsByColumn(col: string): Card[] {
     return Array.from(this.cards.values())
       .filter((c) => c.column === col)
-      .sort((a, b) => a.position - b.position)
+      .sort((a, b) => a.position - b.position);
   }
 
   getCard(id: number): Card | undefined {
-    return this.cards.get(id)
+    return this.cards.get(id);
   }
 
   // ── Hydration ───────────────────────────────────────────────────────────────
 
   hydrate(items: unknown[], replace = false) {
-    if (replace) this.cards.clear()
+    if (replace) {
+      this.cards.clear();
+      this.hydrated = true;
+    }
     for (const c of items) {
-      const card = c as Card
-      this.cards.set(card.id, card)
+      const card = c as Card;
+      this.cards.set(card.id, card);
     }
   }
 
   handleUpdated(card: Card) {
-    this.cards.set(card.id, card)
+    this.cards.set(card.id, card);
   }
 
   handleDeleted(id: number) {
-    this.cards.delete(id)
+    this.cards.delete(id);
   }
 
   // ── Persistence ─────────────────────────────────────────────────────────────
 
   serialize(): Card[] {
-    return Array.from(this.cards.values())
+    return Array.from(this.cards.values());
   }
 
   // ── Optimistic mutations ────────────────────────────────────────────────────
 
   async createCard(data: {
-    title: string
-    description?: string | null
-    column?: Column | null
-    projectId?: number | null
-    model?: 'sonnet' | 'opus'
-    thinkingLevel?: 'off' | 'low' | 'medium' | 'high'
-    useWorktree?: boolean
-    sourceBranch?: 'main' | 'dev' | null
+    title: string;
+    description?: string | null;
+    column?: Column | null;
+    projectId?: number | null;
+    model?: 'sonnet' | 'opus' | 'auto';
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+    useWorktree?: boolean;
+    sourceBranch?: 'main' | 'dev' | null;
   }): Promise<Card> {
-    const requestId = uuid()
+    const requestId = uuid();
     const card = await ws().mutate<Card>({
       type: 'card:create',
       requestId,
@@ -83,62 +87,62 @@ export class CardStore {
         useWorktree: data.useWorktree,
         sourceBranch: data.sourceBranch,
       },
-    })
-    this.cards.set(card.id, card)
-    return card
+    });
+    this.cards.set(card.id, card);
+    return card;
   }
 
   async updateCard(data: {
-    id: number
-    title?: string
-    description?: string | null
-    column?: Column
-    position?: number
-    projectId?: number | null
-    model?: 'sonnet' | 'opus'
-    thinkingLevel?: 'off' | 'low' | 'medium' | 'high'
-    useWorktree?: boolean
-    sourceBranch?: 'main' | 'dev' | null
+    id: number;
+    title?: string;
+    description?: string | null;
+    column?: Column;
+    position?: number;
+    projectId?: number | null;
+    model?: 'sonnet' | 'opus' | 'auto';
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+    useWorktree?: boolean;
+    sourceBranch?: 'main' | 'dev' | null;
   }): Promise<Card> {
-    const existing = this.cards.get(data.id)
-    if (existing) this.cards.set(data.id, { ...existing, ...data } as Card)
+    const existing = this.cards.get(data.id);
+    if (existing) this.cards.set(data.id, { ...existing, ...data } as Card);
 
-    const requestId = uuid()
+    const requestId = uuid();
     try {
       const card = await ws().mutate<Card>({
         type: 'card:update',
         requestId,
         data,
-      })
-      this.cards.set(card.id, card)
-      return card
+      });
+      this.cards.set(card.id, card);
+      return card;
     } catch (err) {
-      if (existing) this.cards.set(data.id, existing)
-      throw err
+      if (existing) this.cards.set(data.id, existing);
+      throw err;
     }
   }
 
   async deleteCard(id: number): Promise<void> {
-    const existing = this.cards.get(id)
-    this.cards.delete(id)
+    const existing = this.cards.get(id);
+    this.cards.delete(id);
 
-    const requestId = uuid()
+    const requestId = uuid();
     try {
-      await ws().mutate({ type: 'card:delete', requestId, data: { id } })
+      await ws().mutate({ type: 'card:delete', requestId, data: { id } });
     } catch (err) {
-      if (existing) this.cards.set(id, existing)
-      throw err
+      if (existing) this.cards.set(id, existing);
+      throw err;
     }
   }
 
   async generateTitle(id: number): Promise<void> {
-    const requestId = uuid()
-    await ws().mutate({ type: 'card:generateTitle', requestId, data: { id } })
+    const requestId = uuid();
+    await ws().mutate({ type: 'card:generateTitle', requestId, data: { id } });
   }
 
   async suggestTitle(description: string): Promise<string | null> {
-    const requestId = uuid()
-    const res = await ws().mutate({ type: 'card:suggestTitle', requestId, data: { description } })
-    return typeof res === 'string' ? res : null
+    const requestId = uuid();
+    const res = await ws().mutate({ type: 'card:suggestTitle', requestId, data: { description } });
+    return typeof res === 'string' ? res : null;
   }
 }

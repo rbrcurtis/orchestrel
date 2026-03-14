@@ -211,7 +211,7 @@ export async function beginSession(
     const session = sessionManager.create(cardId, {
       cwd,
       providerID,
-      model: (card.model ?? 'sonnet') as 'sonnet' | 'opus',
+      model: (card.model ?? 'sonnet') as 'sonnet' | 'opus' | 'auto',
       thinkingLevel: (card.thinkingLevel ?? 'high') as 'off' | 'low' | 'medium' | 'high',
       resumeSessionId: card.sessionId ?? undefined,
       projectName,

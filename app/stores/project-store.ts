@@ -63,7 +63,7 @@ export class ProjectStore {
     setupCommands?: string | null
     defaultBranch?: 'main' | 'dev' | null
     defaultWorktree?: boolean
-    defaultModel?: 'sonnet' | 'opus'
+    defaultModel?: 'sonnet' | 'opus' | 'auto'
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high'
     color?: string | null
     providerID?: string
@@ -85,7 +85,7 @@ export class ProjectStore {
     setupCommands?: string | null
     defaultBranch?: 'main' | 'dev' | null
     defaultWorktree?: boolean
-    defaultModel?: 'sonnet' | 'opus'
+    defaultModel?: 'sonnet' | 'opus' | 'auto'
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high'
     color?: string | null
     providerID?: string

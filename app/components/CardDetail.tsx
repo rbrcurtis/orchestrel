@@ -6,9 +6,18 @@ import { SessionView } from './SessionView';
 import { InlineEdit } from './InlineEdit';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
-import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '~/components/ui/select';
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectSeparator, SelectValue } from '~/components/ui/select';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '~/components/ui/alert-dialog';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import { cn } from '~/lib/utils';
@@ -35,7 +44,7 @@ type Draft = {
   projectId: number | null;
   useWorktree: boolean;
   sourceBranch: string | null;
-  model: 'sonnet' | 'opus';
+  model: 'sonnet' | 'opus' | 'auto';
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
@@ -44,6 +53,13 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   const projectStore = useProjectStore();
 
   const card = cardStore.getCard(cardId);
+
+  // Auto-close if the card is deleted (was loaded, then disappeared from store)
+  const wasLoaded = useRef(false);
+  if (card) wasLoaded.current = true;
+  useEffect(() => {
+    if (wasLoaded.current && !card) onClose();
+  }, [card]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [draft, setDraft] = useState<Draft>({
     title: '',
@@ -56,6 +72,10 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   });
 
   const [formOpen, setFormOpen] = useState(true);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [archivePending, setArchivePending] = useState(false);
+  const archiveRef = useRef<HTMLButtonElement>(null);
 
   // Sync draft from card data — keyed on card.id only to initialize form + collapse state once per card
   useEffect(() => {
@@ -112,7 +132,12 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   }
 
   async function handleStatusChange(newColumn: string) {
-    if (!card || newColumn === card.column) return;
+    if (!card) return;
+    if (newColumn === '__delete__') {
+      setDeleteOpen(true);
+      return;
+    }
+    if (newColumn === card.column) return;
     await cardStore.updateCard({ id: card.id, column: newColumn as Column });
     if (newColumn === 'done' || newColumn === 'archive') {
       onClose();
@@ -120,14 +145,23 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   }
 
   if (!card) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center text-muted-foreground">
-        <svg className="size-6 animate-spin" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </div>
-    );
+    // Store hydrated but card never found → invalid ID in URL
+    if (cardStore.hydrated && !wasLoaded.current) {
+      return (
+        <div className="flex flex-col h-full items-center justify-center gap-2 text-muted-foreground px-6 text-center">
+          <span className="text-2xl font-semibold text-foreground/30">404</span>
+          <p className="text-sm">Card not found</p>
+          <button
+            className="mt-2 text-xs underline underline-offset-2 hover:text-foreground transition-colors"
+            onClick={onClose}
+          >
+            Dismiss
+          </button>
+        </div>
+      );
+    }
+    // Still loading or transitioning away after delete
+    return null;
   }
 
   const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
@@ -142,240 +176,305 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header bar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
-        <Select value={col} onValueChange={handleStatusChange}>
-          <div className={col === 'running' ? 'cursor-not-allowed' : ''}>
-            <SelectTrigger className={cn('w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0', col === 'running' && 'pointer-events-none')}>
-              <Badge variant="outline" className="uppercase text-xs tracking-wide">
-                <SelectValue />
-              </Badge>
-            </SelectTrigger>
-          </div>
-          <SelectContent>
-            {STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {statusLabels[s]}
+    <>
+      <div className="flex flex-col h-full">
+        {/* Header bar */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+          <Select value={col} onValueChange={handleStatusChange}>
+            <div className={col === 'running' ? 'cursor-not-allowed' : ''}>
+              <SelectTrigger
+                className={cn(
+                  'w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0',
+                  col === 'running' && 'pointer-events-none',
+                )}
+              >
+                <Badge variant="outline" className="uppercase text-xs tracking-wide">
+                  <SelectValue />
+                </Badge>
+              </SelectTrigger>
+            </div>
+            <SelectContent>
+              {STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {statusLabels[s]}
+                </SelectItem>
+              ))}
+              <SelectSeparator />
+              <SelectItem value="__delete__" className="text-destructive focus:text-destructive">
+                Delete
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {hasSession ? (
-          <InlineEdit
-            value={card.title}
-            onSave={(v) => saveField('title', v)}
-            className="text-sm font-medium flex-1 min-w-0"
-            placeholder="Untitled"
-            minLength={1}
-          />
-        ) : (
-          <span className="text-sm font-medium truncate flex-1">{card.title}</span>
-        )}
-        {card.sessionId && <CopyResumeButton sessionId={card.sessionId} />}
-        <span
-          title={card.useWorktree ? 'Worktree enabled' : 'No worktree'}
-          className="flex items-center shrink-0"
-          style={card.useWorktree && cardProject?.color ? {
-            color: `var(--${cardProject.color})`,
-            filter: `drop-shadow(0 0 4px var(--${cardProject.color}))`,
-          } : undefined}
-        >
-          <GitBranch className={cn('size-3.5', !card.useWorktree && 'text-dim')} />
-        </span>
-        {cardProject && (
-          <Badge
-            variant="secondary"
-            className="text-xs shrink-0"
-            style={cardProject.color ? { borderLeft: `3px solid var(--${cardProject.color})` } : undefined}
+            </SelectContent>
+          </Select>
+          {hasSession ? (
+            <InlineEdit
+              value={card.title}
+              onSave={(v) => saveField('title', v)}
+              className="text-sm font-medium flex-1 min-w-0"
+              placeholder="Untitled"
+              minLength={1}
+            />
+          ) : (
+            <span className="text-sm font-medium truncate flex-1">{card.title}</span>
+          )}
+          {card.sessionId && <CopyResumeButton sessionId={card.sessionId} />}
+          <span
+            title={card.useWorktree ? 'Worktree enabled' : 'No worktree'}
+            className="flex items-center shrink-0"
+            style={
+              card.useWorktree && cardProject?.color
+                ? {
+                    color: `var(--${cardProject.color})`,
+                    filter: `drop-shadow(0 0 4px var(--${cardProject.color}))`,
+                  }
+                : undefined
+            }
           >
-            {cardProject.name}
-          </Badge>
-        )}
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={onClose}>
-          <X className="size-4" />
-        </Button>
-      </div>
+            <GitBranch className={cn('size-3.5', !card.useWorktree && 'text-dim')} />
+          </span>
+          {cardProject && (
+            <Badge
+              variant="secondary"
+              className="text-xs shrink-0"
+              style={cardProject.color ? { borderLeft: `3px solid var(--${cardProject.color})` } : undefined}
+            >
+              {cardProject.name}
+            </Badge>
+          )}
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={onClose}>
+            <X className="size-4" />
+          </Button>
+        </div>
 
-      {/* Collapsible form fields */}
-      <Collapsible open={formOpen} onOpenChange={setFormOpen} className="shrink-0 border-b border-border">
-        <CollapsibleTrigger className="flex items-center gap-1 px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground w-full cursor-pointer">
-          {formOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-          Details
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="px-4 pb-4 space-y-4">
-            {/* Title */}
-            {!hasSession && (
+        {/* Collapsible form fields */}
+        <Collapsible open={formOpen} onOpenChange={setFormOpen} className="shrink-0 border-b border-border">
+          <CollapsibleTrigger className="flex items-center gap-1 px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground w-full cursor-pointer">
+            {formOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+            Details
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="px-4 pb-4 space-y-4">
+              {/* Title */}
+              {!hasSession && (
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
+                  <Input
+                    value={draft.title}
+                    onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+                    onBlur={saveAll}
+                  />
+                </div>
+              )}
+
+              {/* Description */}
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
-                <Input
-                  value={draft.title}
-                  onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-                  onBlur={saveAll}
-                />
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
+                {hasSession ? (
+                  <InlineEdit
+                    value={card.description ?? ''}
+                    onSave={(v) => saveField('description', v)}
+                    multiline
+                    placeholder="Add a description..."
+                  />
+                ) : (
+                  <Textarea
+                    value={draft.description}
+                    onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                    onBlur={async () => {
+                      await saveAll();
+                      if (draft.description && (!draft.title || draft.title === 'New Card')) {
+                        cardStore.generateTitle(card.id);
+                      }
+                    }}
+                    rows={4}
+                    placeholder="Add a description..."
+                    className="resize-y max-h-40 overflow-y-auto"
+                  />
+                )}
               </div>
-            )}
 
-            {/* Description */}
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
-              {hasSession ? (
-                <InlineEdit
-                  value={card.description ?? ''}
-                  onSave={(v) => saveField('description', v)}
-                  multiline
-                  placeholder="Add a description..."
-                />
-              ) : (
-                <Textarea
-                  value={draft.description}
-                  onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                  onBlur={async () => {
-                    await saveAll()
-                    if (draft.description && (!draft.title || draft.title === 'New Card')) {
-                      cardStore.generateTitle(card.id)
-                    }
-                  }}
-                  rows={4}
-                  placeholder="Add a description..."
-                  className="resize-y max-h-40 overflow-y-auto"
-                />
+              {/* Project — only editable if not yet saved */}
+              {!projectLocked && (
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Project</label>
+                  <Select
+                    value={draft.projectId != null ? String(draft.projectId) : '__none__'}
+                    onValueChange={(val) => {
+                      const pid = val === '__none__' ? null : Number(val);
+                      const proj = pid != null ? projectStore.getProject(pid) : undefined;
+                      setDraft((d) => ({
+                        ...d,
+                        projectId: pid,
+                        useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
+                        sourceBranch: null,
+                        model: proj?.defaultModel ?? d.model,
+                        thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {projectStore.all.map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          <span className="flex items-center gap-2">
+                            {p.color && (
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: `var(--${p.color})` }}
+                              />
+                            )}
+                            {p.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Use Worktree */}
+              {selectedProject?.isGitRepo && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="useWorktree"
+                    checked={draft.useWorktree}
+                    disabled={!!card.worktreePath}
+                    onCheckedChange={(checked) => setDraft((d) => ({ ...d, useWorktree: checked === true }))}
+                  />
+                  <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
+                    Use worktree
+                  </label>
+                </div>
+              )}
+
+              {/* Source Branch */}
+              {selectedProject?.isGitRepo && draft.useWorktree && (
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
+                  <Select
+                    value={draft.sourceBranch ?? selectedProject.defaultBranch ?? ''}
+                    onValueChange={(val) => setDraft((d) => ({ ...d, sourceBranch: val }))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="main">main</SelectItem>
+                      <SelectItem value="dev">dev</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Model & Thinking */}
+              {!hasSession && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
+                    <Select
+                      value={draft.model}
+                      onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' | 'auto' }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">Auto</SelectItem>
+                        <SelectItem value="sonnet">Sonnet</SelectItem>
+                        <SelectItem value="opus">Opus</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
+                    <Select
+                      value={draft.thinkingLevel}
+                      onValueChange={(val) =>
+                        setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               )}
             </div>
+          </CollapsibleContent>
+        </Collapsible>
 
-            {/* Project — only editable if not yet saved */}
-            {!projectLocked && (
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Project</label>
-                <Select
-                  value={draft.projectId != null ? String(draft.projectId) : '__none__'}
-                  onValueChange={(val) => {
-                    const pid = val === '__none__' ? null : Number(val);
-                    const proj = pid != null ? projectStore.getProject(pid) : undefined;
-                    setDraft((d) => ({
-                      ...d,
-                      projectId: pid,
-                      useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
-                      sourceBranch: null,
-                      model: proj?.defaultModel ?? d.model,
-                      thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
-                    }));
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {projectStore.all.map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        <span className="flex items-center gap-2">
-                          {p.color && (
-                            <span
-                              className="w-2.5 h-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: `var(--${p.color})` }}
-                            />
-                          )}
-                          {p.name}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+        {/* Session view */}
+        {showSession && (
+          <SessionView
+            cardId={card.id}
+            sessionId={card.sessionId}
+            accentColor={cardProject?.color}
+            model={card.model ?? 'sonnet'}
+            thinkingLevel={card.thinkingLevel ?? 'high'}
+          />
+        )}
+      </div>
 
-            {/* Use Worktree */}
-            {selectedProject?.isGitRepo && (
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="useWorktree"
-                  checked={draft.useWorktree}
-                  disabled={!!card.worktreePath}
-                  onCheckedChange={(checked) =>
-                    setDraft((d) => ({ ...d, useWorktree: checked === true }))
-                  }
-                />
-                <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
-                  Use worktree
-                </label>
-              </div>
-            )}
-
-            {/* Source Branch */}
-            {selectedProject?.isGitRepo && draft.useWorktree && (
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
-                <Select
-                  value={draft.sourceBranch ?? selectedProject.defaultBranch ?? ''}
-                  onValueChange={(val) =>
-                    setDraft((d) => ({ ...d, sourceBranch: val }))
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="main">main</SelectItem>
-                    <SelectItem value="dev">dev</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Model & Thinking */}
-            {!hasSession && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
-                  <Select
-                    value={draft.model}
-                    onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' }))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sonnet">Sonnet</SelectItem>
-                      <SelectItem value="opus">Opus</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
-                  <Select
-                    value={draft.thinkingLevel}
-                    onValueChange={(val) => setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="off">Off</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-
-      {/* Session view */}
-      {showSession && (
-        <SessionView
-          cardId={card.id}
-          sessionId={card.sessionId}
-          accentColor={cardProject?.color}
-          model={card.model ?? 'sonnet'}
-          thinkingLevel={card.thinkingLevel ?? 'high'}
-        />
-      )}
-    </div>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            requestAnimationFrame(() => archiveRef.current?.focus());
+          }}
+          onEscapeKeyDown={(e) => e.stopPropagation()}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove card?</AlertDialogTitle>
+            <AlertDialogDescription>What would you like to do with "{card.title}"?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button
+              variant="ghost"
+              className="border border-neon-magenta/40 bg-neon-magenta/10 text-neon-magenta hover:bg-neon-magenta/20 hover:text-neon-magenta"
+              disabled={deletePending}
+              onClick={async () => {
+                setDeletePending(true);
+                try {
+                  await cardStore.deleteCard(card.id);
+                } finally {
+                  setDeletePending(false);
+                  setDeleteOpen(false);
+                }
+              }}
+            >
+              Delete
+            </Button>
+            <Button
+              ref={archiveRef}
+              variant="ghost"
+              className="border border-neon-lime/40 bg-neon-lime/10 text-neon-lime hover:bg-neon-lime/20 hover:text-neon-lime"
+              disabled={archivePending}
+              onClick={async () => {
+                setArchivePending(true);
+                try {
+                  await cardStore.updateCard({ id: card.id, column: 'archive', position: 0 });
+                } finally {
+                  setArchivePending(false);
+                  setDeleteOpen(false);
+                }
+              }}
+            >
+              Archive
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 });
 
@@ -441,9 +540,13 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Object.entries(statusLabels).filter(([k]) => k !== 'archive').map(([k, label]) => (
-              <SelectItem key={k} value={k} className="text-xs uppercase tracking-wide">{label}</SelectItem>
-            ))}
+            {Object.entries(statusLabels)
+              .filter(([k]) => k !== 'archive')
+              .map(([k, label]) => (
+                <SelectItem key={k} value={k} className="text-xs uppercase tracking-wide">
+                  {label}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}>
@@ -469,12 +572,12 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
             onBlur={async () => {
               if (draft.description && (!draft.title || draft.title === 'New Card')) {
-                setGeneratingTitle(true)
+                setGeneratingTitle(true);
                 try {
-                  const title = await cardStore.suggestTitle(draft.description)
-                  if (title) setDraft((d) => ({ ...d, title }))
+                  const title = await cardStore.suggestTitle(draft.description);
+                  if (title) setDraft((d) => ({ ...d, title }));
                 } finally {
-                  setGeneratingTitle(false)
+                  setGeneratingTitle(false);
                 }
               }
             }}
@@ -534,9 +637,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
             <Checkbox
               id="newUseWorktree"
               checked={draft.useWorktree}
-              onCheckedChange={(checked) =>
-                setDraft((d) => ({ ...d, useWorktree: checked === true }))
-              }
+              onCheckedChange={(checked) => setDraft((d) => ({ ...d, useWorktree: checked === true }))}
             />
             <label htmlFor="newUseWorktree" className="text-sm font-medium text-muted-foreground">
               Use worktree
@@ -567,12 +668,13 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
             <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
             <Select
               value={draft.model}
-              onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' }))}
+              onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' | 'auto' }))}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="auto">Auto</SelectItem>
                 <SelectItem value="sonnet">Sonnet</SelectItem>
                 <SelectItem value="opus">Opus</SelectItem>
               </SelectContent>
@@ -582,7 +684,9 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
             <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
             <Select
               value={draft.thinkingLevel}
-              onValueChange={(val) => setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))}
+              onValueChange={(val) =>
+                setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))
+              }
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -597,11 +701,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
           </div>
         </div>
 
-        <Button
-          className="w-full"
-          disabled={!draft.title.trim() || creating}
-          onClick={handleSave}
-        >
+        <Button className="w-full" disabled={!draft.title.trim() || creating} onClick={handleSave}>
           {creating ? 'Creating...' : 'Save'}
         </Button>
       </div>
@@ -619,13 +719,7 @@ function CopyResumeButton({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 w-7 p-0 shrink-0"
-      onClick={handleCopy}
-      title="Copy resume command"
-    >
+    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleCopy} title="Copy resume command">
       {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
     </Button>
   );

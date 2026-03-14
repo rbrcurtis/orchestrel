@@ -44,7 +44,7 @@ interface Project {
   defaultBranch: string | null;
   defaultWorktree: boolean;
   color: string | null;
-  defaultModel: 'sonnet' | 'opus';
+  defaultModel: 'sonnet' | 'opus' | 'auto';
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   providerID: string;
 }
@@ -62,7 +62,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
   const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? '');
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
   const [color, setColor] = useState(project?.color ?? '');
-  const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus'>(project?.defaultModel ?? 'sonnet');
+  const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus' | 'auto'>(project?.defaultModel ?? 'sonnet');
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(project?.defaultThinkingLevel ?? 'high');
   const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
   const [pending, setPending] = useState(false);
@@ -148,7 +148,8 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="anthropic">Anthropic</SelectItem>
-                    <SelectItem value="kiro">Kiro</SelectItem>
+                    <SelectItem value="okkanti">Kiro — Okkanti</SelectItem>
+                    <SelectItem value="trackable">Kiro — Trackable</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -219,11 +220,12 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               {/* Default Model */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Default Model</label>
-                <Select value={defaultModel} onValueChange={(v) => setDefaultModel(v as 'sonnet' | 'opus')}>
+                <Select value={defaultModel} onValueChange={(v) => setDefaultModel(v as 'sonnet' | 'opus' | 'auto')}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="auto">Auto</SelectItem>
                     <SelectItem value="sonnet">Sonnet 4.6</SelectItem>
                     <SelectItem value="opus">Opus 4.6</SelectItem>
                   </SelectContent>

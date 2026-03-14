@@ -16,7 +16,7 @@ interface Project {
   isGitRepo: boolean;
   defaultBranch: string | null;
   defaultWorktree: boolean;
-  defaultModel: 'sonnet' | 'opus';
+  defaultModel: 'sonnet' | 'opus' | 'auto';
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   color: string | null;
   providerID: string;

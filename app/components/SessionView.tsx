@@ -14,7 +14,7 @@ type Props = {
   cardId: number;
   sessionId?: string | null;
   accentColor?: string | null;
-  model: 'sonnet' | 'opus';
+  model: 'sonnet' | 'opus' | 'auto';
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
@@ -180,7 +180,7 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: 'sonnet' | 'opus'; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' }) {
+  async function handleUpdateCard(data: { model?: 'sonnet' | 'opus' | 'auto'; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -240,9 +240,10 @@ export const SessionView = observer(function SessionView({
           )}
           <select
             value={model}
-            onChange={(e) => handleUpdateCard({ model: e.target.value as 'sonnet' | 'opus' })}
+            onChange={(e) => handleUpdateCard({ model: e.target.value as 'sonnet' | 'opus' | 'auto' })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
           >
+            <option value="auto">Auto</option>
             <option value="sonnet">Sonnet</option>
             <option value="opus">Opus</option>
           </select>

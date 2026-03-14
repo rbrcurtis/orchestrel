@@ -6,7 +6,7 @@ import { openCodeServer } from '../opencode/server'
 export interface CreateSessionOpts {
   cwd: string
   providerID: string
-  model: 'sonnet' | 'opus'
+  model: 'sonnet' | 'opus' | 'auto'
   thinkingLevel: 'off' | 'low' | 'medium' | 'high'
   resumeSessionId?: string
   projectName?: string
