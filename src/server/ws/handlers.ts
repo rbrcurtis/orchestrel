@@ -1,10 +1,9 @@
 import type { WebSocket } from 'ws'
 import type { ConnectionManager } from './connections'
-import type { DbMutator } from '../db/mutator'
+import { clientSubs } from './subscriptions'
 import { clientMessage } from '../../shared/ws-protocol'
-import { db } from '../db/index'
-import { cards } from '../db/schema'
-import { like, or, asc, count } from 'drizzle-orm'
+import { cardService } from '../services/card'
+import { projectService } from '../services/project'
 import {
   handleCardCreate,
   handleCardUpdate,
@@ -25,14 +24,13 @@ import {
   handleAgentStop,
   handleAgentStatus,
 } from './handlers/agents'
-
-const PAGE_SIZE = 20
+import type { Card } from '../../shared/ws-protocol'
+import type { Card as CardEntity } from '../models/Card'
 
 export function handleMessage(
   ws: WebSocket,
   raw: unknown,
   connections: ConnectionManager,
-  mutator: DbMutator,
 ) {
   const parsed = clientMessage.safeParse(raw)
   if (!parsed.success) {
@@ -50,72 +48,94 @@ export function handleMessage(
 
   switch (msg.type) {
     case 'subscribe': {
-      connections.subscribe(ws, msg.columns)
-      const syncCards = mutator.listCards(msg.columns.length > 0 ? msg.columns : undefined)
-      const syncProjects = mutator.listProjects()
-      connections.send(ws, { type: 'sync', cards: syncCards, projects: syncProjects })
+      const cols = msg.columns
+
+      // Send initial sync
+      Promise.all([
+        cardService.listCards(cols.length > 0 ? cols : undefined),
+        projectService.listProjects(),
+      ]).then(([syncCards, syncProjects]) => {
+        connections.send(ws, { type: 'sync', cards: syncCards as Card[], projects: syncProjects as Card[] })
+      }).catch(err => console.error('[ws] subscribe sync error:', err))
+
+      // Subscribe to board:changed — forward card:updated for cards in subscribed columns
+      clientSubs.subscribe(ws, 'board:changed', (payload) => {
+        const { card, oldColumn, newColumn } = payload as { card: CardEntity | null; oldColumn: string | null; newColumn: string | null; id?: number }
+        if (!card) return
+        const relevant = cols.length === 0 ||
+          (oldColumn && cols.includes(oldColumn as never)) ||
+          (newColumn && cols.includes(newColumn as never))
+        if (relevant) {
+          connections.send(ws, { type: 'card:updated', data: card as Card })
+        }
+      })
+
+      // Subscribe to project updates for all known projects
+      projectService.listProjects().then(projs => {
+        for (const p of projs) {
+          clientSubs.subscribe(ws, `project:${p.id}:updated`, (payload) => {
+            connections.send(ws, { type: 'project:updated', data: payload as import('../../shared/ws-protocol').Project })
+          })
+          clientSubs.subscribe(ws, `project:${p.id}:deleted`, (payload) => {
+            connections.send(ws, { type: 'project:deleted', data: payload as { id: number } })
+          })
+        }
+      }).catch(err => console.error('[ws] subscribe project listing error:', err))
+
+      // Subscribe to system errors — forward to all subscribed clients
+      clientSubs.subscribe(ws, 'system:error', (payload) => {
+        const { message } = payload as { message: string }
+        connections.send(ws, {
+          type: 'agent:message',
+          cardId: -1,
+          data: {
+            type: 'error',
+            role: 'system',
+            content: message,
+            timestamp: Date.now(),
+          },
+        })
+      })
+
       break
     }
 
     case 'page': {
       const { column, cursor, limit } = msg
-      const allCards = mutator.listCards([column])
-      const sorted = allCards.sort((a, b) => a.position - b.position)
-      const startIdx = cursor !== undefined
-        ? sorted.findIndex(c => c.id === cursor) + 1
-        : 0
-      const pageSize = limit ?? PAGE_SIZE
-      const slice = sorted.slice(startIdx, startIdx + pageSize)
-      const nextCursor = startIdx + pageSize < sorted.length
-        ? slice[slice.length - 1]?.id
-        : undefined
-      connections.send(ws, {
-        type: 'page:result',
-        column,
-        cards: slice,
-        nextCursor,
-        total: sorted.length,
-      })
+      cardService.pageCards(column, cursor, limit).then(result => {
+        connections.send(ws, {
+          type: 'page:result',
+          column,
+          cards: result.cards as Card[],
+          nextCursor: result.nextCursor,
+          total: result.total,
+        })
+      }).catch(err => console.error('[ws] page error:', err))
       break
     }
 
     case 'search': {
       const { query, requestId } = msg
-      const pattern = `%${query}%`
-      const results = db
-        .select()
-        .from(cards)
-        .where(or(like(cards.title, pattern), like(cards.description, pattern)))
-        .orderBy(asc(cards.position))
-        .all()
-      const [{ value: total }] = db
-        .select({ value: count() })
-        .from(cards)
-        .where(or(like(cards.title, pattern), like(cards.description, pattern)))
-        .all()
-      connections.send(ws, {
-        type: 'search:result',
-        requestId,
-        cards: results,
-        total,
-      })
+      cardService.searchCards(query).then(({ cards, total }) => {
+        connections.send(ws, { type: 'search:result', requestId, cards: cards as Card[], total })
+      }).catch(err => console.error('[ws] search error:', err))
       break
     }
 
     case 'card:create':
-      void handleCardCreate(ws, msg, connections, mutator)
+      void handleCardCreate(ws, msg, connections)
       break
 
     case 'card:update':
-      void handleCardUpdate(ws, msg, connections, mutator)
+      void handleCardUpdate(ws, msg, connections)
       break
 
     case 'card:delete':
-      handleCardDelete(ws, msg, connections, mutator)
+      handleCardDelete(ws, msg, connections)
       break
 
     case 'card:generateTitle':
-      void handleCardGenerateTitle(ws, msg, connections, mutator)
+      void handleCardGenerateTitle(ws, msg, connections)
       break
 
     case 'card:suggestTitle':
@@ -123,15 +143,15 @@ export function handleMessage(
       break
 
     case 'project:create':
-      void handleProjectCreate(ws, msg, connections, mutator)
+      void handleProjectCreate(ws, msg, connections)
       break
 
     case 'project:update':
-      void handleProjectUpdate(ws, msg, connections, mutator)
+      void handleProjectUpdate(ws, msg, connections)
       break
 
     case 'project:delete':
-      handleProjectDelete(ws, msg, connections, mutator)
+      handleProjectDelete(ws, msg, connections)
       break
 
     case 'project:browse':
@@ -143,19 +163,19 @@ export function handleMessage(
       break
 
     case 'session:load':
-      void handleSessionLoad(ws, msg, connections, mutator)
+      void handleSessionLoad(ws, msg, connections)
       break
 
     case 'agent:send':
-      void handleAgentSend(ws, msg, connections, mutator)
+      void handleAgentSend(ws, msg, connections)
       break
 
     case 'agent:stop':
-      void handleAgentStop(ws, msg, connections, mutator)
+      void handleAgentStop(ws, msg, connections)
       break
 
     case 'agent:status':
-      void handleAgentStatus(ws, msg, connections, mutator)
+      void handleAgentStatus(ws, msg, connections)
       break
 
     default: {

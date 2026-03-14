@@ -1,26 +1,19 @@
 import type { WebSocket } from 'ws'
 import type { ClientMessage } from '../../../shared/ws-protocol'
 import type { ConnectionManager } from '../connections'
-import type { DbMutator } from '../../db/mutator'
-import { existsSync } from 'fs'
-import { readdir, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { projectService } from '../../services/project'
 
 export async function handleProjectCreate(
   ws: WebSocket,
   msg: Extract<ClientMessage, { type: 'project:create' }>,
   connections: ConnectionManager,
-  mutator: DbMutator,
 ): Promise<void> {
-  const { requestId } = msg
+  const { requestId, data } = msg
   try {
-    const input = msg.data
-    const isGitRepo = existsSync(join(input.path, '.git'))
-    const project = mutator.createProject({ ...input, isGitRepo })
+    const project = await projectService.createProject(data)
     connections.send(ws, { type: 'mutation:ok', requestId, data: project })
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    connections.send(ws, { type: 'mutation:error', requestId, error })
+    connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
   }
 }
 
@@ -28,20 +21,14 @@ export async function handleProjectUpdate(
   ws: WebSocket,
   msg: Extract<ClientMessage, { type: 'project:update' }>,
   connections: ConnectionManager,
-  mutator: DbMutator,
 ): Promise<void> {
-  const { requestId } = msg
+  const { requestId, data } = msg
+  const { id, ...rest } = data
   try {
-    const { id, ...data } = msg.data
-    const updates: Record<string, unknown> = { ...data }
-    if (data.path) {
-      updates.isGitRepo = existsSync(join(data.path, '.git'))
-    }
-    const project = mutator.updateProject(id, updates)
+    const project = await projectService.updateProject(id, rest)
     connections.send(ws, { type: 'mutation:ok', requestId, data: project })
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    connections.send(ws, { type: 'mutation:error', requestId, error })
+    connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
   }
 }
 
@@ -49,16 +36,11 @@ export function handleProjectDelete(
   ws: WebSocket,
   msg: Extract<ClientMessage, { type: 'project:delete' }>,
   connections: ConnectionManager,
-  mutator: DbMutator,
 ): void {
-  const { requestId } = msg
-  try {
-    mutator.deleteProject(msg.data.id)
-    connections.send(ws, { type: 'mutation:ok', requestId })
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    connections.send(ws, { type: 'mutation:error', requestId, error })
-  }
+  const { requestId, data } = msg
+  projectService.deleteProject(data.id)
+    .then(() => connections.send(ws, { type: 'mutation:ok', requestId }))
+    .catch(err => connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) }))
 }
 
 export async function handleProjectBrowse(
@@ -68,28 +50,10 @@ export async function handleProjectBrowse(
 ): Promise<void> {
   const { requestId, data: { path } } = msg
   try {
-    const fsEntries = await readdir(path, { withFileTypes: true })
-    const isGitRepo = fsEntries.some(e => e.name === '.git' && e.isDirectory())
-    const dirs = fsEntries
-      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
-      .map(e => ({ name: e.name, path: join(path, e.name), isDir: true }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-
-    connections.send(ws, {
-      type: 'project:browse:result',
-      requestId,
-      data: dirs,
-    })
-
-    // NOTE: isGitRepo for the browsed path is not in the protocol browse:result shape.
-    // project:create/update re-detect it on save. Suppress unused var.
-    void isGitRepo
+    const dirs = await projectService.browse(path)
+    connections.send(ws, { type: 'project:browse:result', requestId, data: dirs })
   } catch {
-    connections.send(ws, {
-      type: 'project:browse:result',
-      requestId,
-      data: [],
-    })
+    connections.send(ws, { type: 'project:browse:result', requestId, data: [] })
   }
 }
 
@@ -100,10 +64,9 @@ export async function handleProjectMkdir(
 ): Promise<void> {
   const { requestId, data: { path } } = msg
   try {
-    await mkdir(path, { recursive: true })
+    await projectService.mkdir(path)
     connections.send(ws, { type: 'mutation:ok', requestId, data: { success: true } })
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    connections.send(ws, { type: 'mutation:error', requestId, error })
+    connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
   }
 }
