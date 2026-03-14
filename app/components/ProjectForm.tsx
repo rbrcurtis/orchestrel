@@ -148,8 +148,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="anthropic">Anthropic</SelectItem>
-                    <SelectItem value="kiro-okkanti">Kiro — Okkanti</SelectItem>
-                    <SelectItem value="kiro-trackable">Kiro — Trackable</SelectItem>
+                    <SelectItem value="kiro">Kiro</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
