@@ -42,7 +42,7 @@ const BoardLayout = observer(function BoardLayout() {
   const projectStore = useProjectStore();
 
   useEffect(() => {
-    store.subscribe(['backlog', 'ready', 'running', 'review', 'done']);
+    store.subscribe(['backlog', 'ready', 'running', 'review', 'done', 'archive']);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedCardId = searchParams.get('card') ? Number(searchParams.get('card')) : null;
@@ -51,22 +51,23 @@ const BoardLayout = observer(function BoardLayout() {
 
   // Derive divider color from selected card's project
   const selectedCard = selectedCardId ? cardStore.getCard(selectedCardId) : undefined;
-  const selectedProject = selectedCard?.projectId
-    ? projectStore.getProject(selectedCard.projectId)
-    : null;
+  const selectedProject = selectedCard?.projectId ? projectStore.getProject(selectedCard.projectId) : null;
   const dividerColor = selectedCardId ? (selectedProject?.color ?? null) : null;
   const panelActive = !!(selectedCardId || newCardColumn);
 
   function selectCard(id: number | null) {
     setNewCardColumn(null);
-    setSearchParams(prev => {
-      if (id === null) {
-        prev.delete('card');
-      } else {
-        prev.set('card', String(id));
-      }
-      return prev;
-    }, { replace: true });
+    setSearchParams(
+      (prev) => {
+        if (id === null) {
+          prev.delete('card');
+        } else {
+          prev.set('card', String(id));
+        }
+        return prev;
+      },
+      { replace: true },
+    );
   }
 
   function startNewCard(column: string) {
@@ -109,19 +110,16 @@ const BoardLayout = observer(function BoardLayout() {
             </SelectTrigger>
             <SelectContent>
               {NAV_ITEMS.map(({ to, label }) => (
-                <SelectItem key={to} value={to}>{label}</SelectItem>
+                <SelectItem key={to} value={to}>
+                  {label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {/* Desktop: button nav */}
           <nav className="hidden sm:flex items-center gap-1">
             {NAV_ITEMS.map(({ to, label }) => (
-              <Button
-                key={to}
-                variant={location.pathname === to ? 'default' : 'ghost'}
-                size="sm"
-                asChild
-              >
+              <Button key={to} variant={location.pathname === to ? 'default' : 'ghost'} size="sm" asChild>
                 <Link to={to}>{label}</Link>
               </Button>
             ))}
@@ -129,10 +127,22 @@ const BoardLayout = observer(function BoardLayout() {
         </div>
         <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
-          <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" onClick={() => setActiveModal('icons')} title="Icon Colors">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground"
+            onClick={() => setActiveModal('icons')}
+            title="Icon Colors"
+          >
             <Palette className="size-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground" onClick={() => setActiveModal('settings')} title="Settings">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-muted-foreground"
+            onClick={() => setActiveModal('settings')}
+            title="Settings"
+          >
             <Settings className="size-5" />
           </Button>
         </div>
@@ -151,7 +161,10 @@ const BoardLayout = observer(function BoardLayout() {
         {panelActive && (
           <div
             className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-            onClick={() => { selectCard(null); setNewCardColumn(null); }}
+            onClick={() => {
+              selectCard(null);
+              setNewCardColumn(null);
+            }}
           />
         )}
 
