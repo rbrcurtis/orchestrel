@@ -2,10 +2,10 @@ import { EventEmitter } from 'events'
 
 export type AgentType = 'opencode'
 
-export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped'
+export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry'
 
 export type AgentMessage = {
-  type: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'system' | 'turn_end' | 'error' | 'user' | 'tool_progress'
+  type: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'system' | 'turn_end' | 'error' | 'user' | 'tool_progress' | 'subagent'
   role: 'user' | 'assistant' | 'system'
   content: string
   toolCall?: {

@@ -22,7 +22,7 @@ export interface ConversationRow extends AgentMessage {
 
 export interface SessionState {
   active: boolean;
-  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
+  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry';
   sessionId: string | null;
   promptsSent: number;
   turnsCompleted: number;
