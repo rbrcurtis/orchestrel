@@ -1,5 +1,21 @@
 import { EventEmitter } from 'events'
 
+export interface BoardChangedPayload {
+  card: import('./models/Card').Card | null
+  oldColumn: string | null
+  newColumn: string | null
+  id?: number
+}
+
+export interface SessionExitPayload {
+  cardId: number
+  active: boolean
+  status: string
+  sessionId: string | null
+  promptsSent: number
+  turnsCompleted: number
+}
+
 export class MessageBus extends EventEmitter {
   publish(topic: string, payload: unknown): void {
     this.emit(topic, payload)
