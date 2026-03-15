@@ -117,7 +117,7 @@ export function wsServerPlugin(): Plugin {
           // Mount without prefix stripping — tsoa generates full paths from @Route('api')
           server.middlewares.use((req, res, next) => {
             if (req.url?.startsWith('/api/')) {
-              restApp(req, res, next)
+              restApp(req as import('express').Request, res as import('express').Response, next)
             } else {
               next()
             }
