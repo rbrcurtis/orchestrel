@@ -1,0 +1,58 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@zhafron/opencode-kiro-auth"],
+  "provider": {
+    "anthropic": {
+      "models": {
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6",
+          "limit": { "context": 200000, "output": 65536 },
+          "variants": {
+            "low": { "thinking": { "type": "enabled", "budgetTokens": 8192 } },
+            "medium": { "thinking": { "type": "enabled", "budgetTokens": 16384 } },
+            "high": { "thinking": { "type": "enabled", "budgetTokens": 32768 } }
+          }
+        },
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6",
+          "limit": { "context": 200000, "output": 65536 },
+          "variants": {
+            "low": { "thinking": { "type": "enabled", "budgetTokens": 8192 } },
+            "medium": { "thinking": { "type": "enabled", "budgetTokens": 16384 } },
+            "high": { "thinking": { "type": "enabled", "budgetTokens": 32768 } }
+          }
+        }
+      }
+    },
+    "kiro": {
+      "models": {
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "claude-sonnet-4-6-thinking": {
+          "name": "Claude Sonnet 4.6 (Thinking)",
+          "limit": { "context": 200000, "output": 64000 },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "claude-opus-4-6-thinking": {
+          "name": "Claude Opus 4.6 (Thinking)",
+          "limit": { "context": 200000, "output": 64000 },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        }
+      }
+    }
+  }
+}
