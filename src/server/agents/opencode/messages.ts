@@ -40,10 +40,12 @@ export function normalizeOpenCodeEvent(event: {
       }
 
       if (part.type === 'reasoning') {
+        const content = delta ?? part.text ?? ''
+        if (!content) return null // skip empty initial reasoning part
         return {
           type: 'thinking',
           role: 'assistant',
-          content: delta ?? part.text ?? '',
+          content,
           timestamp: ts,
         }
       }

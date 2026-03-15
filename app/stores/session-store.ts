@@ -17,6 +17,7 @@ function ws(): WsClient {
 
 export interface ConversationRow extends AgentMessage {
   id: string; // content hash for dedup
+  optimistic?: boolean;
 }
 
 export interface SessionState {
@@ -26,7 +27,6 @@ export interface SessionState {
   promptsSent: number;
   turnsCompleted: number;
   conversation: ConversationRow[];
-  conversationIds: Set<string>; // O(1) dedup lookup
   toolCallIdxMap: Map<string, number>; // toolCall.id → conversation index for in-place update
   historyLoaded: boolean; // true after first history load
   contextTokens: number;
@@ -47,7 +47,6 @@ function defaultSession(): SessionState {
     promptsSent: 0,
     turnsCompleted: 0,
     conversation: [],
-    conversationIds: new Set(),
     toolCallIdxMap: new Map(),
     historyLoaded: false,
     contextTokens: 0,
@@ -91,6 +90,17 @@ export class SessionStore {
       const { timestamp, ...stable } = msg;
       const id = contentHashSync(msg.type, stable);
 
+      // Server echo for a user message — confirm the optimistic row
+      if (msg.type === 'user' && !msg.meta?.optimistic) {
+        const idx = s.conversation.findLastIndex(
+          (r) => r.type === 'user' && r.optimistic && r.content === msg.content,
+        );
+        if (idx !== -1) {
+          s.conversation[idx].optimistic = false;
+          return;
+        }
+      }
+
       if (msg.type === 'tool_call' && msg.toolCall?.id) {
         const existingIdx = s.toolCallIdxMap.get(msg.toolCall.id);
         if (existingIdx !== undefined) {
@@ -98,10 +108,7 @@ export class SessionStore {
           const existingParamCount = Object.keys(existing.toolCall?.params ?? {}).length;
           const newParamCount = Object.keys(msg.toolCall.params ?? {}).length;
           if (newParamCount > existingParamCount) {
-            // Replace in-place with the richer (complete) version
-            s.conversationIds.delete(existing.id);
             s.conversation.splice(existingIdx, 1, { ...msg, id });
-            s.conversationIds.add(id);
           }
           return; // Either replaced or kept existing — never append a duplicate
         }
@@ -109,10 +116,9 @@ export class SessionStore {
         s.toolCallIdxMap.set(msg.toolCall.id, s.conversation.length);
       }
 
-      if (s.conversationIds.has(id)) return; // dedup
-
-      s.conversation.push({ ...msg, id });
-      s.conversationIds.add(id);
+      const row: ConversationRow = { ...msg, id };
+      if (msg.meta?.optimistic) row.optimistic = true;
+      s.conversation.push(row);
 
       const tokens = extractContextTokens(msg);
       if (tokens !== null) s.contextTokens = tokens;
@@ -139,10 +145,7 @@ export class SessionStore {
       for (const msg of messages) {
         const { timestamp, ...stable } = msg;
         const id = contentHashSync(msg.type, stable);
-        if (s.conversationIds.has(id)) continue;
-
         newRows.push({ ...msg, id });
-        s.conversationIds.add(id);
       }
 
       if (newRows.length > 0) {
@@ -189,7 +192,6 @@ export class SessionStore {
     const s = this.sessions.get(cardId);
     if (!s) return;
     s.conversation.splice(0);
-    s.conversationIds.clear();
     s.toolCallIdxMap.clear();
     s.historyLoaded = false;
     s.contextTokens = 0;
@@ -216,6 +218,7 @@ export class SessionStore {
         type: 'user',
         role: 'user',
         content: message,
+        meta: { optimistic: true },
         timestamp: Date.now(),
       });
     }

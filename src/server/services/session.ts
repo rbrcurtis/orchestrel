@@ -227,7 +227,7 @@ class SessionService {
     if (!session) return null
     return {
       cardId,
-      active: session.status === 'running',
+      active: session.status === 'running' || session.status === 'starting',
       status: session.status,
       sessionId: session.sessionId,
       promptsSent: session.promptsSent,

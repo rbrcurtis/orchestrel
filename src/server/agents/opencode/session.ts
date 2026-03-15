@@ -44,7 +44,7 @@ export class OpenCodeSession extends AgentSession {
   }
 
   async start(prompt: string): Promise<void> {
-    this.status = 'running'
+    this.status = 'starting'
     const sdk = this.client as unknown as SdkClient
 
     if (!this.sessionId) {
@@ -55,14 +55,6 @@ export class OpenCodeSession extends AgentSession {
       })
       this.sessionId = res.data?.id ?? res.id ?? null
     }
-
-    this.emit('message', {
-      type: 'system',
-      role: 'system',
-      content: '',
-      meta: { subtype: 'init', model: this.modelID },
-      timestamp: Date.now(),
-    } satisfies AgentMessage)
 
     await this.subscribeToEvents()
 
@@ -89,7 +81,7 @@ export class OpenCodeSession extends AgentSession {
     }
 
     this.promptsSent++
-    this.status = 'running'
+    this.status = 'starting'
 
     console.log(`[opencode-session:${this.sessionId}] → session.prompt text_length=${content.length}`)
     await sdk.session.promptAsync({
@@ -167,7 +159,7 @@ export class OpenCodeSession extends AgentSession {
           let eventCount = 0
           for await (const event of events.stream) {
             eventCount++
-            console.log(`[opencode-session:${this.sessionId}] SSE event #${eventCount}: ${event.type}`)
+            console.log(`[opencode-session:${this.sessionId}] SSE event #${eventCount}: ${event.type}`, JSON.stringify(event.properties))
 
             if (this.abortController?.signal.aborted) break
 
@@ -231,6 +223,21 @@ export class OpenCodeSession extends AgentSession {
 
             const msg = normalizeOpenCodeEvent(event)
             if (msg) this.emit('message', msg)
+
+            // session.status busy = opencode started processing a turn
+            if (event.type === 'session.status') {
+              const { status } = event.properties as { sessionID?: string; status?: { type?: string } }
+              if (status?.type === 'busy' && this.status !== 'running') {
+                this.status = 'running'
+                this.emit('message', {
+                  type: 'system',
+                  role: 'system',
+                  content: '',
+                  meta: { subtype: 'init', model: this.modelID, turn: this.promptsSent },
+                  timestamp: Date.now(),
+                } satisfies AgentMessage)
+              }
+            }
 
             // session.idle = assistant finished one response cycle (turn complete)
             // Session stays alive for follow-up messages — don't break or emit exit
