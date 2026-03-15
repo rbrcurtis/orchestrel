@@ -1,7 +1,6 @@
 import { resolve } from 'path'
 import { Card } from '../models/Card'
 import { Project } from '../models/Project'
-import { messageBus } from '../bus'
 import { sessionManager } from '../agents/manager'
 import { OpenCodeSession } from '../agents/opencode/session'
 import type { AgentMessage, SessionStatus } from '../agents/types'
@@ -13,11 +12,7 @@ import {
   slugify,
   worktreeExists,
 } from '../worktree'
-
-const DISPLAY_TYPES = new Set([
-  'user', 'text', 'tool_call', 'tool_result', 'tool_progress',
-  'thinking', 'system', 'turn_end', 'error',
-])
+import { wireSession } from '../controllers/oc'
 
 export interface SessionStatusData {
   cardId: number
@@ -151,51 +146,7 @@ class SessionService {
       session.turnsCompleted = card.turnsCompleted ?? 0
     }
 
-    // Register one-time session-level listeners (server-owned, no WS reference)
-    session.on('message', async (msg: AgentMessage) => {
-      if (!DISPLAY_TYPES.has(msg.type)) return
-      messageBus.publish(`card:${cardId}:message`, msg)
-
-      if (msg.type === 'turn_end') {
-        try {
-          await card.reload()
-          card.column = 'review'
-          card.promptsSent = session.promptsSent
-          card.turnsCompleted = session.turnsCompleted
-          card.updatedAt = new Date().toISOString()
-          await card.save()
-          // Subscriber handles card:updated + card:status broadcasts
-        } catch (err) {
-          console.error(`[session:${cardId}] failed to persist turn_end:`, err)
-        }
-      }
-    })
-
-    session.on('exit', async () => {
-      console.log(`[session:${cardId}] exit, status=${session.status}`)
-      // Only move to review on error or stop — session.idle keeps session alive
-      if (session.status === 'errored' || session.status === 'stopped') {
-        try {
-          await card.reload()
-          card.column = 'review'
-          card.promptsSent = session.promptsSent
-          card.turnsCompleted = session.turnsCompleted
-          card.updatedAt = new Date().toISOString()
-          await card.save()
-        } catch (err) {
-          console.error(`[session:${cardId}] failed to auto-move to review on exit:`, err)
-        }
-      }
-      // Publish exit status to bus so transport can forward agent:status
-      messageBus.publish(`card:${cardId}:exit`, {
-        cardId,
-        active: false,
-        status: session.status,
-        sessionId: session.sessionId,
-        promptsSent: session.promptsSent,
-        turnsCompleted: session.turnsCompleted,
-      })
-    })
+    wireSession(cardId, session)
 
     console.log(`[session:${cardId}] startSession: calling session.start()`)
     await session.start(prompt)
