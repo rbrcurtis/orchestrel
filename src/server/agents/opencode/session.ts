@@ -9,6 +9,7 @@ interface SdkClient {
     prompt(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
     promptAsync(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
     abort(opts: { path: { id: string } }): Promise<void>
+    children(opts: { path: { id: string } }): Promise<Array<{ id: string; title: string; parentID?: string }>>
   }
   event: {
     subscribe(opts: { signal: AbortSignal; headers: Record<string, string> }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
@@ -28,6 +29,8 @@ export class OpenCodeSession extends AgentSession {
   private turnCost = 0
   private turnTokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null = null
   private userMessageIds = new Set<string>()
+  private childSessions = new Map<string, { title: string; status: string }>()
+  private childrenResolvePending = false
 
   constructor(
     private client: unknown,
@@ -57,6 +60,50 @@ export class OpenCodeSession extends AgentSession {
 
   private logChild(childId: string, msg: string): void {
     console.log(`[session:${this.sessionId ?? 'pending'}:child:${childId}] ${msg}`)
+  }
+
+  private async resolveChildren(triggeringChildId?: string): Promise<void> {
+    if (this.childrenResolvePending || !this.sessionId) {
+      // Still insert placeholder so this child isn't permanently unknown
+      if (triggeringChildId && !this.childSessions.has(triggeringChildId)) {
+        this.childSessions.set(triggeringChildId, { title: triggeringChildId.slice(0, 12), status: 'running' })
+        this.log(`child:placeholder ${triggeringChildId}`)
+      }
+      return
+    }
+    this.childrenResolvePending = true
+    try {
+      const sdk = this.client as unknown as SdkClient
+      const children = await sdk.session.children({ path: { id: this.sessionId } })
+      for (const child of children) {
+        if (!this.childSessions.has(child.id)) {
+          this.childSessions.set(child.id, { title: child.title, status: 'running' })
+          this.log(`child:discovered ${child.id} title="${child.title.slice(0, 60)}"`)
+        }
+      }
+    } catch (err) {
+      this.log(`child:resolve-error ${err}`)
+      // Use child session ID as placeholder title — retry resolution on next event
+      if (triggeringChildId && !this.childSessions.has(triggeringChildId)) {
+        this.childSessions.set(triggeringChildId, { title: triggeringChildId.slice(0, 12), status: 'running' })
+        this.log(`child:placeholder ${triggeringChildId}`)
+      }
+    } finally {
+      this.childrenResolvePending = false
+    }
+  }
+
+  private extractShortTarget(tool: string, input: Record<string, unknown>): string {
+    if (tool === 'bash') {
+      const cmd = (input.command as string) ?? (input.description as string) ?? ''
+      return cmd.slice(0, 40)
+    }
+    const filePath = (input.filePath ?? input.file_path ?? input.path ?? input.pattern ?? '') as string
+    if (filePath) {
+      const parts = filePath.split('/')
+      return parts[parts.length - 1] || filePath.slice(0, 40)
+    }
+    return ''
   }
 
   async start(prompt: string): Promise<void> {
@@ -204,7 +251,66 @@ export class OpenCodeSession extends AgentSession {
               props.sessionID ??
               props.part?.sessionID ??
               props.info?.sessionID
+            // Child session event handling
             if (sessionID && sessionID !== this.sessionId) {
+              // session.idle for a child = subagent completed
+              if (event.type === 'session.idle') {
+                const child = this.childSessions.get(sessionID)
+                if (child) {
+                  child.status = 'idle'
+                  this.logChild(sessionID, 'idle')
+                  this.emit('message', {
+                    type: 'subagent',
+                    role: 'system',
+                    content: '',
+                    meta: { subtype: 'completed', childSessionId: sessionID, title: child.title },
+                    timestamp: Date.now(),
+                  } satisfies AgentMessage)
+                }
+                continue
+              }
+
+              // Child retry — log only, don't forward
+              if (event.type === 'session.status') {
+                const { status } = event.properties as { status?: { type?: string; attempt?: number; next?: number; message?: string } }
+                if (status?.type === 'retry') {
+                  this.logChild(sessionID, `retry attempt=${status.attempt} next=${status.next}ms`)
+                }
+                continue
+              }
+
+              // Child tool activity — only forward running state
+              if (event.type === 'message.part.updated') {
+                const part = (event.properties as { part?: { type?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown> } } }).part
+                if (part?.type === 'tool' && part.state?.status === 'running' && part.tool) {
+                  // Resolve child session info if unknown
+                  if (!this.childSessions.has(sessionID)) {
+                    await this.resolveChildren(sessionID)
+                  }
+                  const child = this.childSessions.get(sessionID)
+                  if (!child) { continue } // Not our child — truly skip
+
+                  const target = this.extractShortTarget(part.tool, part.state.input ?? {})
+                  this.logChild(sessionID, `tool:${part.tool} → ${target} (running)`)
+                  this.emit('message', {
+                    type: 'subagent',
+                    role: 'system',
+                    content: '',
+                    meta: {
+                      subtype: 'activity',
+                      childSessionId: sessionID,
+                      title: child.title,
+                      tool: part.tool,
+                      target,
+                      status: 'running',
+                    },
+                    timestamp: Date.now(),
+                  } satisfies AgentMessage)
+                }
+                continue
+              }
+
+              // All other child events — skip silently
               continue
             }
 
@@ -242,7 +348,7 @@ export class OpenCodeSession extends AgentSession {
 
             // session.status busy = opencode started processing a turn
             if (event.type === 'session.status') {
-              const { status } = event.properties as { sessionID?: string; status?: { type?: string } }
+              const { status } = event.properties as { sessionID?: string; status?: { type?: string; attempt?: number; next?: number; message?: string } }
               if (status?.type === 'busy' && this.status !== 'running') {
                 this.status = 'running'
                 this.emit('message', {
@@ -250,6 +356,22 @@ export class OpenCodeSession extends AgentSession {
                   role: 'system',
                   content: '',
                   meta: { subtype: 'init', model: this.modelID, turn: this.promptsSent },
+                  timestamp: Date.now(),
+                } satisfies AgentMessage)
+              }
+              if (status?.type === 'retry') {
+                this.status = 'retry'
+                this.log(`retry attempt=${status.attempt} next=${status.next}ms message="${status.message}"`)
+                this.emit('message', {
+                  type: 'system',
+                  role: 'system',
+                  content: '',
+                  meta: {
+                    subtype: 'retry',
+                    attempt: status.attempt,
+                    message: status.message,
+                    nextMs: status.next,
+                  },
                   timestamp: Date.now(),
                 } satisfies AgentMessage)
               }
