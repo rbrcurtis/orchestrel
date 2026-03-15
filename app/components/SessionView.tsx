@@ -7,6 +7,7 @@ import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { ContextGauge } from './ContextGauge';
+import { SubagentFeed } from './SubagentFeed';
 import { useSessionStore, useCardStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
 
@@ -37,6 +38,7 @@ export const SessionView = observer(function SessionView({
   const sessionStoreId = session?.sessionId ?? null;
   const contextTokens = session?.contextTokens ?? 0;
   const contextWindow = session?.contextWindow ?? 200_000;
+  const subagents = session?.subagents ?? new Map();
 
   const [startError, setStartError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -79,7 +81,8 @@ export const SessionView = observer(function SessionView({
       sessionStatus === 'running' ||
       sessionStatus === 'completed' ||
       sessionStatus === 'errored' ||
-      sessionStatus === 'stopped'
+      sessionStatus === 'stopped' ||
+      sessionStatus === 'retry'
     ) {
       setIsStarting(false);
     }
@@ -172,6 +175,9 @@ export const SessionView = observer(function SessionView({
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, contextTokens / contextWindow * 100) : 0;
+  const retryInfo = sessionStatus === 'retry'
+    ? conversation.findLast(m => m.type === 'system' && m.meta?.subtype === 'retry')
+    : null;
 
   async function handleSend(message: string, files?: FileRef[]) {
     try {
@@ -239,6 +245,12 @@ export const SessionView = observer(function SessionView({
       {(isStreaming || conversation.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0">
           <StatusBadge status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus} />
+          {retryInfo && (
+            <span className="text-[11px] text-neon-amber truncate">
+              {String(retryInfo.meta?.message ?? 'Waiting...')}
+              {retryInfo.meta?.attempt != null && ` (attempt ${retryInfo.meta.attempt})`}
+            </span>
+          )}
           {showCounters && (
             <span className="text-[11px] text-muted-foreground">
               {turnsCompleted}/{promptsSent} turns
@@ -277,6 +289,9 @@ export const SessionView = observer(function SessionView({
         </div>
       )}
 
+      {/* Subagent activity feed */}
+      <SubagentFeed subagents={subagents} />
+
       {/* Prompt input — pinned to bottom */}
       <PromptInput
         cardId={cardId}
@@ -308,6 +323,10 @@ function StatusBadge({ status }: { status: string }) {
     case 'stopped':
       variant = 'secondary';
       label = 'Completed';
+      break;
+    case 'retry':
+      variant = 'outline';
+      label = 'Queued';
       break;
     default:
       variant = 'destructive';
