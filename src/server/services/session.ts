@@ -16,7 +16,7 @@ import {
 
 const DISPLAY_TYPES = new Set([
   'user', 'text', 'tool_call', 'tool_result', 'tool_progress',
-  'thinking', 'system', 'turn_end', 'error',
+  'thinking', 'system', 'turn_end', 'error', 'subagent',
 ])
 
 export interface SessionStatusData {
@@ -227,7 +227,7 @@ class SessionService {
     if (!session) return null
     return {
       cardId,
-      active: session.status === 'running' || session.status === 'starting',
+      active: session.status === 'running' || session.status === 'starting' || session.status === 'retry',
       status: session.status,
       sessionId: session.sessionId,
       promptsSent: session.promptsSent,
