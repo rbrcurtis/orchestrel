@@ -14,3 +14,4 @@ data/
 .private-journal/*
 .worktrees/*
 CLAUDE.md
+.claude/
