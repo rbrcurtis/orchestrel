@@ -43,6 +43,9 @@ export default defineConfig(({ isSsrBuild }) => ({
     port: Number(process.env.PORT) || 6194,
     host: process.env.HOST || '0.0.0.0',
     allowedHosts: true,
+    watch: {
+      ignored: ['**/.worktrees/**'],
+    },
   },
   plugins: [wsServerPlugin(), pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],
 }));
