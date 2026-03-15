@@ -16,3 +16,5 @@ data/
 CLAUDE.md
 .claude/
 opencode.json
+src/server/api/generated/routes.ts
+src/server/api/generated/swagger.json
