@@ -58,74 +58,81 @@ export function wsServerPlugin(): Plugin {
   return {
     name: 'dispatcher-ws',
     configureServer(server) {
-      if (server.httpServer) {
-        // All TypeORM-dependent imports are lazy to avoid decorator issues with Vite's esbuild
-        Promise.all([
-          import('../models/index'),
-          import('./handlers'),
-          import('./subscriptions'),
-          import('../bus'),
-          import('../opencode/server'),
-        ]).then(async ([{ initDatabase }, { handleMessage }, { clientSubs }, { messageBus }, { openCodeServer }]) => {
-          await initDatabase()
+      // Register REST middleware placeholder synchronously so it's in the middleware
+      // stack BEFORE React Router's catch-all. The actual router activates after async init.
+      let restApp: import('express').Router | null = null
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.startsWith('/api/') && restApp) {
+          restApp(req as import('express').Request, res as import('express').Response, next)
+        } else {
+          next()
+        }
+      })
 
-          createWsServer(server.httpServer!, handleMessage, clientSubs)
+      // All TypeORM-dependent imports are lazy to avoid decorator issues with Vite's esbuild
+      Promise.all([
+        import('../models/index'),
+        import('./handlers'),
+        import('./subscriptions'),
+        import('../bus'),
+        import('../opencode/server'),
+      ]).then(async ([{ initDatabase }, { handleMessage }, { clientSubs }, { messageBus }, { openCodeServer }]) => {
+        await initDatabase()
+
+        // WS server requires httpServer (only available when NOT in middlewareMode)
+        if (server.httpServer) {
+          createWsServer(server.httpServer, handleMessage, clientSubs)
           console.log('[ws] WebSocket server attached to Vite dev server')
+        }
 
-          // Publish OpenCode crash to bus — all connected clients get notified
-          openCodeServer.onCrash = () => {
-            messageBus.publish('system:error', {
-              message: 'OpenCode server crashed, restarting...',
-            })
-          }
-
-          openCodeServer.start().catch((err: unknown) => {
-            console.error('[opencode] failed to start:', err)
+        // Publish OpenCode crash to bus — all connected clients get notified
+        openCodeServer.onCrash = () => {
+          messageBus.publish('system:error', {
+            message: 'OpenCode server crashed, restarting...',
           })
+        }
 
-          // REST API middleware (tsoa-generated routes)
-          const express = await import('express')
-          const { RegisterRoutes } = await import('../api/generated/routes')
-
-          const restApp = express.default.Router()
-          restApp.use(express.default.json())
-          RegisterRoutes(restApp)
-
-          // Serve OpenAPI spec and Swagger UI
-          const { readFileSync } = await import('fs')
-          const { resolve } = await import('path')
-          const swaggerUi = await import('swagger-ui-express')
-
-          const specPath = resolve(import.meta.dirname, '../api/generated/swagger.json')
-          const spec = JSON.parse(readFileSync(specPath, 'utf-8'))
-
-          restApp.get('/api/docs/swagger.json', (_req: import('express').Request, res: import('express').Response) => {
-            res.json(spec)
-          })
-          restApp.use('/api/docs', swaggerUi.serve, swaggerUi.setup(spec))
-
-          // Error handler for tsoa validation errors
-          restApp.use((err: unknown, _req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
-            if (err && typeof err === 'object' && 'status' in err) {
-              const e = err as { status: number; message?: string; fields?: Record<string, unknown> }
-              res.status(e.status).json({ error: e.message ?? 'Validation error', fields: e.fields })
-              return
-            }
-            next(err)
-          })
-
-          // Mount without prefix stripping — tsoa generates full paths from @Route('api')
-          server.middlewares.use((req, res, next) => {
-            if (req.url?.startsWith('/api/')) {
-              restApp(req as import('express').Request, res as import('express').Response, next)
-            } else {
-              next()
-            }
-          })
-        }).catch((err) => {
-          console.error('[db] failed to initialize:', err)
+        openCodeServer.start().catch((err: unknown) => {
+          console.error('[opencode] failed to start:', err)
         })
-      }
+
+        // REST API middleware (tsoa-generated routes)
+        const express = await import('express')
+        const { RegisterRoutes } = await import('../api/generated/routes')
+
+        const router = express.default.Router()
+        router.use(express.default.json())
+        RegisterRoutes(router)
+
+        // Serve OpenAPI spec and Swagger UI
+        const { readFileSync } = await import('fs')
+        const { resolve } = await import('path')
+        const swaggerUi = await import('swagger-ui-express')
+
+        const specPath = resolve(import.meta.dirname, '../api/generated/swagger.json')
+        const spec = JSON.parse(readFileSync(specPath, 'utf-8'))
+
+        router.get('/api/docs/swagger.json', (_req: import('express').Request, res: import('express').Response) => {
+          res.json(spec)
+        })
+        router.use('/api/docs', swaggerUi.serve, swaggerUi.setup(spec))
+
+        // Error handler for tsoa validation errors
+        router.use((err: unknown, _req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
+          if (err && typeof err === 'object' && 'status' in err) {
+            const e = err as { status: number; message?: string; fields?: Record<string, unknown> }
+            res.status(e.status).json({ error: e.message ?? 'Validation error', fields: e.fields })
+            return
+          }
+          next(err)
+        })
+
+        // Activate the sync placeholder registered above
+        restApp = router
+        console.log('[rest] REST API mounted at /api/')
+      }).catch((err) => {
+        console.error('[db] failed to initialize:', err)
+      })
     },
   }
 }
