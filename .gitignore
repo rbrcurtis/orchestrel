@@ -13,3 +13,4 @@ data/
 .playwright-mcp/*
 .private-journal/*
 .worktrees/*
+CLAUDE.md

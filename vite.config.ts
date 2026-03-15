@@ -40,9 +40,9 @@ export default defineConfig(({ isSsrBuild }) => ({
       : undefined,
   },
   server: {
-    port: 6194,
-    host: '192.168.4.200',
-    allowedHosts: ['dispatch.rbrcurtis.com'],
+    port: Number(process.env.PORT) || 6194,
+    host: process.env.HOST || '0.0.0.0',
+    allowedHosts: true,
   },
   plugins: [wsServerPlugin(), pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],
 }));

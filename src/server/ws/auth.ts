@@ -1,7 +1,7 @@
 import type { IncomingMessage } from 'http'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 
-const CF_TEAM_DOMAIN = 'rbrcurtis' // <team>.cloudflareaccess.com
+const CF_TEAM_DOMAIN = process.env.CF_TEAM_DOMAIN ?? ''
 const CERTS_URL = `https://${CF_TEAM_DOMAIN}.cloudflareaccess.com/cdn-cgi/access/certs`
 
 // jose caches JWK set and handles rotation automatically
