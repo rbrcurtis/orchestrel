@@ -18,7 +18,7 @@ interface SdkClient {
 
 export class OpenCodeSession extends AgentSession {
   sessionId: string | null = null
-  status: SessionStatus = 'starting'
+  private _status: SessionStatus = 'starting'
   promptsSent = 0
   turnsCompleted = 0
 
@@ -43,12 +43,27 @@ export class OpenCodeSession extends AgentSession {
     }
   }
 
+  override get status(): SessionStatus { return this._status }
+  override set status(val: SessionStatus) {
+    if (val !== this._status) {
+      this.log(`status: ${this._status} → ${val}`)
+      this._status = val
+    }
+  }
+
+  private log(msg: string): void {
+    console.log(`[session:${this.sessionId ?? 'pending'}] ${msg}`)
+  }
+
+  private logChild(childId: string, msg: string): void {
+    console.log(`[session:${this.sessionId ?? 'pending'}:child:${childId}] ${msg}`)
+  }
+
   async start(prompt: string): Promise<void> {
     this.status = 'starting'
     const sdk = this.client as unknown as SdkClient
 
     if (!this.sessionId) {
-      console.log(`[opencode-session:${this.sessionId}] → session.create`)
       const res = await sdk.session.create({
         body: { title: prompt.slice(0, 100) },
         query: { directory: this.cwd },
@@ -57,9 +72,10 @@ export class OpenCodeSession extends AgentSession {
     }
 
     await this.subscribeToEvents()
+    this.log('sse:connect')
 
     this.promptsSent++
-    console.log(`[opencode-session:${this.sessionId}] → session.prompt text_length=${prompt.length}`)
+    this.log('prompt:send length=' + prompt.length)
     await sdk.session.promptAsync({
       path: { id: this.sessionId! },
       body: {
@@ -69,6 +85,7 @@ export class OpenCodeSession extends AgentSession {
       },
       query: { directory: this.cwd },
     })
+    this.log('prompt:ack')
   }
 
   async sendMessage(content: string): Promise<void> {
@@ -78,12 +95,13 @@ export class OpenCodeSession extends AgentSession {
     // Re-subscribe if SSE was lost (stream ended or aborted)
     if (!this.sseAlive) {
       await this.subscribeToEvents()
+      this.log('sse:connect')
     }
 
     this.promptsSent++
     this.status = 'starting'
 
-    console.log(`[opencode-session:${this.sessionId}] → session.prompt text_length=${content.length}`)
+    this.log('prompt:send length=' + content.length)
     await sdk.session.promptAsync({
       path: { id: this.sessionId },
       body: {
@@ -93,6 +111,7 @@ export class OpenCodeSession extends AgentSession {
       },
       query: { directory: this.cwd },
     })
+    this.log('prompt:ack')
   }
 
   updateModel(model: string, thinkingLevel: string): void {
@@ -115,10 +134,10 @@ export class OpenCodeSession extends AgentSession {
     this.status = 'stopped'
 
     try {
-      console.log(`[opencode-session:${this.sessionId}] → session.abort`)
+      this.log('kill')
       await sdk.session.abort({ path: { id: this.sessionId } })
     } catch (err) {
-      console.error(`[opencode-session:${this.sessionId}] abort error:`, err)
+      this.log('kill:error ' + String(err))
     }
 
     this.emit('exit')
@@ -159,7 +178,6 @@ export class OpenCodeSession extends AgentSession {
           let eventCount = 0
           for await (const event of events.stream) {
             eventCount++
-            console.log(`[opencode-session:${this.sessionId}] SSE event #${eventCount}: ${event.type}`, JSON.stringify(event.properties))
 
             if (this.abortController?.signal.aborted) break
 
@@ -169,15 +187,13 @@ export class OpenCodeSession extends AgentSession {
               const perm = event.properties as { id?: string; sessionID?: string; type?: string; title?: string }
               const permSessionId = perm.sessionID ?? this.sessionId!
               if (perm.id) {
-                console.log(`[opencode-session:${this.sessionId}] auto-approving permission ${perm.id} (type=${perm.type}, session=${permSessionId}, title=${perm.title})`)
+                this.log(`permission:approve ${perm.id} type=${perm.type}`)
                 sdk.postSessionIdPermissionsPermissionId({
                   path: { id: permSessionId, permissionID: perm.id },
                   body: { response: 'always' },
                 }).then(() => {
-                  console.log(`[opencode-session:${this.sessionId}] permission ${perm.id} approved OK`)
-                }).catch(err => console.error(`[opencode-session:${this.sessionId}] permission approve failed:`, err))
-              } else {
-                console.log(`[opencode-session:${this.sessionId}] permission event without id:`, JSON.stringify(event.properties))
+                  this.log(`permission:approve ${perm.id} type=${perm.type}`)
+                }).catch(err => this.log('permission:error ' + String(err)))
               }
               continue
             }
@@ -189,7 +205,6 @@ export class OpenCodeSession extends AgentSession {
               props.part?.sessionID ??
               props.info?.sessionID
             if (sessionID && sessionID !== this.sessionId) {
-              console.log(`[opencode-session:${this.sessionId}] skipping event for session ${sessionID}`)
               continue
             }
 
@@ -243,7 +258,7 @@ export class OpenCodeSession extends AgentSession {
             // session.idle = assistant finished one response cycle (turn complete)
             // Session stays alive for follow-up messages — don't break or emit exit
             if (event.type === 'session.idle') {
-              console.log(`[opencode-session:${this.sessionId}] session.idle received!`)
+              this.log('session:idle')
               const sid = (event.properties as { sessionID?: string }).sessionID
               if (sid && sid !== this.sessionId) continue
               this.turnsCompleted++
@@ -274,7 +289,7 @@ export class OpenCodeSession extends AgentSession {
               if (sid && sid !== this.sessionId) continue
               // Ignore errors caused by our own abort (user hit stop)
               if (this.status === 'stopped') break
-              console.error(`[opencode-session:${this.sessionId}] session.error:`, JSON.stringify(event.properties))
+              this.log('session:error ' + JSON.stringify(event.properties))
               this.status = 'errored'
               this.emit('exit')
               break
@@ -286,7 +301,7 @@ export class OpenCodeSession extends AgentSession {
             resolveConnected()
           }
           if (this.abortController?.signal.aborted || this.status === 'stopped') return
-          console.error(`[opencode-session:${this.sessionId}] SSE error:`, err)
+          this.log('sse:disconnect reason=' + String(err))
           this.status = 'errored'
           this.emit('message', {
             type: 'error',
