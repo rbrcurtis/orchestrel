@@ -10,27 +10,28 @@ export async function handleAgentSend(
   connections: ConnectionManager,
 ): Promise<void> {
   const { requestId, data: { cardId, message, files } } = msg
-  console.log(`[session:${cardId}] agent:send received, message length=${message.length}, files=${files?.length ?? 0}`)
+  console.log(`[session:${cardId}] agent:send, len=${message.length}, files=${files?.length ?? 0}`)
 
   try {
-    // Respond immediately — startSession runs in background
     connections.send(ws, { type: 'mutation:ok', requestId })
 
-    sessionService.startSession(cardId, message, files).catch((err) => {
-      const error = err instanceof Error ? err.message : String(err)
-      console.error(`[session:${cardId}] startSession error:`, error)
-      connections.send(ws, {
-        type: 'agent:status',
-        data: {
-          cardId,
-          active: false,
-          status: 'errored',
-          sessionId: null,
-          promptsSent: 0,
-          turnsCompleted: 0,
-        },
+    const { sessionManager } = await import('../../agents/manager')
+    const existing = sessionManager.get(cardId)
+
+    if (existing && (existing.status === 'running' || existing.status === 'completed')) {
+      sessionService.sendFollowUp(cardId, message).catch(err => {
+        console.error(`[session:${cardId}] sendFollowUp error:`, err)
       })
-    })
+    } else {
+      sessionService.startSession(cardId, message, files).catch(err => {
+        const error = err instanceof Error ? err.message : String(err)
+        console.error(`[session:${cardId}] startSession error:`, error)
+        connections.send(ws, {
+          type: 'agent:status',
+          data: { cardId, active: false, status: 'errored', sessionId: null, promptsSent: 0, turnsCompleted: 0 },
+        })
+      })
+    }
   } catch (err) {
     connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
   }

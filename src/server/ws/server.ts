@@ -71,6 +71,13 @@ export function wsServerPlugin(): Plugin {
         ]).then(async ([{ initDatabase }, { handleMessage }, { clientSubs }, { messageBus }, { openCodeServer }, { createRestApi }]) => {
           await initDatabase()
 
+          const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc')
+          const { sessionService } = await import('../services/session')
+          const { removeWorktree, worktreeExists } = await import('../worktree')
+          registerAutoStart(undefined, sessionService)
+          registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists })
+          console.log('[oc] controller listeners registered')
+
           createWsServer(server.httpServer!, handleMessage, clientSubs)
           console.log('[ws] WebSocket server attached to Vite dev server')
 
