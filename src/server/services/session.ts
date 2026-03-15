@@ -63,25 +63,32 @@ async function ensureWorktree(card: Card): Promise<string> {
 }
 
 class SessionService {
+  async sendFollowUp(cardId: number, message: string): Promise<void> {
+    const session = sessionManager.get(cardId)
+    if (!session) throw new Error(`No active session for card ${cardId}`)
+    if (session.status !== 'running' && session.status !== 'completed') {
+      throw new Error(`Session for card ${cardId} is ${session.status}, cannot send follow-up`)
+    }
+
+    if (session instanceof OpenCodeSession) {
+      const card = await Card.findOneByOrFail({ id: cardId })
+      session.updateModel(card.model, card.thinkingLevel)
+    }
+
+    await session.sendMessage(message)
+
+    // Move back to running so the board reflects active work
+    const card = await Card.findOneByOrFail({ id: cardId })
+    card.promptsSent = session.promptsSent
+    if (card.column !== 'running') card.column = 'running'
+    card.updatedAt = new Date().toISOString()
+    await card.save()
+  }
+
   async startSession(cardId: number, message?: string, files?: FileRef[]): Promise<void> {
     const existing = sessionManager.get(cardId)
-
-    if (existing) {
-      // Follow-up message to an existing session
-      if (!message) throw new Error(`No message to send to existing session for card ${cardId}`)
-
-      if (existing instanceof OpenCodeSession) {
-        const card = await Card.findOneByOrFail({ id: cardId })
-        existing.updateModel(card.model, card.thinkingLevel)
-      }
-
-      await existing.sendMessage(message)
-
-      const card = await Card.findOneByOrFail({ id: cardId })
-      card.promptsSent = existing.promptsSent
-      if (card.column !== 'running') card.column = 'running'
-      card.updatedAt = new Date().toISOString()
-      await card.save()
+    if (existing && (existing.status === 'running' || existing.status === 'starting')) {
+      console.log(`[session:${cardId}] session already active, skipping startSession`)
       return
     }
 
@@ -90,7 +97,9 @@ class SessionService {
     if (!card.title?.trim()) throw new Error('Title is required for running')
     if (!card.description?.trim()) throw new Error('Description is required for running')
 
-    // Move to running only if not already there
+    // Safety net: ensure card is in running. No-op when called via auto-start
+    // (card is already running). Required when called from handleAgentSend for
+    // cards in review — triggers board:changed so controller handlers subscribe.
     if (card.column !== 'running') {
       card.column = 'running'
       card.updatedAt = new Date().toISOString()
@@ -165,6 +174,10 @@ class SessionService {
   }
 
   async sendMessage(cardId: number, message: string): Promise<void> {
+    const existing = sessionManager.get(cardId)
+    if (existing && (existing.status === 'running' || existing.status === 'completed')) {
+      return this.sendFollowUp(cardId, message)
+    }
     return this.startSession(cardId, message)
   }
 
