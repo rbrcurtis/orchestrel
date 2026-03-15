@@ -116,3 +116,82 @@ describe('CardsController POST /api/cards', () => {
     expect(result).not.toHaveProperty('model')
   })
 })
+
+describe('CardsController PUT /api/cards/:id', () => {
+  it('updates title and description of a ready card', async () => {
+    const { CardsController } = await import('./cards')
+    const now = new Date().toISOString()
+    const card = await Card.save(Card.create({ title: 'Original', description: 'orig desc', column: 'ready', position: 0, projectId, createdAt: now, updatedAt: now }))
+
+    const ctrl = new CardsController()
+    const result = await ctrl.updateCard(card.id, { title: 'Updated Title', description: 'Updated desc' })
+    expect(result.title).toBe('Updated Title')
+    expect(result.description).toBe('Updated desc')
+    expect(result.id).toBe(card.id)
+  })
+
+  it('returns 404 for non-ready card', async () => {
+    const { CardsController } = await import('./cards')
+    const now = new Date().toISOString()
+    const card = await Card.save(Card.create({ title: 'Backlog', description: 'desc', column: 'backlog', position: 0, projectId, createdAt: now, updatedAt: now }))
+
+    const ctrl = new CardsController()
+    await expect(ctrl.updateCard(card.id, { title: 'New', description: 'New desc' }))
+      .rejects.toThrow('not found or not in ready column')
+  })
+
+  it('returns 404 for nonexistent card', async () => {
+    const { CardsController } = await import('./cards')
+    const ctrl = new CardsController()
+    await expect(ctrl.updateCard(99999, { title: 'New', description: 'New desc' }))
+      .rejects.toThrow('not found or not in ready column')
+  })
+
+  it('strips internal fields from PUT response', async () => {
+    const { CardsController } = await import('./cards')
+    const now = new Date().toISOString()
+    const card = await Card.save(Card.create({ title: 'Strip', description: 'desc', column: 'ready', position: 0, projectId, createdAt: now, updatedAt: now }))
+
+    const ctrl = new CardsController()
+    const result = await ctrl.updateCard(card.id, { title: 'Strip Updated', description: 'Updated' })
+    expect(result).toHaveProperty('id')
+    expect(result).toHaveProperty('title')
+    expect(result).toHaveProperty('description')
+    expect(result).toHaveProperty('projectId')
+    expect(result).not.toHaveProperty('column')
+    expect(result).not.toHaveProperty('position')
+    expect(result).not.toHaveProperty('sessionId')
+    expect(result).not.toHaveProperty('model')
+  })
+})
+
+describe('CardsController DELETE /api/cards/:id', () => {
+  it('deletes a ready card', async () => {
+    const { CardsController } = await import('./cards')
+    const now = new Date().toISOString()
+    const card = await Card.save(Card.create({ title: 'Delete Me', description: 'desc', column: 'ready', position: 0, projectId, createdAt: now, updatedAt: now }))
+
+    const ctrl = new CardsController()
+    await ctrl.deleteCard(card.id)
+
+    const found = await Card.findOneBy({ id: card.id })
+    expect(found).toBeNull()
+  })
+
+  it('returns 404 for non-ready card', async () => {
+    const { CardsController } = await import('./cards')
+    const now = new Date().toISOString()
+    const card = await Card.save(Card.create({ title: 'Running', description: 'desc', column: 'running', position: 0, projectId, createdAt: now, updatedAt: now }))
+
+    const ctrl = new CardsController()
+    await expect(ctrl.deleteCard(card.id))
+      .rejects.toThrow('not found or not in ready column')
+  })
+
+  it('returns 404 for nonexistent card', async () => {
+    const { CardsController } = await import('./cards')
+    const ctrl = new CardsController()
+    await expect(ctrl.deleteCard(99999))
+      .rejects.toThrow('not found or not in ready column')
+  })
+})

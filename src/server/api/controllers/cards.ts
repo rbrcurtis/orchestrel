@@ -39,4 +39,33 @@ export class CardsController extends Controller {
     this.setStatus(201)
     return toCardResponse(card)
   }
+
+  @Put('cards/{id}')
+  public async updateCard(@Path() id: number, @Body() body: CardUpdateBody): Promise<CardResponse> {
+    const card = await Card.findOneBy({ id })
+    if (!card || card.column !== 'ready') {
+      this.setStatus(404)
+      throw new Error(`Card ${id} not found or not in ready column`)
+    }
+
+    const updated = await cardService.updateCard(id, {
+      title: body.title,
+      description: body.description,
+    })
+
+    return toCardResponse(updated)
+  }
+
+  @Delete('cards/{id}')
+  @SuccessResponse(204, 'Deleted')
+  public async deleteCard(@Path() id: number): Promise<void> {
+    const card = await Card.findOneBy({ id })
+    if (!card || card.column !== 'ready') {
+      this.setStatus(404)
+      throw new Error(`Card ${id} not found or not in ready column`)
+    }
+
+    await cardService.deleteCard(id)
+    this.setStatus(204)
+  }
 }
