@@ -562,6 +562,12 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
           <Input
             value={draft.title}
             onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleSave();
+              }
+            }}
             placeholder={generatingTitle ? 'Generating title...' : 'Card title'}
           />
         </div>
@@ -584,7 +590,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.shiftKey) {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
                 e.preventDefault();
                 handleSave();
               }
