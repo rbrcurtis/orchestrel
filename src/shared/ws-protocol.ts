@@ -102,14 +102,14 @@ export const agentSendSchema = z.object({
 export const agentStatusSchema = z.object({
   cardId: z.number(),
   active: z.boolean(),
-  status: z.enum(['starting', 'running', 'completed', 'errored', 'stopped']),
+  status: z.enum(['starting', 'running', 'completed', 'errored', 'stopped', 'retry']),
   sessionId: z.string().nullable(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
 })
 
 export const agentMessageSchema = z.object({
-  type: z.enum(['text', 'tool_call', 'tool_result', 'thinking', 'system', 'turn_end', 'error', 'user', 'tool_progress']),
+  type: z.enum(['text', 'tool_call', 'tool_result', 'thinking', 'system', 'turn_end', 'error', 'user', 'tool_progress', 'subagent']),
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
   toolCall: z.object({
