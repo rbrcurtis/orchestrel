@@ -184,6 +184,23 @@ class SessionService {
   async stopSession(cardId: number): Promise<void> {
     await sessionManager.kill(cardId)
     // exit listener on the session handles card update to review
+
+    // Fallback: abort via SDK even if no in-memory session (e.g., post-restart).
+    // sessionManager.kill() is a no-op when the map is empty, but the OpenCode
+    // session may still be running. Always send the SDK abort to be safe.
+    const card = await Card.findOneBy({ id: cardId })
+    if (card?.sessionId) {
+      try {
+        const { openCodeServer } = await import('../opencode/server')
+        if (openCodeServer.client) {
+          const sdk = openCodeServer.client as unknown as { session: { abort(opts: { sessionID: string }): Promise<void> } }
+          await sdk.session.abort({ sessionID: card.sessionId })
+          console.log(`[session:${cardId}] SDK abort sent for ${card.sessionId}`)
+        }
+      } catch {
+        // Already idle or session gone — harmless
+      }
+    }
   }
 
   getStatus(cardId: number): SessionStatusData | null {
@@ -205,16 +222,16 @@ class SessionService {
 
     interface SdkClient {
       session: {
-        get(opts: { path: { id: string } }): Promise<unknown>
-        messages(opts: { path: { id: string } }): Promise<unknown>
+        get(opts: { sessionID: string }): Promise<unknown>
+        messages(opts: { sessionID: string }): Promise<unknown>
       }
     }
     const sdk = openCodeServer.client as unknown as SdkClient
 
-    const session = await sdk.session.get({ path: { id: sessionId } })
+    const session = await sdk.session.get({ sessionID: sessionId })
     if (!session || (session as { success?: boolean }).success === false) return []
 
-    const rawMessages = await sdk.session.messages({ path: { id: sessionId } })
+    const rawMessages = await sdk.session.messages({ sessionID: sessionId })
     const rawMsgs = rawMessages as { success?: boolean; data?: unknown[] } | unknown[]
     const msgData = (rawMsgs as { success?: boolean }).success === false
       ? []

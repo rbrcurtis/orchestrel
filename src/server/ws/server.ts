@@ -10,6 +10,20 @@ import { validateCfAccess } from './auth'
 // vite.config.ts with esbuild which uses TC39 decorators, not legacy TypeScript
 // decorators that TypeORM requires. Static imports would fail at config bundle time.
 
+// Cache httpServer across Vite server restarts (HMR re-runs configureServer)
+let _cachedHttpServer: HttpServer | null = null
+const _httpServerPromise = new Promise<HttpServer>((resolve) => {
+  process.once('dispatcher:httpServer', (server: HttpServer) => {
+    _cachedHttpServer = server
+    resolve(server)
+  })
+})
+
+function getHttpServer(): Promise<HttpServer> {
+  if (_cachedHttpServer) return Promise.resolve(_cachedHttpServer)
+  return _httpServerPromise
+}
+
 export const connections = new ConnectionManager()
 
 export function createWsServer(

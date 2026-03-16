@@ -1,5 +1,5 @@
 import { spawn, execFileSync, type ChildProcess } from 'child_process'
-import { createOpencodeClient } from '@opencode-ai/sdk'
+import { createOpencodeClient } from '@opencode-ai/sdk/v2'
 import { resolve as resolvePath } from 'path'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
@@ -137,7 +137,7 @@ export class OpenCodeServer {
         interface SdkClient {
           session: {
             list(): Promise<{ data?: SdkSession[] } | SdkSession[]>
-            abort(opts: { path: { id: string } }): Promise<void>
+            abort(opts: { sessionID: string }): Promise<void>
           }
         }
         const sdk = this.client as unknown as SdkClient
@@ -145,7 +145,7 @@ export class OpenCodeServer {
         const list: SdkSession[] = (sessions as { data?: SdkSession[] }).data ?? (sessions as SdkSession[]) ?? []
         for (const s of list) {
           if (s.status === 'active' || s.status === 'running') {
-            await sdk.session.abort({ path: { id: s.id } }).catch(() => {})
+            await sdk.session.abort({ sessionID: s.id }).catch(() => {})
           }
         }
       } catch {

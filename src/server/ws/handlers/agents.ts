@@ -65,6 +65,12 @@ export async function handleAgentStatus(
     } else {
       // No active session — read counters from DB via model
       const card = await Card.findOneBy({ id: cardId })
+      // Stale running card with no active session → move to review
+      if (card && card.column === 'running') {
+        card.column = 'review'
+        card.updatedAt = new Date().toISOString()
+        await card.save()
+      }
       connections.send(ws, {
         type: 'agent:status',
         data: {
