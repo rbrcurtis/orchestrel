@@ -32,6 +32,8 @@ export interface SessionState {
   contextTokens: number;
   contextWindow: number;
   subagents: Map<string, { title: string; lastActivity: string; status: 'running' | 'idle' }>;
+  activeTextIdx: number | null; // index of current open text block for delta accumulation
+  activeThinkingIdx: number | null; // index of current open thinking block for delta accumulation
 }
 
 function extractContextTokens(msg: AgentMessage): number | null {
@@ -47,12 +49,14 @@ function defaultSession(): SessionState {
     sessionId: null,
     promptsSent: 0,
     turnsCompleted: 0,
-    conversation: [],
+    conversation: observable.array([], { deep: true }),
     toolCallIdxMap: new Map(),
     historyLoaded: false,
     contextTokens: 0,
     contextWindow: 200_000,
     subagents: observable.map(),
+    activeTextIdx: null,
+    activeThinkingIdx: null,
   };
 }
 
@@ -133,6 +137,31 @@ export class SessionStore {
         }
       }
 
+      // Block-closing events: reset active text/thinking indices
+      if (
+        msg.type === 'turn_end' ||
+        msg.type === 'tool_call' ||
+        msg.type === 'user' ||
+        msg.type === 'error' ||
+        (msg.type === 'system' && (msg.meta as { subtype?: string } | undefined)?.subtype === 'init')
+      ) {
+        s.activeTextIdx = null;
+        s.activeThinkingIdx = null;
+      }
+
+      // Delta accumulation for text and thinking
+      if (msg.type === 'text' || msg.type === 'thinking') {
+        const activeIdx = msg.type === 'text' ? s.activeTextIdx : s.activeThinkingIdx;
+        if (activeIdx !== null) {
+          // Append delta to existing row — skip dedup, mutate in place
+          s.conversation[activeIdx].content += msg.content ?? '';
+          const tokens = extractContextTokens(msg);
+          if (tokens !== null) s.contextTokens = tokens;
+          return;
+        }
+        // No active block — fall through to push a new row and record its index
+      }
+
       if (msg.type === 'tool_call' && msg.toolCall?.id) {
         const existingIdx = s.toolCallIdxMap.get(msg.toolCall.id);
         if (existingIdx !== undefined) {
@@ -151,6 +180,13 @@ export class SessionStore {
       const row: ConversationRow = { ...msg, id };
       if (msg.meta?.optimistic) row.optimistic = true;
       s.conversation.push(row);
+
+      // Record the index of the newly pushed text/thinking row as the active block
+      if (msg.type === 'text') {
+        s.activeTextIdx = s.conversation.length - 1;
+      } else if (msg.type === 'thinking') {
+        s.activeThinkingIdx = s.conversation.length - 1;
+      }
 
       const tokens = extractContextTokens(msg);
       if (tokens !== null) s.contextTokens = tokens;
@@ -228,6 +264,8 @@ export class SessionStore {
     s.historyLoaded = false;
     s.contextTokens = 0;
     s.contextWindow = 200_000;
+    s.activeTextIdx = null;
+    s.activeThinkingIdx = null;
     // Clear subagent state
     s.subagents.clear();
     for (const [key, timer] of this.subagentTimeouts) {
