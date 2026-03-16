@@ -4,16 +4,20 @@ import {
   type EntitySubscriberInterface,
   type InsertEvent, type UpdateEvent, type RemoveEvent,
 } from 'typeorm'
+import { Expose } from 'class-transformer'
 import { messageBus } from '../bus'
 
 @Entity({ name: 'cards' })
 export class Card extends BaseEntity {
+  @Expose({ groups: ['rest'] })
   @PrimaryGeneratedColumn()
   id!: number
 
+  @Expose({ groups: ['rest'] })
   @Column({ type: 'text' })
   title!: string
 
+  @Expose({ groups: ['rest'] })
   @Column({ type: 'text', default: '' })
   description!: string
 
@@ -23,6 +27,7 @@ export class Card extends BaseEntity {
   @Column({ type: 'real', default: 0 })
   position!: number
 
+  @Expose({ groups: ['rest'] })
   @Column({ name: 'project_id', type: 'integer', nullable: true })
   projectId!: number | null
 

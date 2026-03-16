@@ -9,7 +9,7 @@ class SessionManager extends EventEmitter {
   create(cardId: number, opts: CreateSessionOpts): AgentSession {
     const key = `card-${cardId}`;
     const existing = this.sessions.get(key);
-    if (existing && (existing.status === 'running' || existing.status === 'starting')) {
+    if (existing && (existing.status === 'running' || existing.status === 'starting' || existing.status === 'retry')) {
       console.log(`[session:${cardId}] blocked: session already ${existing.status}`);
       throw new Error(`Session already ${existing.status} for card ${cardId}`);
     }

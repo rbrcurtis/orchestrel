@@ -22,7 +22,7 @@ export interface ConversationRow extends AgentMessage {
 
 export interface SessionState {
   active: boolean;
-  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
+  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry';
   sessionId: string | null;
   promptsSent: number;
   turnsCompleted: number;
@@ -31,6 +31,7 @@ export interface SessionState {
   historyLoaded: boolean; // true after first history load
   contextTokens: number;
   contextWindow: number;
+  subagents: Map<string, { title: string; lastActivity: string; status: 'running' | 'idle' }>;
 }
 
 function extractContextTokens(msg: AgentMessage): number | null {
@@ -51,15 +52,17 @@ function defaultSession(): SessionState {
     historyLoaded: false,
     contextTokens: 0,
     contextWindow: 200_000,
+    subagents: observable.map(),
   };
 }
 
 export class SessionStore {
   sessions = observable.map<number, SessionState>();
   subscribedCards = new Set<number>();
+  private subagentTimeouts = new Map<string, NodeJS.Timeout>();
 
   constructor() {
-    makeAutoObservable(this);
+    makeAutoObservable(this, { subagentTimeouts: false });
   }
 
   private getOrCreate(cardId: number): SessionState {
@@ -87,6 +90,35 @@ export class SessionStore {
   ingest(cardId: number, msg: AgentMessage): void {
     runInAction(() => {
       const s = this.getOrCreate(cardId);
+
+      if (msg.type === 'subagent' && msg.meta) {
+        const m = msg.meta as { subtype: string; childSessionId: string; title: string; tool?: string; target?: string };
+        if (m.subtype === 'activity') {
+          s.subagents.set(m.childSessionId, {
+            title: m.title,
+            lastActivity: `${m.tool} → ${m.target}`,
+            status: 'running',
+          });
+        } else if (m.subtype === 'completed') {
+          const existing = s.subagents.get(m.childSessionId);
+          if (existing) {
+            existing.status = 'idle';
+            existing.lastActivity = 'done';
+          }
+          // Schedule removal after 2s
+          const timeoutKey = `${cardId}:${m.childSessionId}`;
+          const prev = this.subagentTimeouts.get(timeoutKey);
+          if (prev) clearTimeout(prev);
+          this.subagentTimeouts.set(timeoutKey, setTimeout(() => {
+            runInAction(() => {
+              s.subagents.delete(m.childSessionId);
+            });
+            this.subagentTimeouts.delete(timeoutKey);
+          }, 2000));
+        }
+        return; // Don't add subagent messages to conversation
+      }
+
       const { timestamp, ...stable } = msg;
       const id = contentHashSync(msg.type, stable);
 
@@ -196,6 +228,14 @@ export class SessionStore {
     s.historyLoaded = false;
     s.contextTokens = 0;
     s.contextWindow = 200_000;
+    // Clear subagent state
+    s.subagents.clear();
+    for (const [key, timer] of this.subagentTimeouts) {
+      if (key.startsWith(`${cardId}:`)) {
+        clearTimeout(timer);
+        this.subagentTimeouts.delete(key);
+      }
+    }
   }
 
   handleAgentStatus(data: AgentStatus) {
@@ -206,6 +246,16 @@ export class SessionStore {
       s.sessionId = data.sessionId;
       s.promptsSent = data.promptsSent;
       s.turnsCompleted = data.turnsCompleted;
+      // Clear subagent rows when parent session ends
+      if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {
+        s.subagents.clear();
+        for (const [key, timer] of this.subagentTimeouts) {
+          if (key.startsWith(`${data.cardId}:`)) {
+            clearTimeout(timer);
+            this.subagentTimeouts.delete(key);
+          }
+        }
+      }
     });
   }
 

@@ -4,6 +4,7 @@ import {
   type EntitySubscriberInterface,
   type InsertEvent, type UpdateEvent, type RemoveEvent,
 } from 'typeorm'
+import { Expose } from 'class-transformer'
 import { messageBus } from '../bus'
 
 export const NEON_COLORS = [
@@ -15,9 +16,11 @@ export type NeonColor = typeof NEON_COLORS[number]
 
 @Entity({ name: 'projects' })
 export class Project extends BaseEntity {
+  @Expose({ groups: ['rest'] })
   @PrimaryGeneratedColumn()
   id!: number
 
+  @Expose({ groups: ['rest'] })
   @Column({ type: 'text' })
   name!: string
 
