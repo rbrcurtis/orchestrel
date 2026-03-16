@@ -1,0 +1,16 @@
+{
+  "entryFile": "src/server/api/generated/stub.ts",
+  "noImplicitAdditionalProperties": "throw-on-extras",
+  "controllerPathGlobs": ["src/server/api/controllers/**/*.ts"],
+  "spec": {
+    "outputDirectory": "src/server/api/generated",
+    "specVersion": 3
+  },
+  "routes": {
+    "routesDir": "src/server/api/generated",
+    "middleware": "express"
+  },
+  "compilerOptions": {
+    "experimentalDecorators": true
+  }
+}

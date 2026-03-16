@@ -1,5 +1,7 @@
+import 'reflect-metadata'
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { DataSource } from 'typeorm'
+import { instanceToPlain } from 'class-transformer'
 import { Project, ProjectSubscriber } from './Project'
 import { messageBus } from '../bus'
 
@@ -50,5 +52,31 @@ describe('Project entity', () => {
     await proj.remove()
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({ id }))
     messageBus.unsubscribe(`project:${id}:deleted`, handler)
+  })
+})
+
+describe('Project REST serialization', () => {
+  it('only exposes rest-group fields via instanceToPlain', () => {
+    const proj = Object.assign(new Project(), {
+      id: 1,
+      name: 'My Project',
+      path: '/home/user/code/proj',
+      setupCommands: 'pnpm install',
+      isGitRepo: true,
+      defaultBranch: 'main',
+      defaultWorktree: true,
+      defaultModel: 'sonnet',
+      defaultThinkingLevel: 'high',
+      providerID: 'anthropic',
+      color: 'neon-cyan',
+      createdAt: '2026-01-01T00:00:00Z',
+    })
+
+    const plain = instanceToPlain(proj, { groups: ['rest'], excludeExtraneousValues: true })
+
+    expect(plain).toEqual({ id: 1, name: 'My Project' })
+    expect(plain).not.toHaveProperty('path')
+    expect(plain).not.toHaveProperty('setupCommands')
+    expect(plain).not.toHaveProperty('defaultModel')
   })
 })

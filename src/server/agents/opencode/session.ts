@@ -9,6 +9,7 @@ interface SdkClient {
     prompt(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
     promptAsync(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
     abort(opts: { path: { id: string } }): Promise<void>
+    children(opts: { path: { id: string } }): Promise<Array<{ id: string; title: string; parentID?: string }>>
   }
   event: {
     subscribe(opts: { signal: AbortSignal; headers: Record<string, string> }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
@@ -18,7 +19,7 @@ interface SdkClient {
 
 export class OpenCodeSession extends AgentSession {
   sessionId: string | null = null
-  status: SessionStatus = 'starting'
+  private _status: SessionStatus = 'starting'
   promptsSent = 0
   turnsCompleted = 0
 
@@ -28,6 +29,8 @@ export class OpenCodeSession extends AgentSession {
   private turnCost = 0
   private turnTokens: { input: number; output: number; cacheRead: number; cacheWrite: number } | null = null
   private userMessageIds = new Set<string>()
+  private childSessions = new Map<string, { title: string; status: string }>()
+  private childrenResolvePending = false
 
   constructor(
     private client: unknown,
@@ -43,12 +46,77 @@ export class OpenCodeSession extends AgentSession {
     }
   }
 
+  override get status(): SessionStatus { return this._status }
+  override set status(val: SessionStatus) {
+    if (val !== this._status) {
+      this.log(`status: ${this._status} → ${val}`)
+      this._status = val
+    }
+  }
+
+  private log(msg: string): void {
+    console.log(`[session:${this.sessionId ?? 'pending'}] ${msg}`)
+  }
+
+  private logChild(childId: string, msg: string): void {
+    console.log(`[session:${this.sessionId ?? 'pending'}:child:${childId}] ${msg}`)
+  }
+
+  private async resolveChildren(triggeringChildId?: string): Promise<void> {
+    if (this.childrenResolvePending || !this.sessionId) {
+      // Still insert placeholder so this child isn't permanently unknown
+      if (triggeringChildId && !this.childSessions.has(triggeringChildId)) {
+        this.childSessions.set(triggeringChildId, { title: triggeringChildId.slice(0, 12), status: 'running' })
+        this.log(`child:placeholder ${triggeringChildId}`)
+      }
+      return
+    }
+    this.childrenResolvePending = true
+    try {
+      const sdk = this.client as unknown as SdkClient
+      const res = await sdk.session.children({ path: { id: this.sessionId } })
+      // SDK may wrap response in { data: [...] } or return bare array
+      const children = Array.isArray(res) ? res : ((res as Record<string, unknown>).data as Array<{ id: string; title: string; parentID?: string }>) ?? []
+      if (!Array.isArray(children)) {
+        this.log(`child:resolve-unexpected response=${JSON.stringify(res).slice(0, 200)}`)
+        return
+      }
+      for (const child of children) {
+        if (!this.childSessions.has(child.id)) {
+          this.childSessions.set(child.id, { title: child.title, status: 'running' })
+          this.log(`child:discovered ${child.id} title="${child.title.slice(0, 60)}"`)
+        }
+      }
+    } catch (err) {
+      this.log(`child:resolve-error ${err}`)
+      // Use child session ID as placeholder title — retry resolution on next event
+      if (triggeringChildId && !this.childSessions.has(triggeringChildId)) {
+        this.childSessions.set(triggeringChildId, { title: triggeringChildId.slice(0, 12), status: 'running' })
+        this.log(`child:placeholder ${triggeringChildId}`)
+      }
+    } finally {
+      this.childrenResolvePending = false
+    }
+  }
+
+  private extractShortTarget(tool: string, input: Record<string, unknown>): string {
+    if (tool === 'bash') {
+      const cmd = (input.command as string) ?? (input.description as string) ?? ''
+      return cmd.slice(0, 40)
+    }
+    const filePath = (input.filePath ?? input.file_path ?? input.path ?? input.pattern ?? '') as string
+    if (filePath) {
+      const parts = filePath.split('/')
+      return parts[parts.length - 1] || filePath.slice(0, 40)
+    }
+    return ''
+  }
+
   async start(prompt: string): Promise<void> {
     this.status = 'starting'
     const sdk = this.client as unknown as SdkClient
 
     if (!this.sessionId) {
-      console.log(`[opencode-session:${this.sessionId}] → session.create`)
       const res = await sdk.session.create({
         body: { title: prompt.slice(0, 100) },
         query: { directory: this.cwd },
@@ -57,9 +125,10 @@ export class OpenCodeSession extends AgentSession {
     }
 
     await this.subscribeToEvents()
+    this.log('sse:connect')
 
     this.promptsSent++
-    console.log(`[opencode-session:${this.sessionId}] → session.prompt text_length=${prompt.length}`)
+    this.log('prompt:send length=' + prompt.length)
     await sdk.session.promptAsync({
       path: { id: this.sessionId! },
       body: {
@@ -69,6 +138,7 @@ export class OpenCodeSession extends AgentSession {
       },
       query: { directory: this.cwd },
     })
+    this.log('prompt:ack')
   }
 
   async sendMessage(content: string): Promise<void> {
@@ -78,12 +148,13 @@ export class OpenCodeSession extends AgentSession {
     // Re-subscribe if SSE was lost (stream ended or aborted)
     if (!this.sseAlive) {
       await this.subscribeToEvents()
+      this.log('sse:connect')
     }
 
     this.promptsSent++
     this.status = 'starting'
 
-    console.log(`[opencode-session:${this.sessionId}] → session.prompt text_length=${content.length}`)
+    this.log('prompt:send length=' + content.length)
     await sdk.session.promptAsync({
       path: { id: this.sessionId },
       body: {
@@ -93,6 +164,7 @@ export class OpenCodeSession extends AgentSession {
       },
       query: { directory: this.cwd },
     })
+    this.log('prompt:ack')
   }
 
   updateModel(model: string, thinkingLevel: string): void {
@@ -115,10 +187,10 @@ export class OpenCodeSession extends AgentSession {
     this.status = 'stopped'
 
     try {
-      console.log(`[opencode-session:${this.sessionId}] → session.abort`)
+      this.log('kill')
       await sdk.session.abort({ path: { id: this.sessionId } })
     } catch (err) {
-      console.error(`[opencode-session:${this.sessionId}] abort error:`, err)
+      this.log('kill:error ' + String(err))
     }
 
     this.emit('exit')
@@ -159,7 +231,6 @@ export class OpenCodeSession extends AgentSession {
           let eventCount = 0
           for await (const event of events.stream) {
             eventCount++
-            console.log(`[opencode-session:${this.sessionId}] SSE event #${eventCount}: ${event.type}`, JSON.stringify(event.properties))
 
             if (this.abortController?.signal.aborted) break
 
@@ -169,15 +240,13 @@ export class OpenCodeSession extends AgentSession {
               const perm = event.properties as { id?: string; sessionID?: string; type?: string; title?: string }
               const permSessionId = perm.sessionID ?? this.sessionId!
               if (perm.id) {
-                console.log(`[opencode-session:${this.sessionId}] auto-approving permission ${perm.id} (type=${perm.type}, session=${permSessionId}, title=${perm.title})`)
+                this.log(`permission:approve ${perm.id} type=${perm.type}`)
                 sdk.postSessionIdPermissionsPermissionId({
                   path: { id: permSessionId, permissionID: perm.id },
                   body: { response: 'always' },
                 }).then(() => {
-                  console.log(`[opencode-session:${this.sessionId}] permission ${perm.id} approved OK`)
-                }).catch(err => console.error(`[opencode-session:${this.sessionId}] permission approve failed:`, err))
-              } else {
-                console.log(`[opencode-session:${this.sessionId}] permission event without id:`, JSON.stringify(event.properties))
+                  this.log(`permission:approved ${perm.id}`)
+                }).catch(err => this.log('permission:error ' + String(err)))
               }
               continue
             }
@@ -188,8 +257,66 @@ export class OpenCodeSession extends AgentSession {
               props.sessionID ??
               props.part?.sessionID ??
               props.info?.sessionID
+            // Child session event handling
             if (sessionID && sessionID !== this.sessionId) {
-              console.log(`[opencode-session:${this.sessionId}] skipping event for session ${sessionID}`)
+              // session.idle for a child = subagent completed
+              if (event.type === 'session.idle') {
+                const child = this.childSessions.get(sessionID)
+                if (child) {
+                  child.status = 'idle'
+                  this.logChild(sessionID, 'idle')
+                  this.emit('message', {
+                    type: 'subagent',
+                    role: 'system',
+                    content: '',
+                    meta: { subtype: 'completed', childSessionId: sessionID, title: child.title },
+                    timestamp: Date.now(),
+                  } satisfies AgentMessage)
+                }
+                continue
+              }
+
+              // Child retry — log only, don't forward
+              if (event.type === 'session.status') {
+                const { status } = event.properties as { status?: { type?: string; attempt?: number; next?: number; message?: string } }
+                if (status?.type === 'retry') {
+                  this.logChild(sessionID, `retry attempt=${status.attempt} next=${status.next}ms`)
+                }
+                continue
+              }
+
+              // Child tool activity — only forward running state
+              if (event.type === 'message.part.updated') {
+                const part = (event.properties as { part?: { type?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown> } } }).part
+                if (part?.type === 'tool' && part.state?.status === 'running' && part.tool) {
+                  // Resolve child session info if unknown
+                  if (!this.childSessions.has(sessionID)) {
+                    await this.resolveChildren(sessionID)
+                  }
+                  const child = this.childSessions.get(sessionID)
+                  if (!child) { continue } // Not our child — truly skip
+
+                  const target = this.extractShortTarget(part.tool, part.state.input ?? {})
+                  this.logChild(sessionID, `tool:${part.tool} → ${target} (running)`)
+                  this.emit('message', {
+                    type: 'subagent',
+                    role: 'system',
+                    content: '',
+                    meta: {
+                      subtype: 'activity',
+                      childSessionId: sessionID,
+                      title: child.title,
+                      tool: part.tool,
+                      target,
+                      status: 'running',
+                    },
+                    timestamp: Date.now(),
+                  } satisfies AgentMessage)
+                }
+                continue
+              }
+
+              // All other child events — skip silently
               continue
             }
 
@@ -227,7 +354,7 @@ export class OpenCodeSession extends AgentSession {
 
             // session.status busy = opencode started processing a turn
             if (event.type === 'session.status') {
-              const { status } = event.properties as { sessionID?: string; status?: { type?: string } }
+              const { status } = event.properties as { sessionID?: string; status?: { type?: string; attempt?: number; next?: number; message?: string } }
               if (status?.type === 'busy' && this.status !== 'running') {
                 this.status = 'running'
                 this.emit('message', {
@@ -238,12 +365,28 @@ export class OpenCodeSession extends AgentSession {
                   timestamp: Date.now(),
                 } satisfies AgentMessage)
               }
+              if (status?.type === 'retry') {
+                this.status = 'retry'
+                this.log(`retry attempt=${status.attempt} next=${status.next}ms message="${status.message}"`)
+                this.emit('message', {
+                  type: 'system',
+                  role: 'system',
+                  content: '',
+                  meta: {
+                    subtype: 'retry',
+                    attempt: status.attempt,
+                    message: status.message,
+                    nextMs: status.next,
+                  },
+                  timestamp: Date.now(),
+                } satisfies AgentMessage)
+              }
             }
 
             // session.idle = assistant finished one response cycle (turn complete)
             // Session stays alive for follow-up messages — don't break or emit exit
             if (event.type === 'session.idle') {
-              console.log(`[opencode-session:${this.sessionId}] session.idle received!`)
+              this.log('session:idle')
               const sid = (event.properties as { sessionID?: string }).sessionID
               if (sid && sid !== this.sessionId) continue
               this.turnsCompleted++
@@ -274,7 +417,7 @@ export class OpenCodeSession extends AgentSession {
               if (sid && sid !== this.sessionId) continue
               // Ignore errors caused by our own abort (user hit stop)
               if (this.status === 'stopped') break
-              console.error(`[opencode-session:${this.sessionId}] session.error:`, JSON.stringify(event.properties))
+              this.log('session:error ' + JSON.stringify(event.properties))
               this.status = 'errored'
               this.emit('exit')
               break
@@ -286,7 +429,7 @@ export class OpenCodeSession extends AgentSession {
             resolveConnected()
           }
           if (this.abortController?.signal.aborted || this.status === 'stopped') return
-          console.error(`[opencode-session:${this.sessionId}] SSE error:`, err)
+          this.log('sse:disconnect reason=' + String(err))
           this.status = 'errored'
           this.emit('message', {
             type: 'error',

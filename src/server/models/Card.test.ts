@@ -1,5 +1,7 @@
+import 'reflect-metadata'
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { DataSource } from 'typeorm'
+import { instanceToPlain } from 'class-transformer'
 import { Card, CardSubscriber } from './Card'
 import { messageBus } from '../bus'
 
@@ -109,5 +111,55 @@ describe('Card entity', () => {
     expect(boardHandler).toHaveBeenCalled()
     messageBus.unsubscribe(`card:${id}:deleted`, deletedHandler)
     messageBus.unsubscribe('board:changed', boardHandler)
+  })
+})
+
+describe('Card REST serialization', () => {
+  it('only exposes rest-group fields via instanceToPlain', () => {
+    const card = Object.assign(new Card(), {
+      id: 1,
+      title: 'Test',
+      description: 'Desc',
+      projectId: 5,
+      column: 'ready',
+      position: 0,
+      model: 'sonnet',
+      sessionId: 'secret-session',
+      worktreePath: '/tmp/wt',
+      worktreeBranch: 'feat-x',
+      useWorktree: true,
+      sourceBranch: 'main',
+      thinkingLevel: 'high',
+      promptsSent: 3,
+      turnsCompleted: 2,
+      prUrl: 'https://github.com/pr/1',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
+
+    const plain = instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true })
+
+    expect(plain).toEqual({
+      id: 1,
+      title: 'Test',
+      description: 'Desc',
+      projectId: 5,
+    })
+    expect(plain).not.toHaveProperty('column')
+    expect(plain).not.toHaveProperty('sessionId')
+    expect(plain).not.toHaveProperty('model')
+    expect(plain).not.toHaveProperty('worktreePath')
+  })
+
+  it('handles null projectId', () => {
+    const card = Object.assign(new Card(), {
+      id: 2,
+      title: 'No project',
+      description: 'Orphan',
+      projectId: null,
+    })
+
+    const plain = instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true })
+    expect(plain.projectId).toBeNull()
   })
 })
