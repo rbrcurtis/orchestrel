@@ -1,9 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Copy, Check } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ToolUseBlock } from './ToolUseBlock';
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import type { AgentMessage } from '../../src/shared/ws-protocol';
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
@@ -163,23 +162,15 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-// --- Thinking block (collapsible) ---
+// --- Thinking block (always visible, muted) ---
 
 function ThinkingBlock({ thinking }: { thinking: string }) {
-  const [open, setOpen] = useState(false);
-
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="text-xs text-muted-foreground">
-      <CollapsibleTrigger className="cursor-pointer hover:text-foreground flex items-center gap-1">
-        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-        Thinking...
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-1 whitespace-pre-wrap pl-3 border-l border-border">
-          {thinking}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+    <div className="text-xs text-muted-foreground">
+      <div className="whitespace-pre-wrap pl-3 border-l border-border">
+        {thinking}
+      </div>
+    </div>
   );
 }
 
@@ -265,6 +256,16 @@ function SystemBlock({ message }: { message: AgentMessage }) {
     return (
       <div className="text-xs text-muted-foreground py-1">
         Session started (model: {String(message.meta?.model ?? 'unknown')})
+      </div>
+    );
+  }
+
+  if (subtype === 'retry') {
+    const attempt = message.meta?.attempt as number | undefined;
+    const retryMsg = String(message.meta?.message ?? 'Retrying...');
+    return (
+      <div className="text-xs text-neon-amber py-1">
+        {retryMsg}{attempt != null && ` (attempt ${attempt})`}
       </div>
     );
   }

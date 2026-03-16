@@ -48,6 +48,10 @@ if (DEVELOPMENT) {
 }
 
 const HOST = process.env.HOST || '0.0.0.0';
-app.listen(PORT, HOST, () => {
+const httpServer = app.listen(PORT, HOST, () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
 });
+
+if (DEVELOPMENT) {
+  process.emit('dispatcher:httpServer', httpServer);
+}

@@ -12,6 +12,12 @@ function toCardResponse(card: Card): CardResponse {
   return instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true }) as CardResponse
 }
 
+function httpError(status: number, message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number }
+  err.status = status
+  return err
+}
+
 @Route('api')
 export class CardsController extends Controller {
   @Get('cards')
@@ -24,10 +30,7 @@ export class CardsController extends Controller {
   @SuccessResponse(201, 'Created')
   public async createCard(@Body() body: CardCreateBody): Promise<CardResponse> {
     const proj = await Project.findOneBy({ id: body.projectId })
-    if (!proj) {
-      this.setStatus(422)
-      throw new Error(`Project ${body.projectId} not found`)
-    }
+    if (!proj) throw httpError(422, `Project ${body.projectId} not found`)
 
     const card = await cardService.createCard({
       title: body.title,
@@ -43,10 +46,7 @@ export class CardsController extends Controller {
   @Put('cards/{id}')
   public async updateCard(@Path() id: number, @Body() body: CardUpdateBody): Promise<CardResponse> {
     const card = await Card.findOneBy({ id })
-    if (!card || card.column !== 'ready') {
-      this.setStatus(404)
-      throw new Error(`Card ${id} not found or not in ready column`)
-    }
+    if (!card || card.column !== 'ready') throw httpError(404, `Card ${id} not found or not in ready column`)
 
     const updated = await cardService.updateCard(id, {
       title: body.title,
@@ -57,15 +57,12 @@ export class CardsController extends Controller {
   }
 
   @Delete('cards/{id}')
-  @SuccessResponse(204, 'Deleted')
-  public async deleteCard(@Path() id: number): Promise<void> {
+  @SuccessResponse(200, 'Deleted')
+  public async deleteCard(@Path() id: number): Promise<Record<string, never>> {
     const card = await Card.findOneBy({ id })
-    if (!card || card.column !== 'ready') {
-      this.setStatus(404)
-      throw new Error(`Card ${id} not found or not in ready column`)
-    }
+    if (!card || card.column !== 'ready') throw httpError(404, `Card ${id} not found or not in ready column`)
 
     await cardService.deleteCard(id)
-    this.setStatus(204)
+    return {}
   }
 }
