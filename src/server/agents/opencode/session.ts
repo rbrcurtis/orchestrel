@@ -5,16 +5,18 @@ import { resolveModel } from './models'
 
 interface SdkClient {
   session: {
-    create(opts: { body: { title: string }; query: { directory: string } }): Promise<{ data?: { id: string }; id?: string }>
-    prompt(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
-    promptAsync(opts: { path: { id: string }; body: { parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string }; query: { directory: string } }): Promise<void>
-    abort(opts: { path: { id: string } }): Promise<void>
-    children(opts: { path: { id: string } }): Promise<Array<{ id: string; title: string; parentID?: string }>>
+    create(opts: { title: string; directory: string }): Promise<{ data?: { id: string }; id?: string }>
+    prompt(opts: { sessionID: string; parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string; directory: string }): Promise<void>
+    promptAsync(opts: { sessionID: string; parts: { type: string; text: string }[]; model: { providerID: string; modelID: string }; variant?: string; directory: string }): Promise<void>
+    abort(opts: { sessionID: string }): Promise<void>
+    children(opts: { sessionID: string }): Promise<Array<{ id: string; title: string; parentID?: string }>>
   }
   event: {
-    subscribe(opts: { signal: AbortSignal; headers: Record<string, string> }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
+    subscribe(params: { directory?: string }, opts?: { signal?: AbortSignal }): Promise<{ stream: AsyncIterable<{ type: string; properties: Record<string, unknown> }> }>
   }
-  postSessionIdPermissionsPermissionId(opts: { path: { id: string; permissionID: string }; body: { response: 'once' | 'always' | 'reject' } }): Promise<unknown>
+  permission: {
+    reply(opts: { requestID: string; reply: 'once' | 'always' | 'reject' }): Promise<unknown>
+  }
 }
 
 export class OpenCodeSession extends AgentSession {
@@ -74,7 +76,7 @@ export class OpenCodeSession extends AgentSession {
     this.childrenResolvePending = true
     try {
       const sdk = this.client as unknown as SdkClient
-      const res = await sdk.session.children({ path: { id: this.sessionId } })
+      const res = await sdk.session.children({ sessionID: this.sessionId })
       // SDK may wrap response in { data: [...] } or return bare array
       const children = Array.isArray(res) ? res : ((res as Record<string, unknown>).data as Array<{ id: string; title: string; parentID?: string }>) ?? []
       if (!Array.isArray(children)) {
@@ -118,8 +120,8 @@ export class OpenCodeSession extends AgentSession {
 
     if (!this.sessionId) {
       const res = await sdk.session.create({
-        body: { title: prompt.slice(0, 100) },
-        query: { directory: this.cwd },
+        title: prompt.slice(0, 100),
+        directory: this.cwd,
       })
       this.sessionId = res.data?.id ?? res.id ?? null
     }
@@ -130,13 +132,11 @@ export class OpenCodeSession extends AgentSession {
     this.promptsSent++
     this.log('prompt:send length=' + prompt.length)
     await sdk.session.promptAsync({
-      path: { id: this.sessionId! },
-      body: {
-        parts: [{ type: 'text', text: prompt }],
-        model: { providerID: this.providerID, modelID: this.modelID },
-        ...(this.variant !== undefined ? { variant: this.variant } : {}),
-      },
-      query: { directory: this.cwd },
+      sessionID: this.sessionId!,
+      parts: [{ type: 'text', text: prompt }],
+      model: { providerID: this.providerID, modelID: this.modelID },
+      ...(this.variant !== undefined ? { variant: this.variant } : {}),
+      directory: this.cwd,
     })
     this.log('prompt:ack')
   }
@@ -156,13 +156,11 @@ export class OpenCodeSession extends AgentSession {
 
     this.log('prompt:send length=' + content.length)
     await sdk.session.promptAsync({
-      path: { id: this.sessionId },
-      body: {
-        parts: [{ type: 'text', text: content }],
-        model: { providerID: this.providerID, modelID: this.modelID },
-        ...(this.variant !== undefined ? { variant: this.variant } : {}),
-      },
-      query: { directory: this.cwd },
+      sessionID: this.sessionId,
+      parts: [{ type: 'text', text: content }],
+      model: { providerID: this.providerID, modelID: this.modelID },
+      ...(this.variant !== undefined ? { variant: this.variant } : {}),
+      directory: this.cwd,
     })
     this.log('prompt:ack')
   }
@@ -188,7 +186,7 @@ export class OpenCodeSession extends AgentSession {
 
     try {
       this.log('kill')
-      await sdk.session.abort({ path: { id: this.sessionId } })
+      await sdk.session.abort({ sessionID: this.sessionId })
     } catch (err) {
       this.log('kill:error ' + String(err))
     }
@@ -216,10 +214,10 @@ export class OpenCodeSession extends AgentSession {
 
       const subscribe = async () => {
         try {
-          const events = await sdk.event.subscribe({
-            signal: this.abortController!.signal,
-            headers: { 'x-opencode-directory': encodeURIComponent(this.cwd) },
-          })
+          const events = await sdk.event.subscribe(
+            { directory: this.cwd },
+            { signal: this.abortController!.signal },
+          )
 
           // Resolve immediately once SSE connection is established
           // Don't wait for first event — that would deadlock if no other sessions are active
@@ -241,10 +239,7 @@ export class OpenCodeSession extends AgentSession {
               const permSessionId = perm.sessionID ?? this.sessionId!
               if (perm.id) {
                 this.log(`permission:approve ${perm.id} type=${perm.type}`)
-                sdk.postSessionIdPermissionsPermissionId({
-                  path: { id: permSessionId, permissionID: perm.id },
-                  body: { response: 'always' },
-                }).then(() => {
+                sdk.permission.reply({ requestID: perm.id, reply: 'always' }).then(() => {
                   this.log(`permission:approved ${perm.id}`)
                 }).catch(err => this.log('permission:error ' + String(err)))
               }

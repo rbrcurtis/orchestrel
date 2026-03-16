@@ -118,17 +118,20 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
       draft.thinkingLevel !== card.thinkingLevel
     : false;
 
-  async function saveAll() {
-    if (!card || !isDirty) return;
+  async function saveAll(overrides?: Partial<Draft>) {
+    if (!card) return;
+    const merged = { ...draft, ...overrides };
+    const dirty = overrides != null || isDirty;
+    if (!dirty) return;
     await cardStore.updateCard({
       id: card.id,
-      title: draft.title,
-      description: draft.description,
-      projectId: draft.projectId,
-      useWorktree: draft.useWorktree,
-      sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
-      model: draft.model,
-      thinkingLevel: draft.thinkingLevel,
+      title: merged.title,
+      description: merged.description,
+      projectId: merged.projectId,
+      useWorktree: merged.useWorktree,
+      sourceBranch: merged.sourceBranch as 'main' | 'dev' | null | undefined,
+      model: merged.model,
+      thinkingLevel: merged.thinkingLevel,
     });
   }
 
@@ -262,7 +265,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                   <Input
                     value={draft.title}
                     onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-                    onBlur={saveAll}
+                    onBlur={() => saveAll()}
                   />
                 </div>
               )}
@@ -343,7 +346,11 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                     id="useWorktree"
                     checked={draft.useWorktree}
                     disabled={!!card.worktreePath}
-                    onCheckedChange={(checked) => setDraft((d) => ({ ...d, useWorktree: checked === true }))}
+                    onCheckedChange={(checked) => {
+                      const v = checked === true;
+                      setDraft((d) => ({ ...d, useWorktree: v }));
+                      saveAll({ useWorktree: v });
+                    }}
                   />
                   <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
                     Use worktree

@@ -58,10 +58,13 @@ export function handleMessage(
         connections.send(ws, { type: 'sync', cards: syncCards as unknown as Card[], projects: syncProjects as unknown as Project[] })
       }).catch(err => console.error('[ws] subscribe sync error:', err))
 
-      // Subscribe to board:changed — forward card:updated for cards in subscribed columns
+      // Subscribe to board:changed — forward card:updated or card:deleted
       clientSubs.subscribe(ws, 'board:changed', (payload) => {
-        const { card, oldColumn, newColumn } = payload as { card: CardEntity | null; oldColumn: string | null; newColumn: string | null; id?: number }
-        if (!card) return
+        const { card, oldColumn, newColumn, id } = payload as { card: CardEntity | null; oldColumn: string | null; newColumn: string | null; id?: number }
+        if (!card) {
+          if (id) connections.send(ws, { type: 'card:deleted', data: { id } })
+          return
+        }
         const relevant = cols.length === 0 ||
           (oldColumn && cols.includes(oldColumn as never)) ||
           (newColumn && cols.includes(newColumn as never))

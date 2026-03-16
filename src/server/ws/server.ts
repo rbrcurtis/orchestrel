@@ -9,6 +9,20 @@ import { validateCfAccess } from './auth'
 // vite.config.ts with esbuild which uses TC39 decorators, not legacy TypeScript
 // decorators that TypeORM requires. Static imports would fail at config bundle time.
 
+// Cache httpServer across Vite server restarts (HMR re-runs configureServer)
+let _cachedHttpServer: HttpServer | null = null
+const _httpServerPromise = new Promise<HttpServer>((resolve) => {
+  process.once('dispatcher:httpServer', (server: HttpServer) => {
+    _cachedHttpServer = server
+    resolve(server)
+  })
+})
+
+function getHttpServer(): Promise<HttpServer> {
+  if (_cachedHttpServer) return Promise.resolve(_cachedHttpServer)
+  return _httpServerPromise
+}
+
 export const connections = new ConnectionManager()
 
 export function createWsServer(
@@ -79,11 +93,9 @@ export function wsServerPlugin(): Plugin {
       ]).then(async ([{ initDatabase }, { handleMessage }, { clientSubs }, { messageBus }, { openCodeServer }]) => {
         await initDatabase()
 
-        // WS server requires httpServer (only available when NOT in middlewareMode)
-        if (server.httpServer) {
-          createWsServer(server.httpServer, handleMessage, clientSubs)
-          console.log('[ws] WebSocket server attached to Vite dev server')
-        }
+        const httpServer = server.httpServer ?? await getHttpServer()
+        createWsServer(httpServer, handleMessage, clientSubs)
+        console.log('[ws] WebSocket server attached')
 
         // Publish OpenCode crash to bus — all connected clients get notified
         openCodeServer.onCrash = () => {
