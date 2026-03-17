@@ -77,6 +77,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   const [deletePending, setDeletePending] = useState(false);
   const [archivePending, setArchivePending] = useState(false);
   const archiveRef = useRef<HTMLButtonElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync draft from card data — keyed on card.id only to initialize form + collapse state once per card
   useEffect(() => {
@@ -107,6 +108,18 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
       thinkingLevel: card.thinkingLevel,
     });
   }, [card?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save: 250ms debounce for text fields only
+  useEffect(() => {
+    if (!card) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      void saveAll();
+    }, 250);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [draft.title, draft.description]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isDirty = card
     ? draft.title !== card.title ||
@@ -223,7 +236,11 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
           )}
           {card.sessionId && <CopyResumeButton sessionId={card.sessionId} />}
           <span
-            title={card.useWorktree ? 'Worktree enabled' : 'No worktree'}
+            title={
+              card.useWorktree
+                ? `Worktree from: ${card.sourceBranch ?? cardProject?.defaultBranch ?? 'default branch'}`
+                : 'No worktree'
+            }
             className="flex items-center shrink-0"
             style={
               card.useWorktree && cardProject?.color
@@ -301,14 +318,15 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                     onValueChange={(val) => {
                       const pid = val === '__none__' ? null : Number(val);
                       const proj = pid != null ? projectStore.getProject(pid) : undefined;
-                      setDraft((d) => ({
-                        ...d,
+                      const updates = {
                         projectId: pid,
                         useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
-                        sourceBranch: null,
-                        model: proj?.defaultModel ?? d.model,
-                        thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
-                      }));
+                        sourceBranch: null as string | null,
+                        model: proj?.defaultModel ?? draft.model,
+                        thinkingLevel: proj?.defaultThinkingLevel ?? draft.thinkingLevel,
+                      };
+                      setDraft((d) => ({ ...d, ...updates }));
+                      void saveAll(updates);
                     }}
                   >
                     <SelectTrigger className="w-full">
@@ -335,7 +353,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
               )}
 
               {/* Use Worktree */}
-              {selectedProject?.isGitRepo && (
+              {!!selectedProject?.isGitRepo && (
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="useWorktree"
@@ -354,12 +372,15 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
               )}
 
               {/* Source Branch */}
-              {selectedProject?.isGitRepo && draft.useWorktree && (
+              {!!selectedProject?.isGitRepo && draft.useWorktree && (
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
                   <Select
                     value={draft.sourceBranch ?? selectedProject.defaultBranch ?? ''}
-                    onValueChange={(val) => setDraft((d) => ({ ...d, sourceBranch: val }))}
+                    onValueChange={(val) => {
+                      setDraft((d) => ({ ...d, sourceBranch: val }));
+                      void saveAll({ sourceBranch: val });
+                    }}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -379,7 +400,10 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                     <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
                     <Select
                       value={draft.model}
-                      onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' | 'auto' }))}
+                      onValueChange={(val) => {
+                        setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' | 'auto' }));
+                        void saveAll({ model: val as 'sonnet' | 'opus' | 'auto' });
+                      }}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue />
@@ -395,9 +419,10 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                     <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
                     <Select
                       value={draft.thinkingLevel}
-                      onValueChange={(val) =>
-                        setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))
-                      }
+                      onValueChange={(val) => {
+                        setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }));
+                        void saveAll({ thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' });
+                      }}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue />
@@ -504,6 +529,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
     thinkingLevel: 'high',
   });
   const [creating, setCreating] = useState(false);
+  const [suggestingTitle, setSuggestingTitle] = useState(false);
 
   useEffect(() => {
     descRef.current?.focus();
@@ -569,7 +595,8 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
                 handleSave();
               }
             }}
-            placeholder="Card title"
+            placeholder={suggestingTitle ? 'Generating title...' : 'Card title'}
+            disabled={suggestingTitle}
           />
         </div>
 
@@ -583,6 +610,16 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
                 e.preventDefault();
                 handleSave();
+              }
+            }}
+            onBlur={async () => {
+              if (!draft.description.trim() || draft.title.trim()) return;
+              setSuggestingTitle(true);
+              try {
+                const title = await cardStore.suggestTitle(draft.description);
+                if (title) setDraft((d) => ({ ...d, title }));
+              } finally {
+                setSuggestingTitle(false);
               }
             }}
             rows={4}
@@ -630,7 +667,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
           </Select>
         </div>
 
-        {selectedProject?.isGitRepo && (
+        {!!selectedProject?.isGitRepo && (
           <div className="flex items-center gap-2">
             <Checkbox
               id="newUseWorktree"
@@ -643,7 +680,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
           </div>
         )}
 
-        {selectedProject?.isGitRepo && draft.useWorktree && (
+        {!!selectedProject?.isGitRepo && draft.useWorktree && (
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
             <Select
