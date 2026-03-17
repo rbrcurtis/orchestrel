@@ -9,7 +9,7 @@ import { validateCfAccess } from './auth'
 // vite.config.ts with esbuild which uses TC39 decorators, not legacy TypeScript
 // decorators that TypeORM requires. Static imports would fail at config bundle time.
 
-// Cache httpServer across Vite server restarts (HMR re-runs configureServer)
+// Cache across Vite server restarts (HMR re-runs configureServer)
 let _cachedHttpServer: HttpServer | null = null
 const _httpServerPromise = new Promise<HttpServer>((resolve) => {
   process.once('dispatcher:httpServer', (server: HttpServer) => {
@@ -22,6 +22,10 @@ function getHttpServer(): Promise<HttpServer> {
   if (_cachedHttpServer) return Promise.resolve(_cachedHttpServer)
   return _httpServerPromise
 }
+
+// Guard: only run full async init once (WSS, OC listeners, OpenCode).
+// REST middleware is re-wired on each restart via the restApp closure.
+let _initialized = false
 
 export const connections = new ConnectionManager()
 
@@ -93,15 +97,7 @@ export function wsServerPlugin(): Plugin {
       ]).then(async ([{ initDatabase }, { handleMessage }, { clientSubs }, { messageBus }, { openCodeServer }]) => {
         await initDatabase()
 
-        const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc')
-        const { sessionService } = await import('../services/session')
-        const { removeWorktree, worktreeExists } = await import('../worktree')
-        registerAutoStart(undefined, sessionService)
-        registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists })
-        console.log('[oc] controller listeners registered')
-
-        // REST API middleware (tsoa-generated routes) — registered before WS/OpenCode
-        // because those depend on httpServer which hangs after Vite restarts
+        // REST API routes are re-wired on each restart (restApp closure updates)
         const express = await import('express')
         const { RegisterRoutes } = await import('../api/generated/routes')
 
@@ -134,6 +130,18 @@ export function wsServerPlugin(): Plugin {
 
         restApp = router
         console.log('[rest] API routes registered')
+
+        // Everything below must only run once — WSS, OC listeners, OpenCode server.
+        // Vite re-runs configureServer on restart; duplicate WSS/listeners break subscriptions.
+        if (_initialized) return
+        _initialized = true
+
+        const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc')
+        const { sessionService } = await import('../services/session')
+        const { removeWorktree, worktreeExists } = await import('../worktree')
+        registerAutoStart(undefined, sessionService)
+        registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists })
+        console.log('[oc] controller listeners registered')
 
         const httpServer = server.httpServer ?? await getHttpServer()
         createWsServer(httpServer, handleMessage, clientSubs)
