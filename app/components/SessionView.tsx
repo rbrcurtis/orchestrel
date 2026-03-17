@@ -90,7 +90,7 @@ export const SessionView = observer(function SessionView({
   // Show notification when session errors
   useEffect(() => {
     if (sessionStatus === 'errored') {
-      const last = conversation.findLast(m => m.type === 'error');
+      const last = conversation.findLast((m) => m.type === 'error');
       if (last?.content) setNotification(last.content);
     } else {
       setNotification(null);
@@ -110,7 +110,10 @@ export const SessionView = observer(function SessionView({
 
     const ro = new ResizeObserver(() => {
       const newHeight = content.scrollHeight;
-      if (newHeight <= prevHeight) { prevHeight = newHeight; return; }
+      if (newHeight <= prevHeight) {
+        prevHeight = newHeight;
+        return;
+      }
 
       // Compute near-bottom BEFORE updating prevHeight:
       // If user was within threshold of the OLD bottom, they're "following along"
@@ -131,7 +134,10 @@ export const SessionView = observer(function SessionView({
     });
 
     ro.observe(content);
-    return () => { ro.disconnect(); if (rafId) cancelAnimationFrame(rafId); };
+    return () => {
+      ro.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [cardId]);
 
   // Track scroll position for near-bottom gating + scroll-to-bottom button
@@ -152,7 +158,10 @@ export const SessionView = observer(function SessionView({
   // Compaction detection
   useEffect(() => {
     const len = conversation.length;
-    if (len === 0) { prevConvLen.current = 0; return; }
+    if (len === 0) {
+      prevConvLen.current = 0;
+      return;
+    }
     const last = conversation[len - 1];
     if (last.type === 'system' && last.meta?.subtype === 'compact_boundary') {
       setCompacted(true);
@@ -183,10 +192,9 @@ export const SessionView = observer(function SessionView({
   }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
-  const contextPercent = contextWindow > 0 ? Math.min(100, contextTokens / contextWindow * 100) : 0;
-  const retryInfo = sessionStatus === 'retry'
-    ? conversation.findLast(m => m.type === 'system' && m.meta?.subtype === 'retry')
-    : null;
+  const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
+  const retryInfo =
+    sessionStatus === 'retry' ? conversation.findLast((m) => m.type === 'system' && m.meta?.subtype === 'retry') : null;
 
   async function handleSend(message: string, files?: FileRef[]) {
     try {
@@ -201,7 +209,10 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: 'sonnet' | 'opus' | 'auto'; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' }) {
+  async function handleUpdateCard(data: {
+    model?: 'sonnet' | 'opus' | 'auto';
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+  }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -212,12 +223,7 @@ export const SessionView = observer(function SessionView({
         <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden">
           <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0">
             {conversation.map((row, i) => (
-              <MessageBlock
-                key={`${row.id}-${i}`}
-                message={row}
-                toolOutputs={toolOutputs}
-                accentColor={accentColor}
-              />
+              <MessageBlock key={`${row.id}-${i}`} message={row} toolOutputs={toolOutputs} accentColor={accentColor} />
             ))}
             <div ref={bottomRef} />
           </div>
@@ -302,6 +308,7 @@ export const SessionView = observer(function SessionView({
         hasSession={!!sessionId || sessionActive}
         isPending={isStarting}
         onSend={handleSend}
+        onStop={handleStop}
         sendPending={false}
         contextPercent={contextPercent}
         compacted={compacted}
@@ -379,6 +386,7 @@ function PromptInput({
   hasSession,
   isPending,
   onSend,
+  onStop,
   sendPending,
   contextPercent,
   compacted,
@@ -388,13 +396,18 @@ function PromptInput({
   hasSession: boolean;
   isPending: boolean;
   onSend: (message: string, files?: FileRef[]) => void;
+  onStop: () => void;
   sendPending: boolean;
   contextPercent: number;
   compacted: boolean;
 }) {
   const storageKey = `prompt-draft-${cardId}`;
   const [text, setText] = useState(() => {
-    try { return localStorage.getItem(storageKey) ?? ''; } catch { return ''; }
+    try {
+      return localStorage.getItem(storageKey) ?? '';
+    } catch {
+      return '';
+    }
   });
   const [files, setFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -405,12 +418,21 @@ function PromptInput({
   // Sync text to localStorage on every change
   function updateText(val: string) {
     setText(val);
-    try { if (val) localStorage.setItem(storageKey, val); else localStorage.removeItem(storageKey); } catch { /* localStorage unavailable */ }
+    try {
+      if (val) localStorage.setItem(storageKey, val);
+      else localStorage.removeItem(storageKey);
+    } catch {
+      /* localStorage unavailable */
+    }
   }
 
   // Reload draft when switching cards
   useEffect(() => {
-    try { setText(localStorage.getItem(storageKey) ?? ''); } catch { setText(''); }
+    try {
+      setText(localStorage.getItem(storageKey) ?? '');
+    } catch {
+      setText('');
+    }
   }, [storageKey]);
 
   useEffect(() => {
@@ -470,6 +492,11 @@ function PromptInput({
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape' && isRunning) {
+      e.preventDefault();
+      onStop();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -482,7 +509,10 @@ function PromptInput({
     <form
       onSubmit={handleSubmit}
       className="px-3 py-2 border-t border-border bg-muted shrink-0"
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
     >
@@ -507,9 +537,7 @@ function PromptInput({
         </div>
       )}
       {uploadError && (
-        <div className="text-xs text-destructive mb-1 text-right pr-[46px] sm:pr-[38px]">
-          {uploadError}
-        </div>
+        <div className="text-xs text-destructive mb-1 text-right pr-[46px] sm:pr-[38px]">{uploadError}</div>
       )}
       <div className={`flex gap-2 ${dragging ? 'ring-2 ring-neon-cyan/50 rounded-md' : ''}`}>
         <div className="relative flex-1">
@@ -552,11 +580,7 @@ function PromptInput({
             compacted={compacted}
             onCompact={hasSession ? () => onSend('/compact') : undefined}
           />
-          <Button
-            type="submit"
-            disabled={disabled}
-            className="size-[50px] sm:size-[34px] p-0"
-          >
+          <Button type="submit" disabled={disabled} className="size-[50px] sm:size-[34px] p-0">
             <Send className="size-5 sm:size-4" />
           </Button>
         </div>
