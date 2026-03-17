@@ -332,6 +332,13 @@ export class OpenCodeSession extends AgentSession {
             // Log every SSE event with full payload for traceability
             this.log(`sse:event ${JSON.stringify({ type: event.type, sid: sessionID ?? 'none', timer: this.promptTimer ? 'active' : 'null', props: event.properties })}`)
 
+            // Any event carrying our session ID = session is alive, reset timer
+            // This catches message.part.delta, step-start, empty reasoning, etc.
+            // that normalizeOpenCodeEvent() may not recognize
+            if (sessionID === this.sessionId && this.promptTimer) {
+              this.resetPromptTimer(`sse:${event.type}`)
+            }
+
             // Child session event handling
             if (sessionID && sessionID !== this.sessionId) {
               // Register child sessions from session.created (carries parentID)
@@ -438,16 +445,8 @@ export class OpenCodeSession extends AgentSession {
               if (part?.messageID && this.userMessageIds.has(part.messageID)) continue
             }
 
-            // session.updated for our session = active work, reset timer
-            // (these normalize to null so they won't reset via the msg path below)
-            if (event.type === 'session.updated' && this.promptTimer) {
-              this.resetPromptTimer('session.updated')
-            }
-
             const msg = normalizeOpenCodeEvent(event)
             if (msg) {
-              // Reset timeout on real messages (text, tool_call, tool_result, etc.)
-              if (this.promptTimer) this.resetPromptTimer(`msg:${msg.type}`)
               this.emit('message', msg)
             }
 
@@ -455,8 +454,6 @@ export class OpenCodeSession extends AgentSession {
             if (event.type === 'session.status') {
               const { status } = event.properties as { sessionID?: string; status?: { type?: string; attempt?: number; next?: number; message?: string } }
               if (status?.type === 'busy') {
-                // Busy = agent actively processing — reset timeout
-                if (this.promptTimer) this.resetPromptTimer('session.status:busy')
                 if (this.status !== 'running') {
                   this.status = 'running'
                   this.emit('message', {
