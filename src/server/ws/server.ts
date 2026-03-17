@@ -100,22 +100,8 @@ export function wsServerPlugin(): Plugin {
         registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists })
         console.log('[oc] controller listeners registered')
 
-        const httpServer = server.httpServer ?? await getHttpServer()
-        createWsServer(httpServer, handleMessage, clientSubs)
-        console.log('[ws] WebSocket server attached')
-
-        // Publish OpenCode crash to bus — all connected clients get notified
-        openCodeServer.onCrash = () => {
-          messageBus.publish('system:error', {
-            message: 'OpenCode server crashed, restarting...',
-          })
-        }
-
-        openCodeServer.start().catch((err: unknown) => {
-          console.error('[opencode] failed to start:', err)
-        })
-
-        // REST API middleware (tsoa-generated routes)
+        // REST API middleware (tsoa-generated routes) — registered before WS/OpenCode
+        // because those depend on httpServer which hangs after Vite restarts
         const express = await import('express')
         const { RegisterRoutes } = await import('../api/generated/routes')
 
@@ -148,6 +134,21 @@ export function wsServerPlugin(): Plugin {
 
         restApp = router
         console.log('[rest] API routes registered')
+
+        const httpServer = server.httpServer ?? await getHttpServer()
+        createWsServer(httpServer, handleMessage, clientSubs)
+        console.log('[ws] WebSocket server attached')
+
+        // Publish OpenCode crash to bus — all connected clients get notified
+        openCodeServer.onCrash = () => {
+          messageBus.publish('system:error', {
+            message: 'OpenCode server crashed, restarting...',
+          })
+        }
+
+        openCodeServer.start().catch((err: unknown) => {
+          console.error('[opencode] failed to start:', err)
+        })
       }).catch((err) => {
         console.error('[db] failed to initialize:', err)
       })
