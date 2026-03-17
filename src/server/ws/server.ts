@@ -1,6 +1,4 @@
 import { WebSocketServer } from 'ws'
-import type { Server as HttpServer } from 'http'
-import type { Http2SecureServer } from 'http2'
 import type { Plugin } from 'vite'
 import { ConnectionManager } from './connections'
 import { validateCfAccess } from './auth'
@@ -8,48 +6,17 @@ import { validateCfAccess } from './auth'
 // NOTE: TypeORM entity imports must be lazy (dynamic import) because Vite bundles
 // vite.config.ts with esbuild which uses TC39 decorators, not legacy TypeScript
 // decorators that TypeORM requires. Static imports would fail at config bundle time.
-
-// Cache across Vite server restarts (HMR re-runs configureServer)
-let _cachedHttpServer: HttpServer | null = null
-const _httpServerPromise = new Promise<HttpServer>((resolve) => {
-  process.once('dispatcher:httpServer', (server: HttpServer) => {
-    _cachedHttpServer = server
-    resolve(server)
-  })
-})
-
-function getHttpServer(): Promise<HttpServer> {
-  if (_cachedHttpServer) return Promise.resolve(_cachedHttpServer)
-  return _httpServerPromise
-}
-
-// Guard: only run full async init once (WSS, OC listeners, OpenCode).
-// REST middleware is re-wired on each restart via the restApp closure.
-let _initialized = false
+//
+// State that must survive Vite restarts lives in src/server/init-state.ts (dynamically
+// imported, so Node.js module cache preserves it across re-bundles).
 
 export const connections = new ConnectionManager()
 
-export function createWsServer(
-  httpServer: HttpServer | Http2SecureServer,
+function createWsServer(
   handleMessage: (ws: import('ws').WebSocket, raw: unknown, connections: ConnectionManager) => void,
   clientSubs: { unsubscribeAll: (ws: import('ws').WebSocket) => void },
 ) {
   const wss = new WebSocketServer({ noServer: true })
-
-  httpServer.on('upgrade', async (req, socket, head) => {
-    if (req.url !== '/ws') return
-
-    const valid = await validateCfAccess(req)
-    if (!valid) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-      socket.destroy()
-      return
-    }
-
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req)
-    })
-  })
 
   wss.on('connection', (ws) => {
     connections.add(ws)
@@ -94,7 +61,8 @@ export function wsServerPlugin(): Plugin {
         import('./subscriptions'),
         import('../bus'),
         import('../opencode/server'),
-      ]).then(async ([{ initDatabase }, { handleMessage }, { clientSubs }, { messageBus }, { openCodeServer }]) => {
+        import('../init-state'),
+      ]).then(async ([{ initDatabase }, { handleMessage }, { clientSubs }, { messageBus }, { openCodeServer }, initState]) => {
         await initDatabase()
 
         // REST API routes are re-wired on each restart (restApp closure updates)
@@ -131,10 +99,33 @@ export function wsServerPlugin(): Plugin {
         restApp = router
         console.log('[rest] API routes registered')
 
-        // Everything below must only run once — WSS, OC listeners, OpenCode server.
-        // Vite re-runs configureServer on restart; duplicate WSS/listeners break subscriptions.
-        if (_initialized) return
-        _initialized = true
+        // --- WSS: create once, re-attach upgrade handler on each restart ---
+        let wss = initState.wss
+        if (!wss) {
+          wss = createWsServer(handleMessage, clientSubs)
+          initState.setWss(wss)
+        }
+
+        const httpServer = await initState.getHttpServer()
+        initState.attachUpgradeHandler(httpServer, async (req: import('http').IncomingMessage, socket: import('stream').Duplex, head: Buffer) => {
+          if (req.url !== '/ws') return
+
+          const valid = await validateCfAccess(req)
+          if (!valid) {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+            socket.destroy()
+            return
+          }
+
+          wss!.handleUpgrade(req, socket, head, (ws) => {
+            wss!.emit('connection', ws, req)
+          })
+        })
+        console.log('[ws] WebSocket server attached')
+
+        // --- One-time init: OC listeners, OpenCode server ---
+        if (initState.initialized) return
+        initState.markInitialized()
 
         const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc')
         const { sessionService } = await import('../services/session')
@@ -143,11 +134,6 @@ export function wsServerPlugin(): Plugin {
         registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists })
         console.log('[oc] controller listeners registered')
 
-        const httpServer = server.httpServer ?? await getHttpServer()
-        createWsServer(httpServer, handleMessage, clientSubs)
-        console.log('[ws] WebSocket server attached')
-
-        // Publish OpenCode crash to bus — all connected clients get notified
         openCodeServer.onCrash = () => {
           messageBus.publish('system:error', {
             message: 'OpenCode server crashed, restarting...',
