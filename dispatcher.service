@@ -7,8 +7,9 @@ Wants=opencode.service
 Type=simple
 User=ryan
 WorkingDirectory=/home/ryan/Code/dispatcher
-ExecStart=/home/ryan/.nvm/versions/node/v24.2.0/bin/pnpm dev
-Environment=NODE_ENV=development
+ExecStart=/home/ryan/.nvm/versions/node/v24.2.0/bin/pnpm start
+Environment=NODE_ENV=production
+Environment=CF_TEAM_DOMAIN=accordyx
 Environment=PATH=/home/ryan/.nvm/versions/node/v24.2.0/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PORT=6194
 Restart=on-failure
