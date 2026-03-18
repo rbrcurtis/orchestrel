@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make child session (subagent) work visible in the dispatcher UI and add structured diagnostic logging for session lifecycle.
+**Goal:** Make child session (subagent) work visible in the orchestrel UI and add structured diagnostic logging for session lifecycle.
 
 **Architecture:** Server-side SSE event processing in `OpenCodeSession` gains child session tracking and forwards lightweight activity messages. Client-side MobX store tracks subagent state, rendered as stacked rows pinned above the prompt input. All changes ride on existing message bus and WS protocol — no new transport.
 
@@ -393,7 +393,7 @@ if (event.type === 'session.status') {
 
 - [ ] **Step 6: Verify build compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No type errors
 
 - [ ] **Step 7: Commit**
@@ -660,10 +660,10 @@ git commit -m "feat: integrate SubagentFeed + retry badge in SessionView"
 
 ### Task 8: Manual smoke test
 
-- [ ] **Step 1: Restart dispatcher service**
+- [ ] **Step 1: Restart orchestrel service**
 
 ```bash
-sudo systemctl restart dispatcher.service
+sudo systemctl restart orchestrel.service
 ```
 
 - [ ] **Step 2: Test subagent visibility**
@@ -678,7 +678,7 @@ Open dispatch.rbrcurtis.com. Start a card in Running with a project and a prompt
 - [ ] **Step 3: Test diagnostic logging**
 
 ```bash
-journalctl -u dispatcher.service --no-pager -n 100 | grep '\[session:'
+journalctl -u orchestrel.service --no-pager -n 100 | grep '\[session:'
 ```
 
 Verify structured log lines appear with `status:`, `prompt:send`, `sse:connect`, `child:discovered`, `child:` prefix for subagent events.

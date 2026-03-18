@@ -6,21 +6,21 @@
 
 ## Summary
 
-Replace both agent providers (Claude SDK, Kiro ACP) with a single OpenCode backend. Dispatcher becomes a kanban UI and session orchestrator over OpenCode's agent layer. One `opencode serve` process handles all model providers, session management, tool execution, and MCP integration.
+Replace both agent providers (Claude SDK, Kiro ACP) with a single OpenCode backend. Orchestrel becomes a kanban UI and session orchestrator over OpenCode's agent layer. One `opencode serve` process handles all model providers, session management, tool execution, and MCP integration.
 
 ## Motivation
 
 - Kiro CLI is painful to integrate — poor compaction support (summarize + new session), fragile ACP protocol, stdio parsing headaches
 - Maintaining two divergent agent protocol integrations (and dreading adding more) is a real cost
 - OpenCode supports 75+ model providers through a single interface, including Anthropic (Claude) and Kiro
-- OpenCode handles context compaction, tool execution, MCP — all the agent plumbing Dispatcher currently reimplements per provider
+- OpenCode handles context compaction, tool execution, MCP — all the agent plumbing Orchestrel currently reimplements per provider
 - TUI interop: users can `opencode attach` to interact with the same sessions directly
 
 ## Architecture
 
 ### OpenCode Server Lifecycle
 
-Dispatcher spawns `opencode serve` as a child process on startup:
+Orchestrel spawns `opencode serve` as a child process on startup:
 
 - **Port:** 4097 (configurable)
 - **Config:** `data/opencode.json`
@@ -43,11 +43,11 @@ Three providers configured in `data/opencode.json`:
 | `kiro-okkanti` | Okkanti project (Kiro account) | opencode-kiro-auth plugin |
 | `kiro-trackable` | Trackable project (Kiro account) | opencode-kiro-auth plugin |
 
-Projects in Dispatcher store a `providerID` that maps to one of these.
+Projects in Orchestrel store a `providerID` that maps to one of these.
 
 ### Kiro Auth Plugin
 
-**External dependency** — not part of Dispatcher codebase.
+**External dependency** — not part of Orchestrel codebase.
 
 Fork of [opencode-kiro-auth](https://github.com/tickernelz/opencode-kiro-auth) with one enhancement: support multiple named instances with isolated credential storage, driven by config rather than hardcoded single export.
 
@@ -59,7 +59,7 @@ Each instance gets its own provider ID, account DB, and `AccountManager`. The ex
 - Model: sonnet / opus
 - Thinking level: off / low / medium / high
 
-**Backend mapping:** Dispatcher combines `project.providerID` + `card.model` + `card.thinkingLevel` into `{ providerID, modelID }` for the SDK call.
+**Backend mapping:** Orchestrel combines `project.providerID` + `card.model` + `card.thinkingLevel` into `{ providerID, modelID }` for the SDK call.
 
 Example: `kiro-okkanti` + `opus` + `high` → `{ providerID: "kiro-okkanti", modelID: "claude-opus-4-6-thinking" }`
 
@@ -81,18 +81,18 @@ Each SDK call includes `?directory=/path/to/worktree` query param (or `x-opencod
 
 - **Global:** Shared-memory MCP configured in `data/opencode.json`
 - **Per-project:** Each project's directory can contain its own `opencode.json` with project-specific MCP servers
-- **Dispatcher responsibility:** None. MCP is fully delegated to OpenCode.
+- **Orchestrel responsibility:** None. MCP is fully delegated to OpenCode.
 
 ### Session History
 
 Use OpenCode SDK exclusively:
 - **Live streaming:** SSE subscription via `client.event.subscribe()`, scoped to session. Events normalized to `AgentMessage` and forwarded to WS subscribers.
 - **History replay:** `client.session.messages(id)` returns the full message list for a session. Each message is normalized to `AgentMessage` format before sending to the client.
-- **No file tailing, no Dispatcher DB duplication.** All Claude/Kiro-specific log parsing, JSONL reading, and file tailing is eliminated.
+- **No file tailing, no Orchestrel DB duplication.** All Claude/Kiro-specific log parsing, JSONL reading, and file tailing is eliminated.
 
 ### Session Resume
 
-OpenCode persists sessions in its own SQLite DB. After Dispatcher restart:
+OpenCode persists sessions in its own SQLite DB. After Orchestrel restart:
 1. Child OpenCode process restarts, DB persists
 2. Cards with `sessionId` reconnect to existing OpenCode sessions
 3. `session.get(id)` verifies session exists, `session.prompt()` sends follow-ups
@@ -205,7 +205,7 @@ File tailing for externally-active sessions is eliminated — sessions started v
 **Types:** `AgentType = 'opencode'`
 
 **Migration:**
-1. Backup `data/dispatcher.db` to `data/dispatcher.db.backup`
+1. Backup `data/orchestrel.db` to `data/orchestrel.db.backup`
 2. Delete all existing cards (intentional clean slate — old sessions are Claude/Kiro and won't resolve against OpenCode's DB)
 3. Schema migration: add `providerID`, drop `agentType`/`agentProfile`
 4. Update existing project rows with appropriate `providerID`
@@ -244,17 +244,17 @@ File tailing for externally-active sessions is eliminated — sessions started v
 
 ## Deployment
 
-**Systemd service:** No change — `dispatcher.service` runs `pnpm dev` on port 6194. OpenCode is a child process.
+**Systemd service:** No change — `orchestrel.service` runs `pnpm dev` on port 6194. OpenCode is a child process.
 
 **OpenCode binary:** Must be on PATH. Install globally via npm or pin path.
 
 **Shell alias:** `alias oc="opencode attach http://localhost:4097"` for TUI access.
 
-**Cloudflare tunnel:** No change — only Dispatcher's port 6194 is exposed.
+**Cloudflare tunnel:** No change — only Orchestrel's port 6194 is exposed.
 
 ## TUI Interop
 
-Users can `opencode attach http://localhost:4097` to interact with the same sessions via OpenCode's terminal UI. Sessions started in TUI are visible to Dispatcher (future: import orphan sessions into cards).
+Users can `opencode attach http://localhost:4097` to interact with the same sessions via OpenCode's terminal UI. Sessions started in TUI are visible to Orchestrel (future: import orphan sessions into cards).
 
 ## Risks
 

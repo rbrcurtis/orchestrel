@@ -2,7 +2,7 @@
 
 ## Problem
 
-OpenCode SSE emits `text` and `thinking` events as small deltas (token-by-token). The OC TUI streams these live. Dispatcher's SessionStore pushes each delta as a separate conversation row, so the UI shows one big block when thinking finishes rather than streaming content as it arrives.
+OpenCode SSE emits `text` and `thinking` events as small deltas (token-by-token). The OC TUI streams these live. Orchestrel's SessionStore pushes each delta as a separate conversation row, so the UI shows one big block when thinking finishes rather than streaming content as it arrives.
 
 ## Solution
 

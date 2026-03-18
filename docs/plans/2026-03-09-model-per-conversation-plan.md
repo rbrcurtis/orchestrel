@@ -441,7 +441,7 @@ git commit -m "feat: pass model+thinkingLevel from card to SessionView"
 **Step 1: Restart service to pick up server changes**
 
 ```bash
-sudo systemctl restart dispatcher
+sudo systemctl restart orchestrel
 ```
 
 **Step 2: Manual smoke test**

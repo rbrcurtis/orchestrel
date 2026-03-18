@@ -5,7 +5,7 @@
 
 ## Problem
 
-The server-side session lifecycle (OpenCode ↔ Dispatcher) is tightly coupled to WebSocket client connections. Session event handlers that perform DB mutations (card column transitions, counter updates) are registered per-WebSocket in `subscribeToSession()`. If no client is connected when a session completes a turn, the DB update never fires and cards get stuck in `running`.
+The server-side session lifecycle (OpenCode ↔ Orchestrel) is tightly coupled to WebSocket client connections. Session event handlers that perform DB mutations (card column transitions, counter updates) are registered per-WebSocket in `subscribeToSession()`. If no client is connected when a session completes a turn, the DB update never fires and cards get stuck in `running`.
 
 More broadly, the server layer has no separation of concerns: `beginSession()` takes a `ws` parameter, `DbMutator` reaches directly into `ConnectionManager.broadcast()`, and data access, business logic, and transport are interleaved throughout.
 
@@ -263,7 +263,7 @@ import { DataSource } from 'typeorm'
 
 export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
-  database: 'data/dispatcher.db',
+  database: 'data/orchestrel.db',
   entities: [Card, Project],
   subscribers: [CardSubscriber, ProjectSubscriber],
   synchronize: false, // manage schema via migrations
@@ -330,7 +330,7 @@ Handles both new sessions and follow-up messages to existing sessions.
 1. `Card.findOneBy({ id: cardId })` — load card
 2. Validate title/description (non-empty required for running)
 3. Move card to running only if not already there: `if (card.column !== 'running') { card.column = 'running'; await card.save() }`
-4. Handle file attachments: validate paths against `/tmp/dispatcher-uploads/`, build augmented prompt with file list
+4. Handle file attachments: validate paths against `/tmp/orchestrel-uploads/`, build augmented prompt with file list
 5. `ensureWorktree(card)` — create worktree if needed, `await card.save()` to persist path
 6. Resolve provider/model from card + project
 7. `sessionManager.create(cardId, opts)` — create agent session

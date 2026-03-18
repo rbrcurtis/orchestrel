@@ -1,4 +1,4 @@
-# Dispatcher
+# Orchestrel
 
 A personal kanban board that orchestrates AI coding agents. Drag a card to "Running" and an AI session starts automatically — complete with git worktree isolation, real-time streaming output, and context window tracking.
 
@@ -86,7 +86,7 @@ Built for managing multiple concurrent AI-assisted development tasks from a sing
 - **Server-owned session lifecycle** — the client never starts sessions directly. Moving a card to "Running" or sending a prompt triggers server-side session creation.
 - **WebSocket-first communication** — all mutations and subscriptions flow through a typed WebSocket protocol (Zod-validated).
 - **Message bus** — TypeORM entity subscribers emit events to an internal bus, which fans out to WebSocket subscriptions.
-- **SSE multiplexing** — OpenCode emits server-sent events; Dispatcher filters by session ID to route messages to the correct card.
+- **SSE multiplexing** — OpenCode emits server-sent events; Orchestrel filters by session ID to route messages to the correct card.
 
 ## Prerequisites
 
@@ -98,8 +98,8 @@ Built for managing multiple concurrent AI-assisted development tasks from a sing
 ## Setup
 
 ```bash
-git clone https://github.com/your-username/dispatcher.git
-cd dispatcher
+git clone https://github.com/your-username/orchestrel.git
+cd orchestrel
 pnpm install
 
 # Copy and configure environment
@@ -130,7 +130,7 @@ pnpm start
 
 ### Cloudflare Access (optional)
 
-If exposing via Cloudflare Tunnel, Dispatcher validates `CF_Authorization` JWTs. Set the `CF_TEAM_DOMAIN` environment variable to your Cloudflare Access team domain. In development mode, auth is bypassed.
+If exposing via Cloudflare Tunnel, Orchestrel validates `CF_Authorization` JWTs. Set the `CF_TEAM_DOMAIN` environment variable to your Cloudflare Access team domain. In development mode, auth is bypassed.
 
 ## Project Structure
 

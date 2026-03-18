@@ -4,7 +4,7 @@
 
 **Goal:** Let users attach files (images, PDFs, docs, code) to chat messages so Claude can review them.
 
-**Architecture:** Separate Express upload endpoint saves files to `/tmp/dispatcher-uploads/{sessionId}/`. tRPC `sendMessage` extended to accept file references. Server prepends file paths to the text prompt so Claude Code reads them via its native Read tool. UI gets paperclip button, drag-and-drop, clipboard paste, and file chips.
+**Architecture:** Separate Express upload endpoint saves files to `/tmp/orchestrel-uploads/{sessionId}/`. tRPC `sendMessage` extended to accept file references. Server prepends file paths to the text prompt so Claude Code reads them via its native Read tool. UI gets paperclip button, drag-and-drop, clipboard paste, and file chips.
 
 **Tech Stack:** multer (file upload middleware), Express route, React (file input, drag/drop, paste handlers)
 
@@ -61,7 +61,7 @@ const MAX_FILES = 10;
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const sessionId = req.body?.sessionId || 'unsorted';
-    const dir = join('/tmp/dispatcher-uploads', sessionId);
+    const dir = join('/tmp/orchestrel-uploads', sessionId);
     mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -143,7 +143,7 @@ Expected: JSON response with file ref including `id`, `name`, `mimeType`, `path`
 **Step 4: Verify file on disk**
 
 ```bash
-ls /tmp/dispatcher-uploads/test-session/
+ls /tmp/orchestrel-uploads/test-session/
 ```
 
 Expected: file exists with UUID prefix.
@@ -582,7 +582,7 @@ git commit -m "feat: show file attachment chips in chat history"
 **Step 1: Restart the service**
 
 ```bash
-sudo systemctl restart dispatcher
+sudo systemctl restart orchestrel
 ```
 
 **Step 2: Test text-only message (regression)**

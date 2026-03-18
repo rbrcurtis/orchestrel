@@ -1,6 +1,6 @@
 {
-  "name": "Dispatcher",
-  "short_name": "Dispatcher",
+  "name": "Orchestrel",
+  "short_name": "Orchestrel",
   "description": "Personal kanban board + Claude Code orchestration",
   "start_url": "/",
   "display": "standalone",

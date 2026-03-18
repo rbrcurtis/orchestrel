@@ -99,7 +99,7 @@ async mkdir(path: string): Promise<unknown> {
 
 - [ ] **Step 5: Verify TypeScript compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No errors
 
 - [ ] **Step 6: Commit**
@@ -254,7 +254,7 @@ The current `onClick={() => onSelect(currentPath, false)}` on the Select button 
 
 - [ ] **Step 6: Verify TypeScript compiles and test visually**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No errors
 
 Verify in browser: open project settings, click Browse on path field. Confirm:
@@ -416,7 +416,7 @@ agentProfile?: string | null
 
 - [ ] **Step 6: Verify TypeScript compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No errors
 
 - [ ] **Step 7: Test in browser**
@@ -632,7 +632,7 @@ export class KiroSession extends AgentSession {
 
 - [ ] **Step 2: Verify TypeScript compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: Errors about missing `./messages` — that's expected, we create it next.
 
 - [ ] **Step 3: Commit**
@@ -749,7 +749,7 @@ export function normalizeKiroMessage(params: Record<string, unknown>): AgentMess
 
 - [ ] **Step 2: Verify TypeScript compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No errors (KiroSession imports this)
 
 - [ ] **Step 3: Commit**
@@ -788,7 +788,7 @@ case 'kiro':
 
 - [ ] **Step 2: Verify TypeScript compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No errors
 
 - [ ] **Step 3: Commit**
@@ -1008,7 +1008,7 @@ export class KiroSessionTailer extends EventEmitter {
 
 - [ ] **Step 2: Verify TypeScript compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No errors
 
 - [ ] **Step 3: Commit**
@@ -1127,7 +1127,7 @@ if (agentType === 'kiro' && agentProfile && filePath) {
 
 - [ ] **Step 3: Verify TypeScript compiles**
 
-Run: `cd /home/ryan/Code/dispatcher && npx tsc --noEmit`
+Run: `cd /home/ryan/Code/orchestrel && npx tsc --noEmit`
 Expected: No errors
 
 - [ ] **Step 4: Commit**

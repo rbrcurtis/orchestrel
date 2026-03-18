@@ -44,7 +44,7 @@ git commit -m "chore: add idb-keyval and react-query-persist-client"
 import { createStore, get, set, del, entries } from 'idb-keyval';
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client';
 
-const store = createStore('dispatcher-cache', 'query-cache');
+const store = createStore('orchestrel-cache', 'query-cache');
 const CACHE_KEY = 'tanstack-query';
 
 export const persister: Persister = {
@@ -133,7 +133,7 @@ Expected: Build succeeds
 Run: `pnpm dev` (or restart service)
 1. Open app, navigate to a card
 2. Close tab, reopen — card data should appear instantly without flash
-3. Check browser DevTools → Application → IndexedDB → `dispatcher-cache` → `query-cache` — should see a `tanstack-query` entry
+3. Check browser DevTools → Application → IndexedDB → `orchestrel-cache` → `query-cache` — should see a `tanstack-query` entry
 
 **Step 4: Commit**
 

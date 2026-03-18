@@ -17,7 +17,7 @@
 
 **Step 1: Add the dependency**
 
-Run: `cd /home/ryan/Code/dispatcher && pnpm add @anthropic-ai/claude-agent-sdk`
+Run: `cd /home/ryan/Code/orchestrel && pnpm add @anthropic-ai/claude-agent-sdk`
 
 **Step 2: Verify it installed**
 
@@ -206,7 +206,7 @@ Key differences from the old code:
 
 **Step 2: Verify the dev server still starts**
 
-Run: `sudo systemctl restart dispatcher && sleep 3 && sudo systemctl status dispatcher`
+Run: `sudo systemctl restart orchestrel && sleep 3 && sudo systemctl status orchestrel`
 Expected: Service is active/running with no import errors
 
 **Step 3: Commit**
@@ -293,7 +293,7 @@ git commit -m "refactor: remove ControlRequest type (SDK handles permissions)"
 
 **Step 1: Restart the dev server**
 
-Run: `sudo systemctl restart dispatcher`
+Run: `sudo systemctl restart orchestrel`
 
 **Step 2: Open the board in the browser**
 

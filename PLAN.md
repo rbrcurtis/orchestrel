@@ -1,4 +1,4 @@
-# Dispatcher — Implementation Plan
+# Orchestrel — Implementation Plan
 
 ## Phase 1: Project Scaffold
 

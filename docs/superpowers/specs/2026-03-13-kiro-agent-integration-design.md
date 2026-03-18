@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add Kiro as a second agent type in Dispatcher. Projects can select Claude Code (default) or Kiro, with Kiro requiring a HOME directory for auth isolation. The directory browser component gets enhanced with typeahead filtering, paste support, and folder creation. KiroSession implements the ACP (Agent Client Protocol) over stdio. Log tailing and session replay round out feature parity with Claude.
+Add Kiro as a second agent type in Orchestrel. Projects can select Claude Code (default) or Kiro, with Kiro requiring a HOME directory for auth isolation. The directory browser component gets enhanced with typeahead filtering, paste support, and folder creation. KiroSession implements the ACP (Agent Client Protocol) over stdio. Log tailing and session replay round out feature parity with Claude.
 
 ## Implementation Stages
 
