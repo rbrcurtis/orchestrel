@@ -467,7 +467,9 @@ describe('OC controller: registerQueueManager', () => {
     await new Promise((r) => setTimeout(r, 100));
 
     await remaining.reload();
+    await removed.reload();
     expect(remaining.queuePosition).toBe(1);
+    expect(removed.queuePosition).toBeNull(); // cleared on departure
     expect(startMock).not.toHaveBeenCalled();
   });
 
