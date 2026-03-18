@@ -41,7 +41,7 @@ function createWsServer(
 
 export function wsServerPlugin(): Plugin {
   return {
-    name: 'dispatcher-ws',
+    name: 'orchestrel-ws',
     configureServer(server) {
       // Register REST middleware placeholder synchronously so it's in the middleware
       // stack BEFORE React Router's catch-all. The actual router activates after async init.
@@ -99,7 +99,7 @@ export function wsServerPlugin(): Plugin {
               (req: import('express').Request, res: import('express').Response) => {
                 const rawSessionId = (req.body?.sessionId as string | undefined) ?? 'unsorted';
                 const sessionId = rawSessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-                const dir = join('/tmp/dispatcher-uploads', sessionId);
+                const dir = join('/tmp/orchestrel-uploads', sessionId);
                 mkdirSync(dir, { recursive: true });
 
                 const files = req.files as Express.Multer.File[] | undefined;
@@ -194,7 +194,7 @@ export function wsServerPlugin(): Plugin {
             openCodeServer
               .start()
               .then(async () => {
-                // Re-attach to any running sessions that survived a dispatcher restart
+                // Re-attach to any running sessions that survived an orchestrel restart
                 try {
                   const { Card } = await import('../models/Card');
                   const cards = await Card.find({ where: { column: 'running' } });

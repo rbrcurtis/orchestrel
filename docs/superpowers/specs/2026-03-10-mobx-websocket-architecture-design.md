@@ -452,8 +452,8 @@ function persistStore<T extends { serialize(): unknown[]; hydrate(data: unknown[
 }
 
 // Usage
-persistStore(rootStore.cards, 'dispatcher:cards')
-persistStore(rootStore.projects, 'dispatcher:projects')
+persistStore(rootStore.cards, 'orchestrel:cards')
+persistStore(rootStore.projects, 'orchestrel:projects')
 ```
 
 Startup order:
@@ -488,7 +488,7 @@ The existing `POST /api/upload` endpoint (React Router API route) is **retained*
 
 1. User attaches files in SessionView → `POST /api/upload` → returns file refs
 2. File refs passed to `claude:send` WS message via the `files` field
-3. Server validates file paths are within `/tmp/dispatcher-uploads/` (existing security check)
+3. Server validates file paths are within `/tmp/orchestrel-uploads/` (existing security check)
 
 ## Claude Session Streaming
 

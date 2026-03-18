@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-const STORAGE_KEY = 'dispatcher-panel-width';
+const STORAGE_KEY = 'orchestrel-panel-width';
 const DEFAULT_WIDTH = 400;
 const MIN_WIDTH = 300;
 

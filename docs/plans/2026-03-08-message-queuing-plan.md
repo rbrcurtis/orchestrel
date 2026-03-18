@@ -141,12 +141,12 @@ git commit -m "feat: queue messages via streamInput instead of interrupting"
 **Step 1: Restart the service**
 
 ```bash
-sudo systemctl restart dispatcher
+sudo systemctl restart orchestrel
 ```
 
 **Step 2: Test the queue behavior**
 
-1. Open dispatcher in browser, start a Claude session on a card
+1. Open orchestrel in browser, start a Claude session on a card
 2. While Claude is actively working (tool calls in progress), send a follow-up message
 3. Verify: Claude does NOT restart — it continues its current work, then picks up the queued message
 4. Verify: The queued user message appears in the chat immediately (optimistic rendering)

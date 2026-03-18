@@ -24,7 +24,7 @@
 - [ ] **Step 1: Add column to DB via sqlite3 CLI**
 
 ```bash
-sqlite3 data/dispatcher.db "ALTER TABLE cards ADD COLUMN queue_position INTEGER DEFAULT NULL;"
+sqlite3 data/orchestrel.db "ALTER TABLE cards ADD COLUMN queue_position INTEGER DEFAULT NULL;"
 ```
 
 - [ ] **Step 2: Add TypeORM column decorator to Card entity**

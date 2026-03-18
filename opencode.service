@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 User=ryan
-WorkingDirectory=/home/ryan/Code/dispatcher
+WorkingDirectory=/home/ryan/Code/orchestrel
 ExecStart=/home/ryan/.opencode/bin/opencode serve --port 4097
 Environment=OPENCODE_PORT=4097
 Environment=KIROCLI_DB_PATH_OKKANTI=/home/ryan/OK_HOME/.local/share/kiro-cli/data.sqlite3

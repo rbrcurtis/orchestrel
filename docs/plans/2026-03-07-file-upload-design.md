@@ -6,7 +6,7 @@ Allow users to attach files (images, PDFs, docs, code) to chat messages so Claud
 
 ## Approach
 
-Separate Express upload endpoint (`POST /api/upload`) with multer. Files saved to `/tmp/dispatcher-uploads/{sessionId}/`. tRPC `sendMessage` extended to accept file references. Server reads files from `/tmp`, builds Claude API content blocks, passes to SDK. Files are ephemeral — cleared on reboot.
+Separate Express upload endpoint (`POST /api/upload`) with multer. Files saved to `/tmp/orchestrel-uploads/{sessionId}/`. tRPC `sendMessage` extended to accept file references. Server reads files from `/tmp`, builds Claude API content blocks, passes to SDK. Files are ephemeral — cleared on reboot.
 
 ## Upload Flow
 
@@ -41,7 +41,7 @@ Separate Express upload endpoint (`POST /api/upload`) with multer. Files saved t
 
 ### New Express Route
 - `POST /api/upload` — multer middleware, 25 MB limit
-- Saves to `/tmp/dispatcher-uploads/{sessionId}/{uuid}-{originalname}`
+- Saves to `/tmp/orchestrel-uploads/{sessionId}/{uuid}-{originalname}`
 - Returns `FileRef[]`: `{ id, name, mimeType, path }`
 
 ### tRPC Changes

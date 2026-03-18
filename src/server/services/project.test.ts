@@ -57,7 +57,7 @@ describe('ProjectService', () => {
   it('mkdir creates directory recursively', async () => {
     const { projectService } = await import('./project')
     const { existsSync } = await import('fs')
-    const path = join(tmpdir(), `dispatcher-test-${Date.now()}`, 'sub')
+    const path = join(tmpdir(), `orchestrel-test-${Date.now()}`, 'sub')
     await projectService.mkdir(path)
     expect(existsSync(path)).toBe(true)
   })

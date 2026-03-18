@@ -1,7 +1,7 @@
 import type { AgentMessage } from '../types'
 
 /**
- * Normalize OpenCode SSE events into Dispatcher AgentMessage format.
+ * Normalize OpenCode SSE events into Orchestrel AgentMessage format.
  *
  * Key event types from the SDK:
  * - message.part.updated — streaming parts (text, reasoning, tool, step-start/finish)

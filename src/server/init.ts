@@ -47,7 +47,7 @@ export async function initBackend(): Promise<{
   router.post('/api/upload', upload.array('files'), (req: Request, res: Response) => {
     const rawSessionId = (req.body?.sessionId as string | undefined) ?? 'unsorted';
     const sessionId = rawSessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const dir = join('/tmp/dispatcher-uploads', sessionId);
+    const dir = join('/tmp/orchestrel-uploads', sessionId);
     mkdirSync(dir, { recursive: true });
 
     const files = req.files as Express.Multer.File[] | undefined;

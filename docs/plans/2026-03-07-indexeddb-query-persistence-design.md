@@ -2,7 +2,7 @@
 
 ## Problem
 
-When reopening the Dispatcher PWA on mobile, the React Query cache is empty. This causes:
+When reopening the Orchestrel PWA on mobile, the React Query cache is empty. This causes:
 - "Card not found" flash when a card URL is persisted (`?card=123`) but `allCards` hasn't loaded yet
 - Blank chat history while session JSONL re-fetches from the server
 - Frequent re-render flashes on mobile due to `refetchOnWindowFocus` firing on every app switch

@@ -5,12 +5,12 @@
 
 ## Overview
 
-This plan rearchitects the Dispatcher server into three clean layers:
+This plan rearchitects the Orchestrel server into three clean layers:
 1. **Model Layer** — TypeORM ActiveRecord entities with lifecycle subscribers that publish domain events to a MessageBus
 2. **Service Layer** — Orchestrates business logic, owns session lifecycle, no WS knowledge
 3. **Transport Layer** — Thin WS handlers that translate client commands into service calls and forward bus events to subscribed clients
 
-The existing SQLite database (`data/dispatcher.db`) is kept intact throughout — TypeORM entities mirror the current Drizzle schema exactly. Drizzle is removed only in the final task after all callers are migrated.
+The existing SQLite database (`data/orchestrel.db`) is kept intact throughout — TypeORM entities mirror the current Drizzle schema exactly. Drizzle is removed only in the final task after all callers are migrated.
 
 ---
 
@@ -329,7 +329,7 @@ Create the TypeORM Card entity with subscriber. Create the DataSource (pointed a
 
   export const AppDataSource = new DataSource({
     type: 'better-sqlite3',
-    database: join(DB_DIR, 'dispatcher.db'),
+    database: join(DB_DIR, 'orchestrel.db'),
     entities: [Card],
     subscribers: [CardSubscriber],
     synchronize: false,
@@ -581,7 +581,7 @@ Add the Project entity and subscriber. Register both entities in the DataSource.
 
   export const AppDataSource = new DataSource({
     type: 'better-sqlite3',
-    database: join(DB_DIR, 'dispatcher.db'),
+    database: join(DB_DIR, 'orchestrel.db'),
     entities: [Card, Project],
     subscribers: [CardSubscriber, ProjectSubscriber],
     synchronize: false,
@@ -1298,7 +1298,7 @@ Create the service that owns project CRUD plus filesystem operations.
     it('mkdir creates directory recursively', async () => {
       const { projectService } = await import('./project')
       const { existsSync } = await import('fs')
-      const path = join(tmpdir(), `dispatcher-test-${Date.now()}`, 'sub')
+      const path = join(tmpdir(), `orchestrel-test-${Date.now()}`, 'sub')
       await projectService.mkdir(path)
       expect(existsSync(path)).toBe(true)
     })
@@ -1446,7 +1446,7 @@ Create the service that owns the full session lifecycle. This replaces `beginSes
       }
       if (files?.length) {
         for (const f of files) {
-          if (!resolve(f.path).startsWith('/tmp/dispatcher-uploads/')) {
+          if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
             throw new Error(`Invalid file path: ${f.path}`)
           }
         }
@@ -2590,7 +2590,7 @@ Update `server.ts` to initialize the TypeORM DataSource, remove `DbMutator`, use
 
   export function wsServerPlugin(): Plugin {
     return {
-      name: 'dispatcher-ws',
+      name: 'orchestrel-ws',
       configureServer(server) {
         if (server.httpServer) {
           // Initialize TypeORM DataSource before accepting connections
@@ -2760,7 +2760,7 @@ Confirm the app starts correctly, TypeScript compiles clean, and the full card l
   - `[ws] WebSocket server attached to Vite dev server` log line
   - No `[db]` errors or TypeORM schema mismatch warnings
 
-- [ ] Manual smoke test (follow the plan in `~/.claude/projects/-home-ryan-Code-dispatcher/memory/reference_shortened_test_plan.md`):
+- [ ] Manual smoke test (follow the plan in `~/.claude/projects/-home-ryan-Code-orchestrel/memory/reference_shortened_test_plan.md`):
   1. Open the board in the browser
   2. Create a card directly in `running` column — verify it starts a session automatically
   3. Observe agent messages stream in the card detail panel
@@ -2789,7 +2789,7 @@ Confirm the app starts correctly, TypeScript compiles clean, and the full card l
 | `src/server/bus.ts` | MessageBus singleton — typed pub/sub over EventEmitter |
 | `src/server/models/Card.ts` | TypeORM Card entity + CardSubscriber |
 | `src/server/models/Project.ts` | TypeORM Project entity + ProjectSubscriber + NEON_COLORS |
-| `src/server/models/index.ts` | AppDataSource init — points at existing `data/dispatcher.db` |
+| `src/server/models/index.ts` | AppDataSource init — points at existing `data/orchestrel.db` |
 | `src/server/services/card.ts` | CardService — card CRUD, search, pagination, title generation |
 | `src/server/services/project.ts` | ProjectService — project CRUD, browse, mkdir |
 | `src/server/services/session.ts` | SessionService — session lifecycle, bus publishing, no WS |

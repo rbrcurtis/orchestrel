@@ -1143,7 +1143,7 @@ export async function handleAgentSend(
     let prompt = message
     if (files?.length) {
       for (const f of files) {
-        if (!resolve(f.path).startsWith('/tmp/dispatcher-uploads/')) {
+        if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
           throw new Error(`Invalid file path: ${f.path}`)
         }
       }
@@ -1591,7 +1591,7 @@ Restart the service and verify:
 5. Session resumes after follow-up message
 
 ```bash
-sudo systemctl restart dispatcher
+sudo systemctl restart orchestrel
 ```
 
 - [ ] **Step 3: Final commit if any fixes needed**

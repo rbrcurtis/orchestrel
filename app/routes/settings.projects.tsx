@@ -172,8 +172,8 @@ const SettingsProjectsModal = observer(function SettingsProjectsModal({ onClose 
 
 export default SettingsProjectsModal;
 
-const CACHE_STORE = createStore('dispatcher-cache', 'store-cache');
-const CACHE_KEYS = ['dispatcher:cards', 'dispatcher:projects'];
+const CACHE_STORE = createStore('orchestrel-cache', 'store-cache');
+const CACHE_KEYS = ['orchestrel:cards', 'orchestrel:projects'];
 
 function CacheSection() {
   const [size, setSize] = useState<number | null>(null);

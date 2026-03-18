@@ -99,7 +99,7 @@ app/components/ToolUseBlock.tsx
 - [ ] **Step 1: Create git worktree**
 
 ```bash
-cd /home/ryan/Code/dispatcher
+cd /home/ryan/Code/orchestrel
 git worktree add ../dispatcher-ws-migration main
 cd ../dispatcher-ws-migration
 ```
@@ -848,7 +848,7 @@ export function createWsServer(httpServer: HttpServer) {
  */
 export function wsServerPlugin(): Plugin {
   return {
-    name: 'dispatcher-ws',
+    name: 'orchestrel-ws',
     configureServer(server) {
       if (server.httpServer) {
         createWsServer(server.httpServer)
@@ -1922,8 +1922,8 @@ import { persistStore } from './lib/store-persist'
 let rootStore: RootStore
 if (!(globalThis as any).__rootStore) {
   rootStore = new RootStore()
-  persistStore(rootStore.cards, 'dispatcher:cards')
-  persistStore(rootStore.projects, 'dispatcher:projects')
+  persistStore(rootStore.cards, 'orchestrel:cards')
+  persistStore(rootStore.projects, 'orchestrel:projects')
   ;(globalThis as any).__rootStore = rootStore
 } else {
   rootStore = (globalThis as any).__rootStore
@@ -2280,7 +2280,7 @@ export async function handleClaudeStart(
 // 1. If no in-memory session, recreate from DB (session recreation after server restart)
 // 2. Re-register 'message' and 'exit' event handlers on recreated session
 // 3. Refresh model/thinkingLevel from DB
-// 4. Validate file paths are within /tmp/dispatcher-uploads/
+// 4. Validate file paths are within /tmp/orchestrel-uploads/
 // 5. Build augmented prompt with file list
 // 6. Call session.sendUserMessage()
 // 7. Persist promptsSent via mutator

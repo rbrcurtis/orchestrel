@@ -1,12 +1,12 @@
 [Unit]
-Description=Dispatcher Kanban
+Description=Orchestrel Kanban
 After=network.target opencode.service
 Wants=opencode.service
 
 [Service]
 Type=simple
 User=ryan
-WorkingDirectory=/home/ryan/Code/dispatcher
+WorkingDirectory=/home/ryan/Code/orchestrel
 ExecStart=/home/ryan/.nvm/versions/node/v24.2.0/bin/pnpm start
 Environment=NODE_ENV=production
 Environment=CF_TEAM_DOMAIN=wednesday-access

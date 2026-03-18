@@ -39,7 +39,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <link rel="icon" href="/favicon.ico" sizes="32x32" />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        <title>Dispatcher</title>
+        <title>Orchestrel</title>
         <Meta />
         <Links />
       </head>
@@ -80,8 +80,8 @@ let rootStore: RootStore | null = null;
 if (typeof window !== 'undefined') {
   if (!(globalThis as Record<string, unknown>).__rootStore) {
     rootStore = new RootStore();
-    persistStore(rootStore.cards, 'dispatcher:cards');
-    persistStore(rootStore.projects, 'dispatcher:projects');
+    persistStore(rootStore.cards, 'orchestrel:cards');
+    persistStore(rootStore.projects, 'orchestrel:projects');
     (globalThis as Record<string, unknown>).__rootStore = rootStore;
   } else {
     rootStore = (globalThis as Record<string, unknown>).__rootStore as RootStore;
