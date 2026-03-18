@@ -117,13 +117,13 @@ z.object({ type: z.literal('claude:start'), requestId: z.string(), data: claudeS
 
 Run a SQL migration to rename existing `in_progress` values:
 ```bash
-cd /home/ryan/Code/dispatcher && sqlite3 data/dispatcher.db "UPDATE cards SET column = 'running' WHERE column = 'in_progress';"
+cd /home/ryan/Code/orchestrel && sqlite3 data/orchestrel.db "UPDATE cards SET column = 'running' WHERE column = 'in_progress';"
 ```
 
 - [ ] **Step 6: Verify TypeScript compiles (expect errors in handlers — that's expected)**
 
 ```bash
-cd /home/ryan/Code/dispatcher && npx tsc --noEmit 2>&1 | head -50
+cd /home/ryan/Code/orchestrel && npx tsc --noEmit 2>&1 | head -50
 ```
 
 Expected: errors in handlers referencing removed types. These are fixed in subsequent tasks.
@@ -762,7 +762,7 @@ export async function handleClaudeSend(
     let prompt = message
     if (files?.length) {
       for (const f of files) {
-        if (!resolve(f.path).startsWith('/tmp/dispatcher-uploads/')) {
+        if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
           throw new Error(`Invalid file path: ${f.path}`)
         }
       }
@@ -849,7 +849,7 @@ Remove the `claude:start` case (lines 148-150):
 - [ ] **Step 6: Verify TypeScript compiles (server side should pass now)**
 
 ```bash
-cd /home/ryan/Code/dispatcher && npx tsc --noEmit 2>&1 | grep -v "app/" | head -30
+cd /home/ryan/Code/orchestrel && npx tsc --noEmit 2>&1 | grep -v "app/" | head -30
 ```
 
 Expected: no server-side errors. Client errors expected (fixed in Chunk 2).
@@ -1177,7 +1177,7 @@ And the snap-back guard (line 228):
 - [ ] **Step 4: Verify full TypeScript compilation passes**
 
 ```bash
-cd /home/ryan/Code/dispatcher && npx tsc --noEmit
+cd /home/ryan/Code/orchestrel && npx tsc --noEmit
 ```
 
 Expected: clean pass, no errors.
@@ -1211,7 +1211,7 @@ to:
 - [ ] **Step 2: Verify the app runs**
 
 ```bash
-cd /home/ryan/Code/dispatcher && sudo systemctl restart dispatcher && sleep 3 && journalctl -u dispatcher.service --since "1 minute ago" --no-pager | tail -20
+cd /home/ryan/Code/orchestrel && sudo systemctl restart orchestrel && sleep 3 && journalctl -u orchestrel.service --since "1 minute ago" --no-pager | tail -20
 ```
 
 Expected: app starts without errors.

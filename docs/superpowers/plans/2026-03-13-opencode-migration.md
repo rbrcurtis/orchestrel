@@ -4,7 +4,7 @@
 
 **Goal:** Replace Claude SDK and Kiro ACP agent providers with a single OpenCode backend.
 
-**Architecture:** Dispatcher spawns `opencode serve` as a child process, connects via `@opencode-ai/sdk`, and routes all agent sessions through OpenCode's REST/SSE API. One `OpenCodeSession` class replaces both `ClaudeSession` and `KiroSession`.
+**Architecture:** Orchestrel spawns `opencode serve` as a child process, connects via `@opencode-ai/sdk`, and routes all agent sessions through OpenCode's REST/SSE API. One `OpenCodeSession` class replaces both `ClaudeSession` and `KiroSession`.
 
 **Tech Stack:** `@opencode-ai/sdk`, OpenCode CLI (`opencode serve`), SSE for streaming, SQLite (Drizzle ORM)
 
@@ -72,7 +72,7 @@ export class OpenCodeServer {
     try {
       execFileSync('which', ['opencode'], { stdio: 'ignore' })
     } catch {
-      throw new Error('opencode binary not found on PATH. Install it before starting Dispatcher.')
+      throw new Error('opencode binary not found on PATH. Install it before starting Orchestrel.')
     }
 
     await this.spawn()
@@ -1100,11 +1100,11 @@ git commit -m "refactor: rewrite session history handler for OpenCode SDK"
 ### Task 12: Backup DB and push schema
 
 **Files:**
-- Modify: `data/dispatcher.db`
+- Modify: `data/orchestrel.db`
 
 - [ ] **Step 1: Backup the database**
 
-Run: `cp data/dispatcher.db data/dispatcher.db.backup`
+Run: `cp data/orchestrel.db data/orchestrel.db.backup`
 
 - [ ] **Step 2: Push schema changes**
 
@@ -1113,22 +1113,22 @@ Expected: Drizzle applies the schema diff (adds provider_id, removes agent_type 
 
 - [ ] **Step 3: Verify schema**
 
-Run: `sqlite3 data/dispatcher.db ".schema projects" | head -20`
+Run: `sqlite3 data/orchestrel.db ".schema projects" | head -20`
 Expected: Shows `provider_id` column, no `agent_type` or `agent_profile`
 
 - [ ] **Step 4: Delete all cards**
 
-Run: `sqlite3 data/dispatcher.db "DELETE FROM cards;"`
+Run: `sqlite3 data/orchestrel.db "DELETE FROM cards;"`
 
 - [ ] **Step 5: Update project providerIDs**
 
 Set appropriate providerID for each project. Run these manually based on your projects:
 
 ```bash
-sqlite3 data/dispatcher.db "UPDATE projects SET provider_id = 'anthropic' WHERE 1=1;"
+sqlite3 data/orchestrel.db "UPDATE projects SET provider_id = 'anthropic' WHERE 1=1;"
 # Then update specific projects:
-# sqlite3 data/dispatcher.db "UPDATE projects SET provider_id = 'kiro-okkanti' WHERE name = 'Okkanti';"
-# sqlite3 data/dispatcher.db "UPDATE projects SET provider_id = 'kiro-trackable' WHERE name = 'Trackable';"
+# sqlite3 data/orchestrel.db "UPDATE projects SET provider_id = 'kiro-okkanti' WHERE name = 'Okkanti';"
+# sqlite3 data/orchestrel.db "UPDATE projects SET provider_id = 'kiro-trackable' WHERE name = 'Trackable';"
 ```
 
 - [ ] **Step 6: Commit**
@@ -1264,7 +1264,7 @@ openCodeServer.start().catch((err) => {
 
 ```bash
 git add src/server/ws/server.ts
-git commit -m "feat: start OpenCode server on Dispatcher boot"
+git commit -m "feat: start OpenCode server on Orchestrel boot"
 ```
 
 ## Chunk 4: Config & Verification
@@ -1329,10 +1329,10 @@ Ensure `opencode` is installed globally:
 Run: `which opencode`
 If missing: `npm install -g opencode` (or follow OpenCode's install docs)
 
-- [ ] **Step 2: Start Dispatcher**
+- [ ] **Step 2: Start Orchestrel**
 
 Run: `pnpm dev`
-Expected: Dispatcher starts, logs `[opencode] server ready on port 4097`
+Expected: Orchestrel starts, logs `[opencode] server ready on port 4097`
 
 - [ ] **Step 3: Verify OpenCode server health**
 
@@ -1344,7 +1344,7 @@ Expected: 200 OK
 Run: `opencode attach http://localhost:4097`
 Expected: OpenCode TUI connects to the running server
 
-- [ ] **Step 5: Test session via Dispatcher UI**
+- [ ] **Step 5: Test session via Orchestrel UI**
 
 1. Open `dispatch.rbrcurtis.com` (or `localhost:6194`)
 2. Create a card on an Anthropic project

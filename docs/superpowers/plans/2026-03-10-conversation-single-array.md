@@ -73,7 +73,7 @@ export function contentHashSync(type: string, message: Record<string, unknown>):
 
 Open browser console or run:
 ```bash
-cd /home/ryan/Code/dispatcher && node -e "
+cd /home/ryan/Code/orchestrel && node -e "
 const {contentHashSync} = require('./app/lib/content-hash.ts');
 // Won't work directly (TS), just verify logic:
 function contentHashSync(type, message) {
@@ -322,7 +322,7 @@ Keep `stopSession()`, `requestStatus()`, `loadHistory()` unchanged.
 - [ ] **Step 6: Verify the store compiles**
 
 ```bash
-cd /home/ryan/Code/dispatcher && npx tsc --noEmit 2>&1 | head -30
+cd /home/ryan/Code/orchestrel && npx tsc --noEmit 2>&1 | head -30
 ```
 
 Expected: No errors in `session-store.ts` (there may be errors in SessionView.tsx — that's expected, we'll fix it next).
@@ -368,7 +368,7 @@ case 'session:history':
 - [ ] **Step 2: Verify compilation**
 
 ```bash
-cd /home/ryan/Code/dispatcher && npx tsc --noEmit 2>&1 | grep -E '(root-store|session-store)' | head -10
+cd /home/ryan/Code/orchestrel && npx tsc --noEmit 2>&1 | grep -E '(root-store|session-store)' | head -10
 ```
 
 Expected: No errors in these two files.
@@ -602,7 +602,7 @@ No `addOptimisticUser()` — the store's `startSession()` already ingests the op
 - [ ] **Step 9: Verify compilation and test in browser**
 
 ```bash
-cd /home/ryan/Code/dispatcher && npx tsc --noEmit 2>&1 | head -30
+cd /home/ryan/Code/orchestrel && npx tsc --noEmit 2>&1 | head -30
 ```
 
 Then open the app in a browser and test:

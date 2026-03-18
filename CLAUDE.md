@@ -1,4 +1,4 @@
-# Dispatcher
+# Orchestrel
 
 Personal kanban board + Claude Code orchestration app.
 
@@ -41,5 +41,5 @@ This is a **purely event-driven system**. Every handler reacts to a single event
 
 ## Guardrails
 
-- **DB file:** `data/dispatcher.db` — Schema additions (`ALTER TABLE ADD COLUMN`) via sqlite3 CLI are safe anytime. NEVER modify data (INSERT/UPDATE/DELETE) outside the app — use WS mutations. NEVER run WAL management commands (`wal_checkpoint`, `PRAGMA journal_mode`, etc.) — SQLite handles this automatically. A `wal_checkpoint(TRUNCATE)` previously destroyed ~68 cards.
+- **DB file:** `data/orchestrel.db` — Schema additions (`ALTER TABLE ADD COLUMN`) via sqlite3 CLI are safe anytime. NEVER modify data (INSERT/UPDATE/DELETE) outside the app — use WS mutations. NEVER run WAL management commands (`wal_checkpoint`, `PRAGMA journal_mode`, etc.) — SQLite handles this automatically. A `wal_checkpoint(TRUNCATE)` previously destroyed ~68 cards.
 - **Vite HMR:** works through tunnel — do NOT hardcode `hmr.host` in vite.config.ts (let Vite auto-detect)

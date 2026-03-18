@@ -28,7 +28,7 @@ export function setWss(instance: WebSocketServer) { wss = instance }
 let _httpServer: AnyHttpServer | null = null
 const _httpServerReady = new Promise<AnyHttpServer>((resolve) => {
   if (_httpServer) { resolve(_httpServer); return }
-  process.once('dispatcher:httpServer', (server: AnyHttpServer) => {
+  process.once('orchestrel:httpServer', (server: AnyHttpServer) => {
     _httpServer = server
     resolve(server)
   })

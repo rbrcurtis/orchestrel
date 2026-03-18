@@ -2,11 +2,11 @@
 
 ## Overview
 
-Refactor dispatcher's Claude Code integration into an abstract agent service that supports multiple AI coding agents (Claude Code, Kiro, and future agents). Phase 1 extracts the abstraction and refactors Claude into it. Phase 2 (separate) adds Kiro implementation.
+Refactor orchestrel's Claude Code integration into an abstract agent service that supports multiple AI coding agents (Claude Code, Kiro, and future agents). Phase 1 extracts the abstraction and refactors Claude into it. Phase 2 (separate) adds Kiro implementation.
 
 ## Motivation
 
-Ryan is switching work AI agent to Kiro (has 2 AWS jobs = 2 Kiro accounts). Dispatcher needs to orchestrate both Claude Code and Kiro sessions from the same board, with agent selection per-project.
+Ryan is switching work AI agent to Kiro (has 2 AWS jobs = 2 Kiro accounts). Orchestrel needs to orchestrate both Claude Code and Kiro sessions from the same board, with agent selection per-project.
 
 ## Data Model Changes
 

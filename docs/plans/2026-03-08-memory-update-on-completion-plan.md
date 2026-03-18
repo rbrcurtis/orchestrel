@@ -236,13 +236,13 @@ git commit -m "feat: trigger /m memory update when card moves to done/archive"
 **Step 1: Restart the service**
 
 ```bash
-sudo systemctl restart dispatcher
+sudo systemctl restart orchestrel
 ```
 
 **Step 2: Test done flow**
 
 1. Move an existing card with a `sessionId` to `done`
-2. Check server logs (`journalctl -u dispatcher -f`) for `/m` session activity
+2. Check server logs (`journalctl -u orchestrel -f`) for `/m` session activity
 3. Verify card stays in `done` (not moved back to review)
 
 **Step 3: Test archive flow**

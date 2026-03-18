@@ -10,7 +10,7 @@ mkdirSync(DB_DIR, { recursive: true })
 
 export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
-  database: join(DB_DIR, 'dispatcher.db'),
+  database: join(DB_DIR, 'orchestrel.db'),
   entities: [Card, Project],
   subscribers: [CardSubscriber, ProjectSubscriber],
   synchronize: false,

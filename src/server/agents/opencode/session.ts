@@ -330,7 +330,7 @@ export class OpenCodeSession extends AgentSession {
 
             if (this.abortController?.signal.aborted) break
 
-            // Auto-approve ALL permission requests (Dispatcher runs in full-trust mode)
+            // Auto-approve ALL permission requests (Orchestrel runs in full-trust mode)
             // Must run before session filter so subagent permissions are also approved
             if (event.type === 'permission.asked' || event.type === 'permission.updated') {
               const perm = event.properties as { id?: string; sessionID?: string; type?: string; title?: string }

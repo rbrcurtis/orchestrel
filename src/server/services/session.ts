@@ -84,7 +84,7 @@ class SessionService {
     let prompt = message;
     if (files?.length) {
       for (const f of files) {
-        if (!resolve(f.path).startsWith('/tmp/dispatcher-uploads/')) {
+        if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
           throw new Error(`Invalid file path: ${f.path}`);
         }
       }
@@ -131,7 +131,7 @@ class SessionService {
     }
     if (files?.length) {
       for (const f of files) {
-        if (!resolve(f.path).startsWith('/tmp/dispatcher-uploads/')) {
+        if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
           throw new Error(`Invalid file path: ${f.path}`);
         }
       }

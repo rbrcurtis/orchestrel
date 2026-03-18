@@ -5,11 +5,11 @@
 
 ## Problem
 
-When OpenCode sessions spawn subagents (via the `task` tool), the dispatcher UI shows no indication of child session activity. The parent session appears hung — no tool calls, no text output, no progress. Users have reported sessions appearing stuck for 30+ minutes when subagents are actively working.
+When OpenCode sessions spawn subagents (via the `task` tool), the orchestrel UI shows no indication of child session activity. The parent session appears hung — no tool calls, no text output, no progress. Users have reported sessions appearing stuck for 30+ minutes when subagents are actively working.
 
 Additionally, the `retry` session status (rate limiting / API throttling) is not surfaced in the UI. The session shows "Running" with no activity, indistinguishable from a hung session.
 
-Diagnostic logging is also insufficient — when investigating stuck sessions, there's no structured way to grep dispatcher logs by session ID and understand the full lifecycle.
+Diagnostic logging is also insufficient — when investigating stuck sessions, there's no structured way to grep orchestrel logs by session ID and understand the full lifecycle.
 
 ## Scope
 
@@ -26,7 +26,7 @@ Out of scope: detailed subagent conversation view, subagent control (stop/restar
 - `Session.parentID` — child sessions carry their parent's ID
 - `session.children({ sessionID })` — API lists all children of a parent (`GET /session/{id}/children`). Returns `Array<Session>` where each has `id`, `title`, `parentID`, `time`, etc.
 - SSE event stream is global — all session events arrive on a single stream. Events carry `sessionID` in `properties.sessionID`, `properties.part.sessionID`, or `properties.info.sessionID`.
-- Child session events that arrive on the parent's SSE stream include: `message.part.updated` (tool state changes, step-start/finish), `message.part.delta` (text streaming), `message.updated` (message metadata), `session.status`, `session.idle`, `session.updated`. All confirmed empirically from dispatcher logs.
+- Child session events that arrive on the parent's SSE stream include: `message.part.updated` (tool state changes, step-start/finish), `message.part.delta` (text streaming), `message.updated` (message metadata), `session.status`, `session.idle`, `session.updated`. All confirmed empirically from orchestrel logs.
 - Parent session messages contain `tool: "task"` parts for each subagent invocation with `description`, `subagent_type`, `prompt`, `status`
 - OpenCode `SessionStatus` types: `idle`, `busy`, `retry` (retry has `attempt`, `message`, `next` fields)
 
