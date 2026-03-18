@@ -25,6 +25,8 @@ type BoardContext = {
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
+  updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
+  columnSlots: (number | null)[];
 };
 
 interface CardItem extends Card {
@@ -53,9 +55,9 @@ const DoneBoard = observer(function DoneBoard() {
 
   // Read done cards from store (reactive)
   const storeCards = useMemo((): CardItem[] => {
-    return cardStore.cardsByColumn('done').map(c => ({
+    return cardStore.cardsByColumn('done').map((c) => ({
       ...c,
-      color: c.projectId ? colorMap[c.projectId] ?? null : null,
+      color: c.projectId ? (colorMap[c.projectId] ?? null) : null,
     }));
   }, [cardStore.cards, colorMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -68,7 +70,7 @@ const DoneBoard = observer(function DoneBoard() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   function handleDragStart(e: DragStartEvent) {
@@ -96,7 +98,8 @@ const DoneBoard = observer(function DoneBoard() {
       const finalIdx = reordered.findIndex((c) => c.id === active.id);
       const pos = calcPosition(others, finalIdx);
 
-      cardStore.updateCard({ id: active.id as number, column: 'done', position: pos })
+      cardStore
+        .updateCard({ id: active.id as number, column: 'done', position: pos })
         .finally(() => setDragOverride(null));
     } else {
       setDragOverride(null);
@@ -114,9 +117,7 @@ const DoneBoard = observer(function DoneBoard() {
     if (!search) return cards;
     const q = search.toLowerCase();
     return cards.filter(
-      (c) =>
-        c.title.toLowerCase().includes(q) ||
-        (c.description && c.description.toLowerCase().includes(q))
+      (c) => c.title.toLowerCase().includes(q) || (c.description && c.description.toLowerCase().includes(q)),
     );
   }, [cards, search]);
 
@@ -134,21 +135,15 @@ const DoneBoard = observer(function DoneBoard() {
       onDragCancel={handleDragCancel}
     >
       <div className="flex flex-col gap-2 p-4">
-        <StatusRow
-          id="done"
-          cards={filteredCards}
-          onCardClick={selectCard}
-          onAddCard={() => startNewCard('done')}
-        />
+        <StatusRow id="done" cards={filteredCards} onCardClick={selectCard} onAddCard={() => startNewCard('done')} />
       </div>
-      {mounted && createPortal(
-        <DragOverlay>
-          {activeCard ? (
-            <CardOverlay title={activeCard.title} color={activeCard.color} />
-          ) : null}
-        </DragOverlay>,
-        document.body
-      )}
+      {mounted &&
+        createPortal(
+          <DragOverlay>
+            {activeCard ? <CardOverlay title={activeCard.title} color={activeCard.color} /> : null}
+          </DragOverlay>,
+          document.body,
+        )}
     </DndContext>
   );
 });

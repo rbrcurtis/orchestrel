@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router';
-import { Settings, Palette } from 'lucide-react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router';
+import { Settings, Palette, Minus, Plus } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
@@ -16,6 +16,24 @@ const NAV_ITEMS = [
   { to: '/archive', label: 'Archive' },
 ] as const;
 
+const MIN_COLUMN_WIDTH = 350;
+const COLUMN_COUNT_KEY = 'dispatcher-column-count';
+const COLUMN_SLOTS_KEY = 'dispatcher-column-slots';
+
+function readLocalStorage<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalStorage<T>(key: string, value: T) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
 function useIsDesktop() {
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
@@ -28,12 +46,27 @@ function useIsDesktop() {
   return isDesktop;
 }
 
+function useMaxColumns(panelRef: React.RefObject<HTMLDivElement | null>) {
+  const [max, setMax] = useState(4);
+  useEffect(() => {
+    function compute() {
+      if (!panelRef.current) return;
+      const w = panelRef.current.getBoundingClientRect().width;
+      setMax(Math.max(1, Math.floor(w / MIN_COLUMN_WIDTH)));
+    }
+    compute();
+    const obs = new ResizeObserver(compute);
+    if (panelRef.current) obs.observe(panelRef.current);
+    return () => obs.disconnect();
+  }, [panelRef]);
+  return max;
+}
+
 const BoardLayout = observer(function BoardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
   const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
   const isDesktop = useIsDesktop();
 
@@ -45,38 +78,133 @@ const BoardLayout = observer(function BoardLayout() {
     store.subscribe(['backlog', 'ready', 'running', 'review', 'done', 'archive']);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const selectedCardId = searchParams.get('card') ? Number(searchParams.get('card')) : null;
+  // Multi-column state (persisted to localStorage)
+  const [columnCount, setColumnCount] = useState(() => readLocalStorage(COLUMN_COUNT_KEY, 1));
+  const [columnSlots, setColumnSlots] = useState<(number | null)[]>(() => readLocalStorage(COLUMN_SLOTS_KEY, [null]));
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<'icons' | 'settings' | null>(null);
 
-  // Derive divider color from selected card's project
-  const selectedCard = selectedCardId ? cardStore.getCard(selectedCardId) : undefined;
-  const selectedProject = selectedCard?.projectId ? projectStore.getProject(selectedCard.projectId) : null;
-  const dividerColor = selectedCardId ? (selectedProject?.color ?? null) : null;
-  const panelActive = !!(selectedCardId || newCardColumn);
+  const maxColumns = useMaxColumns(panelRef);
+
+  // Keep columnSlots length in sync with columnCount
+  useEffect(() => {
+    setColumnSlots((prev) => {
+      if (prev.length === columnCount) return prev;
+      if (prev.length < columnCount) {
+        const next = [...prev, ...(Array(columnCount - prev.length).fill(null) as null[])];
+        writeLocalStorage(COLUMN_SLOTS_KEY, next);
+        return next;
+      }
+      const next = prev.slice(0, columnCount);
+      writeLocalStorage(COLUMN_SLOTS_KEY, next);
+      return next;
+    });
+  }, [columnCount]);
+
+  // Clamp columnCount if maxColumns shrinks below it
+  useEffect(() => {
+    if (columnCount > maxColumns) {
+      setColumnCount(maxColumns);
+      writeLocalStorage(COLUMN_COUNT_KEY, maxColumns);
+    }
+  }, [maxColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist slots to localStorage whenever they change
+  const updateSlots = useCallback((updater: (prev: (number | null)[]) => (number | null)[]) => {
+    setColumnSlots((prev) => {
+      const next = updater(prev);
+      writeLocalStorage(COLUMN_SLOTS_KEY, next);
+      return next;
+    });
+  }, []);
+
+  // Evict cards that leave running/review, auto-fill empty slots with running/review cards
+  useEffect(() => {
+    updateSlots((prev) => {
+      let changed = false;
+      // First pass: evict cards no longer in running/review
+      const next = prev.map((id) => {
+        if (id == null) return null;
+        const card = cardStore.getCard(id);
+        if (!card || (card.column !== 'running' && card.column !== 'review')) {
+          changed = true;
+          return null;
+        }
+        return id;
+      });
+
+      // Second pass: auto-fill empty slots with running/review cards not already shown
+      const shown = new Set(next.filter((id): id is number => id != null));
+      const runningReview = [...cardStore.cardsByColumn('running'), ...cardStore.cardsByColumn('review')].filter(
+        (c) => !shown.has(c.id),
+      );
+
+      let fillIdx = 0;
+      for (let i = 0; i < next.length && fillIdx < runningReview.length; i++) {
+        if (next[i] == null) {
+          next[i] = runningReview[fillIdx].id;
+          fillIdx++;
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }); // runs every render — MobX observer tracks card column changes
+
+  const panelHasContent = columnSlots.some((id) => id != null) || newCardColumn != null;
+
+  // Mobile: track which single card is open for overlay
+  const [mobileCardId, setMobileCardId] = useState<number | null>(null);
 
   function selectCard(id: number | null) {
     setNewCardColumn(null);
-    setSearchParams(
-      (prev) => {
-        if (id === null) {
-          prev.delete('card');
-        } else {
-          prev.set('card', String(id));
-        }
-        return prev;
-      },
-      { replace: true },
-    );
+    if (!isDesktop) {
+      // Mobile: single card overlay
+      setMobileCardId(id);
+      return;
+    }
+    if (id === null) return;
+    // Desktop: place in slot 0 (leftmost)
+    updateSlots((prev) => {
+      // Already open somewhere? Don't duplicate
+      if (prev.includes(id)) return prev;
+      const next = [...prev];
+      next[0] = id;
+      return next;
+    });
+  }
+
+  function closeSlot(index: number) {
+    updateSlots((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
   }
 
   function startNewCard(column: string) {
-    selectCard(null);
+    if (!isDesktop) {
+      setMobileCardId(null);
+    }
     setNewCardColumn(column);
   }
 
-  // Keyboard shortcuts (layout-level) — selectCard omitted from deps intentionally; it's not memoized
-  // and adding it would re-register the listener on every render
+  function addColumn() {
+    if (columnCount >= maxColumns) return;
+    const next = columnCount + 1;
+    setColumnCount(next);
+    writeLocalStorage(COLUMN_COUNT_KEY, next);
+  }
+
+  function removeColumn() {
+    if (columnCount <= 1) return;
+    const next = columnCount - 1;
+    setColumnCount(next);
+    writeLocalStorage(COLUMN_COUNT_KEY, next);
+  }
+
+  // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName;
@@ -89,14 +217,17 @@ const BoardLayout = observer(function BoardLayout() {
       if (e.key === 'Escape') {
         if (activeModal) {
           setActiveModal(null);
-        } else {
-          selectCard(null);
+        } else if (!isDesktop) {
+          setMobileCardId(null);
         }
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeModal, isDesktop]);
+
+  // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
+  const selectedCardId = columnSlots[0] ?? null;
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -127,6 +258,33 @@ const BoardLayout = observer(function BoardLayout() {
         </div>
         <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
+
+          {/* Column count stepper (desktop only) */}
+          <div className="hidden lg:flex items-center gap-1 text-muted-foreground">
+            <span className="text-xs mr-1">Columns</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={removeColumn}
+              disabled={columnCount <= 1}
+              title="Remove column"
+            >
+              <Minus className="size-3.5" />
+            </Button>
+            <span className="text-xs w-4 text-center tabular-nums">{columnCount}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={addColumn}
+              disabled={columnCount >= maxColumns}
+              title="Add column"
+            >
+              <Plus className="size-3.5" />
+            </Button>
+          </div>
+
           <Button
             variant="ghost"
             size="icon"
@@ -151,52 +309,171 @@ const BoardLayout = observer(function BoardLayout() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left: rows area */}
         <div className="flex-1 overflow-y-auto" style={{ minWidth: 272 }}>
-          <Outlet context={{ search, selectedCardId, selectCard, startNewCard }} />
+          <Outlet context={{ search, selectedCardId, selectCard, startNewCard, updateSlots, columnSlots }} />
         </div>
 
         {/* Resize handle (desktop only) */}
-        <ResizeHandle onMouseDown={onMouseDown} color={dividerColor} />
+        <ResizeHandle onMouseDown={onMouseDown} />
 
-        {/* Backdrop for mobile panel */}
-        {panelActive && (
-          <div
-            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-            onClick={() => {
-              selectCard(null);
-              setNewCardColumn(null);
-            }}
-          />
+        {/* Mobile: backdrop + single-card overlay */}
+        {!isDesktop && (mobileCardId != null || newCardColumn != null) && (
+          <>
+            <div
+              className="fixed inset-0 z-30 bg-black/50"
+              onClick={() => {
+                setMobileCardId(null);
+                setNewCardColumn(null);
+              }}
+            />
+            <div className="fixed top-0 right-0 bottom-0 z-40 w-full sm:w-[400px] flex flex-col border-l border-border bg-card overflow-hidden">
+              {newCardColumn ? (
+                <NewCardDetail
+                  column={newCardColumn}
+                  onCreated={(id) => {
+                    setNewCardColumn(null);
+                    setMobileCardId(id);
+                  }}
+                  onClose={() => setNewCardColumn(null)}
+                />
+              ) : mobileCardId != null ? (
+                <CardDetail cardId={mobileCardId} onClose={() => setMobileCardId(null)} />
+              ) : null}
+            </div>
+          </>
         )}
 
-        {/* Detail panel — inline on desktop, fixed overlay on mobile */}
-        <div
-          ref={panelRef}
-          className={[
-            'flex flex-col border-l border-border bg-card overflow-hidden',
-            panelActive
-              ? 'fixed top-0 right-0 bottom-0 z-40 w-full sm:w-[400px] lg:static lg:z-auto'
-              : 'hidden lg:flex',
-          ].join(' ')}
-          style={isDesktop ? { width: initialWidth } : undefined}
-        >
-          {newCardColumn ? (
-            <NewCardDetail
-              column={newCardColumn}
-              onCreated={(id) => selectCard(id)}
-              onClose={() => setNewCardColumn(null)}
-            />
-          ) : selectedCardId ? (
-            <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              Select a card to view details
-            </div>
-          )}
+        {/* Desktop: multi-column card panels */}
+        <div ref={panelRef} className="hidden lg:flex overflow-hidden" style={{ width: initialWidth }}>
+          {columnSlots.map((cardId, idx) => {
+            const slotCard = cardId != null ? cardStore.getCard(cardId) : undefined;
+            const slotProject = slotCard?.projectId ? projectStore.getProject(slotCard.projectId) : null;
+            const borderColor = slotProject?.color ?? null;
+            return (
+              <ColumnSlot
+                key={idx}
+                index={idx}
+                cardId={cardId}
+                borderColor={borderColor}
+                newCardColumn={newCardColumn}
+                updateSlots={updateSlots}
+                setNewCardColumn={setNewCardColumn}
+                closeSlot={closeSlot}
+              />
+            );
+          })}
         </div>
       </div>
 
       {activeModal === 'icons' && <IconsModal onClose={() => setActiveModal(null)} />}
       {activeModal === 'settings' && <SettingsProjectsModal onClose={() => setActiveModal(null)} />}
+    </div>
+  );
+});
+
+type ColumnSlotProps = {
+  index: number;
+  cardId: number | null;
+  borderColor: string | null;
+  newCardColumn: string | null;
+  updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
+  setNewCardColumn: (col: string | null) => void;
+  closeSlot: (index: number) => void;
+};
+
+const ColumnSlot = observer(function ColumnSlot({
+  index,
+  cardId,
+  borderColor,
+  newCardColumn,
+  updateSlots,
+  setNewCardColumn,
+  closeSlot,
+}: ColumnSlotProps) {
+  const [dragOver, setDragOver] = useState(false);
+
+  function handleDragOver(e: React.DragEvent) {
+    // Accept drops from column headers and kanban cards
+    if (
+      e.dataTransfer.types.includes('application/x-card-slot') ||
+      e.dataTransfer.types.includes('application/x-kanban-card')
+    ) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setDragOver(true);
+    }
+  }
+
+  function handleDragLeave() {
+    setDragOver(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+
+    // Column-to-column header drag
+    const slotData = e.dataTransfer.getData('application/x-card-slot');
+    if (slotData) {
+      const { cardId: srcCardId, slotIndex: srcIdx } = JSON.parse(slotData) as { cardId: number; slotIndex: number };
+      if (srcIdx === index) return;
+      updateSlots((prev) => {
+        const next = [...prev];
+        next[srcIdx] = null; // source slot becomes empty
+        next[index] = srcCardId; // target slot gets the dragged card (replaces whatever was there)
+        return next;
+      });
+      return;
+    }
+
+    // Kanban card drag
+    const kanbanData = e.dataTransfer.getData('application/x-kanban-card');
+    if (kanbanData) {
+      const { cardId: draggedId } = JSON.parse(kanbanData) as { cardId: number };
+      updateSlots((prev) => {
+        const next = [...prev];
+        // Remove from any existing slot to avoid duplicates
+        for (let i = 0; i < next.length; i++) {
+          if (next[i] === draggedId) next[i] = null;
+        }
+        next[index] = draggedId;
+        return next;
+      });
+    }
+  }
+
+  return (
+    <div
+      data-column-slot={index}
+      className={`flex flex-1 min-w-0 overflow-hidden transition-opacity ${dragOver ? 'ring-2 ring-inset ring-neon-cyan/50' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Column divider — project-colored like ResizeHandle */}
+      <div
+        className={`w-1 shrink-0 ${borderColor ? '' : 'bg-border'}`}
+        style={borderColor ? { backgroundColor: `var(--${borderColor})` } : undefined}
+      />
+      <div className="flex flex-col flex-1 min-w-0 bg-card overflow-hidden">
+        {newCardColumn && index === 0 ? (
+          <NewCardDetail
+            column={newCardColumn}
+            onCreated={(id) => {
+              setNewCardColumn(null);
+              updateSlots((prev) => {
+                const next = [...prev];
+                next[0] = id;
+                return next;
+              });
+            }}
+            onClose={() => setNewCardColumn(null)}
+          />
+        ) : cardId != null ? (
+          <CardDetail cardId={cardId} onClose={() => closeSlot(index)} slotIndex={index} />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Select a card</div>
+        )}
+      </div>
     </div>
   );
 });

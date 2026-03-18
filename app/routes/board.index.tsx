@@ -15,6 +15,7 @@ import {
   getFirstCollision,
   MeasuringStrategy,
   type DragStartEvent,
+  type DragMoveEvent,
   type DragOverEvent,
   type DragEndEvent,
   type CollisionDetection,
@@ -31,6 +32,8 @@ type BoardContext = {
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
+  updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
+  columnSlots: (number | null)[];
 };
 
 const ACTIVE_COLUMNS: ColumnId[] = ['backlog', 'ready', 'running', 'review', 'done'];
@@ -78,8 +81,17 @@ function enrichCard(card: Card, colorMap: Record<number, string>): CardItem {
   };
 }
 
+function findColumnSlotAtPoint(x: number, y: number): number | null {
+  const els = document.elementsFromPoint(x, y);
+  for (const el of els) {
+    const slot = (el as HTMLElement).closest('[data-column-slot]');
+    if (slot) return Number((slot as HTMLElement).dataset.columnSlot);
+  }
+  return null;
+}
+
 const ActiveBoard = observer(function ActiveBoard() {
-  const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
+  const { search, selectCard, startNewCard, updateSlots } = useOutletContext<BoardContext>();
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
 
@@ -117,6 +129,7 @@ const ActiveBoard = observer(function ActiveBoard() {
   );
 
   const lastOverId = useRef<UniqueIdentifier | null>(null);
+  const lastPointer = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const collisionDetection: CollisionDetection = useCallback(
     (args) => {
@@ -169,6 +182,14 @@ const ActiveBoard = observer(function ActiveBoard() {
     setDragOverride(snap);
   }
 
+  function handleDragMove(e: DragMoveEvent) {
+    const evt = e.activatorEvent as PointerEvent;
+    if (evt) {
+      const delta = e.delta;
+      lastPointer.current = { x: evt.clientX + delta.x, y: evt.clientY + delta.y };
+    }
+  }
+
   function handleDragOver(e: DragOverEvent) {
     const { active, over } = e;
     if (!over) return;
@@ -213,6 +234,25 @@ const ActiveBoard = observer(function ActiveBoard() {
 
   function handleDragEnd(e: DragEndEvent) {
     const { active, over } = e;
+
+    // Check if dropped over a column slot (right panel)
+    const slotIdx = findColumnSlotAtPoint(lastPointer.current.x, lastPointer.current.y);
+    if (slotIdx != null) {
+      const draggedId = active.id as number;
+      updateSlots((prev) => {
+        const next = [...prev];
+        // Remove from any existing slot to avoid duplicates
+        for (let i = 0; i < next.length; i++) {
+          if (next[i] === draggedId) next[i] = null;
+        }
+        next[slotIdx] = draggedId;
+        return next;
+      });
+      setActiveId(null);
+      setDragOverride(null);
+      snapshotRef.current = null;
+      return;
+    }
 
     if (!over) {
       setActiveId(null);
@@ -310,6 +350,7 @@ const ActiveBoard = observer(function ActiveBoard() {
       sensors={sensors}
       collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
