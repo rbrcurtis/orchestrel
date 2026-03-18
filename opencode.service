@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenCode Server
+After=network.target
+
+[Service]
+Type=simple
+User=ryan
+WorkingDirectory=/home/ryan/Code/dispatcher
+ExecStart=/home/ryan/.opencode/bin/opencode serve --port 4097
+Environment=OPENCODE_PORT=4097
+Environment=KIROCLI_DB_PATH_OKKANTI=/home/ryan/OK_HOME/.local/share/kiro-cli/data.sqlite3
+Environment=KIROCLI_DB_PATH_TRACKABLE=/home/ryan/.local/share/kiro-cli/data.sqlite3
+Environment=PATH=/home/ryan/.opencode/bin:/home/ryan/.nvm/versions/node/v24.2.0/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

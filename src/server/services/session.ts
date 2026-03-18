@@ -175,6 +175,57 @@ class SessionService {
     }
   }
 
+  async attachSession(cardId: number): Promise<boolean> {
+    const card = await Card.findOneByOrFail({ id: cardId })
+    if (!card.sessionId) return false
+
+    const cwd = card.worktreePath
+      ?? (card.projectId ? (await Project.findOneByOrFail({ id: card.projectId })).path : null)
+    if (!cwd) return false
+
+    // Check if session is alive in OC
+    const port = Number(process.env.OPENCODE_PORT ?? 4097)
+    try {
+      const res = await fetch(`http://localhost:${port}/session/status`, {
+        headers: { 'x-opencode-directory': cwd },
+      })
+      if (!res.ok) return false
+      const statuses = await res.json() as Record<string, { type: string }>
+      if (statuses[card.sessionId]?.type !== 'busy') return false
+    } catch {
+      return false
+    }
+
+    console.log(`[session:${cardId}] attachSession: session ${card.sessionId} is busy, attaching`)
+
+    let providerID = 'anthropic'
+    let projectName: string | undefined
+    if (card.projectId) {
+      const proj = await Project.findOneBy({ id: card.projectId })
+      if (proj) {
+        projectName = proj.name.toLowerCase()
+        providerID = proj.providerID ?? 'anthropic'
+      }
+    }
+
+    const session = sessionManager.create(cardId, {
+      cwd,
+      providerID,
+      model: (card.model ?? 'sonnet') as 'sonnet' | 'opus' | 'auto',
+      thinkingLevel: (card.thinkingLevel ?? 'high') as 'off' | 'low' | 'medium' | 'high',
+      resumeSessionId: card.sessionId,
+      projectName,
+    })
+
+    session.promptsSent = card.promptsSent ?? 0
+    session.turnsCompleted = card.turnsCompleted ?? 0
+
+    wireSession(cardId, session)
+    await session.attach()
+
+    return true
+  }
+
   async sendMessage(cardId: number, message: string): Promise<void> {
     const existing = sessionManager.get(cardId)
     if (existing && (existing.status === 'running' || existing.status === 'completed')) {

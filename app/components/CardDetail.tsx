@@ -78,6 +78,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   const [archivePending, setArchivePending] = useState(false);
   const archiveRef = useRef<HTMLButtonElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
 
   // Sync draft from card data — keyed on card.id only to initialize form + collapse state once per card
   useEffect(() => {
@@ -96,17 +97,19 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   }, [card?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-sync fields on update (but don't reset formOpen) — keyed on updatedAt to avoid resetting collapse state
+  // Skip description sync if the textarea is focused to prevent cursor jumps during autosave
   useEffect(() => {
     if (!card) return;
-    setDraft({
+    const descFocused = document.activeElement === descRef.current;
+    setDraft((d) => ({
       title: card.title,
-      description: card.description ?? '',
+      description: descFocused ? d.description : (card.description ?? ''),
       projectId: card.projectId,
       useWorktree: card.useWorktree,
       sourceBranch: card.sourceBranch,
       model: card.model,
       thinkingLevel: card.thinkingLevel,
-    });
+    }));
   }, [card?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save: 250ms debounce for text fields only
@@ -299,6 +302,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                   />
                 ) : (
                   <Textarea
+                    ref={descRef}
                     value={draft.description}
                     onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
                     onBlur={() => saveAll()}

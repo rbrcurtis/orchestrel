@@ -77,7 +77,20 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
   })
 
   // Handler: forward session status changes to domain bus
-  session.on('statusChange', () => {
+  // If session goes to running but card isn't in running column, move it back
+  session.on('statusChange', async () => {
+    if (session.status === 'running') {
+      try {
+        const card = await Card.findOneBy({ id: cardId })
+        if (card && card.column !== 'running') {
+          card.column = 'running'
+          card.updatedAt = new Date().toISOString()
+          await card.save()
+        }
+      } catch (err) {
+        console.error(`[oc:${cardId}] failed to move card to running on statusChange:`, err)
+      }
+    }
     bus.publish(`card:${cardId}:session-status`, {
       cardId,
       active: session.status === 'running' || session.status === 'starting' || session.status === 'retry',
@@ -95,16 +108,39 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
 
 interface SessionStarter {
   startSession(cardId: number, message?: string): Promise<void>
+  attachSession(cardId: number): Promise<boolean>
 }
 
 export function registerAutoStart(bus: MessageBus = messageBus, starter: SessionStarter): void {
-  bus.subscribe('board:changed', (payload) => {
+  bus.subscribe('board:changed', async (payload) => {
     const { card, oldColumn, newColumn } = payload as {
       card: Card | null; oldColumn: string | null; newColumn: string | null
     }
     if (!card) return
     if (newColumn !== 'running') return
     if (oldColumn === 'running') return
+
+    // Card with existing session — try to attach if OC session is still alive
+    if (card.sessionId) {
+      try {
+        const attached = await starter.attachSession(card.id)
+        if (attached) {
+          console.log(`[oc:auto-start] attached to live session for card ${card.id}`)
+          return
+        }
+        // Session not alive — move card back
+        const c = await Card.findOneBy({ id: card.id })
+        if (c && c.column === 'running') {
+          c.column = oldColumn ?? 'backlog'
+          c.updatedAt = new Date().toISOString()
+          await c.save()
+          console.log(`[oc:auto-start] session not alive for card ${card.id}, moved back to ${oldColumn}`)
+        }
+      } catch (err) {
+        console.error(`[oc:auto-start] attach failed for card ${card.id}:`, err)
+      }
+      return
+    }
 
     starter.startSession(card.id, undefined).catch(err => {
       console.error(`[oc:auto-start] failed for card ${card.id}:`, err)

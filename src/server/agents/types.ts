@@ -43,6 +43,7 @@ export abstract class AgentSession extends EventEmitter {
   abstract promptsSent: number
   abstract turnsCompleted: number
 
+  abstract attach(): Promise<void>
   abstract start(prompt: string): Promise<void>
   abstract sendMessage(content: string): Promise<void>
   abstract kill(): Promise<void>

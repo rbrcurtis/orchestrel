@@ -177,7 +177,7 @@ describe('OC controller: registerAutoStart', () => {
     const bus = new MessageBus()
     const startMock = vi.fn().mockResolvedValue(undefined)
     const { registerAutoStart } = await import('./oc')
-    registerAutoStart(bus, { startSession: startMock })
+    registerAutoStart(bus, { startSession: startMock, attachSession: vi.fn().mockResolvedValue(false) })
 
     const card = Card.create({
       title: 'Auto test', description: 'Test', column: 'running',
@@ -195,7 +195,7 @@ describe('OC controller: registerAutoStart', () => {
     const bus = new MessageBus()
     const startMock = vi.fn().mockResolvedValue(undefined)
     const { registerAutoStart } = await import('./oc')
-    registerAutoStart(bus, { startSession: startMock })
+    registerAutoStart(bus, { startSession: startMock, attachSession: vi.fn().mockResolvedValue(false) })
 
     const card = Card.create({
       title: 'No start', description: 'Test', column: 'review',

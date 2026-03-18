@@ -64,15 +64,33 @@ export class OpenCodeSession extends AgentSession {
     this.log(`timer:reset reason=${reason}`)
     if (this.promptTimer) clearTimeout(this.promptTimer)
     this.promptTimer = setTimeout(() => {
-      this.log(`prompt:timeout after ${OpenCodeSession.PROMPT_TIMEOUT_MS}ms (status=${this._status}, turns=${this.turnsCompleted}, prompts=${this.promptsSent})`)
-      this.emit('message', {
-        type: 'error',
-        role: 'system',
-        content: `Session timed out — no activity for ${OpenCodeSession.PROMPT_TIMEOUT_MS / 1000}s after prompt`,
-        timestamp: Date.now(),
-      } satisfies AgentMessage)
-      this.kill()
+      this.log(`prompt:quiet after ${OpenCodeSession.PROMPT_TIMEOUT_MS}ms (status=${this._status}, turns=${this.turnsCompleted}, prompts=${this.promptsSent}) — checking OC`)
+      void this.checkSessionAlive()
     }, OpenCodeSession.PROMPT_TIMEOUT_MS)
+  }
+
+  private async checkSessionAlive(): Promise<void> {
+    if (!this.sessionId) return
+    try {
+      const port = Number(process.env.OPENCODE_PORT ?? 4097)
+      const res = await fetch(`http://localhost:${port}/session/status`, {
+        headers: { 'x-opencode-directory': this.cwd },
+      })
+      if (!res.ok) {
+        this.log(`oc:status-check failed (HTTP ${res.status})`)
+        return
+      }
+      const statuses = await res.json() as Record<string, { type: string }>
+      const status = statuses[this.sessionId]
+      if (status?.type === 'busy') {
+        this.log('oc:alive — session still busy, resetting timer')
+        this.resetPromptTimer('oc:alive')
+      } else {
+        this.log(`oc:idle — session status=${status?.type ?? 'missing'}`)
+      }
+    } catch (err) {
+      this.log(`oc:status-check error: ${err}`)
+    }
   }
 
   private clearPromptTimer(reason: string): void {
@@ -144,6 +162,13 @@ export class OpenCodeSession extends AgentSession {
       return parts[parts.length - 1] || filePath.slice(0, 40)
     }
     return ''
+  }
+
+  async attach(): Promise<void> {
+    this.status = 'running'
+    await this.subscribeToEvents()
+    this.log('sse:connect (attach)')
+    this.resetPromptTimer('attach')
   }
 
   async start(prompt: string): Promise<void> {
