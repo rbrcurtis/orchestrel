@@ -176,7 +176,11 @@ const ActiveBoard = observer(function ActiveBoard() {
     const activeCol = snapshotRef.current
       ? findColumnInData(snapshotRef.current, active.id)
       : findColumnInData(columns, active.id);
-    if (activeCol === 'running') return;
+    if (activeCol === 'running') {
+      // Allow dragging queued cards (they have a queuePosition), block active cards
+      const activeCard = Object.values(columns).flat().find(c => c.id === active.id);
+      if (!activeCard || activeCard.queuePosition == null) return;
+    }
 
     const overCol = findColumnInData(columns, over.id);
     const currentCol = findColumnInData(columns, active.id);
@@ -224,12 +228,18 @@ const ActiveBoard = observer(function ActiveBoard() {
       return;
     }
 
-    // Snap back running cards — session is running, moves not allowed
+    // Snap back active running cards — session is running, moves not allowed
+    // Queued cards (queuePosition != null) can be moved freely
     if (originalCol === 'running') {
-      setDragOverride(null);
-      setActiveId(null);
-      snapshotRef.current = null;
-      return;
+      const draggedCard = snapshotRef.current
+        ? Object.values(snapshotRef.current).flat().find(c => c.id === active.id)
+        : Object.values(columns).flat().find(c => c.id === active.id);
+      if (!draggedCard || draggedCard.queuePosition == null) {
+        setDragOverride(null);
+        setActiveId(null);
+        snapshotRef.current = null;
+        return;
+      }
     }
 
     if (originalCol === currentCol) {
