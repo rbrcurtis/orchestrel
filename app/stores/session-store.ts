@@ -100,6 +100,13 @@ export class SessionStore {
     runInAction(() => {
       const s = this.getOrCreate(cardId);
 
+      // If content arrives for a session we think is inactive, flip it back.
+      // The agent is still producing output (e.g., stop didn't take effect yet).
+      if (!s.active && (msg.type === 'text' || msg.type === 'tool_call' || msg.type === 'thinking')) {
+        s.active = true;
+        s.status = 'running';
+      }
+
       if (msg.type === 'subagent' && msg.meta) {
         const m = msg.meta as {
           subtype: string;
