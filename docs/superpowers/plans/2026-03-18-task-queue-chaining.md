@@ -867,7 +867,15 @@ git commit -m "feat: add queue position badge to card component"
 
 - Modify: `app/components/Card.tsx` (wrap badge in Popover)
 
-- [ ] **Step 1: Add popover imports**
+- [ ] **Step 1: Install shadcn Popover component**
+
+```bash
+npx shadcn@latest add popover
+```
+
+This creates `app/components/ui/popover.tsx`. Verify the file exists after install.
+
+- [ ] **Step 2: Add popover imports**
 
 In `app/components/Card.tsx`, add:
 
@@ -876,7 +884,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover
 import { Input } from '~/components/ui/input';
 ```
 
-- [ ] **Step 2: Add `reorderQueue` method to CardStore**
+- [ ] **Step 3: Add `reorderQueue` method to CardStore**
 
 In `app/stores/card-store.ts`, add a new method to the `CardStore` class (after `suggestTitle` or at the end):
 
@@ -887,7 +895,7 @@ In `app/stores/card-store.ts`, add a new method to the `CardStore` class (after 
   }
 ```
 
-- [ ] **Step 3: Replace static badge with popover-wrapped badge**
+- [ ] **Step 4: Replace static badge with popover-wrapped badge**
 
 Replace the queue badge JSX from Task 6 with:
 
@@ -946,14 +954,14 @@ function QueueBadge({ id, queuePosition }: { id: number; queuePosition: number }
 }
 ```
 
-- [ ] **Step 4: Verify popover works**
+- [ ] **Step 5: Verify popover works**
 
 Navigate to `http://localhost:6194`. With queued cards visible, click a queue badge number. Popover should appear with a number input. Change the number and press Enter — cards should reorder.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add app/components/Card.tsx app/stores/card-store.ts
+git add app/components/Card.tsx app/stores/card-store.ts app/components/ui/popover.tsx
 git commit -m "feat: add reorder popover to queue badge"
 ```
 
