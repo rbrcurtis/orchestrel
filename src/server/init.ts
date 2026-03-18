@@ -149,6 +149,7 @@ export async function initBackend(): Promise<{
         const cards = await Card.find({ where: { column: 'running' } });
         for (const card of cards) {
           if (!card.sessionId) continue;
+          if (card.queuePosition != null) continue; // queued, not actively running
           try {
             const attached = await sessionService.attachSession(card.id);
             if (attached) {
