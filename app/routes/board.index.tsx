@@ -73,7 +73,7 @@ function findColumnInData(data: ColumnCards, id: UniqueIdentifier): ColumnId | n
 function enrichCard(card: Card, colorMap: Record<number, string>): CardItem {
   return {
     ...card,
-    color: card.projectId ? colorMap[card.projectId] ?? null : null,
+    color: card.projectId ? (colorMap[card.projectId] ?? null) : null,
   };
 }
 
@@ -98,7 +98,7 @@ const ActiveBoard = observer(function ActiveBoard() {
     archive: [],
   };
   for (const col of ACTIVE_COLUMNS) {
-    storeColumns[col] = cardStore.cardsByColumn(col).map(c => enrichCard(c, colorMap));
+    storeColumns[col] = cardStore.cardsByColumn(col).map((c) => enrichCard(c, colorMap));
   }
 
   // During drag: local override; after drag ends: null → use storeColumns
@@ -112,7 +112,7 @@ const ActiveBoard = observer(function ActiveBoard() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   const lastOverId = useRef<UniqueIdentifier | null>(null);
@@ -132,7 +132,7 @@ const ActiveBoard = observer(function ActiveBoard() {
               const closestInCol = closestCenter({
                 ...args,
                 droppableContainers: args.droppableContainers.filter(
-                  (c) => c.id === overId || colCards.some((card) => card.id === c.id)
+                  (c) => c.id === overId || colCards.some((card) => card.id === c.id),
                 ),
               });
               if (closestInCol.length > 0) return closestInCol;
@@ -154,7 +154,7 @@ const ActiveBoard = observer(function ActiveBoard() {
       lastOverId.current = getFirstCollision(ccCollisions, 'id');
       return ccCollisions;
     },
-    [columns]
+    [columns],
   );
 
   function handleDragStart(e: DragStartEvent) {
@@ -175,10 +175,12 @@ const ActiveBoard = observer(function ActiveBoard() {
     const activeCol = snapshotRef.current
       ? findColumnInData(snapshotRef.current, active.id)
       : findColumnInData(columns, active.id);
-    if (activeCol === 'running') return;
 
     const overCol = findColumnInData(columns, over.id);
     const currentCol = findColumnInData(columns, active.id);
+
+    // Running cards can only move to done/archive
+    if (activeCol === 'running' && overCol !== 'done' && overCol !== 'archive') return;
 
     if (!currentCol || !overCol || currentCol === overCol) return;
 
@@ -212,9 +214,7 @@ const ActiveBoard = observer(function ActiveBoard() {
     }
 
     const currentCol = findColumnInData(columns, active.id);
-    const originalCol = snapshotRef.current
-      ? findColumnInData(snapshotRef.current, active.id)
-      : currentCol;
+    const originalCol = snapshotRef.current ? findColumnInData(snapshotRef.current, active.id) : currentCol;
 
     if (!currentCol || !originalCol) {
       setActiveId(null);
@@ -223,8 +223,8 @@ const ActiveBoard = observer(function ActiveBoard() {
       return;
     }
 
-    // Snap back running cards — session is running, moves not allowed
-    if (originalCol === 'running') {
+    // Snap back running cards unless moved to done/archive
+    if (originalCol === 'running' && currentCol !== 'done' && currentCol !== 'archive') {
       setDragOverride(null);
       setActiveId(null);
       snapshotRef.current = null;
@@ -245,8 +245,7 @@ const ActiveBoard = observer(function ActiveBoard() {
         const finalIdx = reordered.findIndex((c) => c.id === active.id);
         const _pos = calcPosition(others, finalIdx);
 
-        cardStore.updateCard({ id: active.id as number, column: currentCol })
-          .finally(() => setDragOverride(null));
+        cardStore.updateCard({ id: active.id as number, column: currentCol }).finally(() => setDragOverride(null));
       } else {
         setDragOverride(null);
       }
@@ -256,8 +255,7 @@ const ActiveBoard = observer(function ActiveBoard() {
       const insertIdx = columns[currentCol].findIndex((c) => c.id === active.id);
       const _pos = calcPosition(destCards, insertIdx === -1 ? destCards.length : insertIdx);
 
-      cardStore.updateCard({ id: active.id as number, column: currentCol })
-        .finally(() => setDragOverride(null));
+      cardStore.updateCard({ id: active.id as number, column: currentCol }).finally(() => setDragOverride(null));
     }
 
     setActiveId(null);
@@ -276,9 +274,7 @@ const ActiveBoard = observer(function ActiveBoard() {
     const result = {} as ColumnCards;
     for (const col of ALL_COLUMNS) {
       result[col] = columns[col].filter(
-        (c) =>
-          c.title.toLowerCase().includes(q) ||
-          (c.description && c.description.toLowerCase().includes(q))
+        (c) => c.title.toLowerCase().includes(q) || (c.description && c.description.toLowerCase().includes(q)),
       );
     }
     return result;
@@ -304,7 +300,7 @@ const ActiveBoard = observer(function ActiveBoard() {
       measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
     >
       <div className="flex flex-col gap-2 p-4">
-        {ACTIVE_COLUMNS.map(col => (
+        {ACTIVE_COLUMNS.map((col) => (
           <StatusRow
             key={col}
             id={col}
@@ -314,14 +310,13 @@ const ActiveBoard = observer(function ActiveBoard() {
           />
         ))}
       </div>
-      {mounted && createPortal(
-        <DragOverlay dropAnimation={null}>
-          {activeCard ? (
-            <CardOverlay title={activeCard.title} color={activeCard.color} />
-          ) : null}
-        </DragOverlay>,
-        document.body
-      )}
+      {mounted &&
+        createPortal(
+          <DragOverlay dropAnimation={null}>
+            {activeCard ? <CardOverlay title={activeCard.title} color={activeCard.color} /> : null}
+          </DragOverlay>,
+          document.body,
+        )}
     </DndContext>
   );
 });
