@@ -202,28 +202,25 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
         {/* Header bar */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
           <Select value={col} onValueChange={handleStatusChange}>
-            <div className={sessionActive ? 'cursor-not-allowed' : ''}>
-              <SelectTrigger
-                className={cn(
-                  'w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0',
-                  sessionActive && 'pointer-events-none',
-                )}
-              >
-                <Badge variant="outline" className="uppercase text-xs tracking-wide">
-                  <SelectValue />
-                </Badge>
-              </SelectTrigger>
-            </div>
+            <SelectTrigger className="w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0">
+              <Badge variant="outline" className="uppercase text-xs tracking-wide">
+                <SelectValue />
+              </Badge>
+            </SelectTrigger>
             <SelectContent>
-              {STATUSES.map((s) => (
+              {STATUSES.filter((s) => !sessionActive || s === col || s === 'done' || s === 'archive').map((s) => (
                 <SelectItem key={s} value={s}>
                   {statusLabels[s]}
                 </SelectItem>
               ))}
-              <SelectSeparator />
-              <SelectItem value="__delete__" className="text-destructive focus:text-destructive">
-                Delete
-              </SelectItem>
+              {!sessionActive && (
+                <>
+                  <SelectSeparator />
+                  <SelectItem value="__delete__" className="text-destructive focus:text-destructive">
+                    Delete
+                  </SelectItem>
+                </>
+              )}
             </SelectContent>
           </Select>
           {hasSession ? (

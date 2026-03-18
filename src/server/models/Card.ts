@@ -90,6 +90,19 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
   afterUpdate(event: UpdateEvent<Card>) {
     const card = event.entity as Card
     const prev = event.databaseEntity as Card
+
+    if (prev) {
+      const changes: Record<string, { from: unknown; to: unknown }> = {}
+      for (const key of Object.keys(card) as (keyof Card)[]) {
+        if (prev[key] !== card[key]) {
+          changes[key] = { from: prev[key], to: card[key] }
+        }
+      }
+      if (Object.keys(changes).length > 0) {
+        console.log(`[card:${card.id}:changes]`, JSON.stringify(changes))
+      }
+    }
+
     messageBus.publish(`card:${card.id}:updated`, card)
 
     if (prev?.column !== card.column) {
