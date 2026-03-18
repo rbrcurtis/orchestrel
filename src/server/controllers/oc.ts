@@ -28,6 +28,29 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
     bus.publish(`card:${cardId}:message`, msg);
   });
 
+  // Handler: if messages arrive for a card not in running, move it back.
+  // This handles the case where the agent keeps producing output after a
+  // failed stop attempt or after the card was moved away prematurely.
+  const CONTENT_TYPES = new Set(['text', 'tool_call', 'thinking']);
+  let cardMoveInFlight = false;
+  session.on('message', async (msg: AgentMessage) => {
+    if (!CONTENT_TYPES.has(msg.type) || cardMoveInFlight) return;
+    try {
+      cardMoveInFlight = true;
+      const card = await Card.findOneBy({ id: cardId });
+      if (card && card.column !== 'running' && card.column !== 'archive' && card.column !== 'done') {
+        console.log(`[oc:${cardId}] message arrived while card in ${card.column} — moving to running`);
+        card.column = 'running';
+        card.updatedAt = new Date().toISOString();
+        await card.save();
+      }
+    } catch (err) {
+      console.error(`[oc:${cardId}] failed to move card to running on message:`, err);
+    } finally {
+      cardMoveInFlight = false;
+    }
+  });
+
   // Handler: persist counters + move card to review on turn_end
   // These MUST be in one handler to avoid a lost-update race (both would
   // load the same row, mutate different fields, and the last save wins).

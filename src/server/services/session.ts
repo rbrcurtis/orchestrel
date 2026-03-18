@@ -255,25 +255,26 @@ class SessionService {
   }
 
   async stopSession(cardId: number): Promise<void> {
-    await sessionManager.kill(cardId);
-    // exit listener on the session handles card update to review
-
-    // Fallback: abort via SDK even if no in-memory session (e.g., post-restart).
-    // sessionManager.kill() is a no-op when the map is empty, but the OpenCode
-    // session may still be running. Always send the SDK abort to be safe.
-    const card = await Card.findOneBy({ id: cardId });
-    if (card?.sessionId) {
-      try {
-        const { openCodeServer } = await import('../opencode/server');
-        if (openCodeServer.client) {
-          const sdk = openCodeServer.client as unknown as {
-            session: { abort(opts: { sessionID: string }): Promise<void> };
-          };
-          await sdk.session.abort({ sessionID: card.sessionId });
-          console.log(`[session:${cardId}] SDK abort sent for ${card.sessionId}`);
+    const session = sessionManager.get(cardId);
+    if (session) {
+      // Graceful stop: keeps SSE alive, retries abort every 1s until idle
+      sessionManager.requestStop(cardId);
+    } else {
+      // No in-memory session (e.g., post-restart) — fire-and-forget SDK abort
+      const card = await Card.findOneBy({ id: cardId });
+      if (card?.sessionId) {
+        try {
+          const { openCodeServer } = await import('../opencode/server');
+          if (openCodeServer.client) {
+            const sdk = openCodeServer.client as unknown as {
+              session: { abort(opts: { sessionID: string }): Promise<void> };
+            };
+            await sdk.session.abort({ sessionID: card.sessionId });
+            console.log(`[session:${cardId}] SDK abort sent (no in-memory session) for ${card.sessionId}`);
+          }
+        } catch {
+          // Already idle or session gone — harmless
         }
-      } catch {
-        // Already idle or session gone — harmless
       }
     }
   }
