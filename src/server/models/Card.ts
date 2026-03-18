@@ -3,6 +3,7 @@ import {
   EventSubscriber,
   type EntitySubscriberInterface,
   type InsertEvent, type UpdateEvent, type RemoveEvent,
+  BeforeUpdateEvent,
 } from 'typeorm'
 import { Expose } from 'class-transformer'
 import { messageBus } from '../bus'
@@ -77,6 +78,15 @@ export class Card extends BaseEntity {
 @EventSubscriber()
 export class CardSubscriber implements EntitySubscriberInterface<Card> {
   listenTo() { return Card }
+
+  beforeUpdate(event: BeforeUpdateEvent<Card>) {
+    const card = event.entity as Card
+    const prev = event.databaseEntity as Card
+    if (prev?.sessionId && card.sessionId !== prev.sessionId) {
+      console.error(`[card:${card.id}:BLOCKED] sessionId change from ${prev.sessionId} to ${card.sessionId}`)
+      card.sessionId = prev.sessionId
+    }
+  }
 
   afterInsert(event: InsertEvent<Card>) {
     messageBus.publish(`card:${event.entity.id}:updated`, event.entity)

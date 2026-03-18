@@ -78,6 +78,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   const [archivePending, setArchivePending] = useState(false);
   const archiveRef = useRef<HTMLButtonElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   // Sync draft from card data — keyed on card.id only to initialize form + collapse state once per card
@@ -100,9 +101,10 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   // Skip description sync if the textarea is focused to prevent cursor jumps during autosave
   useEffect(() => {
     if (!card) return;
+    const titleFocused = document.activeElement === titleRef.current;
     const descFocused = document.activeElement === descRef.current;
     setDraft((d) => ({
-      title: card.title,
+      title: titleFocused ? d.title : card.title,
       description: descFocused ? d.description : (card.description ?? ''),
       projectId: card.projectId,
       useWorktree: card.useWorktree,
@@ -280,6 +282,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
                   <Input
+                    ref={titleRef}
                     value={draft.title}
                     onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
                     onBlur={() => saveAll()}
