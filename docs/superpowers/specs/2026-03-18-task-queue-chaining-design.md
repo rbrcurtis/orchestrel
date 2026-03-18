@@ -18,6 +18,31 @@ Cards with `useWorktree=true` are never part of a conflict group and always run 
 ALTER TABLE cards ADD COLUMN queue_position INTEGER DEFAULT NULL;
 ```
 
+### TypeORM entity change
+
+Add `@Column` decorator to `Card` entity in `src/server/models/Card.ts`:
+
+```typescript
+@Column({ name: 'queue_position', type: 'integer', nullable: true, default: null })
+queuePosition!: number | null
+```
+
+### Zod schema change
+
+Add `queuePosition` to `cardSchema` in `src/shared/ws-protocol.ts`:
+
+```typescript
+queuePosition: z.number().nullable();
+```
+
+### WS protocol addition
+
+Add `queue:reorder` to the `clientMessage` discriminated union in `ws-protocol.ts`:
+
+```typescript
+z.object({ type: z.literal('queue:reorder'), requestId: z.string(), cardId: z.number(), newPosition: z.number() });
+```
+
 ### State meanings
 
 | `column`  | `queuePosition` | Meaning                           |
@@ -37,16 +62,25 @@ Within a conflict group, at most one card has `queuePosition = NULL` (the active
 
 ## Server: Event-Driven Behavior
 
-### New listener: `registerQueueManager(bus, starter)`
+### Race condition avoidance
 
-Registered in `src/server/controllers/oc.ts` alongside `registerAutoStart` and `registerWorktreeCleanup`. Listens to `board:changed`.
+Both queue assignment and session start react to `board:changed`. If they were separate listeners, a race exists: `registerAutoStart` could start a session on a card before the queue manager assigns it a position. To avoid this, **queue assignment is integrated into `registerAutoStart`** — it becomes the single decision point for "start, queue, or skip" when a non-worktree card enters `running`.
 
-#### Card enters `running` (`newColumn === 'running'`)
+### Modification to `registerAutoStart`
 
-1. If card has `useWorktree = true` → ignore (let `registerAutoStart` handle normally)
-2. Query the conflict group for this card's project
-3. If no other cards in group → set `queuePosition = NULL` (active), let `registerAutoStart` handle it
-4. If an active card already exists → assign `queuePosition = max(existing positions) + 1`, save. Do NOT start a session.
+When a card enters `running` (`newColumn === 'running'`):
+
+1. If card has `useWorktree = true` → proceed to start session (existing behavior)
+2. If card has `useWorktree = false` → query the conflict group for this card's project:
+   - If no other cards in group → `queuePosition` stays `NULL`, proceed to start session
+   - If an active card already exists → assign `queuePosition = max(existing positions) + 1`, save. Do NOT start a session. Return early.
+3. Existing guard: skip cards where `queuePosition IS NOT NULL` (prevents starting sessions on queued cards during re-attach on startup, promotion, etc.)
+
+This makes `registerAutoStart` the sole handler for the "card enters running" event, eliminating the race.
+
+### New listener: `registerQueueManager(bus)`
+
+Registered in `src/server/controllers/oc.ts` alongside `registerAutoStart` and `registerWorktreeCleanup`. Listens to `board:changed`. Handles only **cards leaving `running`** — it does not handle entry (that's `registerAutoStart`'s job).
 
 #### Card leaves `running` (`oldColumn === 'running'`, any new column)
 
@@ -63,13 +97,14 @@ Triggered by move to another column, deletion, or archival — all produce `boar
    - Decrement all cards with `queuePosition > removed card's position`
    - Save affected cards
 
-### Modification to `registerAutoStart`
-
-Add a single guard: skip cards where `queuePosition IS NOT NULL`. This prevents queued cards from having sessions started. This is the only change to an existing handler.
-
 ### Promotion flow
 
-Promotion does not directly call `startSession`. It sets `queuePosition = NULL` and relies on `registerAutoStart` to notice a card in `running` with no active session. This preserves handler independence and composability.
+When the queue manager promotes a card (sets `queuePosition = NULL`), it directly calls `starter.startSession(cardId)` on the promoted card. This is necessary because:
+
+- `board:changed` only fires on **column changes** (`CardSubscriber` checks `prev?.column !== card.column`), so a `queuePosition`-only update doesn't emit the event
+- `registerAutoStart` explicitly ignores events where `oldColumn === 'running'`
+
+Both `registerAutoStart` and `registerQueueManager` receive `starter` as a dependency — they don't reference each other, they share an injected capability. This preserves testability and composability.
 
 ## WebSocket API
 
@@ -80,8 +115,10 @@ No changes needed to `card:update`. Column moves already produce `board:changed`
 ### New mutation: `queue:reorder`
 
 ```typescript
-{ type: 'queue:reorder', cardId: number, newPosition: number }
+{ type: 'queue:reorder', requestId: string, cardId: number, newPosition: number }
 ```
+
+Follows the existing mutation pattern: includes `requestId` for request/response correlation, responds with `mutation:ok` or `mutation:error`.
 
 - `newPosition` is 1-indexed queue position. Cannot set to 0 or NULL (cannot make yourself active).
 - Server validates the card is queued (`queuePosition !== null`).
@@ -89,7 +126,7 @@ No changes needed to `card:update`. Column moves already produce `board:changed`
   - Moving forward (e.g., 3→1): cards in range `[newPosition, oldPosition-1]` increment by 1
   - Moving backward (e.g., 1→3): cards in range `[oldPosition+1, newPosition]` decrement by 1
   - Target card gets `newPosition`
-- Saves all affected cards (triggers `board:changed` for each via `CardSubscriber`).
+- Saves all affected cards. These intermediate saves are safe: `board:changed` only fires on **column changes** (`CardSubscriber` checks `prev?.column !== card.column`), so `queuePosition`-only updates don't emit events at all. No spurious handler invocations.
 
 ### Subscriptions
 
