@@ -210,6 +210,212 @@ describe('OC controller: registerAutoStart', () => {
   })
 })
 
+describe('OC controller: registerAutoStart queue assignment', () => {
+  it('queues non-worktree card when conflict group has active card', async () => {
+    const bus = new MessageBus();
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { registerAutoStart } = await import('./oc');
+    registerAutoStart(bus, { startSession: startMock, attachSession: vi.fn().mockResolvedValue(false) });
+
+    const proj = Project.create({ name: 'Queue proj', path: '/tmp/q', createdAt: new Date().toISOString() } as Partial<Project> as Project);
+    await proj.save();
+
+    const active = Card.create({
+      title: 'Active', description: 'Test', column: 'running',
+      position: 0, projectId: proj.id, useWorktree: false, queuePosition: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await active.save();
+
+    const queued = Card.create({
+      title: 'Queued', description: 'Test', column: 'running',
+      position: 1, projectId: proj.id, useWorktree: false,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await queued.save();
+
+    bus.publish('board:changed', { card: queued, oldColumn: 'ready', newColumn: 'running' });
+    await new Promise(r => setTimeout(r, 50));
+
+    await queued.reload();
+    expect(queued.queuePosition).toBe(1);
+    expect(startMock).not.toHaveBeenCalled();
+  });
+
+  it('does not queue non-worktree card when no conflict exists', async () => {
+    const bus = new MessageBus();
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { registerAutoStart } = await import('./oc');
+    registerAutoStart(bus, { startSession: startMock, attachSession: vi.fn().mockResolvedValue(false) });
+
+    const proj = Project.create({ name: 'Solo proj', path: '/tmp/s', createdAt: new Date().toISOString() } as Partial<Project> as Project);
+    await proj.save();
+
+    const card = Card.create({
+      title: 'Solo', description: 'Test', column: 'running',
+      position: 0, projectId: proj.id, useWorktree: false,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await card.save();
+
+    bus.publish('board:changed', { card, oldColumn: 'ready', newColumn: 'running' });
+    await new Promise(r => setTimeout(r, 50));
+
+    await card.reload();
+    expect(card.queuePosition).toBeNull();
+    expect(startMock).toHaveBeenCalledWith(card.id, undefined);
+  });
+
+  it('does not queue worktree cards even when conflict group exists', async () => {
+    const bus = new MessageBus();
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { registerAutoStart } = await import('./oc');
+    registerAutoStart(bus, { startSession: startMock, attachSession: vi.fn().mockResolvedValue(false) });
+
+    const proj = Project.create({ name: 'WT proj', path: '/tmp/wt', createdAt: new Date().toISOString() } as Partial<Project> as Project);
+    await proj.save();
+
+    const active = Card.create({
+      title: 'Active NW', description: 'Test', column: 'running',
+      position: 0, projectId: proj.id, useWorktree: false, queuePosition: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await active.save();
+
+    const wtCard = Card.create({
+      title: 'WT card', description: 'Test', column: 'running',
+      position: 1, projectId: proj.id, useWorktree: true,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await wtCard.save();
+
+    bus.publish('board:changed', { card: wtCard, oldColumn: 'ready', newColumn: 'running' });
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(startMock).toHaveBeenCalledWith(wtCard.id, undefined);
+  });
+
+  it('skips already-queued cards (queuePosition not null)', async () => {
+    const bus = new MessageBus();
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { registerAutoStart } = await import('./oc');
+    registerAutoStart(bus, { startSession: startMock, attachSession: vi.fn().mockResolvedValue(false) });
+
+    const card = Card.create({
+      title: 'Pre-queued', description: 'Test', column: 'running',
+      position: 0, queuePosition: 2,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await card.save();
+
+    bus.publish('board:changed', { card, oldColumn: 'ready', newColumn: 'running' });
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(startMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('OC controller: registerQueueManager', () => {
+  it('promotes next card and decrements queue when active card leaves running', async () => {
+    const bus = new MessageBus();
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { registerQueueManager } = await import('./oc');
+    registerQueueManager(bus, { startSession: startMock });
+
+    const proj = Project.create({ name: 'Promo proj', path: '/tmp/promo', createdAt: new Date().toISOString() } as Partial<Project> as Project);
+    await proj.save();
+
+    const departed = Card.create({
+      title: 'Departed', description: 'Test', column: 'review',
+      position: 0, projectId: proj.id, useWorktree: false, queuePosition: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await departed.save();
+
+    const next = Card.create({
+      title: 'Next', description: 'Test', column: 'running',
+      position: 1, projectId: proj.id, useWorktree: false, queuePosition: 1,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await next.save();
+
+    const third = Card.create({
+      title: 'Third', description: 'Test', column: 'running',
+      position: 2, projectId: proj.id, useWorktree: false, queuePosition: 2,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await third.save();
+
+    bus.publish('board:changed', { card: departed, oldColumn: 'running', newColumn: 'review' });
+    await new Promise(r => setTimeout(r, 100));
+
+    await next.reload();
+    await third.reload();
+    expect(next.queuePosition).toBeNull();
+    expect(third.queuePosition).toBe(1);
+    expect(startMock).toHaveBeenCalledWith(next.id);
+  });
+
+  it('renumbers queue when a queued card leaves running', async () => {
+    const bus = new MessageBus();
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { registerQueueManager } = await import('./oc');
+    registerQueueManager(bus, { startSession: startMock });
+
+    const proj = Project.create({ name: 'Renum proj', path: '/tmp/renum', createdAt: new Date().toISOString() } as Partial<Project> as Project);
+    await proj.save();
+
+    const active = Card.create({
+      title: 'Active', description: 'Test', column: 'running',
+      position: 0, projectId: proj.id, useWorktree: false, queuePosition: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await active.save();
+
+    const removed = Card.create({
+      title: 'Removed', description: 'Test', column: 'ready',
+      position: 1, projectId: proj.id, useWorktree: false, queuePosition: 1,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await removed.save();
+
+    const remaining = Card.create({
+      title: 'Remaining', description: 'Test', column: 'running',
+      position: 2, projectId: proj.id, useWorktree: false, queuePosition: 2,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await remaining.save();
+
+    bus.publish('board:changed', { card: removed, oldColumn: 'running', newColumn: 'ready' });
+    await new Promise(r => setTimeout(r, 100));
+
+    await remaining.reload();
+    await removed.reload();
+    expect(remaining.queuePosition).toBe(1);
+    expect(removed.queuePosition).toBeNull(); // cleared on departure
+    expect(startMock).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for worktree cards leaving running', async () => {
+    const bus = new MessageBus();
+    const startMock = vi.fn().mockResolvedValue(undefined);
+    const { registerQueueManager } = await import('./oc');
+    registerQueueManager(bus, { startSession: startMock });
+
+    const card = Card.create({
+      title: 'WT leaving', description: 'Test', column: 'review',
+      position: 0, useWorktree: true, queuePosition: null,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await card.save();
+
+    bus.publish('board:changed', { card, oldColumn: 'running', newColumn: 'review' });
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(startMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('OC controller: registerWorktreeCleanup', () => {
   it('removes worktree when card with worktree moves to archive', async () => {
     const bus = new MessageBus()

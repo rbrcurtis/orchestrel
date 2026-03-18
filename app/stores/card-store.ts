@@ -142,6 +142,11 @@ export class CardStore {
     }
   }
 
+  async reorderQueue(cardId: number, newPosition: number) {
+    const requestId = uuid();
+    await ws().mutate({ type: 'queue:reorder', requestId, cardId, newPosition });
+  }
+
   async generateTitle(id: number): Promise<void> {
     const requestId = uuid();
     await ws().mutate({ type: 'card:generateTitle', requestId, data: { id } });

@@ -45,7 +45,7 @@ export function wsServerPlugin(): Plugin {
     configureServer(server) {
       // Register REST middleware placeholder synchronously so it's in the middleware
       // stack BEFORE React Router's catch-all. The actual router activates after async init.
-      let restApp: import('express').Router | null = null;
+      let restApp: import('express').Express | null = null;
       server.middlewares.use((req, res, next) => {
         if (req.url?.startsWith('/api/') && restApp) {
           restApp(req as import('express').Request, res as import('express').Response, next);
@@ -78,7 +78,7 @@ export function wsServerPlugin(): Plugin {
             const express = await import('express');
             const { RegisterRoutes } = await import('../api/generated/routes');
 
-            const router = express.default.Router();
+            const router = express.default();
             router.use(express.default.json());
             RegisterRoutes(router);
 
@@ -184,10 +184,12 @@ export function wsServerPlugin(): Plugin {
             if (initState.initialized) return;
             initState.markInitialized();
 
-            const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc');
+            const { registerAutoStart, registerQueueManager, registerWorktreeCleanup } =
+              await import('../controllers/oc');
             const { sessionService } = await import('../services/session');
             const { removeWorktree, worktreeExists } = await import('../worktree');
             registerAutoStart(undefined, sessionService);
+            registerQueueManager(undefined, sessionService);
             registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists });
             console.log('[oc] controller listeners registered');
 
@@ -200,6 +202,7 @@ export function wsServerPlugin(): Plugin {
                   const cards = await Card.find({ where: { column: 'running' } });
                   for (const card of cards) {
                     if (!card.sessionId) continue;
+                    if (card.queuePosition != null) continue; // queued, not actively running
                     try {
                       const attached = await sessionService.attachSession(card.id);
                       if (attached) {

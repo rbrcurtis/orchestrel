@@ -50,6 +50,7 @@ interface CardItem {
   turnsCompleted: number;
   createdAt: string;
   updatedAt: string;
+  queuePosition?: number | null;
   color?: string | null;
 }
 
@@ -175,12 +176,19 @@ const ActiveBoard = observer(function ActiveBoard() {
     const activeCol = snapshotRef.current
       ? findColumnInData(snapshotRef.current, active.id)
       : findColumnInData(columns, active.id);
-
     const overCol = findColumnInData(columns, over.id);
     const currentCol = findColumnInData(columns, active.id);
 
-    // Running cards can only move to done/archive
-    if (activeCol === 'running' && overCol !== 'done' && overCol !== 'archive') return;
+    if (activeCol === 'running') {
+      // Queued cards (queuePosition != null) can move anywhere
+      const activeCard = Object.values(columns).flat().find(c => c.id === active.id);
+      if (activeCard?.queuePosition != null) {
+        // allow — queued cards are freely movable
+      } else if (overCol !== 'done' && overCol !== 'archive') {
+        // Active running cards can only move to done/archive
+        return;
+      }
+    }
 
     if (!currentCol || !overCol || currentCol === overCol) return;
 
@@ -223,12 +231,20 @@ const ActiveBoard = observer(function ActiveBoard() {
       return;
     }
 
-    // Snap back running cards unless moved to done/archive
-    if (originalCol === 'running' && currentCol !== 'done' && currentCol !== 'archive') {
-      setDragOverride(null);
-      setActiveId(null);
-      snapshotRef.current = null;
-      return;
+    // Running cards: queued cards can move freely, active cards only to done/archive
+    if (originalCol === 'running') {
+      const draggedCard = snapshotRef.current
+        ? Object.values(snapshotRef.current).flat().find(c => c.id === active.id)
+        : Object.values(columns).flat().find(c => c.id === active.id);
+      if (draggedCard?.queuePosition != null) {
+        // Queued cards — allow move to any column
+      } else if (currentCol !== 'done' && currentCol !== 'archive') {
+        // Active running cards — snap back unless moved to done/archive
+        setDragOverride(null);
+        setActiveId(null);
+        snapshotRef.current = null;
+        return;
+      }
     }
 
     if (originalCol === currentCol) {

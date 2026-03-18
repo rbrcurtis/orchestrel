@@ -20,8 +20,11 @@ describe('cardSchema', () => {
       thinkingLevel: 'high',
       promptsSent: 0,
       turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
+      queuePosition: null,
     }
     const result = cardSchema.safeParse(card)
     expect(result.success).toBe(true)
@@ -45,8 +48,11 @@ describe('cardSchema', () => {
       thinkingLevel: 'off',
       promptsSent: 0,
       turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
+      queuePosition: null,
     }
     const result = cardSchema.safeParse(card)
     expect(result.success).toBe(false)
@@ -132,8 +138,11 @@ describe('serverMessage', () => {
       thinkingLevel: 'off',
       promptsSent: 1,
       turnsCompleted: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-02T00:00:00',
+      queuePosition: null,
     }
     const msg = { type: 'card:updated', data: card }
     const result = serverMessage.safeParse(msg)

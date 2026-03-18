@@ -153,6 +153,32 @@ export function registerAutoStart(bus: MessageBus = messageBus, starter: Session
     if (newColumn !== 'running') return;
     if (oldColumn === 'running') return;
 
+    // Already queued — nothing to do
+    if (card.queuePosition != null) return;
+
+    // Non-worktree cards: check for conflict group before starting
+    if (!card.useWorktree && card.projectId) {
+      const others = await Card.find({
+        where: {
+          column: 'running',
+          projectId: card.projectId,
+          useWorktree: false as unknown as boolean,
+        },
+      });
+      const conflict = others.filter((c) => c.id !== card.id);
+      if (conflict.length > 0) {
+        // Assign queue position: max existing + 1
+        const maxPos = conflict.reduce((mx, c) => Math.max(mx, c.queuePosition ?? 0), 0);
+        const fresh = await Card.findOneBy({ id: card.id });
+        if (fresh) {
+          fresh.queuePosition = maxPos + 1;
+          fresh.updatedAt = new Date().toISOString();
+          await fresh.save();
+        }
+        return;
+      }
+    }
+
     // Card with existing session — try to attach if OC session is still alive
     if (card.sessionId) {
       try {
@@ -171,6 +197,79 @@ export function registerAutoStart(bus: MessageBus = messageBus, starter: Session
     starter.startSession(card.id, undefined).catch((err) => {
       console.error(`[oc:auto-start] failed for card ${card.id}:`, err);
     });
+  });
+}
+
+interface QueueStarter {
+  startSession(cardId: number): Promise<void>;
+}
+
+export function registerQueueManager(bus: MessageBus = messageBus, starter: QueueStarter): void {
+  bus.subscribe('board:changed', async (payload) => {
+    const { card, oldColumn, newColumn } = payload as {
+      card: Card | null;
+      oldColumn: string | null;
+      newColumn: string | null;
+    };
+    if (!card) return;
+    if (oldColumn !== 'running' || newColumn === 'running') return;
+    if (card.useWorktree) return;
+    if (!card.projectId) return;
+
+    const wasActive = card.queuePosition == null;
+    const wasPosition = card.queuePosition;
+
+    // Invariant: non-running cards have null queuePosition
+    if (card.queuePosition != null) {
+      const dep = await Card.findOneBy({ id: card.id });
+      if (dep) {
+        dep.queuePosition = null;
+        dep.updatedAt = new Date().toISOString();
+        await dep.save();
+      }
+    }
+
+    // Query remaining conflict group
+    const remaining = await Card.find({
+      where: {
+        column: 'running',
+        projectId: card.projectId,
+        useWorktree: false as unknown as boolean,
+      },
+    });
+
+    if (wasActive) {
+      // Promote the card with queuePosition=1 to active (null)
+      const nextUp = remaining.find((c) => c.queuePosition === 1);
+      if (nextUp) {
+        nextUp.queuePosition = null;
+        nextUp.updatedAt = new Date().toISOString();
+        await nextUp.save();
+
+        // Decrement all others
+        for (const c of remaining) {
+          if (c.id === nextUp.id) continue;
+          if (c.queuePosition != null && c.queuePosition > 1) {
+            c.queuePosition = c.queuePosition - 1;
+            c.updatedAt = new Date().toISOString();
+            await c.save();
+          }
+        }
+
+        starter.startSession(nextUp.id).catch((err) => {
+          console.error(`[oc:queue] failed to start promoted card ${nextUp.id}:`, err);
+        });
+      }
+    } else if (wasPosition != null) {
+      // Queued card left — decrement cards with position > wasPosition
+      for (const c of remaining) {
+        if (c.queuePosition != null && c.queuePosition > wasPosition) {
+          c.queuePosition = c.queuePosition - 1;
+          c.updatedAt = new Date().toISOString();
+          await c.save();
+        }
+      }
+    }
   });
 }
 

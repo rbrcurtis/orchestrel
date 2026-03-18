@@ -24,6 +24,7 @@ import {
   handleAgentStop,
   handleAgentStatus,
 } from './handlers/agents'
+import { handleQueueReorder } from './handlers/queue'
 import type { Card, Project } from '../../shared/ws-protocol'
 import type { Card as CardEntity } from '../models/Card'
 
@@ -179,6 +180,10 @@ export function handleMessage(
 
     case 'agent:status':
       void handleAgentStatus(ws, msg, connections)
+      break
+
+    case 'queue:reorder':
+      void handleQueueReorder(ws, msg, connections)
       break
 
     default: {

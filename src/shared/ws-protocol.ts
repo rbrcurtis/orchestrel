@@ -26,6 +26,7 @@ export const cardSchema = z.object({
   contextWindow: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  queuePosition: z.number().nullable(),
 })
 
 export const projectSchema = z.object({
@@ -175,6 +176,8 @@ export const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('agent:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
 
   z.object({ type: z.literal('session:load'), requestId: z.string(), data: z.object({ sessionId: z.string().optional(), cardId: z.number() }) }),
+
+  z.object({ type: z.literal('queue:reorder'), requestId: z.string(), cardId: z.number(), newPosition: z.number() }),
 ])
 
 export type ClientMessage = z.infer<typeof clientMessage>
