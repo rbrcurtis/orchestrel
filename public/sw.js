@@ -2,15 +2,16 @@
 // Serves cached HTML/JS/CSS instantly on iOS PWA resume, then updates
 // cache in the background. HMR still works (WebSocket, not fetch).
 
-const CACHE = 'dispatcher-v2';
+const CACHE = 'dispatcher-v3';
 
 self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys()
+    caches
+      .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -43,6 +44,6 @@ self.addEventListener('fetch', (e) => {
         return cached;
       }
       return fresh.catch(() => Response.error());
-    })
+    }),
   );
 });

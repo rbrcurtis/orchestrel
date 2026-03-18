@@ -3,7 +3,7 @@ import express from 'express';
 import morgan from 'morgan';
 
 const DEVELOPMENT = process.env.NODE_ENV === 'development';
-const PORT = Number.parseInt(process.env.PORT || '6194');
+const PORT = Number.parseInt(process.env.PORT || (DEVELOPMENT ? '6195' : '6194'));
 
 const app = express();
 
