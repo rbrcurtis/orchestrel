@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { observer } from 'mobx-react-lite';
 import { Copy, Check } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,9 +11,9 @@ const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 // Correct per-model pricing in USD per million tokens
 const MODEL_PRICING: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
   'claude-sonnet-4-6': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
-  'claude-opus-4-6':   { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
-  'claude-haiku-4-5':  { input: 1, output: 5,  cacheWrite: 1.25, cacheRead: 0.1 },
-  'claude-haiku-3-5':  { input: 0.8, output: 4, cacheWrite: 1,   cacheRead: 0.08 },
+  'claude-opus-4-6': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  'claude-haiku-4-5': { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+  'claude-haiku-3-5': { input: 0.8, output: 4, cacheWrite: 1, cacheRead: 0.08 },
   'claude-sonnet-4-5': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   'claude-sonnet-3-7': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   'claude-sonnet-3-5': { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
@@ -36,18 +37,22 @@ type ModelUsageEntry = {
 
 function calcCostFromModelUsage(
   modelUsage: Record<string, ModelUsageEntry>,
-  fallback: number | undefined
+  fallback: number | undefined,
 ): number | undefined {
   let total = 0;
   let allKnown = true;
   for (const [model, usage] of Object.entries(modelUsage)) {
     const p = lookupPricing(model);
-    if (!p) { allKnown = false; total += usage.costUSD; continue; }
+    if (!p) {
+      allKnown = false;
+      total += usage.costUSD;
+      continue;
+    }
     total +=
       (usage.inputTokens * p.input +
-       usage.outputTokens * p.output +
-       (usage.cacheCreationInputTokens ?? 0) * p.cacheWrite +
-       (usage.cacheReadInputTokens ?? 0) * p.cacheRead) /
+        usage.outputTokens * p.output +
+        (usage.cacheCreationInputTokens ?? 0) * p.cacheWrite +
+        (usage.cacheReadInputTokens ?? 0) * p.cacheRead) /
       1_000_000;
   }
   if (!allKnown && fallback != null) return fallback;
@@ -64,10 +69,16 @@ function linkifyChildren(children: React.ReactNode, color: string): React.ReactN
       if (idx > last) parts.push(children.slice(last, idx));
       const url = m[0];
       parts.push(
-        <a key={idx} href={url} target="_blank" rel="noopener noreferrer"
-          className="underline hover:opacity-80" style={{ color }}>
+        <a
+          key={idx}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline hover:opacity-80"
+          style={{ color }}
+        >
           {url}
-        </a>
+        </a>,
       );
       last = idx + url.length;
     }
@@ -98,7 +109,9 @@ function mdComponents(linkColor: string): Components {
       if (isBlock) {
         return (
           <pre className="bg-elevated rounded px-3 py-2 overflow-x-auto text-xs my-2">
-            <code className={className} {...rest}>{linked}</code>
+            <code className={className} {...rest}>
+              {linked}
+            </code>
           </pre>
         );
       }
@@ -117,9 +130,7 @@ function mdComponents(linkColor: string): Components {
     h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-0.5">{children}</h3>,
     p: ({ children }) => <p className="text-sm my-1">{children}</p>,
     blockquote: ({ children }) => (
-      <blockquote className="border-l-2 border-border pl-3 text-muted-foreground italic my-1">
-        {children}
-      </blockquote>
+      <blockquote className="border-l-2 border-border pl-3 text-muted-foreground italic my-1">{children}</blockquote>
     ),
     table: ({ children }) => (
       <div className="overflow-x-auto my-2">
@@ -167,9 +178,7 @@ function CopyButton({ text }: { text: string }) {
 function ThinkingBlock({ thinking }: { thinking: string }) {
   return (
     <div className="text-xs text-muted-foreground">
-      <div className="whitespace-pre-wrap pl-3 border-l border-border">
-        {thinking}
-      </div>
+      <div className="whitespace-pre-wrap pl-3 border-l border-border">{thinking}</div>
     </div>
   );
 }
@@ -182,7 +191,7 @@ type Props = {
   accentColor?: string | null;
 };
 
-export function MessageBlock({ message, toolOutputs, accentColor }: Props) {
+export const MessageBlock = observer(function MessageBlock({ message, toolOutputs, accentColor }: Props) {
   switch (message.type) {
     case 'text':
       return <TextBlock message={message} accentColor={accentColor} />;
@@ -203,11 +212,17 @@ export function MessageBlock({ message, toolOutputs, accentColor }: Props) {
     default:
       return null;
   }
-}
+});
 
 // --- Text block ---
 
-function TextBlock({ message, accentColor }: { message: AgentMessage; accentColor?: string | null }) {
+const TextBlock = observer(function TextBlock({
+  message,
+  accentColor,
+}: {
+  message: AgentMessage;
+  accentColor?: string | null;
+}) {
   const linkColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
   return (
     <div className="group relative space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
@@ -217,7 +232,7 @@ function TextBlock({ message, accentColor }: { message: AgentMessage; accentColo
       </div>
     </div>
   );
-}
+});
 
 // --- Tool call block ---
 
@@ -226,11 +241,7 @@ function ToolCallBlock({ message, toolOutputs }: { message: AgentMessage; toolOu
   const output = message.toolCall.id ? toolOutputs.get(message.toolCall.id) : undefined;
   return (
     <div className="py-1">
-      <ToolUseBlock
-        name={message.toolCall.name}
-        input={message.toolCall.params ?? {}}
-        output={output}
-      />
+      <ToolUseBlock name={message.toolCall.name} input={message.toolCall.params ?? {}} output={output} />
     </div>
   );
 }
@@ -265,7 +276,8 @@ function SystemBlock({ message }: { message: AgentMessage }) {
     const retryMsg = String(message.meta?.message ?? 'Retrying...');
     return (
       <div className="text-xs text-neon-amber py-1">
-        {retryMsg}{attempt != null && ` (attempt ${attempt})`}
+        {retryMsg}
+        {attempt != null && ` (attempt ${attempt})`}
       </div>
     );
   }
@@ -293,11 +305,7 @@ function SystemBlock({ message }: { message: AgentMessage }) {
   }
 
   if (!message.content) return null;
-  return (
-    <div className="text-xs text-muted-foreground py-1">
-      {message.content}
-    </div>
-  );
+  return <div className="text-xs text-muted-foreground py-1">{message.content}</div>;
 }
 
 // --- Turn end block ---
@@ -312,7 +320,13 @@ function TurnEndBlock({ message }: { message: AgentMessage }) {
   const durationMs = message.meta?.durationMs as number | undefined;
   const durationSec = durationMs != null ? (durationMs / 1000).toFixed(1) : null;
   const finishedAt = message.timestamp
-    ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(message.timestamp))
+    ? new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      }).format(new Date(message.timestamp))
     : null;
 
   const errors = Array.isArray(message.meta?.errors) ? (message.meta!.errors as string[]) : [];
@@ -330,9 +344,7 @@ function TurnEndBlock({ message }: { message: AgentMessage }) {
         <div className="flex-1 border-t border-border" />
       </div>
       {errors.length > 0 && (
-        <div className="text-destructive/80 text-[10px] max-w-md text-center">
-          {errors.join(' · ')}
-        </div>
+        <div className="text-destructive/80 text-[10px] max-w-md text-center">{errors.join(' · ')}</div>
       )}
     </div>
   );
@@ -348,7 +360,11 @@ function renderWithSlashCommands(t: string): React.ReactNode {
   for (const m of t.matchAll(SLASH_CMD_RE)) {
     const idx = m.index!;
     if (idx > last) result.push(t.slice(last, idx));
-    result.push(<span key={idx} className="font-mono font-semibold text-neon-cyan">{m[0]}</span>);
+    result.push(
+      <span key={idx} className="font-mono font-semibold text-neon-cyan">
+        {m[0]}
+      </span>,
+    );
     last = idx + m[0].length;
   }
   if (result.length === 0) return t;
@@ -360,18 +376,17 @@ function UserBlock({ message, accentColor }: { message: AgentMessage; accentColo
   const text = message.content;
   if (!text) return null;
 
-  if (text.includes('<command-name>') || text.includes('<local-command-') || text.includes('<system-reminder>')) return null;
+  if (text.includes('<command-name>') || text.includes('<local-command-') || text.includes('<system-reminder>'))
+    return null;
 
   if (text.startsWith('# ') && (text.includes('## Instructions') || text.includes('## Arguments'))) {
-    return (
-      <div className="text-xs text-muted-foreground py-0.5 italic">
-        skill loaded
-      </div>
-    );
+    return <div className="text-xs text-muted-foreground py-0.5 italic">skill loaded</div>;
   }
 
   // Extract file attachments from prompt prefix
-  const fileMatch = text.match(/^I've attached the following files for you to review\. Use the Read tool to read them:\n((?:- .+\n)+)\n([\s\S]*)$/);
+  const fileMatch = text.match(
+    /^I've attached the following files for you to review\. Use the Read tool to read them:\n((?:- .+\n)+)\n([\s\S]*)$/,
+  );
   let attachedFiles: { name: string; mimeType: string }[] = [];
   let displayText = text;
 

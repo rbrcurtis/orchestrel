@@ -117,16 +117,15 @@ export const SessionView = observer(function SessionView({
         return;
       }
 
-      // Compute near-bottom BEFORE updating prevHeight:
-      // If user was within threshold of the OLD bottom, they're "following along"
-      const gap = prevHeight - scroll.scrollTop - scroll.clientHeight;
-      const wasNearBottom = gap < 150;
-
       prevHeight = newHeight;
 
       if (rafId) cancelAnimationFrame(rafId);
 
-      if (initialScroll || wasNearBottom) {
+      // Use nearBottomRef (updated by scroll listener) — reflects user's
+      // position relative to the CURRENT bottom, not the old one.
+      // This prevents expanding a collapsible tool block from yanking
+      // the user to the bottom when they've scrolled up.
+      if (initialScroll || nearBottomRef.current) {
         initialScroll = false;
         rafId = requestAnimationFrame(() => {
           bottomRef.current?.scrollIntoView({ behavior: 'instant' });

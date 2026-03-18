@@ -25,9 +25,9 @@ export class CardStore {
   // ── Computed views ──────────────────────────────────────────────────────────
 
   cardsByColumn(col: string): Card[] {
-    return Array.from(this.cards.values())
-      .filter((c) => c.column === col)
-      .sort((a, b) => a.position - b.position);
+    const items = Array.from(this.cards.values()).filter((c) => c.column === col);
+    if (col === 'archive') return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return items.sort((a, b) => a.position - b.position);
   }
 
   getCard(id: number): Card | undefined {
@@ -120,7 +120,9 @@ export class CardStore {
       runInAction(() => this.cards.set(card.id, card));
       return card;
     } catch (err) {
-      runInAction(() => { if (existing) this.cards.set(data.id, existing); });
+      runInAction(() => {
+        if (existing) this.cards.set(data.id, existing);
+      });
       throw err;
     }
   }
@@ -133,7 +135,9 @@ export class CardStore {
     try {
       await ws().mutate({ type: 'card:delete', requestId, data: { id } });
     } catch (err) {
-      runInAction(() => { if (existing) this.cards.set(id, existing); });
+      runInAction(() => {
+        if (existing) this.cards.set(id, existing);
+      });
       throw err;
     }
   }

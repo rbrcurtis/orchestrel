@@ -1,7 +1,7 @@
-import { ILike } from 'typeorm'
-import { Card } from '../models/Card'
-import type { Column } from '../../shared/ws-protocol'
-import { Project } from '../models/Project'
+import { ILike } from 'typeorm';
+import { Card } from '../models/Card';
+import type { Column } from '../../shared/ws-protocol';
+import { Project } from '../models/Project';
 
 export interface PageResult {
   cards: Card[];
@@ -28,10 +28,13 @@ async function ollamaSuggestTitle(description: string): Promise<string> {
 
 class CardService {
   async listCards(columns?: Column[]): Promise<Card[]> {
-    if (columns && columns.length > 0) {
-      return Card.find({ where: columns.map((col) => ({ column: col })), order: { position: 'ASC' } });
-    }
-    return Card.find({ order: { position: 'ASC' } });
+    const cards =
+      columns && columns.length > 0
+        ? await Card.find({ where: columns.map((col) => ({ column: col })) })
+        : await Card.find();
+    return cards.sort((a, b) =>
+      a.column === 'archive' ? b.updatedAt.localeCompare(a.updatedAt) : a.position - b.position,
+    );
   }
 
   async createCard(data: Partial<Card>): Promise<Card> {
@@ -64,17 +67,17 @@ class CardService {
     });
     await card.save();
 
-    return card
+    return card;
   }
 
   async updateCard(id: number, data: Partial<Card>): Promise<Card> {
-    const card = await Card.findOneByOrFail({ id })
+    const card = await Card.findOneByOrFail({ id });
 
     Object.assign(card, data);
     card.updatedAt = new Date().toISOString();
     await card.save();
 
-    return card
+    return card;
   }
 
   async deleteCard(id: number): Promise<void> {
@@ -92,9 +95,10 @@ class CardService {
   }
 
   async pageCards(column: Column, cursor?: number, limit = PAGE_SIZE): Promise<PageResult> {
+    const order = column === 'archive' ? { updatedAt: 'DESC' as const } : { position: 'ASC' as const };
     const all = await Card.find({
       where: { column },
-      order: { position: 'ASC' },
+      order,
     });
     const startIdx = cursor !== undefined ? all.findIndex((c) => c.id === cursor) + 1 : 0;
     const slice = all.slice(startIdx, startIdx + limit);

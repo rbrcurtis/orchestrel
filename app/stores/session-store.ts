@@ -68,7 +68,10 @@ export class SessionStore {
   private stopIntervals = new Map<number, NodeJS.Timeout>();
 
   constructor() {
-    makeAutoObservable<this, 'subagentTimeouts' | 'stopIntervals'>(this, { subagentTimeouts: false, stopIntervals: false });
+    makeAutoObservable<this, 'subagentTimeouts' | 'stopIntervals'>(this, {
+      subagentTimeouts: false,
+      stopIntervals: false,
+    });
   }
 
   private getOrCreate(cardId: number): SessionState {
@@ -98,7 +101,13 @@ export class SessionStore {
       const s = this.getOrCreate(cardId);
 
       if (msg.type === 'subagent' && msg.meta) {
-        const m = msg.meta as { subtype: string; childSessionId: string; title: string; tool?: string; target?: string };
+        const m = msg.meta as {
+          subtype: string;
+          childSessionId: string;
+          title: string;
+          tool?: string;
+          target?: string;
+        };
         if (m.subtype === 'activity') {
           s.subagents.set(m.childSessionId, {
             title: m.title,
@@ -115,12 +124,15 @@ export class SessionStore {
           const timeoutKey = `${cardId}:${m.childSessionId}`;
           const prev = this.subagentTimeouts.get(timeoutKey);
           if (prev) clearTimeout(prev);
-          this.subagentTimeouts.set(timeoutKey, setTimeout(() => {
-            runInAction(() => {
-              s.subagents.delete(m.childSessionId);
-            });
-            this.subagentTimeouts.delete(timeoutKey);
-          }, 2000));
+          this.subagentTimeouts.set(
+            timeoutKey,
+            setTimeout(() => {
+              runInAction(() => {
+                s.subagents.delete(m.childSessionId);
+              });
+              this.subagentTimeouts.delete(timeoutKey);
+            }, 2000),
+          );
         }
         return; // Don't add subagent messages to conversation
       }
@@ -128,13 +140,16 @@ export class SessionStore {
       const { timestamp, ...stable } = msg;
       const id = contentHashSync(msg.type, stable);
 
-      // Server echo for a user message — confirm the optimistic row
+      // Server echo for a user message — confirm the optimistic row.
+      // Use endsWith for matching: when files are attached the server prepends
+      // a file-list prefix to the prompt, so the echo content is longer than
+      // the original optimistic message.
       if (msg.type === 'user' && !msg.meta?.optimistic) {
         const idx = s.conversation.findLastIndex(
-          (r) => r.type === 'user' && r.optimistic && r.content === msg.content,
+          (r) => r.type === 'user' && r.optimistic && (r.content === msg.content || msg.content.endsWith(r.content)),
         );
         if (idx !== -1) {
-          s.conversation[idx].optimistic = false;
+          s.conversation[idx] = { ...s.conversation[idx], content: msg.content, optimistic: false };
           return;
         }
       }
@@ -315,16 +330,13 @@ export class SessionStore {
   // ── Mutations ───────────────────────────────────────────────────────────────
 
   async sendMessage(cardId: number, message: string, files?: FileRef[]): Promise<void> {
-    // Only add optimistic message when no files (file prompts get augmented server-side)
-    if (!files?.length) {
-      this.ingest(cardId, {
-        type: 'user',
-        role: 'user',
-        content: message,
-        meta: { optimistic: true },
-        timestamp: Date.now(),
-      });
-    }
+    this.ingest(cardId, {
+      type: 'user',
+      role: 'user',
+      content: message,
+      meta: { optimistic: true, files },
+      timestamp: Date.now(),
+    });
 
     // Optimistically set status to running so Stop button appears immediately
     const s = this.getOrCreate(cardId);
@@ -376,11 +388,13 @@ export class SessionStore {
   async resubscribeAll(): Promise<void> {
     for (const cardId of this.subscribedCards) {
       const requestId = uuid();
-      ws().mutate({
-        type: 'session:load',
-        requestId,
-        data: { cardId },
-      }).catch((err) => console.warn('[ws] resubscribe failed for card', cardId, err));
+      ws()
+        .mutate({
+          type: 'session:load',
+          requestId,
+          data: { cardId },
+        })
+        .catch((err) => console.warn('[ws] resubscribe failed for card', cardId, err));
     }
   }
 }

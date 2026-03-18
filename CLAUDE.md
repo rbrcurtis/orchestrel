@@ -34,6 +34,11 @@ This is a **purely event-driven system**. Every handler reacts to a single event
 - `src/server/ws/server.ts` — statically imported by `vite.config.ts` (exports `wsServerPlugin`). NO persistent state here.
 - On each `configureServer` call: REST middleware is re-wired (restApp closure), WSS upgrade handler is re-attached to the new httpServer. WSS creation, OC bus listeners, and OpenCode server start only happen once (guarded by `init-state.initialized`).
 
+## Dev Server
+
+- **Local URL:** `http://localhost:6194`
+- **Tunnel URL:** `https://dispatch.rbrcurtis.com` (Cloudflare tunnel, requires Access auth)
+
 ## Guardrails
 
 - **DB file:** `data/dispatcher.db` — Schema additions (`ALTER TABLE ADD COLUMN`) via sqlite3 CLI are safe anytime. NEVER modify data (INSERT/UPDATE/DELETE) outside the app — use WS mutations. NEVER run WAL management commands (`wal_checkpoint`, `PRAGMA journal_mode`, etc.) — SQLite handles this automatically. A `wal_checkpoint(TRUNCATE)` previously destroyed ~68 cards.

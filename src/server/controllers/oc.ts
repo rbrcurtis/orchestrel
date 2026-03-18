@@ -90,7 +90,7 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
     if (session.status === 'running') {
       try {
         const card = await Card.findOneBy({ id: cardId });
-        if (card && card.column !== 'running') {
+        if (card && card.column !== 'running' && card.column !== 'archive' && card.column !== 'done') {
           card.column = 'running';
           card.updatedAt = new Date().toISOString();
           await card.save();
@@ -138,18 +138,17 @@ export function registerAutoStart(bus: MessageBus = messageBus, starter: Session
           console.log(`[oc:auto-start] attached to live session for card ${card.id}`);
           return;
         }
-        // Session not alive — move card back
+        // Session not alive — clear stale sessionId and fall through to startSession
         const c = await Card.findOneBy({ id: card.id });
-        if (c && c.column === 'running') {
-          c.column = oldColumn ?? 'backlog';
+        if (c) {
+          c.sessionId = null;
           c.updatedAt = new Date().toISOString();
           await c.save();
-          console.log(`[oc:auto-start] session not alive for card ${card.id}, moved back to ${oldColumn}`);
+          console.log(`[oc:auto-start] cleared stale session for card ${card.id}, starting fresh`);
         }
       } catch (err) {
         console.error(`[oc:auto-start] attach failed for card ${card.id}:`, err);
       }
-      return;
     }
 
     starter.startSession(card.id, undefined).catch((err) => {
@@ -181,6 +180,15 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus, ops: Workt
       if (!proj || !ops.worktreeExists(c.worktreePath)) return;
       ops.removeWorktree(proj.path, c.worktreePath);
       console.log(`[oc:worktree] removed ${c.worktreePath}`);
+
+      // Clear stale fields so re-entering running recreates the worktree + session
+      const fresh = await Card.findOneBy({ id: c.id });
+      if (fresh) {
+        fresh.worktreePath = null;
+        fresh.sessionId = null;
+        fresh.updatedAt = new Date().toISOString();
+        await fresh.save();
+      }
     } catch (err) {
       console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
     }
