@@ -68,7 +68,7 @@ export function wsServerPlugin(): Plugin {
             { initDatabase },
             { handleMessage },
             { clientSubs },
-            { messageBus },
+            { messageBus: _messageBus },
             { openCodeServer },
             initState,
           ]) => {
@@ -191,33 +191,36 @@ export function wsServerPlugin(): Plugin {
             registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists });
             console.log('[oc] controller listeners registered');
 
-            openCodeServer.start().then(async () => {
-              // Re-attach to any running sessions that survived a dispatcher restart
-              try {
-                const { Card } = await import('../models/Card');
-                const cards = await Card.find({ where: { column: 'running' } });
-                for (const card of cards) {
-                  if (!card.sessionId) continue;
-                  try {
-                    const attached = await sessionService.attachSession(card.id);
-                    if (attached) {
-                      console.log(`[startup] re-attached to session for card ${card.id}`);
-                    } else {
-                      card.column = 'review';
-                      card.updatedAt = new Date().toISOString();
-                      await card.save();
-                      console.log(`[startup] session dead for card ${card.id}, moved to review`);
+            openCodeServer
+              .start()
+              .then(async () => {
+                // Re-attach to any running sessions that survived a dispatcher restart
+                try {
+                  const { Card } = await import('../models/Card');
+                  const cards = await Card.find({ where: { column: 'running' } });
+                  for (const card of cards) {
+                    if (!card.sessionId) continue;
+                    try {
+                      const attached = await sessionService.attachSession(card.id);
+                      if (attached) {
+                        console.log(`[startup] re-attached to session for card ${card.id}`);
+                      } else {
+                        card.column = 'review';
+                        card.updatedAt = new Date().toISOString();
+                        await card.save();
+                        console.log(`[startup] session dead for card ${card.id}, moved to review`);
+                      }
+                    } catch (err) {
+                      console.error(`[startup] re-attach failed for card ${card.id}:`, err);
                     }
-                  } catch (err) {
-                    console.error(`[startup] re-attach failed for card ${card.id}:`, err);
                   }
+                } catch (err) {
+                  console.error('[startup] re-attach scan failed:', err);
                 }
-              } catch (err) {
-                console.error('[startup] re-attach scan failed:', err);
-              }
-            }).catch((err: unknown) => {
-              console.error('[opencode] failed to start:', err);
-            });
+              })
+              .catch((err: unknown) => {
+                console.error('[opencode] failed to start:', err);
+              });
           },
         )
         .catch((err) => {

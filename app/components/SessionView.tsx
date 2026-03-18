@@ -39,6 +39,8 @@ export const SessionView = observer(function SessionView({
   const contextWindow = session?.contextWindow ?? 200_000;
   const subagents = session?.subagents ?? new Map();
 
+  const isStopping = sessionStore.stoppingCards.has(cardId);
+
   const [notification, setNotification] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -204,8 +206,8 @@ export const SessionView = observer(function SessionView({
     }
   }
 
-  async function handleStop() {
-    await sessionStore.stopSession(cardId);
+  function handleStop() {
+    sessionStore.stopSession(cardId);
     setIsStarting(false);
   }
 
@@ -287,9 +289,10 @@ export const SessionView = observer(function SessionView({
               size="sm"
               className="ml-auto h-6 px-2 text-xs text-muted-foreground"
               onClick={handleStop}
+              disabled={isStopping}
             >
               <Square className="size-3 fill-current" />
-              Stop
+              {isStopping ? 'Stopping...' : 'Stop'}
             </Button>
           )}
         </div>
