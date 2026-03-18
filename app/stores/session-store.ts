@@ -63,10 +63,12 @@ function defaultSession(): SessionState {
 export class SessionStore {
   sessions = observable.map<number, SessionState>();
   subscribedCards = new Set<number>();
+  stoppingCards = observable.set<number>();
   private subagentTimeouts = new Map<string, NodeJS.Timeout>();
+  private stopIntervals = new Map<number, NodeJS.Timeout>();
 
   constructor() {
-    makeAutoObservable<this, 'subagentTimeouts'>(this, { subagentTimeouts: false });
+    makeAutoObservable<this, 'subagentTimeouts' | 'stopIntervals'>(this, { subagentTimeouts: false, stopIntervals: false });
   }
 
   private getOrCreate(cardId: number): SessionState {
@@ -291,7 +293,7 @@ export class SessionStore {
       if (s.contextWindow === 200_000 && data.contextWindow !== 200_000 && data.contextWindow > 0) {
         s.contextWindow = data.contextWindow;
       }
-      // Clear subagent rows when parent session ends
+      // Clear subagent rows and stop retry interval when parent session ends
       if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {
         s.subagents.clear();
         for (const [key, timer] of this.subagentTimeouts) {
@@ -300,6 +302,12 @@ export class SessionStore {
             this.subagentTimeouts.delete(key);
           }
         }
+        const stopInterval = this.stopIntervals.get(data.cardId);
+        if (stopInterval !== undefined) {
+          clearInterval(stopInterval);
+          this.stopIntervals.delete(data.cardId);
+        }
+        this.stoppingCards.delete(data.cardId);
       }
     });
   }
@@ -332,13 +340,16 @@ export class SessionStore {
     });
   }
 
-  async stopSession(cardId: number): Promise<void> {
-    const requestId = uuid();
-    await ws().mutate({
-      type: 'agent:stop',
-      requestId,
-      data: { cardId },
-    });
+  stopSession(cardId: number): void {
+    if (this.stoppingCards.has(cardId)) return;
+    const s = this.sessions.get(cardId);
+    if (s && (s.status === 'stopped' || s.status === 'completed' || s.status === 'errored')) return;
+
+    runInAction(() => this.stoppingCards.add(cardId));
+
+    const sendStop = () => ws().send({ type: 'agent:stop', requestId: uuid(), data: { cardId } });
+    sendStop();
+    this.stopIntervals.set(cardId, setInterval(sendStop, 1000));
   }
 
   async requestStatus(cardId: number): Promise<void> {
