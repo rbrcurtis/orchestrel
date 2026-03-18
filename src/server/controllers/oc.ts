@@ -142,7 +142,7 @@ export function registerAutoStart(bus: MessageBus = messageBus, starter: Session
           useWorktree: false as unknown as boolean,
         },
       });
-      const conflict = others.filter(c => c.id !== card.id);
+      const conflict = others.filter((c) => c.id !== card.id);
       if (conflict.length > 0) {
         // Assign queue position: max existing + 1
         const maxPos = conflict.reduce((mx, c) => Math.max(mx, c.queuePosition ?? 0), 0);
@@ -217,7 +217,7 @@ export function registerQueueManager(bus: MessageBus = messageBus, starter: Queu
 
     if (wasActive) {
       // Promote the card with queuePosition=1 to active (null)
-      const nextUp = remaining.find(c => c.queuePosition === 1);
+      const nextUp = remaining.find((c) => c.queuePosition === 1);
       if (nextUp) {
         nextUp.queuePosition = null;
         nextUp.updatedAt = new Date().toISOString();
