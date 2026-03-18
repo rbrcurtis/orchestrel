@@ -24,6 +24,7 @@ import {
   handleAgentStop,
   handleAgentStatus,
 } from './handlers/agents'
+import { handleQueueReorder } from './handlers/queue'
 import type { Card, Project } from '../../shared/ws-protocol'
 import type { Card as CardEntity } from '../models/Card'
 

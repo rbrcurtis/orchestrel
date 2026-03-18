@@ -184,10 +184,11 @@ export function wsServerPlugin(): Plugin {
             if (initState.initialized) return;
             initState.markInitialized();
 
-            const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc');
+            const { registerAutoStart, registerQueueManager, registerWorktreeCleanup } = await import('../controllers/oc');
             const { sessionService } = await import('../services/session');
             const { removeWorktree, worktreeExists } = await import('../worktree');
             registerAutoStart(undefined, sessionService);
+            registerQueueManager(undefined, sessionService);
             registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists });
             console.log('[oc] controller listeners registered');
 
