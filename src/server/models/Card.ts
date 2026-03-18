@@ -83,8 +83,7 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
     const card = event.entity as Card
     const prev = event.databaseEntity as Card
     if (prev?.sessionId && card.sessionId !== prev.sessionId) {
-      console.error(`[card:${card.id}:BLOCKED] sessionId change from ${prev.sessionId} to ${card.sessionId}`)
-      card.sessionId = prev.sessionId
+      throw new Error(`[card:${card.id}] sessionId is immutable once set (was ${prev.sessionId}, attempted ${card.sessionId})`)
     }
   }
 
