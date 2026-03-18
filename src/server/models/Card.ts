@@ -96,6 +96,17 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
         `[card:${card.id}] sessionId is immutable once set (was ${prev.sessionId}, attempted ${card.sessionId})`,
       );
     }
+    // Invariant: queuePosition only exists on running cards.
+    // When leaving running, stash old values for afterUpdate recalc.
+    if (prev?.column === 'running' && card.column !== 'running' && !card.useWorktree && card.projectId) {
+      (card as unknown as Record<string, unknown>)._queueRecalc = {
+        projectId: card.projectId,
+        oldQueuePosition: prev.queuePosition ?? null,
+      };
+    }
+    if (card.column !== 'running' && card.queuePosition != null) {
+      card.queuePosition = null;
+    }
   }
 
   afterInsert(event: InsertEvent<Card>) {
@@ -126,6 +137,56 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
       prev?.sessionId !== card.sessionId
     ) {
       messageBus.publish(`card:${card.id}:status`, card);
+    }
+
+    // Recalculate queue positions when a non-worktree card leaves running
+    const recalc = (card as unknown as Record<string, unknown>)._queueRecalc as
+      | { projectId: number; oldQueuePosition: number | null }
+      | undefined;
+    if (recalc) {
+      delete (card as unknown as Record<string, unknown>)._queueRecalc;
+      void this.recalcQueue(recalc.projectId, recalc.oldQueuePosition);
+    }
+  }
+
+  private async recalcQueue(projectId: number, oldQueuePosition: number | null): Promise<void> {
+    const remaining = await Card.find({
+      where: {
+        column: 'running',
+        projectId,
+        useWorktree: false as unknown as boolean,
+      },
+      order: { queuePosition: 'ASC' },
+    });
+
+    const queued = remaining.filter((c) => c.queuePosition != null).sort((a, b) => a.queuePosition! - b.queuePosition!);
+
+    if (oldQueuePosition == null && queued.length > 0) {
+      // Active card left — promote first queued card, renumber rest
+      const promoted = queued[0];
+      promoted.queuePosition = null;
+      promoted.updatedAt = new Date().toISOString();
+      await promoted.save();
+
+      for (let i = 1; i < queued.length; i++) {
+        if (queued[i].queuePosition !== i) {
+          queued[i].queuePosition = i;
+          queued[i].updatedAt = new Date().toISOString();
+          await queued[i].save();
+        }
+      }
+
+      messageBus.publish('queue:promoted', { cardId: promoted.id });
+    } else {
+      // Queued card left — renumber contiguously
+      for (let i = 0; i < queued.length; i++) {
+        const expected = i + 1;
+        if (queued[i].queuePosition !== expected) {
+          queued[i].queuePosition = expected;
+          queued[i].updatedAt = new Date().toISOString();
+          await queued[i].save();
+        }
+      }
     }
   }
 

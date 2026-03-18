@@ -205,71 +205,11 @@ interface QueueStarter {
 }
 
 export function registerQueueManager(bus: MessageBus = messageBus, starter: QueueStarter): void {
-  bus.subscribe('board:changed', async (payload) => {
-    const { card, oldColumn, newColumn } = payload as {
-      card: Card | null;
-      oldColumn: string | null;
-      newColumn: string | null;
-    };
-    if (!card) return;
-    if (oldColumn !== 'running' || newColumn === 'running') return;
-    if (card.useWorktree) return;
-    if (!card.projectId) return;
-
-    const wasActive = card.queuePosition == null;
-    const wasPosition = card.queuePosition;
-
-    // Invariant: non-running cards have null queuePosition
-    if (card.queuePosition != null) {
-      const dep = await Card.findOneBy({ id: card.id });
-      if (dep) {
-        dep.queuePosition = null;
-        dep.updatedAt = new Date().toISOString();
-        await dep.save();
-      }
-    }
-
-    // Query remaining conflict group
-    const remaining = await Card.find({
-      where: {
-        column: 'running',
-        projectId: card.projectId,
-        useWorktree: false as unknown as boolean,
-      },
+  bus.subscribe('queue:promoted', async (payload) => {
+    const { cardId } = payload as { cardId: number };
+    starter.startSession(cardId).catch((err) => {
+      console.error(`[oc:queue] failed to start promoted card ${cardId}:`, err);
     });
-
-    if (wasActive) {
-      // Promote the card with queuePosition=1 to active (null)
-      const nextUp = remaining.find((c) => c.queuePosition === 1);
-      if (nextUp) {
-        nextUp.queuePosition = null;
-        nextUp.updatedAt = new Date().toISOString();
-        await nextUp.save();
-
-        // Decrement all others
-        for (const c of remaining) {
-          if (c.id === nextUp.id) continue;
-          if (c.queuePosition != null && c.queuePosition > 1) {
-            c.queuePosition = c.queuePosition - 1;
-            c.updatedAt = new Date().toISOString();
-            await c.save();
-          }
-        }
-
-        starter.startSession(nextUp.id).catch((err) => {
-          console.error(`[oc:queue] failed to start promoted card ${nextUp.id}:`, err);
-        });
-      }
-    } else if (wasPosition != null) {
-      // Queued card left — decrement cards with position > wasPosition
-      for (const c of remaining) {
-        if (c.queuePosition != null && c.queuePosition > wasPosition) {
-          c.queuePosition = c.queuePosition - 1;
-          c.updatedAt = new Date().toISOString();
-          await c.save();
-        }
-      }
-    }
   });
 }
 
