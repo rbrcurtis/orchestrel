@@ -164,14 +164,8 @@ export function registerAutoStart(bus: MessageBus = messageBus, starter: Session
           console.log(`[oc:auto-start] attached to live session for card ${card.id}`);
           return;
         }
-        // Session not alive — clear stale sessionId and fall through to startSession
-        const c = await Card.findOneBy({ id: card.id });
-        if (c) {
-          c.sessionId = null;
-          c.updatedAt = new Date().toISOString();
-          await c.save();
-          console.log(`[oc:auto-start] cleared stale session for card ${card.id}, starting fresh`);
-        }
+        // Session not alive — fall through to startSession (resume with existing sessionId)
+        console.log(`[oc:auto-start] session not active for card ${card.id}, will resume`);
       } catch (err) {
         console.error(`[oc:auto-start] attach failed for card ${card.id}:`, err);
       }
@@ -280,11 +274,11 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus, ops: Workt
       ops.removeWorktree(proj.path, c.worktreePath);
       console.log(`[oc:worktree] removed ${c.worktreePath}`);
 
-      // Clear stale fields so re-entering running recreates the worktree + session
+      // Clear worktree path so re-entering running recreates the worktree
+      // sessionId is preserved — resume will pick up the conversation
       const fresh = await Card.findOneBy({ id: c.id });
       if (fresh) {
         fresh.worktreePath = null;
-        fresh.sessionId = null;
         fresh.updatedAt = new Date().toISOString();
         await fresh.save();
       }
