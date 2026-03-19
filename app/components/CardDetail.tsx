@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch } from 'lucide-react';
-import { useCardStore, useProjectStore, useSessionStore } from '~/stores/context';
+import { useCardStore, useProjectStore, useSessionStore, useConfigStore } from '~/stores/context';
 import { SessionView } from './SessionView';
 import { InlineEdit } from './InlineEdit';
 import { Input } from '~/components/ui/input';
@@ -45,7 +45,7 @@ type Draft = {
   projectId: number | null;
   useWorktree: boolean;
   sourceBranch: string | null;
-  model: 'sonnet' | 'opus' | 'auto';
+  model: string;
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
@@ -53,6 +53,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const sessionStore = useSessionStore();
+  const config = useConfigStore();
 
   const card = cardStore.getCard(cardId);
 
@@ -211,6 +212,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
             e.dataTransfer.setData('application/x-card-slot', JSON.stringify({ cardId, slotIndex }));
             e.dataTransfer.effectAllowed = 'move';
           }}
+        >
           <Select value={col} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0">
               <Badge variant="outline" className="uppercase text-xs tracking-wide">
@@ -411,19 +413,24 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
                     <Select
+                      key={cardProject?.providerID}
                       value={draft.model}
                       onValueChange={(val) => {
-                        setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' | 'auto' }));
-                        void saveAll({ model: val as 'sonnet' | 'opus' | 'auto' });
+                        setDraft((d) => ({ ...d, model: val }));
+                        void saveAll({ model: val });
                       }}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue />
+                        <span data-slot="select-value">
+                          {config.getModel(cardProject?.providerID ?? 'anthropic', draft.model)?.label ?? draft.model}
+                        </span>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="auto">Auto</SelectItem>
-                        <SelectItem value="sonnet">Sonnet</SelectItem>
-                        <SelectItem value="opus">Opus</SelectItem>
+                        {config.getModels(cardProject?.providerID ?? 'anthropic').map(([alias, m]) => (
+                          <SelectItem key={alias} value={alias}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -460,6 +467,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
             sessionId={card.sessionId}
             accentColor={cardProject?.color}
             model={card.model ?? 'sonnet'}
+            providerID={cardProject?.providerID ?? 'anthropic'}
             thinkingLevel={card.thinkingLevel ?? 'high'}
           />
         )}
@@ -528,6 +536,7 @@ type NewCardProps = {
 export const NewCardDetail = observer(function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
+  const config = useConfigStore();
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   const [selectedColumn, setSelectedColumn] = useState(column);
@@ -714,16 +723,21 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
             <Select
+              key={selectedProject?.providerID}
               value={draft.model}
-              onValueChange={(val) => setDraft((d) => ({ ...d, model: val as 'sonnet' | 'opus' | 'auto' }))}
+              onValueChange={(val) => setDraft((d) => ({ ...d, model: val }))}
             >
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <span data-slot="select-value">
+                  {config.getModel(selectedProject?.providerID ?? 'anthropic', draft.model)?.label ?? draft.model}
+                </span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto</SelectItem>
-                <SelectItem value="sonnet">Sonnet</SelectItem>
-                <SelectItem value="opus">Opus</SelectItem>
+                {config.getModels(selectedProject?.providerID ?? 'anthropic').map(([alias, m]) => (
+                  <SelectItem key={alias} value={alias}>
+                    {m.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

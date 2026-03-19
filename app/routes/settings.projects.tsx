@@ -16,7 +16,7 @@ interface Project {
   isGitRepo: boolean;
   defaultBranch: string | null;
   defaultWorktree: boolean;
-  defaultModel: 'sonnet' | 'opus' | 'auto';
+  defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   color: string | null;
   providerID: string;
@@ -53,18 +53,18 @@ const SettingsProjectsModal = observer(function SettingsProjectsModal({ onClose 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-foreground">Project Settings</h1>
           <div className="flex items-center gap-2">
-          {!showAddForm && !editingProject && (
-            <Button size="sm" onClick={() => setShowAddForm(true)}>
-              <Plus />
-              Add Project
-            </Button>
-          )}
-          <button
-            onClick={onClose}
-            className="rounded-md p-1.5 transition-colors hover:bg-white/10 text-muted-foreground"
-          >
-            <X className="size-6" />
-          </button>
+            {!showAddForm && !editingProject && (
+              <Button size="sm" onClick={() => setShowAddForm(true)}>
+                <Plus />
+                Add Project
+              </Button>
+            )}
+            <button
+              onClick={onClose}
+              className="rounded-md p-1.5 transition-colors hover:bg-white/10 text-muted-foreground"
+            >
+              <X className="size-6" />
+            </button>
           </div>
         </div>
 
@@ -82,89 +82,85 @@ const SettingsProjectsModal = observer(function SettingsProjectsModal({ onClose 
           </div>
         )}
 
-        {!showAddForm && !editingProject && (<>
-          {/* Project list */}
-          {isLoading && (
-            <p className="text-sm text-muted-foreground">Loading projects...</p>
-          )}
+        {!showAddForm && !editingProject && (
+          <>
+            {/* Project list */}
+            {isLoading && <p className="text-sm text-muted-foreground">Loading projects...</p>}
 
-          {projectsList.length === 0 && !isLoading && (
-            <div className="text-center py-12 text-muted-foreground">
-              <p className="text-sm">No projects configured yet.</p>
-              <Button
-                variant="link"
-                onClick={() => setShowAddForm(true)}
-                className="mt-2"
-              >
-                Add your first project
-              </Button>
-            </div>
-          )}
+            {projectsList.length === 0 && !isLoading && (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">No projects configured yet.</p>
+                <Button variant="link" onClick={() => setShowAddForm(true)} className="mt-2">
+                  Add your first project
+                </Button>
+              </div>
+            )}
 
-          {projectsList.length > 0 && (
-            <Card>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Project</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {projectsList.map((project) => (
-                      <TableRow key={project.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2 min-w-0">
-                            {project.color && (
-                              <span
-                                className="w-3 h-3 rounded-full shrink-0"
-                                style={{ backgroundColor: `var(--${project.color})` }}
-                              />
-                            )}
-                            <div className="min-w-0">
-                              <span className="font-medium text-sm">{project.name}</span>
-                              <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => {
-                                setShowAddForm(false);
-                                setEditingProject(project as Project);
-                              }}
-                            >
-                              <Pencil />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => handleDelete(project.id)}
-                              disabled={deletePending === project.id}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              <Trash2 />
-                            </Button>
-                          </div>
-                        </TableCell>
+            {projectsList.length > 0 && (
+              <Card>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Project</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
+                    </TableHeader>
+                    <TableBody>
+                      {projectsList.map((project) => (
+                        <TableRow key={project.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-2 min-w-0">
+                              {project.color && (
+                                <span
+                                  className="w-3 h-3 rounded-full shrink-0"
+                                  style={{ backgroundColor: `var(--${project.color})` }}
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <span className="font-medium text-sm">{project.name}</span>
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => {
+                                  setShowAddForm(false);
+                                  setEditingProject(project as Project);
+                                }}
+                              >
+                                <Pencil />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                onClick={() => handleDelete(project.id)}
+                                disabled={deletePending === project.id}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
 
-          {/* Cache management */}
-          <div className="mt-6">
-            <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
-            <CacheSection />
-          </div>
-        </>)}
+            {/* Cache management */}
+            <div className="mt-6">
+              <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
+              <CacheSection />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -213,16 +209,9 @@ function CacheSection() {
       <CardContent className="flex items-center justify-between py-4">
         <div>
           <p className="text-sm font-medium">Local Cache</p>
-          <p className="text-xs text-muted-foreground">
-            {size === null ? 'Calculating...' : formatBytes(size)}
-          </p>
+          <p className="text-xs text-muted-foreground">{size === null ? 'Calculating...' : formatBytes(size)}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleClear}
-          disabled={clearing || size === 0}
-        >
+        <Button variant="outline" size="sm" onClick={handleClear} disabled={clearing || size === 0}>
           {clearing ? 'Clearing...' : 'Clear'}
         </Button>
       </CardContent>

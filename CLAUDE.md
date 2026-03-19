@@ -39,6 +39,12 @@ This is a **purely event-driven system**. Every handler reacts to a single event
 - **Local URL:** `http://localhost:6194`
 - **Tunnel URL:** `https://dispatch.rbrcurtis.com` (Cloudflare tunnel, requires Access auth)
 
+## DB Backups
+
+- **Cron:** every 15 minutes via `scripts/backup-db.sh`
+- **Location:** `/mnt/D/Sync/orchestra-backups/orchestrel-YYYYMMDD-HHMMSS.db`
+- **Retention:** 3-day rolling (older backups auto-pruned)
+
 ## Guardrails
 
 - **DB file:** `data/orchestrel.db` — Schema additions (`ALTER TABLE ADD COLUMN`) via sqlite3 CLI are safe anytime. NEVER modify data (INSERT/UPDATE/DELETE) outside the app — use WS mutations. NEVER run WAL management commands (`wal_checkpoint`, `PRAGMA journal_mode`, etc.) — SQLite handles this automatically. A `wal_checkpoint(TRUNCATE)` previously destroyed ~68 cards.

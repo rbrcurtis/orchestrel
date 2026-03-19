@@ -7,14 +7,15 @@ import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { ContextGauge } from './ContextGauge';
 import { SubagentFeed } from './SubagentFeed';
-import { useSessionStore, useCardStore } from '~/stores/context';
+import { useSessionStore, useCardStore, useConfigStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
 
 type Props = {
   cardId: number;
   sessionId?: string | null;
   accentColor?: string | null;
-  model: 'sonnet' | 'opus' | 'auto';
+  model: string;
+  providerID: string;
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
@@ -23,10 +24,12 @@ export const SessionView = observer(function SessionView({
   sessionId,
   accentColor,
   model,
+  providerID,
   thinkingLevel,
 }: Props) {
   const sessionStore = useSessionStore();
   const cardStore = useCardStore();
+  const config = useConfigStore();
 
   const session = sessionStore.getSession(cardId);
   const conversation = session?.conversation ?? [];
@@ -211,10 +214,7 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: {
-    model?: 'sonnet' | 'opus' | 'auto';
-    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
-  }) {
+  async function handleUpdateCard(data: { model?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -266,12 +266,14 @@ export const SessionView = observer(function SessionView({
           )}
           <select
             value={model}
-            onChange={(e) => handleUpdateCard({ model: e.target.value as 'sonnet' | 'opus' | 'auto' })}
+            onChange={(e) => handleUpdateCard({ model: e.target.value })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
           >
-            <option value="auto">Auto</option>
-            <option value="sonnet">Sonnet</option>
-            <option value="opus">Opus</option>
+            {config.getModels(providerID).map(([alias, m]) => (
+              <option key={alias} value={alias}>
+                {m.label}
+              </option>
+            ))}
           </select>
           <select
             value={thinkingLevel}
