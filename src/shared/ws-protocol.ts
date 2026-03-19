@@ -121,6 +121,7 @@ export const agentMessageSchema = z.object({
     id: z.string(),
     name: z.string(),
     params: z.record(z.string(), z.unknown()).optional(),
+    streamingOutput: z.string().optional(),
   }).optional(),
   toolResult: z.object({
     id: z.string(),

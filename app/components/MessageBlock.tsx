@@ -4,6 +4,7 @@ import { Copy, Check } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ToolUseBlock } from './ToolUseBlock';
+import { BashToolBlock } from './BashToolBlock';
 import type { AgentMessage } from '../../src/shared/ws-protocol';
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
@@ -238,10 +239,28 @@ const TextBlock = observer(function TextBlock({
 
 function ToolCallBlock({ message, toolOutputs }: { message: AgentMessage; toolOutputs: Map<string, string> }) {
   if (!message.toolCall) return null;
-  const output = message.toolCall.id ? toolOutputs.get(message.toolCall.id) : undefined;
+  const tc = message.toolCall;
+  const output = tc.id ? toolOutputs.get(tc.id) : undefined;
+  const isRunning = !output && !toolOutputs.has(tc.id ?? '');
+
+  // Bash tools get a terminal-style renderer
+  if (tc.name === 'Bash' || tc.name === 'bash') {
+    const command = typeof tc.params?.command === 'string' ? tc.params.command : '';
+    const description = typeof tc.params?.description === 'string' ? tc.params.description : undefined;
+    return (
+      <BashToolBlock
+        command={command}
+        description={description}
+        streamingOutput={tc.streamingOutput}
+        output={output}
+        isRunning={isRunning}
+      />
+    );
+  }
+
   return (
     <div className="py-1">
-      <ToolUseBlock name={message.toolCall.name} input={message.toolCall.params ?? {}} output={output} />
+      <ToolUseBlock name={tc.name} input={tc.params ?? {}} output={output} />
     </div>
   );
 }

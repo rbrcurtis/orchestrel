@@ -22,6 +22,7 @@ export type AgentMessage = {
     id: string;
     name: string;
     params?: Record<string, unknown>;
+    streamingOutput?: string;
   };
   toolResult?: {
     id: string;

@@ -25,6 +25,7 @@ export function normalizeOpenCodeEvent(event: {
           tool?: string
           callID?: string
           state?: { status: string; input?: Record<string, unknown>; output?: string; error?: string; title?: string }
+          metadata?: { output?: string }
         }
         delta?: string
       }
@@ -52,6 +53,7 @@ export function normalizeOpenCodeEvent(event: {
 
       if (part.type === 'tool' && part.state) {
         const st = part.state
+        const metadata = part.metadata
         if (st.status === 'pending' || st.status === 'running') {
           return {
             type: 'tool_call',
@@ -61,6 +63,7 @@ export function normalizeOpenCodeEvent(event: {
               id: part.callID ?? part.messageID,
               name: part.tool ?? 'unknown',
               params: st.input,
+              streamingOutput: metadata?.output || undefined,
             },
             timestamp: ts,
           }

@@ -192,7 +192,8 @@ export class SessionStore {
           const existing = s.conversation[existingIdx];
           const existingParamCount = Object.keys(existing.toolCall?.params ?? {}).length;
           const newParamCount = Object.keys(msg.toolCall.params ?? {}).length;
-          if (newParamCount > existingParamCount) {
+          const hasNewStreaming = !!msg.toolCall.streamingOutput;
+          if (newParamCount > existingParamCount || hasNewStreaming) {
             s.conversation.splice(existingIdx, 1, { ...msg, id });
           }
           return; // Either replaced or kept existing — never append a duplicate
