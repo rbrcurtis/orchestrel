@@ -154,7 +154,7 @@ function QueueBadge({ id, queuePosition }: { id: number; queuePosition: number }
         >
           <Badge
             variant="secondary"
-            className="text-xs tabular-nums px-1.5 py-0 h-5 min-w-5 flex items-center justify-center cursor-pointer hover:bg-secondary/80"
+            className="text-[10px] leading-none tabular-nums px-1 py-0 h-4 min-w-4 flex items-center justify-center cursor-pointer hover:bg-secondary/80"
           >
             {queuePosition}
           </Badge>
