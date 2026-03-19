@@ -532,9 +532,15 @@ type NewCardProps = {
   column: string;
   onCreated: (id: number) => void;
   onClose: () => void;
+  onColorChange?: (color: string | null) => void;
 };
 
-export const NewCardDetail = observer(function NewCardDetail({ column, onCreated, onClose }: NewCardProps) {
+export const NewCardDetail = observer(function NewCardDetail({
+  column,
+  onCreated,
+  onClose,
+  onColorChange,
+}: NewCardProps) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const config = useConfigStore();
@@ -584,10 +590,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
   const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
 
   return (
-    <div
-      className="flex flex-col h-full border-l-3 transition-colors duration-200"
-      style={{ borderLeftColor: selectedProject?.color ? `var(--${selectedProject.color})` : 'var(--color-border)' }}
-    >
+    <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <Select value={selectedColumn} onValueChange={setSelectedColumn}>
           <SelectTrigger size="sm" className="w-auto gap-1.5 border-border text-xs font-medium uppercase tracking-wide">
@@ -669,6 +672,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
                   model: proj?.defaultModel ?? d.model,
                   thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
                 }));
+                onColorChange?.(proj?.color ?? null);
               }}
             >
               <SelectTrigger className="w-full">

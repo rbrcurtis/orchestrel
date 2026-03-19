@@ -372,6 +372,7 @@ const ColumnSlot = observer(function ColumnSlot({
   closeSlot,
 }: ColumnSlotProps) {
   const [dragOver, setDragOver] = useState(false);
+  const [draftColor, setDraftColor] = useState<string | null>(null);
 
   function handleDragOver(e: React.DragEvent) {
     // Accept drops from column headers and kanban cards
@@ -432,15 +433,21 @@ const ColumnSlot = observer(function ColumnSlot({
       onDrop={handleDrop}
     >
       {/* Column divider — project-colored like ResizeHandle */}
-      <div
-        className={`w-1 shrink-0 ${borderColor ? '' : 'bg-border'}`}
-        style={borderColor ? { backgroundColor: `var(--${borderColor})` } : undefined}
-      />
+      {(() => {
+        const c = newCardColumn && index === 0 ? draftColor : borderColor;
+        return (
+          <div
+            className={`w-1 shrink-0 transition-colors ${c ? '' : 'bg-border'}`}
+            style={c ? { backgroundColor: `var(--${c})` } : undefined}
+          />
+        );
+      })()}
       <div className="flex flex-col flex-1 min-w-0 bg-card overflow-hidden">
         {newCardColumn && index === 0 ? (
           <NewCardDetail
             column={newCardColumn}
             onCreated={(id) => {
+              setDraftColor(null);
               setNewCardColumn(null);
               updateSlots((prev) => {
                 const next = [...prev];
@@ -448,7 +455,11 @@ const ColumnSlot = observer(function ColumnSlot({
                 return next;
               });
             }}
-            onClose={() => setNewCardColumn(null)}
+            onClose={() => {
+              setDraftColor(null);
+              setNewCardColumn(null);
+            }}
+            onColorChange={setDraftColor}
           />
         ) : cardId != null ? (
           <CardDetail cardId={cardId} onClose={() => closeSlot(index)} slotIndex={index} />
