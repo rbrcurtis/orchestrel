@@ -9,6 +9,7 @@ import { Textarea } from '~/components/ui/textarea';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectSeparator, SelectValue } from '~/components/ui/select';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { ScrollArea } from '~/components/ui/scroll-area';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -217,6 +218,9 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
             <SelectTrigger className="w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0">
               <Badge variant="outline" className="uppercase text-xs tracking-wide">
                 <SelectValue />
+                {card.queuePosition != null && (
+                  <span className="text-muted-foreground font-normal">#{card.queuePosition}</span>
+                )}
               </Badge>
             </SelectTrigger>
             <SelectContent>
@@ -583,7 +587,10 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
   const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
 
   return (
-    <div className="flex flex-col h-full">
+    <div
+      className="flex flex-col h-full border-l-3 transition-colors duration-200"
+      style={{ borderLeftColor: selectedProject?.color ? `var(--${selectedProject.color})` : 'var(--color-border)' }}
+    >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <Select value={selectedColumn} onValueChange={setSelectedColumn}>
           <SelectTrigger size="sm" className="w-auto gap-1.5 border-border text-xs font-medium uppercase tracking-wide">
@@ -604,7 +611,7 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <ScrollArea className="flex-1 px-4 py-4 space-y-4">
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
           <Input
@@ -719,53 +726,55 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
-            <Select
-              key={selectedProject?.providerID}
-              value={draft.model}
-              onValueChange={(val) => setDraft((d) => ({ ...d, model: val }))}
-            >
-              <SelectTrigger className="w-full">
-                <span data-slot="select-value">
-                  {config.getModel(selectedProject?.providerID ?? 'anthropic', draft.model)?.label ?? draft.model}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                {config.getModels(selectedProject?.providerID ?? 'anthropic').map(([alias, m]) => (
-                  <SelectItem key={alias} value={alias}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {selectedProject && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
+              <Select
+                key={selectedProject.providerID}
+                value={draft.model}
+                onValueChange={(val) => setDraft((d) => ({ ...d, model: val }))}
+              >
+                <SelectTrigger className="w-full">
+                  <span data-slot="select-value">
+                    {config.getModel(selectedProject.providerID ?? 'anthropic', draft.model)?.label ?? draft.model}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {config.getModels(selectedProject.providerID ?? 'anthropic').map(([alias, m]) => (
+                    <SelectItem key={alias} value={alias}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
+              <Select
+                value={draft.thinkingLevel}
+                onValueChange={(val) =>
+                  setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="off">Off</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
-            <Select
-              value={draft.thinkingLevel}
-              onValueChange={(val) =>
-                setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="off">Off</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        )}
 
         <Button className="w-full" disabled={!draft.title.trim() || creating} onClick={handleSave}>
           {creating ? 'Creating...' : 'Save'}
         </Button>
-      </div>
+      </ScrollArea>
     </div>
   );
 });

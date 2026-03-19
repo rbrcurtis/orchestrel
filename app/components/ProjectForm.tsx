@@ -158,13 +158,13 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
                 <Select value={providerID} onValueChange={handleProviderChange}>
                   <SelectTrigger className="w-full">
-                    <span data-slot="select-value">
-                      {config.getProvider(providerID)?.label ?? providerID}
-                    </span>
+                    <span data-slot="select-value">{config.getProvider(providerID)?.label ?? providerID}</span>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" sideOffset={4}>
                     {config.allProviders.map(([id, p]) => (
-                      <SelectItem key={id} value={id}>{p.label}</SelectItem>
+                      <SelectItem key={id} value={id}>
+                        {p.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -209,7 +209,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select branch..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" sideOffset={4}>
                       <SelectItem value="main">main</SelectItem>
                       <SelectItem value="dev">dev</SelectItem>
                     </SelectContent>
@@ -239,9 +239,11 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                       {config.getModel(providerID, defaultModel)?.label ?? defaultModel}
                     </span>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" sideOffset={4}>
                     {config.getModels(providerID).map(([alias, m]) => (
-                      <SelectItem key={alias} value={alias}>{m.label}</SelectItem>
+                      <SelectItem key={alias} value={alias}>
+                        {m.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -257,7 +259,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" sideOffset={4}>
                     <SelectItem value="off">Off</SelectItem>
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>

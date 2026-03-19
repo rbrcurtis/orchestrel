@@ -32,14 +32,7 @@ export function Card({ id, title, color, queuePosition, onClick }: CardProps) {
   const archiveRef = useRef<HTMLButtonElement>(null);
   const cards = useCardStore();
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -59,11 +52,9 @@ export function Card({ id, title, color, queuePosition, onClick }: CardProps) {
         onClick={() => onClick?.(id)}
         className={`group relative w-full sm:w-56 sm:shrink-0 rounded bg-card border border-border px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${color ? 'border-l-3' : ''}`}
       >
-        <div className="flex items-stretch gap-1">
+        <div className="flex items-center gap-1">
           <p className="text-sm text-foreground truncate flex-1 min-w-0 self-center">{title}</p>
-          {queuePosition != null && (
-            <QueueBadge id={id} queuePosition={queuePosition} />
-          )}
+          {queuePosition != null && <QueueBadge id={id} queuePosition={queuePosition} />}
           <button
             type="button"
             className="shrink-0 flex sm:hidden sm:group-hover:flex items-center px-1 -my-2 -mr-3 rounded-r text-muted-foreground/60 hover:text-neon-magenta hover:bg-neon-magenta/10 active:bg-neon-magenta/20"
@@ -79,14 +70,15 @@ export function Card({ id, title, color, queuePosition, onClick }: CardProps) {
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent
-          onOpenAutoFocus={(e) => { e.preventDefault(); requestAnimationFrame(() => archiveRef.current?.focus()); }}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            requestAnimationFrame(() => archiveRef.current?.focus());
+          }}
           onEscapeKeyDown={(e) => e.stopPropagation()}
         >
           <AlertDialogHeader>
             <AlertDialogTitle>Remove card?</AlertDialogTitle>
-            <AlertDialogDescription>
-              What would you like to do with "{title}"?
-            </AlertDialogDescription>
+            <AlertDialogDescription>What would you like to do with "{title}"?</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -144,12 +136,21 @@ function QueueBadge({ id, queuePosition }: { id: number; queuePosition: number }
   }
 
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setValue(String(queuePosition)); }}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) setValue(String(queuePosition));
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
           className="shrink-0 self-center"
-          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(true);
+          }}
         >
           <Badge
             variant="secondary"
@@ -165,7 +166,9 @@ function QueueBadge({ id, queuePosition }: { id: number; queuePosition: number }
           min={1}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSubmit();
+          }}
           onBlur={handleSubmit}
           className="h-7 text-center"
           autoFocus
