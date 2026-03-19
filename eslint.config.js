@@ -36,7 +36,7 @@ export default [
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'warn',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+        { argsIgnorePattern: '^_', ignoreRestSiblings: true },
       ],
     },
   },

@@ -59,13 +59,6 @@ interface CardItem {
 
 type ColumnCards = Record<ColumnId, CardItem[]>;
 
-function calcPosition(items: { position: number }[], targetIndex: number): number {
-  if (items.length === 0) return 1;
-  if (targetIndex === 0) return items[0].position - 1;
-  if (targetIndex >= items.length) return items[items.length - 1].position + 1;
-  return (items[targetIndex - 1].position + items[targetIndex].position) / 2;
-}
-
 function findColumnInData(data: ColumnCards, id: UniqueIdentifier): ColumnId | null {
   if (ACTIVE_COLUMNS.includes(id as ColumnId)) return id as ColumnId;
   for (const col of ACTIVE_COLUMNS) {
@@ -297,20 +290,12 @@ const ActiveBoard = observer(function ActiveBoard() {
         const reordered = arrayMove(colCards, oldIdx, newIdx);
         setDragOverride((prev) => ({ ...(prev ?? storeColumns), [currentCol]: reordered }));
 
-        const others = reordered.filter((c) => c.id !== active.id);
-        const finalIdx = reordered.findIndex((c) => c.id === active.id);
-        const _pos = calcPosition(others, finalIdx);
-
         cardStore.updateCard({ id: active.id as number, column: currentCol }).finally(() => setDragOverride(null));
       } else {
         setDragOverride(null);
       }
     } else {
       // Cross-column move — handleDragOver already moved it visually, persist it
-      const destCards = columns[currentCol].filter((c) => c.id !== active.id);
-      const insertIdx = columns[currentCol].findIndex((c) => c.id === active.id);
-      const _pos = calcPosition(destCards, insertIdx === -1 ? destCards.length : insertIdx);
-
       cardStore.updateCard({ id: active.id as number, column: currentCol }).finally(() => setDragOverride(null));
     }
 

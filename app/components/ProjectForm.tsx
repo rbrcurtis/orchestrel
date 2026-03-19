@@ -71,7 +71,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [name, setName] = useState(project?.name ?? '');
   const [path, setPath] = useState(project?.path ?? '');
   const [setupCommands, setSetupCommands] = useState(project?.setupCommands ?? '');
-  const [isGitRepo, _setIsGitRepo] = useState(project?.isGitRepo ?? false);
+  const isGitRepo = project?.isGitRepo ?? false;
   const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? '');
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
   const [color, setColor] = useState(project?.color ?? '');
