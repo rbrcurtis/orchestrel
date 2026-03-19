@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
+import { ScrollArea } from '~/components/ui/scroll-area';
 
 type Props = {
   command: string;
@@ -40,25 +41,27 @@ export const BashToolBlock = observer(function BashToolBlock({
       </div>
 
       {/* Terminal body */}
-      <div className="bg-[#0d0d1a] px-3 py-2 min-h-[2rem] max-h-80 overflow-y-auto">
-        {/* Command prompt */}
-        <div className="flex gap-1.5">
-          <span className="text-emerald-400 select-none flex-shrink-0">$</span>
-          <span className="text-foreground whitespace-pre-wrap break-all">{command}</span>
+      <ScrollArea className="bg-[#0d0d1a] min-h-[2rem] max-h-80">
+        <div className="px-3 py-2">
+          {/* Command prompt */}
+          <div className="flex gap-1.5">
+            <span className="text-emerald-400 select-none flex-shrink-0">$</span>
+            <span className="text-foreground whitespace-pre-wrap break-all">{command}</span>
+          </div>
+
+          {/* Output */}
+          {displayOutput && (
+            <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed">
+              {displayOutput}
+            </pre>
+          )}
+
+          {/* Cursor indicator while running */}
+          {isRunning && <span className="inline-block w-1.5 h-3.5 bg-emerald-400/70 animate-pulse mt-0.5" />}
+
+          <div ref={bottomRef} />
         </div>
-
-        {/* Output */}
-        {displayOutput && (
-          <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed">
-            {displayOutput}
-          </pre>
-        )}
-
-        {/* Cursor indicator while running */}
-        {isRunning && <span className="inline-block w-1.5 h-3.5 bg-emerald-400/70 animate-pulse mt-0.5" />}
-
-        <div ref={bottomRef} />
-      </div>
+      </ScrollArea>
     </div>
   );
 });

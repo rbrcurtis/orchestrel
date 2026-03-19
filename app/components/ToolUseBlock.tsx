@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import { Badge } from '~/components/ui/badge';
+import { ScrollArea } from '~/components/ui/scroll-area';
 
 type Props = {
   name: string;
@@ -43,16 +44,18 @@ export function ToolUseBlock({ name, input, output }: Props) {
         <div className="p-2 space-y-2 bg-muted">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Input</div>
-            <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground max-h-60 overflow-y-auto">
-              {formatInput(input)}
-            </pre>
+            <ScrollArea className="max-h-60">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground">
+                {formatInput(input)}
+              </pre>
+            </ScrollArea>
           </div>
           {output != null && (
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Output</div>
-              <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground max-h-60 overflow-y-auto">
-                {output}
-              </pre>
+              <ScrollArea className="max-h-60">
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground">{output}</pre>
+              </ScrollArea>
             </div>
           )}
         </div>

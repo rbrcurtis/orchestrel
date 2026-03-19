@@ -7,6 +7,7 @@ import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { ContextGauge } from './ContextGauge';
 import { SubagentFeed } from './SubagentFeed';
+import { ScrollArea } from '~/components/ui/scroll-area';
 import { useSessionStore, useCardStore, useConfigStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
 
@@ -222,14 +223,14 @@ export const SessionView = observer(function SessionView({
     <div className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border">
       {/* Messages — scrollable middle area */}
       <div className="relative flex-1 min-h-0 min-w-0">
-        <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden">
+        <ScrollArea viewportRef={scrollRef} className="h-full">
           <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0">
             {conversation.map((row, i) => (
               <MessageBlock key={`${row.id}-${i}`} message={row} toolOutputs={toolOutputs} accentColor={accentColor} />
             ))}
             <div ref={bottomRef} />
           </div>
-        </div>
+        </ScrollArea>
         {!session?.historyLoaded && conversation.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
             <svg className="size-6 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
