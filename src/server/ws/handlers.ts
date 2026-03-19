@@ -1,94 +1,103 @@
-import type { WebSocket } from 'ws'
-import type { ConnectionManager } from './connections'
-import { clientSubs } from './subscriptions'
-import { clientMessage } from '../../shared/ws-protocol'
-import { cardService } from '../services/card'
-import { projectService } from '../services/project'
+import type { WebSocket } from 'ws';
+import type { ConnectionManager } from './connections';
+import { clientSubs } from './subscriptions';
+import { clientMessage } from '../../shared/ws-protocol';
+import { cardService } from '../services/card';
+import { projectService } from '../services/project';
+import { getProvidersForClient } from '../config/providers';
 import {
   handleCardCreate,
   handleCardUpdate,
   handleCardDelete,
   handleCardGenerateTitle,
   handleCardSuggestTitle,
-} from './handlers/cards'
+} from './handlers/cards';
 import {
   handleProjectCreate,
   handleProjectUpdate,
   handleProjectDelete,
   handleProjectBrowse,
   handleProjectMkdir,
-} from './handlers/projects'
-import { handleSessionLoad } from './handlers/sessions'
-import {
-  handleAgentSend,
-  handleAgentStop,
-  handleAgentStatus,
-} from './handlers/agents'
-import { handleQueueReorder } from './handlers/queue'
-import type { Card, Project } from '../../shared/ws-protocol'
-import type { Card as CardEntity } from '../models/Card'
+} from './handlers/projects';
+import { handleSessionLoad } from './handlers/sessions';
+import { handleAgentSend, handleAgentStop, handleAgentStatus } from './handlers/agents';
+import { handleQueueReorder } from './handlers/queue';
+import type { Card, Project } from '../../shared/ws-protocol';
+import type { Card as CardEntity } from '../models/Card';
 
-export function handleMessage(
-  ws: WebSocket,
-  raw: unknown,
-  connections: ConnectionManager,
-) {
-  const parsed = clientMessage.safeParse(raw)
+export function handleMessage(ws: WebSocket, raw: unknown, connections: ConnectionManager) {
+  const parsed = clientMessage.safeParse(raw);
   if (!parsed.success) {
     connections.send(ws, {
       type: 'mutation:error',
-      requestId: (raw as Record<string, unknown>)?.requestId as string ?? 'unknown',
+      requestId: ((raw as Record<string, unknown>)?.requestId as string) ?? 'unknown',
       error: `Invalid message: ${parsed.error.message}`,
-    })
-    return
+    });
+    return;
   }
 
-  const msg = parsed.data
-  const rid = 'requestId' in msg ? (msg as { requestId?: string }).requestId : undefined
-  if (rid) console.log(`[ws] → ${msg.type} requestId=${rid}`)
+  const msg = parsed.data;
+  const rid = 'requestId' in msg ? (msg as { requestId?: string }).requestId : undefined;
+  if (rid) console.log(`[ws] → ${msg.type} requestId=${rid}`);
 
   switch (msg.type) {
     case 'subscribe': {
-      const cols = msg.columns
+      const cols = msg.columns;
 
       // Send initial sync
-      Promise.all([
-        cardService.listCards(cols.length > 0 ? cols : undefined),
-        projectService.listProjects(),
-      ]).then(([syncCards, syncProjects]) => {
-        connections.send(ws, { type: 'sync', cards: syncCards as unknown as Card[], projects: syncProjects as unknown as Project[] })
-      }).catch(err => console.error('[ws] subscribe sync error:', err))
+      Promise.all([cardService.listCards(cols.length > 0 ? cols : undefined), projectService.listProjects()])
+        .then(([syncCards, syncProjects]) => {
+          connections.send(ws, {
+            type: 'sync',
+            cards: syncCards as unknown as Card[],
+            projects: syncProjects as unknown as Project[],
+            providers: getProvidersForClient(),
+          });
+        })
+        .catch((err) => console.error('[ws] subscribe sync error:', err));
 
       // Subscribe to board:changed — forward card:updated or card:deleted
       clientSubs.subscribe(ws, 'board:changed', (payload) => {
-        const { card, oldColumn, newColumn, id } = payload as { card: CardEntity | null; oldColumn: string | null; newColumn: string | null; id?: number }
+        const { card, oldColumn, newColumn, id } = payload as {
+          card: CardEntity | null;
+          oldColumn: string | null;
+          newColumn: string | null;
+          id?: number;
+        };
         if (!card) {
-          if (id) connections.send(ws, { type: 'card:deleted', data: { id } })
-          return
+          if (id) connections.send(ws, { type: 'card:deleted', data: { id } });
+          return;
         }
-        const relevant = cols.length === 0 ||
+        const relevant =
+          cols.length === 0 ||
           (oldColumn && cols.includes(oldColumn as never)) ||
-          (newColumn && cols.includes(newColumn as never))
+          (newColumn && cols.includes(newColumn as never));
         if (relevant) {
-          connections.send(ws, { type: 'card:updated', data: card as Card })
+          connections.send(ws, { type: 'card:updated', data: card as Card });
         }
-      })
+      });
 
       // Subscribe to project updates for all known projects
-      projectService.listProjects().then(projs => {
-        for (const p of projs) {
-          clientSubs.subscribe(ws, `project:${p.id}:updated`, (payload) => {
-            connections.send(ws, { type: 'project:updated', data: payload as import('../../shared/ws-protocol').Project })
-          })
-          clientSubs.subscribe(ws, `project:${p.id}:deleted`, (payload) => {
-            connections.send(ws, { type: 'project:deleted', data: payload as { id: number } })
-          })
-        }
-      }).catch(err => console.error('[ws] subscribe project listing error:', err))
+      projectService
+        .listProjects()
+        .then((projs) => {
+          for (const p of projs) {
+            clientSubs.subscribe(ws, `project:${p.id}:updated`, (payload) => {
+              connections.send(ws, {
+                type: 'project:updated',
+                data: payload as import('../../shared/ws-protocol').Project,
+              });
+            });
+            clientSubs.subscribe(ws, `project:${p.id}:deleted`, (payload) => {
+              connections.send(ws, { type: 'project:deleted', data: payload as { id: number } });
+            });
+          }
+        })
+        .catch((err) => console.error('[ws] subscribe project listing error:', err));
 
       // Subscribe to system errors — forward to all subscribed clients
       clientSubs.subscribe(ws, 'system:error', (payload) => {
-        const { message } = payload as { message: string }
+        const { message } = payload as { message: string };
         connections.send(ws, {
           type: 'agent:message',
           cardId: -1,
@@ -98,101 +107,107 @@ export function handleMessage(
             content: message,
             timestamp: Date.now(),
           },
-        })
-      })
+        });
+      });
 
-      break
+      break;
     }
 
     case 'page': {
-      const { column, cursor, limit } = msg
-      cardService.pageCards(column, cursor, limit).then(result => {
-        connections.send(ws, {
-          type: 'page:result',
-          column,
-          cards: result.cards as Card[],
-          nextCursor: result.nextCursor,
-          total: result.total,
+      const { column, cursor, limit } = msg;
+      cardService
+        .pageCards(column, cursor, limit)
+        .then((result) => {
+          connections.send(ws, {
+            type: 'page:result',
+            column,
+            cards: result.cards as Card[],
+            nextCursor: result.nextCursor,
+            total: result.total,
+          });
         })
-      }).catch(err => console.error('[ws] page error:', err))
-      break
+        .catch((err) => console.error('[ws] page error:', err));
+      break;
     }
 
     case 'search': {
-      const { query, requestId } = msg
-      cardService.searchCards(query).then(({ cards, total }) => {
-        connections.send(ws, { type: 'search:result', requestId, cards: cards as Card[], total })
-      }).catch(err => console.error('[ws] search error:', err))
-      break
+      const { query, requestId } = msg;
+      cardService
+        .searchCards(query)
+        .then(({ cards, total }) => {
+          connections.send(ws, { type: 'search:result', requestId, cards: cards as Card[], total });
+        })
+        .catch((err) => console.error('[ws] search error:', err));
+      break;
     }
 
     case 'card:create':
-      void handleCardCreate(ws, msg, connections)
-      break
+      void handleCardCreate(ws, msg, connections);
+      break;
 
     case 'card:update':
-      void handleCardUpdate(ws, msg, connections)
-      break
+      void handleCardUpdate(ws, msg, connections);
+      break;
 
     case 'card:delete':
-      handleCardDelete(ws, msg, connections)
-      break
+      handleCardDelete(ws, msg, connections);
+      break;
 
     case 'card:generateTitle':
-      void handleCardGenerateTitle(ws, msg, connections)
-      break
+      void handleCardGenerateTitle(ws, msg, connections);
+      break;
 
     case 'card:suggestTitle':
-      void handleCardSuggestTitle(ws, msg, connections)
-      break
+      void handleCardSuggestTitle(ws, msg, connections);
+      break;
 
     case 'project:create':
-      void handleProjectCreate(ws, msg, connections)
-      break
+      void handleProjectCreate(ws, msg, connections);
+      break;
 
     case 'project:update':
-      void handleProjectUpdate(ws, msg, connections)
-      break
+      void handleProjectUpdate(ws, msg, connections);
+      break;
 
     case 'project:delete':
-      handleProjectDelete(ws, msg, connections)
-      break
+      handleProjectDelete(ws, msg, connections);
+      break;
 
     case 'project:browse':
-      void handleProjectBrowse(ws, msg, connections)
-      break
+      void handleProjectBrowse(ws, msg, connections);
+      break;
 
     case 'project:mkdir':
-      void handleProjectMkdir(ws, msg, connections)
-      break
+      void handleProjectMkdir(ws, msg, connections);
+      break;
 
     case 'session:load':
-      void handleSessionLoad(ws, msg, connections)
-      break
+      void handleSessionLoad(ws, msg, connections);
+      break;
 
     case 'agent:send':
-      void handleAgentSend(ws, msg, connections)
-      break
+      void handleAgentSend(ws, msg, connections);
+      break;
 
     case 'agent:stop':
-      void handleAgentStop(ws, msg, connections)
-      break
+      void handleAgentStop(ws, msg, connections);
+      break;
 
     case 'agent:status':
-      void handleAgentStatus(ws, msg, connections)
-      break
+      void handleAgentStatus(ws, msg, connections);
+      break;
 
     case 'queue:reorder':
-      void handleQueueReorder(ws, msg, connections)
-      break
+      void handleQueueReorder(ws, msg, connections);
+      break;
 
     default: {
-      const exhausted = msg as { type: string; requestId?: string }
+      const exhausted = msg as { type: string; requestId?: string };
       connections.send(ws, {
         type: 'mutation:error',
         requestId: exhausted.requestId ?? 'unknown',
         error: `Handler not implemented: ${exhausted.type}`,
-      })
+      });
     }
   }
 }

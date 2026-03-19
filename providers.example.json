@@ -1,0 +1,13 @@
+{
+  "providers": {
+    "anthropic": {
+      "label": "Anthropic",
+      "models": {
+        "sonnet": { "label": "Sonnet 4.6", "modelID": "claude-sonnet-4-6", "contextWindow": 200000 },
+        "sonnet-1m": { "label": "Sonnet 4.6 1M", "modelID": "claude-sonnet-4-6", "contextWindow": 1000000 },
+        "opus": { "label": "Opus 4.6", "modelID": "claude-opus-4-6", "contextWindow": 200000 },
+        "opus-1m": { "label": "Opus 4.6 1M", "modelID": "claude-opus-4-6", "contextWindow": 1000000 }
+      }
+    }
+  }
+}

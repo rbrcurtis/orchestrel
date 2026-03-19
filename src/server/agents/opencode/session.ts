@@ -287,11 +287,7 @@ export class OpenCodeSession extends AgentSession {
   }
 
   updateModel(model: string, thinkingLevel: string): void {
-    const resolved = resolveModel(
-      this.providerID,
-      model as 'sonnet' | 'opus' | 'auto',
-      thinkingLevel as 'off' | 'low' | 'medium' | 'high',
-    );
+    const resolved = resolveModel(this.providerID, model, thinkingLevel as 'off' | 'low' | 'medium' | 'high');
     this.modelID = resolved.modelID;
     this.variant = resolved.variant;
   }

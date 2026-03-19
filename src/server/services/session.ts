@@ -160,7 +160,7 @@ class SessionService {
     const session = sessionManager.create(cardId, {
       cwd,
       providerID,
-      model: (card.model ?? 'sonnet') as 'sonnet' | 'opus' | 'auto',
+      model: card.model ?? 'sonnet',
       thinkingLevel: (card.thinkingLevel ?? 'high') as 'off' | 'low' | 'medium' | 'high',
       resumeSessionId: card.sessionId ?? undefined,
       projectName,
@@ -231,7 +231,7 @@ class SessionService {
     const session = sessionManager.create(cardId, {
       cwd,
       providerID,
-      model: (card.model ?? 'sonnet') as 'sonnet' | 'opus' | 'auto',
+      model: card.model ?? 'sonnet',
       thinkingLevel: (card.thinkingLevel ?? 'high') as 'off' | 'low' | 'medium' | 'high',
       resumeSessionId: card.sessionId,
       projectName,

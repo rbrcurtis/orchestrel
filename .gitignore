@@ -10,6 +10,7 @@ dist/
 .DS_Store
 .env
 node_modules
+providers.json
 node_modules/
 opencode.json
 .playwright-mcp/*

@@ -2,6 +2,7 @@ import { ILike } from 'typeorm';
 import { Card } from '../models/Card';
 import type { Column } from '../../shared/ws-protocol';
 import { Project } from '../models/Project';
+import { getModelConfig } from '../config/providers';
 
 export interface PageResult {
   cards: Card[];
@@ -32,9 +33,7 @@ class CardService {
       columns && columns.length > 0
         ? await Card.find({ where: columns.map((col) => ({ column: col })) })
         : await Card.find();
-    return cards.sort((a, b) =>
-      a.column === 'archive' ? b.updatedAt.localeCompare(a.updatedAt) : a.position - b.position,
-    );
+    return cards.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async createCard(data: Partial<Card>): Promise<Card> {
@@ -48,14 +47,20 @@ class CardService {
     const position = (maxCard?.position ?? -1) + 1;
 
     // Inherit defaults from project if projectId set
+    let providerID = 'anthropic';
     if (data.projectId) {
       const proj = await Project.findOneBy({ id: data.projectId });
       if (proj) {
+        providerID = proj.providerID ?? 'anthropic';
         data.model = data.model ?? proj.defaultModel;
         data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
         data.useWorktree = data.useWorktree ?? proj.defaultWorktree;
       }
     }
+
+    // Set contextWindow from provider config
+    const modelCfg = getModelConfig(providerID, data.model ?? 'sonnet');
+    if (modelCfg) data.contextWindow = modelCfg.contextWindow;
 
     const now = new Date().toISOString();
     const card = Card.create({
@@ -73,6 +78,14 @@ class CardService {
   async updateCard(id: number, data: Partial<Card>): Promise<Card> {
     const card = await Card.findOneByOrFail({ id });
 
+    // Update contextWindow when model changes
+    if (data.model) {
+      const proj = card.projectId ? await Project.findOneBy({ id: card.projectId }) : null;
+      const providerID = proj?.providerID ?? 'anthropic';
+      const modelCfg = getModelConfig(providerID, data.model);
+      if (modelCfg) data.contextWindow = modelCfg.contextWindow;
+    }
+
     Object.assign(card, data);
     card.updatedAt = new Date().toISOString();
     await card.save();
@@ -89,13 +102,13 @@ class CardService {
     const pattern = `%${query}%`;
     const [results, total] = await Card.findAndCount({
       where: [{ title: ILike(pattern) }, { description: ILike(pattern) }],
-      order: { position: 'ASC' },
+      order: { updatedAt: 'DESC' },
     });
     return { cards: results, total };
   }
 
   async pageCards(column: Column, cursor?: number, limit = PAGE_SIZE): Promise<PageResult> {
-    const order = column === 'archive' ? { updatedAt: 'DESC' as const } : { position: 'ASC' as const };
+    const order = { updatedAt: 'DESC' as const };
     const all = await Card.find({
       where: { column },
       order,

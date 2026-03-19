@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useProjectStore } from '~/stores/context';
+import { observer } from 'mobx-react-lite';
+import { useProjectStore, useConfigStore } from '~/stores/context';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
@@ -10,10 +11,22 @@ import { Checkbox } from '~/components/ui/checkbox';
 import { AlertCircle } from 'lucide-react';
 
 const NEON_COLORS = [
-  'neon-cyan', 'neon-magenta', 'neon-violet', 'neon-amber',
-  'neon-lime', 'neon-coral', 'neon-electric', 'neon-plasma',
-  'neon-ice', 'neon-rose', 'neon-teal', 'neon-gold',
-  'neon-indigo', 'neon-acid', 'neon-crimson', 'neon-sky',
+  'neon-cyan',
+  'neon-magenta',
+  'neon-violet',
+  'neon-amber',
+  'neon-lime',
+  'neon-coral',
+  'neon-electric',
+  'neon-plasma',
+  'neon-ice',
+  'neon-rose',
+  'neon-teal',
+  'neon-gold',
+  'neon-indigo',
+  'neon-acid',
+  'neon-crimson',
+  'neon-sky',
 ] as const;
 
 const COLOR_LABELS: Record<string, string> = {
@@ -44,7 +57,7 @@ interface Project {
   defaultBranch: string | null;
   defaultWorktree: boolean;
   color: string | null;
-  defaultModel: 'sonnet' | 'opus' | 'auto';
+  defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   providerID: string;
 }
@@ -54,7 +67,7 @@ interface ProjectFormProps {
   onDone: () => void;
 }
 
-export default function ProjectForm({ project, onDone }: ProjectFormProps) {
+export default observer(function ProjectForm({ project, onDone }: ProjectFormProps) {
   const [name, setName] = useState(project?.name ?? '');
   const [path, setPath] = useState(project?.path ?? '');
   const [setupCommands, setSetupCommands] = useState(project?.setupCommands ?? '');
@@ -62,15 +75,23 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
   const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? '');
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
   const [color, setColor] = useState(project?.color ?? '');
-  const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus' | 'auto'>(project?.defaultModel ?? 'sonnet');
-  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(project?.defaultThinkingLevel ?? 'high');
+  const [defaultModel, setDefaultModel] = useState(project?.defaultModel ?? 'sonnet');
+  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(
+    project?.defaultThinkingLevel ?? 'high',
+  );
   const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const projects = useProjectStore();
+  const config = useConfigStore();
 
   const isValid = name.trim() && path.trim() && (!isGitRepo || defaultBranch);
+
+  function handleProviderChange(newProvider: string) {
+    setProviderID(newProvider);
+    setDefaultModel(config.getDefaultModel(newProvider));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,9 +130,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">
-            {project ? 'Edit Project' : 'Add Project'}
-          </CardTitle>
+          <CardTitle className="text-sm">{project ? 'Edit Project' : 'Add Project'}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit}>
@@ -119,12 +138,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               {/* Name */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Name</label>
-                <Input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="My Project"
-                />
+                <Input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="My Project" />
               </div>
 
               {/* Path */}
@@ -133,7 +147,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
                 <Input
                   type="text"
                   value={path}
-                  onChange={e => setPath(e.target.value)}
+                  onChange={(e) => setPath(e.target.value)}
                   placeholder="/home/ryan/Code/my-project"
                   className="font-mono"
                 />
@@ -142,14 +156,16 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               {/* Provider */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
-                <Select value={providerID} onValueChange={setProviderID}>
+                <Select value={providerID} onValueChange={handleProviderChange}>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <span data-slot="select-value">
+                      {config.getProvider(providerID)?.label ?? providerID}
+                    </span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="anthropic">Anthropic</SelectItem>
-                    <SelectItem value="okkanti">Kiro — Okkanti</SelectItem>
-                    <SelectItem value="trackable">Kiro — Trackable</SelectItem>
+                    {config.allProviders.map(([id, p]) => (
+                      <SelectItem key={id} value={id}>{p.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -158,7 +174,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Color</label>
                 <div className="flex gap-2 flex-wrap">
-                  {NEON_COLORS.map(c => (
+                  {NEON_COLORS.map((c) => (
                     <button
                       key={c}
                       type="button"
@@ -178,8 +194,8 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Setup Commands</label>
                 <Textarea
                   value={setupCommands}
-                  onChange={e => setSetupCommands(e.target.value)}
-                  placeholder={"Commands to run in worktree after creation, e.g.\nyarn install\ncp .env.example .env"}
+                  onChange={(e) => setSetupCommands(e.target.value)}
+                  placeholder={'Commands to run in worktree after creation, e.g.\nyarn install\ncp .env.example .env'}
                   rows={3}
                   className="font-mono"
                 />
@@ -189,10 +205,7 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               {isGitRepo && (
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Default Branch</label>
-                  <Select
-                    value={defaultBranch}
-                    onValueChange={setDefaultBranch}
-                  >
+                  <Select value={defaultBranch} onValueChange={setDefaultBranch}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select branch..." />
                     </SelectTrigger>
@@ -220,14 +233,16 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               {/* Default Model */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Default Model</label>
-                <Select value={defaultModel} onValueChange={(v) => setDefaultModel(v as 'sonnet' | 'opus' | 'auto')}>
+                <Select key={providerID} value={defaultModel} onValueChange={setDefaultModel}>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <span data-slot="select-value">
+                      {config.getModel(providerID, defaultModel)?.label ?? defaultModel}
+                    </span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Auto</SelectItem>
-                    <SelectItem value="sonnet">Sonnet 4.6</SelectItem>
-                    <SelectItem value="opus">Opus 4.6</SelectItem>
+                    {config.getModels(providerID).map(([alias, m]) => (
+                      <SelectItem key={alias} value={alias}>{m.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -235,7 +250,10 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
               {/* Default Thinking */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Default Thinking</label>
-                <Select value={defaultThinkingLevel} onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high')}>
+                <Select
+                  value={defaultThinkingLevel}
+                  onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high')}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -269,7 +287,6 @@ export default function ProjectForm({ project, onDone }: ProjectFormProps) {
           </form>
         </CardContent>
       </Card>
-
     </>
   );
-}
+});

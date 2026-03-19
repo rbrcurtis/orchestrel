@@ -1,24 +1,22 @@
-type Model = 'sonnet' | 'opus' | 'auto'
-type ThinkingLevel = 'off' | 'low' | 'medium' | 'high'
+import { getModelConfig } from '../../config/providers';
+
+type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';
 
 interface ResolvedModel {
-  modelID: string
-  variant?: string
-}
-
-const BASE_MODEL: Record<Model, string> = {
-  sonnet: 'claude-sonnet-4-6',
-  opus: 'claude-opus-4-6',
-  auto: 'auto',
+  modelID: string;
+  variant?: string;
 }
 
 export function resolveModel(
-  _provider: string,
-  model: Model = 'sonnet',
+  provider: string,
+  model: string = 'sonnet',
   thinkingLevel: ThinkingLevel = 'high',
 ): ResolvedModel {
+  const cfg = getModelConfig(provider, model);
+  const modelID = cfg?.modelID ?? 'claude-sonnet-4-6';
+
   return {
-    modelID: BASE_MODEL[model] ?? BASE_MODEL.sonnet,
+    modelID,
     variant: thinkingLevel === 'off' ? undefined : thinkingLevel,
-  }
+  };
 }

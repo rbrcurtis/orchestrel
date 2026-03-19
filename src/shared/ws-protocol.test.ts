@@ -94,6 +94,7 @@ describe('serverMessage', () => {
       type: 'sync',
       cards: [],
       projects: [],
+      providers: {},
     }
     const result = serverMessage.safeParse(msg)
     expect(result.success).toBe(true)
