@@ -218,9 +218,6 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
             <SelectTrigger className="w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0">
               <Badge variant="outline" className="uppercase text-xs tracking-wide">
                 <SelectValue />
-                {card.queuePosition != null && (
-                  <span className="text-muted-foreground font-normal">#{card.queuePosition}</span>
-                )}
               </Badge>
             </SelectTrigger>
             <SelectContent>

@@ -118,40 +118,22 @@ const BoardLayout = observer(function BoardLayout() {
     });
   }, []);
 
-  // Evict cards that leave running/review, auto-fill empty slots with running/review cards
+  // Evict cards that no longer exist (deleted)
   useEffect(() => {
     updateSlots((prev) => {
       let changed = false;
-      // First pass: evict cards no longer in running/review
       const next = prev.map((id) => {
         if (id == null) return null;
         const card = cardStore.getCard(id);
-        if (!card || (card.column !== 'running' && card.column !== 'review')) {
+        if (!card) {
           changed = true;
           return null;
         }
         return id;
       });
-
-      // Second pass: auto-fill empty slots with running/review cards not already shown
-      const shown = new Set(next.filter((id): id is number => id != null));
-      const runningReview = [...cardStore.cardsByColumn('running'), ...cardStore.cardsByColumn('review')].filter(
-        (c) => !shown.has(c.id),
-      );
-
-      let fillIdx = 0;
-      for (let i = 0; i < next.length && fillIdx < runningReview.length; i++) {
-        if (next[i] == null) {
-          next[i] = runningReview[fillIdx].id;
-          fillIdx++;
-          changed = true;
-        }
-      }
-
       return changed ? next : prev;
     });
-  }); // runs every render — MobX observer tracks card column changes
-
+  }); // runs every render — MobX observer tracks card changes
 
   // Mobile: track which single card is open for overlay
   const [mobileCardId, setMobileCardId] = useState<number | null>(null);
@@ -164,12 +146,13 @@ const BoardLayout = observer(function BoardLayout() {
       return;
     }
     if (id === null) return;
-    // Desktop: place in slot 0 (leftmost)
+    // Desktop: place in next open slot, or slot 0 if all full
     updateSlots((prev) => {
       // Already open somewhere? Don't duplicate
       if (prev.includes(id)) return prev;
       const next = [...prev];
-      next[0] = id;
+      const emptyIdx = next.indexOf(null);
+      next[emptyIdx >= 0 ? emptyIdx : 0] = id;
       return next;
     });
   }

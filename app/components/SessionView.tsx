@@ -253,7 +253,10 @@ export const SessionView = observer(function SessionView({
       {/* Status bar — above prompt input */}
       {(isStreaming || conversation.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0">
-          <StatusBadge status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus} />
+          <StatusBadge
+            status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
+            queuePosition={cardStore.getCard(cardId)?.queuePosition}
+          />
           {retryInfo && (
             <span className="text-[11px] text-neon-amber truncate">
               {String(retryInfo.meta?.message ?? 'Waiting...')}
@@ -325,7 +328,7 @@ export const SessionView = observer(function SessionView({
 
 // --- Status badge ---
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, queuePosition }: { status: string; queuePosition?: number | null }) {
   let variant: 'default' | 'secondary' | 'destructive' | 'outline';
   let label: string;
 
@@ -333,7 +336,7 @@ function StatusBadge({ status }: { status: string }) {
     case 'running':
     case 'starting':
       variant = 'default';
-      label = status === 'starting' ? 'Starting...' : 'Running';
+      label = queuePosition != null ? `Waiting...#${queuePosition}` : status === 'starting' ? 'Starting...' : 'Running';
       break;
     case 'completed':
     case 'stopped':
