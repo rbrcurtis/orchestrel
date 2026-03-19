@@ -68,7 +68,7 @@ export class CardStore {
     description?: string | null;
     column?: Column | null;
     projectId?: number | null;
-    model?: 'sonnet' | 'opus' | 'auto';
+    model?: string;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     useWorktree?: boolean;
     sourceBranch?: 'main' | 'dev' | null;
@@ -99,7 +99,7 @@ export class CardStore {
     column?: Column;
     position?: number;
     projectId?: number | null;
-    model?: 'sonnet' | 'opus' | 'auto';
+    model?: string;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     useWorktree?: boolean;
     sourceBranch?: 'main' | 'dev' | null;

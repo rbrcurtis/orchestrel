@@ -1,6 +1,5 @@
 import { useRef, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
-import { ScrollArea } from '~/components/ui/scroll-area';
 
 type Props = {
   command: string;
@@ -37,35 +36,29 @@ export const BashToolBlock = observer(function BashToolBlock({
         {isRunning && (
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
         )}
-        {description && (
-          <span className="text-muted-foreground truncate text-[11px]">{description}</span>
-        )}
+        {description && <span className="text-muted-foreground truncate text-[11px]">{description}</span>}
       </div>
 
       {/* Terminal body */}
-      <ScrollArea className="max-h-80">
-        <div className="bg-[#0d0d1a] px-3 py-2 min-h-[2rem]">
-          {/* Command prompt */}
-          <div className="flex gap-1.5">
-            <span className="text-emerald-400 select-none flex-shrink-0">$</span>
-            <span className="text-foreground whitespace-pre-wrap break-all">{command}</span>
-          </div>
-
-          {/* Output */}
-          {displayOutput && (
-            <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed">
-              {displayOutput}
-            </pre>
-          )}
-
-          {/* Cursor indicator while running */}
-          {isRunning && (
-            <span className="inline-block w-1.5 h-3.5 bg-emerald-400/70 animate-pulse mt-0.5" />
-          )}
-
-          <div ref={bottomRef} />
+      <div className="bg-[#0d0d1a] px-3 py-2 min-h-[2rem] max-h-80 overflow-y-auto">
+        {/* Command prompt */}
+        <div className="flex gap-1.5">
+          <span className="text-emerald-400 select-none flex-shrink-0">$</span>
+          <span className="text-foreground whitespace-pre-wrap break-all">{command}</span>
         </div>
-      </ScrollArea>
+
+        {/* Output */}
+        {displayOutput && (
+          <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed">
+            {displayOutput}
+          </pre>
+        )}
+
+        {/* Cursor indicator while running */}
+        {isRunning && <span className="inline-block w-1.5 h-3.5 bg-emerald-400/70 animate-pulse mt-0.5" />}
+
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 });

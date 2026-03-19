@@ -152,7 +152,7 @@ const BoardLayout = observer(function BoardLayout() {
     });
   }); // runs every render — MobX observer tracks card column changes
 
-  const panelHasContent = columnSlots.some((id) => id != null) || newCardColumn != null;
+  const _panelHasContent = columnSlots.some((id) => id != null) || newCardColumn != null;
 
   // Mobile: track which single card is open for overlay
   const [mobileCardId, setMobileCardId] = useState<number | null>(null);
