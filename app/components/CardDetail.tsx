@@ -26,6 +26,7 @@ import type { Column } from '../../src/shared/ws-protocol';
 type Props = {
   cardId: number;
   onClose: () => void;
+  slotIndex?: number;
 };
 
 const STATUSES = ['backlog', 'ready', 'running', 'review', 'done', 'archive'] as const;
@@ -48,7 +49,7 @@ type Draft = {
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
-export const CardDetail = observer(function CardDetail({ cardId, onClose }: Props) {
+export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIndex }: Props) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const sessionStore = useSessionStore();
@@ -201,8 +202,15 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
   return (
     <>
       <div className="flex flex-col h-full">
-        {/* Header bar */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+        {/* Header bar — draggable for column-to-column reorder */}
+        <div
+          className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0 cursor-grab active:cursor-grabbing"
+          draggable={slotIndex != null}
+          onDragStart={(e) => {
+            if (slotIndex == null) return;
+            e.dataTransfer.setData('application/x-card-slot', JSON.stringify({ cardId, slotIndex }));
+            e.dataTransfer.effectAllowed = 'move';
+          }}
           <Select value={col} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0">
               <Badge variant="outline" className="uppercase text-xs tracking-wide">
@@ -236,7 +244,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose }: Prop
           ) : (
             <span className="text-sm font-medium truncate flex-1">{card.title}</span>
           )}
-          {card.sessionId && <CopyResumeButton sessionId={card.sessionId} />}
+          {card.sessionId && <CopyResumeButton sessionId={card.sessionId} cardId={card.id} />}
           <span
             title={
               card.useWorktree
@@ -748,11 +756,11 @@ export const NewCardDetail = observer(function NewCardDetail({ column, onCreated
   );
 });
 
-function CopyResumeButton({ sessionId }: { sessionId: string }) {
+function CopyResumeButton({ sessionId, cardId }: { sessionId: string; cardId: number }) {
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
-    navigator.clipboard.writeText(sessionId);
+    navigator.clipboard.writeText(`${sessionId} # card ${cardId}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }

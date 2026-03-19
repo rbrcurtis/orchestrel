@@ -26,6 +26,8 @@ type BoardContext = {
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
+  updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
+  columnSlots: (number | null)[];
 };
 
 interface CardItem extends Card {
@@ -54,9 +56,9 @@ const BacklogBoard = observer(function BacklogBoard() {
 
   // Read backlog cards from store (reactive)
   const storeCards = useMemo((): CardItem[] => {
-    return cardStore.cardsByColumn('backlog').map(c => ({
+    return cardStore.cardsByColumn('backlog').map((c) => ({
       ...c,
-      color: c.projectId ? colorMap[c.projectId] ?? null : null,
+      color: c.projectId ? (colorMap[c.projectId] ?? null) : null,
     }));
   }, [cardStore.cards, colorMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -69,7 +71,7 @@ const BacklogBoard = observer(function BacklogBoard() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   function handleDragStart(e: DragStartEvent) {
@@ -97,7 +99,8 @@ const BacklogBoard = observer(function BacklogBoard() {
       const finalIdx = reordered.findIndex((c) => c.id === active.id);
       const pos = calcPosition(others, finalIdx);
 
-      cardStore.updateCard({ id: active.id as number, column: 'backlog', position: pos })
+      cardStore
+        .updateCard({ id: active.id as number, column: 'backlog', position: pos })
         .finally(() => setDragOverride(null));
     } else {
       setDragOverride(null);
@@ -115,9 +118,7 @@ const BacklogBoard = observer(function BacklogBoard() {
     if (!search) return cards;
     const q = search.toLowerCase();
     return cards.filter(
-      (c) =>
-        c.title.toLowerCase().includes(q) ||
-        (c.description && c.description.toLowerCase().includes(q))
+      (c) => c.title.toLowerCase().includes(q) || (c.description && c.description.toLowerCase().includes(q)),
     );
   }, [cards, search]);
 
@@ -143,14 +144,13 @@ const BacklogBoard = observer(function BacklogBoard() {
           onAddCard={() => startNewCard('backlog')}
         />
       </div>
-      {mounted && createPortal(
-        <DragOverlay>
-          {activeCard ? (
-            <CardOverlay title={activeCard.title} color={activeCard.color} />
-          ) : null}
-        </DragOverlay>,
-        document.body
-      )}
+      {mounted &&
+        createPortal(
+          <DragOverlay>
+            {activeCard ? <CardOverlay title={activeCard.title} color={activeCard.color} /> : null}
+          </DragOverlay>,
+          document.body,
+        )}
     </DndContext>
   );
 });
