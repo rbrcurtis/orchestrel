@@ -20,7 +20,7 @@ import {
   handleProjectMkdir,
 } from './handlers/projects';
 import { handleSessionLoad } from './handlers/sessions';
-import { handleAgentSend, handleAgentStop, handleAgentStatus } from './handlers/agents';
+import { handleAgentSend, handleAgentCompact, handleAgentStop, handleAgentStatus } from './handlers/agents';
 import { handleQueueReorder } from './handlers/queue';
 import type { Card, Project } from '../../shared/ws-protocol';
 import type { Card as CardEntity } from '../models/Card';
@@ -187,6 +187,10 @@ export function handleMessage(ws: WebSocket, raw: unknown, connections: Connecti
 
     case 'agent:send':
       void handleAgentSend(ws, msg, connections);
+      break;
+
+    case 'agent:compact':
+      void handleAgentCompact(ws, msg, connections);
       break;
 
     case 'agent:stop':

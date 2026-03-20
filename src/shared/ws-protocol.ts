@@ -217,6 +217,7 @@ export const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('project:mkdir'), requestId: z.string(), data: z.object({ path: z.string() }) }),
 
   z.object({ type: z.literal('agent:send'), requestId: z.string(), data: agentSendSchema }),
+  z.object({ type: z.literal('agent:compact'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
   z.object({ type: z.literal('agent:stop'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
   z.object({ type: z.literal('agent:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
 

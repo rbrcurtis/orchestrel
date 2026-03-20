@@ -41,7 +41,7 @@ function calcPosition(items: { position: number }[], targetIndex: number): numbe
 }
 
 const DoneBoard = observer(function DoneBoard() {
-  const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
+  const { search, selectCard } = useOutletContext<BoardContext>();
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
 
@@ -135,7 +135,7 @@ const DoneBoard = observer(function DoneBoard() {
       onDragCancel={handleDragCancel}
     >
       <div className="flex flex-col gap-2 p-4">
-        <StatusRow id="done" cards={filteredCards} onCardClick={selectCard} onAddCard={() => startNewCard('done')} />
+        <StatusRow id="done" cards={filteredCards} onCardClick={selectCard} />
       </div>
       {mounted &&
         createPortal(

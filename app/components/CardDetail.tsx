@@ -58,11 +58,18 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
 
   const card = cardStore.getCard(cardId);
 
-  // Auto-close if the card is deleted or archived
+  // Auto-close if the card is deleted or moved to archive while viewing
   const wasLoaded = useRef(false);
+  const initialColumn = useRef(card?.column);
   if (card) wasLoaded.current = true;
   useEffect(() => {
-    if (wasLoaded.current && (!card || card.column === 'archive')) onClose();
+    if (!wasLoaded.current) return;
+    if (!card) {
+      onClose();
+      return;
+    }
+    // Only auto-close on archive transition, not if card was already archived when opened
+    if (card.column === 'archive' && initialColumn.current !== 'archive') onClose();
   }, [card, card?.column]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [draft, setDraft] = useState<Draft>({

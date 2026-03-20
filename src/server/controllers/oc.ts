@@ -95,7 +95,8 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
   });
 
   // Handler: publish exit status to domain bus
-  session.on('exit', () => {
+  session.on('exit', async () => {
+    const card = await Card.findOneBy({ id: cardId });
     bus.publish(`card:${cardId}:exit`, {
       cardId,
       active: false,
@@ -103,17 +104,18 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
       sessionId: session.sessionId,
       promptsSent: session.promptsSent,
       turnsCompleted: session.turnsCompleted,
-      contextTokens: 0,
-      contextWindow: 200_000,
+      contextTokens: card?.contextTokens ?? 0,
+      contextWindow: card?.contextWindow ?? 200_000,
     });
   });
 
   // Handler: forward session status changes to domain bus
   // If session goes to running but card isn't in running column, move it back
   session.on('statusChange', async () => {
+    let card: Card | null = null;
     if (session.status === 'running') {
       try {
-        const card = await Card.findOneBy({ id: cardId });
+        card = await Card.findOneBy({ id: cardId });
         if (card && card.column !== 'running' && card.column !== 'archive' && card.column !== 'done') {
           card.column = 'running';
           card.updatedAt = new Date().toISOString();
@@ -123,6 +125,7 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
         console.error(`[oc:${cardId}] failed to move card to running on statusChange:`, err);
       }
     }
+    if (!card) card = await Card.findOneBy({ id: cardId });
     bus.publish(`card:${cardId}:session-status`, {
       cardId,
       active: session.status === 'running' || session.status === 'starting' || session.status === 'retry',
@@ -130,8 +133,8 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
       sessionId: session.sessionId,
       promptsSent: session.promptsSent,
       turnsCompleted: session.turnsCompleted,
-      contextTokens: 0,
-      contextWindow: 200_000,
+      contextTokens: card?.contextTokens ?? 0,
+      contextWindow: card?.contextWindow ?? 200_000,
     });
   });
 }

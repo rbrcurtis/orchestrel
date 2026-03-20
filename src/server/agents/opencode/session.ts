@@ -15,6 +15,7 @@ interface SdkClient {
       tools?: Record<string, boolean>;
     }): Promise<void>;
     abort(opts: { sessionID: string }): Promise<void>;
+    summarize(opts: { sessionID: string; auto?: boolean }): Promise<unknown>;
     children(opts: { sessionID: string }): Promise<Array<{ id: string; title: string; parentID?: string }>>;
   };
   event: {
@@ -222,6 +223,26 @@ export class OpenCodeSession extends AgentSession {
     this.promptsSent++;
     this.status = 'starting';
     this.sendPrompt(sdk, content);
+  }
+
+  async compact(): Promise<void> {
+    if (!this.sessionId) throw new Error('No active session');
+    const sdk = this.client as unknown as SdkClient;
+
+    // Re-subscribe if SSE was lost so we receive the session.compacted event
+    if (!this.sseAlive) {
+      await this.subscribeToEvents();
+      this.log('sse:connect');
+    }
+
+    this.log('compact:start');
+    try {
+      await sdk.session.summarize({ sessionID: this.sessionId, auto: false });
+      this.log('compact:requested');
+    } catch (err) {
+      this.log(`compact:error ${String(err)}`);
+      throw err;
+    }
   }
 
   private sendPrompt(sdk: SdkClient, content: string): void {
@@ -645,6 +666,21 @@ export class OpenCodeSession extends AgentSession {
               } satisfies AgentMessage);
               this.turnCost = 0;
               this.turnTokens = null;
+            }
+
+            // session.compacted = context compaction finished
+            if (event.type === 'session.compacted') {
+              const sid = (event.properties as { sessionID?: string }).sessionID;
+              if (sid && sid !== this.sessionId) continue;
+              this.log('session:compacted');
+              this.emit('message', {
+                type: 'system',
+                role: 'system',
+                content: '',
+                meta: { subtype: 'compact_boundary' },
+                timestamp: Date.now(),
+              } satisfies AgentMessage);
+              continue;
             }
 
             if (event.type === 'session.error') {

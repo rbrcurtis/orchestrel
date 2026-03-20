@@ -318,6 +318,7 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting}
         onSend={handleSend}
         onStop={handleStop}
+        onCompact={!!sessionId || sessionActive ? () => sessionStore.compactSession(cardId) : undefined}
         sendPending={false}
         contextPercent={contextPercent}
         compacted={compacted}
@@ -396,6 +397,7 @@ function PromptInput({
   isPending,
   onSend,
   onStop,
+  onCompact,
   sendPending,
   contextPercent,
   compacted,
@@ -406,6 +408,7 @@ function PromptInput({
   isPending: boolean;
   onSend: (message: string, files?: FileRef[]) => void;
   onStop: () => void;
+  onCompact?: () => void;
   sendPending: boolean;
   contextPercent: number;
   compacted: boolean;
@@ -584,11 +587,7 @@ function PromptInput({
           />
         </div>
         <div className="flex flex-col items-center justify-end gap-1.5 shrink-0">
-          <ContextGauge
-            percent={contextPercent}
-            compacted={compacted}
-            onCompact={hasSession ? () => onSend('/compact') : undefined}
-          />
+          <ContextGauge percent={contextPercent} compacted={compacted} onCompact={onCompact} />
           <Button type="submit" disabled={disabled} className="size-[50px] sm:size-[34px] p-0">
             <Send className="size-5 sm:size-4" />
           </Button>

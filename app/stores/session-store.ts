@@ -241,9 +241,13 @@ export class SessionStore {
         newRows.push({ ...msg, id });
       }
 
-      if (newRows.length > 0) {
+      // Filter out messages already delivered live (race: live sub fires before history arrives)
+      const existingIds = new Set(s.conversation.map((r) => r.id));
+      const deduped = newRows.filter((r) => !existingIds.has(r.id));
+
+      if (deduped.length > 0) {
         // Prepend history before any live messages
-        s.conversation.unshift(...newRows);
+        s.conversation.unshift(...deduped);
       }
 
       // Rebuild toolCallIdxMap from scratch after prepend (indices shifted)
@@ -357,6 +361,15 @@ export class SessionStore {
       type: 'agent:send',
       requestId,
       data: { cardId, message, files },
+    });
+  }
+
+  async compactSession(cardId: number): Promise<void> {
+    const requestId = uuid();
+    await ws().mutate({
+      type: 'agent:compact',
+      requestId,
+      data: { cardId },
     });
   }
 
