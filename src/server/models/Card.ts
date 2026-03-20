@@ -80,6 +80,12 @@ export class Card extends BaseEntity {
 
   @Column({ name: 'queue_position', type: 'integer', nullable: true, default: null })
   queuePosition!: number | null;
+
+  @Column({ name: 'pending_prompt', type: 'text', nullable: true, default: null })
+  pendingPrompt!: string | null;
+
+  @Column({ name: 'pending_files', type: 'text', nullable: true, default: null })
+  pendingFiles!: string | null;
 }
 
 @EventSubscriber()

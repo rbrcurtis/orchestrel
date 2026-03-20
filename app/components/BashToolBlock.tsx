@@ -2,6 +2,13 @@ import { useRef, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { ScrollArea } from '~/components/ui/scroll-area';
 
+/** Strip ANSI escape codes (colors, cursor moves, etc.) */
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[>=<]|\x1b\[[?]?[0-9;]*[hlsr]/g;
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '');
+}
+
 type Props = {
   command: string;
   description?: string;
@@ -21,7 +28,8 @@ export const BashToolBlock = observer(function BashToolBlock({
   isRunning,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const displayOutput = output ?? streamingOutput ?? '';
+  const raw = output ?? streamingOutput ?? '';
+  const displayOutput = stripAnsi(raw);
 
   // Auto-scroll to bottom when output grows
   useEffect(() => {

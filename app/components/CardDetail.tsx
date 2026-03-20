@@ -58,12 +58,12 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
 
   const card = cardStore.getCard(cardId);
 
-  // Auto-close if the card is deleted (was loaded, then disappeared from store)
+  // Auto-close if the card is deleted or archived
   const wasLoaded = useRef(false);
   if (card) wasLoaded.current = true;
   useEffect(() => {
-    if (wasLoaded.current && !card) onClose();
-  }, [card]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (wasLoaded.current && (!card || card.column === 'archive')) onClose();
+  }, [card, card?.column]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [draft, setDraft] = useState<Draft>({
     title: '',
@@ -203,7 +203,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
 
   return (
     <>
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full min-w-0 overflow-x-hidden">
         {/* Header bar — draggable for column-to-column reorder */}
         <div
           className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0 cursor-grab active:cursor-grabbing"

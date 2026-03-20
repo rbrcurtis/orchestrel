@@ -74,9 +74,7 @@ async function processQueueImpl(projectId: number): Promise<void> {
   // Nothing running — promote next card
   // Priority: card with queuePosition=null (just entered, not yet queued), then lowest queuePosition
   const unqueued = group.filter((c) => c.queuePosition == null);
-  const queued = group
-    .filter((c) => c.queuePosition != null)
-    .sort((a, b) => a.queuePosition! - b.queuePosition!);
+  const queued = group.filter((c) => c.queuePosition != null).sort((a, b) => a.queuePosition! - b.queuePosition!);
 
   const toStart = unqueued[0] ?? queued[0];
   if (!toStart) return;
@@ -107,6 +105,6 @@ async function processQueueImpl(projectId: number): Promise<void> {
   }
 
   const { sessionService } = await import('./session');
-  console.log(`[queue-gate] project=${projectId}: starting session for card #${toStart.id}`);
-  await sessionService.startSession(toStart.id);
+  console.log(`[queue-gate] project=${projectId}: launching session for card #${toStart.id}`);
+  await sessionService.launchSession(toStart.id);
 }

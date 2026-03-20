@@ -18,38 +18,25 @@ export async function handleAgentSend(
   try {
     connections.send(ws, { type: 'mutation:ok', requestId });
 
-    const { sessionManager } = await import('../../agents/manager');
-    const existing = sessionManager.get(cardId);
-
-    if (existing && (existing.status === 'running' || existing.status === 'completed')) {
-      sessionService.sendFollowUp(cardId, message, files).catch((err) => {
-        console.error(`[session:${cardId}] sendFollowUp error:`, err);
+    // startSession handles everything: follow-ups to active sessions,
+    // queueing for non-worktree cards, and direct launch for worktree cards.
+    sessionService.startSession(cardId, message, files).catch((err) => {
+      const error = err instanceof Error ? err.message : String(err);
+      console.error(`[session:${cardId}] startSession error:`, error);
+      connections.send(ws, {
+        type: 'agent:status',
+        data: {
+          cardId,
+          active: false,
+          status: 'errored',
+          sessionId: null,
+          promptsSent: 0,
+          turnsCompleted: 0,
+          contextTokens: 0,
+          contextWindow: 200_000,
+        },
       });
-    } else {
-      // Don't start sessions on queued cards — they wait for their turn
-      const card = await Card.findOneBy({ id: cardId });
-      if (card && card.queuePosition != null) {
-        console.log(`[session:${cardId}] agent:send blocked — card is queued (qP=${card.queuePosition})`);
-        return;
-      }
-      sessionService.startSession(cardId, message, files).catch((err) => {
-        const error = err instanceof Error ? err.message : String(err);
-        console.error(`[session:${cardId}] startSession error:`, error);
-        connections.send(ws, {
-          type: 'agent:status',
-          data: {
-            cardId,
-            active: false,
-            status: 'errored',
-            sessionId: null,
-            promptsSent: 0,
-            turnsCompleted: 0,
-            contextTokens: 0,
-            contextWindow: 200_000,
-          },
-        });
-      });
-    }
+    });
   } catch (err) {
     connections.send(ws, {
       type: 'mutation:error',
