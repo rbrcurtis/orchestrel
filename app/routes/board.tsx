@@ -700,7 +700,7 @@ const ColumnSlot = observer(function ColumnSlot({
         ) : index === 0 ? (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Select a card</div>
         ) : (
-          <ProjectPinSelector onSelect={(pid) => onPin(pid)} />
+          <ProjectPinSelector onSelect={onPin} />
         )}
       </div>
     </div>
