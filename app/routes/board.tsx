@@ -283,6 +283,7 @@ const BoardLayout = observer(function BoardLayout() {
   }
 
   function pinSlot(index: number, projectId: number) {
+    if (index === 0) return; // slot 0 is the hotseat, never pinnable
     updatePins((prev) => {
       const next = [...prev];
       next[index] = projectId;
@@ -604,10 +605,10 @@ const ColumnSlot = observer(function ColumnSlot({
         next[index] = srcCardId; // target slot gets the dragged card (replaces whatever was there)
         return next;
       });
+      // Clear pin on target slot only — source pin stays so resolver can refill it
       updatePins((prev) => {
-        if (prev[srcIdx] == null && prev[index] == null) return prev;
+        if (prev[index] == null) return prev;
         const next = [...prev];
-        next[srcIdx] = null;
         next[index] = null;
         return next;
       });
