@@ -586,7 +586,7 @@ function PromptInput({
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
             maxLength={10000}
             rows={3}
-            className="resize-none min-h-full pr-10"
+            className="resize-none min-h-full pr-10 focus-ring"
           />
           {/* Paperclip button - bottom right inside textarea */}
           {(isRunning || hasSession) && (
