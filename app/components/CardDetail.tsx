@@ -216,7 +216,15 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
         >
           <Select value={col} onValueChange={handleStatusChange}>
             <SelectTrigger className="w-auto border-none shadow-none px-0 h-auto gap-1.5 shrink-0">
-              <Badge variant="outline" className="uppercase text-xs tracking-wide">
+              <Badge
+                variant="outline"
+                className={`uppercase text-xs tracking-wide ${col === 'review' && cardProject?.color ? 'animate-review-glow' : ''}`}
+                style={
+                  col === 'review' && cardProject?.color
+                    ? ({ '--glow-color': `var(--${cardProject.color})` } as React.CSSProperties)
+                    : undefined
+                }
+              >
                 <SelectValue />
               </Badge>
             </SelectTrigger>

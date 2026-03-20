@@ -223,8 +223,8 @@ export const SessionView = observer(function SessionView({
     <div className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border">
       {/* Messages — scrollable middle area */}
       <div className="relative flex-1 min-h-0 min-w-0">
-        <ScrollArea viewportRef={scrollRef} className="h-full">
-          <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0">
+        <ScrollArea viewportRef={scrollRef} className="h-full max-w-[100vw]">
+          <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0 max-w-full overflow-x-hidden">
             {conversation.map((row, i) => (
               <MessageBlock key={`${row.id}-${i}`} message={row} toolOutputs={toolOutputs} accentColor={accentColor} />
             ))}

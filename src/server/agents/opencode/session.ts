@@ -433,6 +433,10 @@ export class OpenCodeSession extends AgentSession {
             if (sessionID === this.sessionId && this.promptTimer) {
               this.resetPromptTimer(`sse:${event.type}`);
             }
+            // Also kill the idle fallback — session is still producing events
+            if (sessionID === this.sessionId && this.idleFallbackTimer) {
+              this.clearIdleFallbackTimer();
+            }
 
             // Child session event handling
             if (sessionID && sessionID !== this.sessionId) {

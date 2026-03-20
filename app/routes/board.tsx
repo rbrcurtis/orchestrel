@@ -47,7 +47,19 @@ function useIsDesktop() {
 }
 
 function useMaxColumns(panelRef: React.RefObject<HTMLDivElement | null>) {
-  const [max, setMax] = useState(4);
+  const [max, setMax] = useState(() => {
+    // Compute synchronously from DOM if available so the first render
+    // already knows the real max — prevents clamping a restored count.
+    if (panelRef.current) {
+      const w = panelRef.current.getBoundingClientRect().width;
+      return Math.max(1, Math.floor(w / MIN_COLUMN_WIDTH));
+    }
+    // SSR / ref not yet attached — use window width as best guess
+    if (typeof window !== 'undefined') {
+      return Math.max(1, Math.floor(window.innerWidth / MIN_COLUMN_WIDTH));
+    }
+    return 4;
+  });
   useEffect(() => {
     function compute() {
       if (!panelRef.current) return;

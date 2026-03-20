@@ -1,5 +1,5 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -153,8 +153,29 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji';
+}
+
+@keyframes review-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 4px color-mix(in srgb, var(--glow-color) 40%, transparent),
+      0 0 10px color-mix(in srgb, var(--glow-color) 20%, transparent);
+    border-color: color-mix(in srgb, var(--glow-color) 60%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 8px color-mix(in srgb, var(--glow-color) 60%, transparent),
+      0 0 20px color-mix(in srgb, var(--glow-color) 30%, transparent);
+    border-color: var(--glow-color);
+  }
+}
+
+.animate-review-glow {
+  animation: review-glow 2s ease-in-out infinite;
 }
 
 body {
