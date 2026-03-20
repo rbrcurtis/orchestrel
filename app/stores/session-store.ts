@@ -313,11 +313,11 @@ export class SessionStore {
       s.sessionId = data.sessionId;
       s.promptsSent = data.promptsSent;
       s.turnsCompleted = data.turnsCompleted;
-      // Seed context data from card when session store has no live data
-      if (s.contextTokens === 0 && data.contextTokens > 0) {
+      // Always accept context data from server status (source of truth)
+      if (data.contextTokens > 0) {
         s.contextTokens = data.contextTokens;
       }
-      if (s.contextWindow === 200_000 && data.contextWindow !== 200_000 && data.contextWindow > 0) {
+      if (data.contextWindow > 0) {
         s.contextWindow = data.contextWindow;
       }
       // Clear subagent rows and stop retry interval when parent session ends

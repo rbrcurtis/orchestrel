@@ -2,6 +2,13 @@
 
 Personal kanban board + Claude Code orchestration app.
 
+## Commands
+
+- `pnpm dev` — start Vite dev server (used by systemd service)
+- `pnpm build` — production build (SPA mode, outputs to build/client/)
+- `pnpm start` — run built server directly
+- `sudo systemctl restart orchestrel` — restart the service (needed for server-side changes; frontend uses HMR)
+
 ## Code Style
 
 - TypeScript strict mode
