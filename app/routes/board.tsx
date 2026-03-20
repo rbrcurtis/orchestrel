@@ -3,7 +3,8 @@ import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { resolvePins } from '~/lib/resolve-pin';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { Settings, Palette, Minus, Plus, Filter } from 'lucide-react';
+import { Settings, Palette, Minus, Plus, Filter, X } from 'lucide-react';
+import { ProjectPinSelector } from '~/components/ProjectPinSelector';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
@@ -281,6 +282,14 @@ const BoardLayout = observer(function BoardLayout() {
     writeLocalStorage(COLUMN_COUNT_KEY, next);
   }
 
+  function pinSlot(index: number, projectId: number) {
+    updatePins((prev) => {
+      const next = [...prev];
+      next[index] = projectId;
+      return next;
+    });
+  }
+
   // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -500,9 +509,10 @@ const BoardLayout = observer(function BoardLayout() {
         {/* Desktop: multi-column card panels */}
         <div ref={panelRef} className="hidden lg:flex overflow-hidden" style={{ width: initialWidth }}>
           {columnSlots.map((cardId, idx) => {
+            const pinProject = columnPins[idx] != null ? projectStore.getProject(columnPins[idx]!) : null;
             const slotCard = cardId != null ? cardStore.getCard(cardId) : undefined;
             const slotProject = slotCard?.projectId ? projectStore.getProject(slotCard.projectId) : null;
-            const borderColor = slotProject?.color ?? null;
+            const borderColor = pinProject?.color ?? slotProject?.color ?? null;
             return (
               <ColumnSlot
                 key={idx}
@@ -515,6 +525,7 @@ const BoardLayout = observer(function BoardLayout() {
                 updateSlots={updateSlots}
                 updatePins={updatePins}
                 pinProjectId={columnPins[idx] ?? null}
+                onPin={(projectId) => pinSlot(idx, projectId)}
                 setNewCardColumn={setNewCardColumn}
                 closeSlot={closeSlot}
               />
@@ -539,6 +550,7 @@ type ColumnSlotProps = {
   updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
   updatePins: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
   pinProjectId: number | null;
+  onPin: (projectId: number) => void;
   setNewCardColumn: (col: string | null) => void;
   closeSlot: (index: number) => void;
 };
@@ -553,9 +565,11 @@ const ColumnSlot = observer(function ColumnSlot({
   updateSlots,
   updatePins,
   pinProjectId,
+  onPin,
   setNewCardColumn,
   closeSlot,
 }: ColumnSlotProps) {
+  const projectStore = useProjectStore();
   const [dragOver, setDragOver] = useState(false);
   const [draftColor, setDraftColor] = useState<string | null>(null);
 
@@ -668,8 +682,24 @@ const ColumnSlot = observer(function ColumnSlot({
           />
         ) : cardId != null ? (
           <CardDetail cardId={cardId} onClose={() => closeSlot(index)} slotIndex={index} />
-        ) : (
+        ) : pinProjectId != null ? (
+          <div className="flex flex-col flex-1">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+              <span className="text-sm font-medium text-muted-foreground truncate">
+                {projectStore.getProject(pinProjectId)?.name ?? 'Unknown project'}
+              </span>
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => closeSlot(index)}>
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+              No review or running cards
+            </div>
+          </div>
+        ) : index === 0 ? (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Select a card</div>
+        ) : (
+          <ProjectPinSelector onSelect={(pid) => onPin(pid)} />
         )}
       </div>
     </div>
