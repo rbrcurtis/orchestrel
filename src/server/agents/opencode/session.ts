@@ -14,7 +14,7 @@ interface SdkClient {
       directory: string;
       tools?: Record<string, boolean>;
     }): Promise<void>;
-    abort(opts: { sessionID: string }): Promise<void>;
+    abort(opts: { sessionID: string; directory?: string }): Promise<void>;
     children(opts: { sessionID: string }): Promise<Array<{ id: string; title: string; parentID?: string }>>;
   };
   event: {
@@ -349,7 +349,7 @@ export class OpenCodeSession extends AgentSession {
     if (!this.sessionId) return;
     const sdk = this.client as unknown as SdkClient;
     this.log('abort:send');
-    sdk.session.abort({ sessionID: this.sessionId }).catch((err) => {
+    sdk.session.abort({ sessionID: this.sessionId, directory: this.cwd }).catch((err) => {
       this.log('abort:error ' + String(err));
     });
   }

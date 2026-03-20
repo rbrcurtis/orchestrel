@@ -266,10 +266,13 @@ class SessionService {
         try {
           const { openCodeServer } = await import('../opencode/server');
           if (openCodeServer.client) {
+            const cwd =
+              card.worktreePath ??
+              (card.projectId ? (await Project.findOneByOrFail({ id: card.projectId })).path : undefined);
             const sdk = openCodeServer.client as unknown as {
-              session: { abort(opts: { sessionID: string }): Promise<void> };
+              session: { abort(opts: { sessionID: string; directory?: string }): Promise<void> };
             };
-            await sdk.session.abort({ sessionID: card.sessionId });
+            await sdk.session.abort({ sessionID: card.sessionId, ...(cwd ? { directory: cwd } : {}) });
             console.log(`[session:${cardId}] SDK abort sent (no in-memory session) for ${card.sessionId}`);
           }
         } catch {
