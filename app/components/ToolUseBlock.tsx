@@ -27,11 +27,11 @@ export function ToolUseBlock({ name, input, output }: Props) {
     <Collapsible
       open={expanded}
       onOpenChange={setExpanded}
-      className="rounded border border-border overflow-hidden my-1"
+      className="rounded border border-border overflow-x-auto my-1 min-w-0 max-w-full"
     >
-      <CollapsibleTrigger className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium bg-muted hover:bg-hover transition-colors">
-        {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-        <Badge variant={variant} className="text-xs font-mono">
+      <CollapsibleTrigger className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium bg-muted hover:bg-hover transition-colors min-w-0">
+        {expanded ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+        <Badge variant={variant} className="text-xs font-mono shrink-0">
           {name}
         </Badge>
         {!expanded && (
@@ -41,20 +41,20 @@ export function ToolUseBlock({ name, input, output }: Props) {
         )}
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="p-2 space-y-2 bg-muted">
-          <div>
+        <div className="p-2 space-y-2 bg-muted min-w-0 overflow-x-auto">
+          <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Input</div>
             <ScrollArea className="max-h-60">
-              <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground min-w-0">
                 {formatInput(input)}
               </pre>
             </ScrollArea>
           </div>
           {output != null && (
-            <div>
+            <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Output</div>
               <ScrollArea className="max-h-60">
-                <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground">{output}</pre>
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground min-w-0">{output}</pre>
               </ScrollArea>
             </div>
           )}

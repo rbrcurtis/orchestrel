@@ -252,26 +252,26 @@ export const SessionView = observer(function SessionView({
 
       {/* Status bar — above prompt input */}
       {(isStreaming || conversation.length > 0) && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0 min-w-0 overflow-hidden">
           <StatusBadge
             status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
             queuePosition={cardStore.getCard(cardId)?.queuePosition}
           />
           {retryInfo && (
-            <span className="text-[11px] text-neon-amber truncate">
+            <span className="text-[11px] text-neon-amber truncate min-w-0">
               {String(retryInfo.meta?.message ?? 'Waiting...')}
               {retryInfo.meta?.attempt != null && ` (attempt ${retryInfo.meta.attempt})`}
             </span>
           )}
           {showCounters && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground shrink-0">
               {turnsCompleted}/{promptsSent} turns
             </span>
           )}
           <select
             value={model}
             onChange={(e) => handleUpdateCard({ model: e.target.value })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 truncate"
           >
             {config.getModels(providerID).map(([alias, m]) => (
               <option key={alias} value={alias}>
@@ -282,7 +282,7 @@ export const SessionView = observer(function SessionView({
           <select
             value={thinkingLevel}
             onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0"
           >
             <option value="off">Off</option>
             <option value="low">Low</option>
@@ -583,7 +583,7 @@ function PromptInput({
             }}
           />
         </div>
-        <div className="flex flex-col items-center justify-end gap-1.5">
+        <div className="flex flex-col items-center justify-end gap-1.5 shrink-0">
           <ContextGauge
             percent={contextPercent}
             compacted={compacted}

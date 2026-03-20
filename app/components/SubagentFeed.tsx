@@ -30,12 +30,10 @@ export const SubagentFeed = observer(function SubagentFeed({ subagents }: Props)
               boxShadow: entry.status === 'running' ? '0 0 4px #39ff1466' : 'none',
             }}
           />
-          <span className="text-foreground truncate max-w-[200px]">
+          <span className="text-foreground truncate min-w-0 flex-1">
             {entry.title.replace(/\s*\(@\w+ subagent\)$/, '').slice(0, 40)}
           </span>
-          <span className="text-muted-foreground truncate flex-1">
-            {entry.lastActivity}
-          </span>
+          <span className="text-muted-foreground truncate min-w-0 shrink-0 max-w-[50%]">{entry.lastActivity}</span>
         </div>
       ))}
     </div>
