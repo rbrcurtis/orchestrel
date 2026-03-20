@@ -178,6 +178,22 @@
   animation: review-glow 2s ease-in-out infinite;
 }
 
+@keyframes slot-flash {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.2;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-slot-flash {
+  animation: slot-flash 500ms ease-out forwards;
+}
+
 body {
   @apply bg-background text-foreground;
 }

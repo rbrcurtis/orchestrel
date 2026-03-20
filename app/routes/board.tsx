@@ -149,19 +149,31 @@ const BoardLayout = observer(function BoardLayout() {
 
   // Mobile: track which single card is open for overlay
   const [mobileCardId, setMobileCardId] = useState<number | null>(null);
+  const [mobileFlash, setMobileFlash] = useState(false);
+
+  // Flash: which slot index should show the "already open" overlay
+  const [flashSlot, setFlashSlot] = useState<number | null>(null);
 
   function selectCard(id: number | null) {
     setNewCardColumn(null);
     if (!isDesktop) {
-      // Mobile: single card overlay
+      if (id != null && mobileCardId === id) {
+        // Already open on mobile — flash it
+        setMobileFlash(true);
+        return;
+      }
       setMobileCardId(id);
       return;
     }
     if (id === null) return;
     // Desktop: place in next open slot, or slot 0 if all full
     updateSlots((prev) => {
-      // Already open somewhere? Don't duplicate
-      if (prev.includes(id)) return prev;
+      const existingIdx = prev.indexOf(id);
+      if (existingIdx >= 0) {
+        // Already open — flash that slot
+        setFlashSlot(existingIdx);
+        return prev;
+      }
       const next = [...prev];
       const emptyIdx = next.indexOf(null);
       next[emptyIdx >= 0 ? emptyIdx : 0] = id;
@@ -319,7 +331,20 @@ const BoardLayout = observer(function BoardLayout() {
                 setNewCardColumn(null);
               }}
             />
-            <div className="fixed top-0 right-0 bottom-0 z-40 w-full sm:w-[400px] flex flex-col border-l border-border bg-card overflow-hidden">
+            <div className="relative fixed top-0 right-0 bottom-0 z-40 w-full sm:w-[400px] flex flex-col border-l border-border bg-card overflow-hidden">
+              {mobileFlash &&
+                (() => {
+                  const mc = mobileCardId != null ? cardStore.getCard(mobileCardId) : undefined;
+                  const mp = mc?.projectId ? projectStore.getProject(mc.projectId) : null;
+                  const clr = mp?.color;
+                  return (
+                    <div
+                      className="absolute inset-0 z-10 pointer-events-none animate-slot-flash"
+                      style={{ backgroundColor: clr ? `var(--${clr})` : 'white' }}
+                      onAnimationEnd={() => setMobileFlash(false)}
+                    />
+                  );
+                })()}
               {newCardColumn ? (
                 <NewCardDetail
                   column={newCardColumn}
@@ -348,6 +373,8 @@ const BoardLayout = observer(function BoardLayout() {
                 index={idx}
                 cardId={cardId}
                 borderColor={borderColor}
+                flash={flashSlot === idx}
+                onFlashDone={() => setFlashSlot(null)}
                 newCardColumn={newCardColumn}
                 updateSlots={updateSlots}
                 setNewCardColumn={setNewCardColumn}
@@ -368,6 +395,8 @@ type ColumnSlotProps = {
   index: number;
   cardId: number | null;
   borderColor: string | null;
+  flash: boolean;
+  onFlashDone: () => void;
   newCardColumn: string | null;
   updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
   setNewCardColumn: (col: string | null) => void;
@@ -378,6 +407,8 @@ const ColumnSlot = observer(function ColumnSlot({
   index,
   cardId,
   borderColor,
+  flash,
+  onFlashDone,
   newCardColumn,
   updateSlots,
   setNewCardColumn,
@@ -454,7 +485,14 @@ const ColumnSlot = observer(function ColumnSlot({
           />
         );
       })()}
-      <div className="flex flex-col flex-1 min-w-0 bg-card overflow-hidden">
+      <div className="relative flex flex-col flex-1 min-w-0 bg-card overflow-hidden">
+        {flash && (
+          <div
+            className="absolute inset-0 z-10 pointer-events-none animate-slot-flash"
+            style={{ backgroundColor: borderColor ? `var(--${borderColor})` : 'white' }}
+            onAnimationEnd={onFlashDone}
+          />
+        )}
         {newCardColumn && index === 0 ? (
           <NewCardDetail
             column={newCardColumn}
