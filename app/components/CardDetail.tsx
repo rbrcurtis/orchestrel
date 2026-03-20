@@ -579,7 +579,7 @@ export const NewCardDetail = observer(function NewCardDetail({
   }, []);
 
   async function handleSave() {
-    if (!draft.title.trim()) return;
+    if (!draft.title.trim() || !draft.projectId) return;
     setCreating(true);
     try {
       const card = await cardStore.createCard({
@@ -788,7 +788,11 @@ export const NewCardDetail = observer(function NewCardDetail({
             </div>
           )}
 
-          <Button className="w-full" disabled={!draft.title.trim() || creating} onClick={handleSave}>
+          <Button
+            className="w-full"
+            disabled={!draft.title.trim() || !draft.projectId || creating}
+            onClick={handleSave}
+          >
             {creating ? 'Creating...' : 'Save'}
           </Button>
         </div>

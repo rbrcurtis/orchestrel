@@ -26,6 +26,7 @@ const MIN_COLUMN_WIDTH = 350;
 const COLUMN_COUNT_KEY = 'dispatcher-column-count';
 const COLUMN_SLOTS_KEY = 'dispatcher-column-slots';
 const COLUMN_PINS_KEY = 'dispatcher-column-pins';
+const PROJECT_FILTER_KEY = 'dispatcher-project-filter';
 
 function readLocalStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -85,7 +86,16 @@ const BoardLayout = observer(function BoardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [projectFilter, setProjectFilter] = useState<Set<number>>(new Set());
+  const [projectFilter, _setProjectFilter] = useState<Set<number>>(
+    () => new Set(readLocalStorage<number[]>(PROJECT_FILTER_KEY, [])),
+  );
+  const setProjectFilter = useCallback((update: Set<number> | ((prev: Set<number>) => Set<number>)) => {
+    _setProjectFilter((prev) => {
+      const next = typeof update === 'function' ? update(prev) : update;
+      writeLocalStorage(PROJECT_FILTER_KEY, [...next]);
+      return next;
+    });
+  }, []);
   const searchRef = useRef<HTMLInputElement>(null);
   const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
   const isDesktop = useIsDesktop();
@@ -342,10 +352,7 @@ const BoardLayout = observer(function BoardLayout() {
               </Button>
             ))}
           </nav>
-        </div>
-        <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
-
           {/* Project filter */}
           {projectStore.all.length > 0 && (
             <Popover>
@@ -364,7 +371,7 @@ const BoardLayout = observer(function BoardLayout() {
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-52 p-2">
+              <PopoverContent align="start" className="w-52 p-2">
                 <div className="flex items-center justify-between px-2 pb-2">
                   <span className="text-xs font-medium text-muted-foreground">Projects</span>
                   {projectFilter.size > 0 && (
@@ -408,7 +415,8 @@ const BoardLayout = observer(function BoardLayout() {
               </PopoverContent>
             </Popover>
           )}
-
+        </div>
+        <div className="flex items-center gap-3 min-w-0">
           {/* Column count stepper (desktop only) */}
           <div className="hidden lg:flex items-center gap-1 text-muted-foreground">
             <span className="text-xs mr-1">Columns</span>

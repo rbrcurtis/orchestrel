@@ -33,14 +33,15 @@ export const SessionView = observer(function SessionView({
   const config = useConfigStore();
 
   const session = sessionStore.getSession(cardId);
+  const card = cardStore.getCard(cardId);
   const conversation = session?.conversation ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
   const promptsSent = session?.promptsSent ?? 0;
   const turnsCompleted = session?.turnsCompleted ?? 0;
   const sessionStoreId = session?.sessionId ?? null;
-  const contextTokens = session?.contextTokens ?? 0;
-  const contextWindow = session?.contextWindow ?? 200_000;
+  const contextTokens = session?.contextTokens || card?.contextTokens || 0;
+  const contextWindow = session?.contextWindow || card?.contextWindow || 200_000;
   const subagents = session?.subagents ?? new Map();
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
@@ -503,6 +504,33 @@ function PromptInput({
     if (e.key === 'Escape' && isRunning) {
       e.preventDefault();
       onStop();
+      return;
+    }
+    if (e.key === 'c' && e.ctrlKey && !e.shiftKey && !e.metaKey) {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) {
+        e.preventDefault();
+        updateText('');
+        setFiles([]);
+      }
+      return;
+    }
+    if (e.key === 'w' && e.ctrlKey && !e.shiftKey && !e.metaKey) {
+      e.preventDefault();
+      const ta = ref.current;
+      if (!ta) return;
+      const pos = ta.selectionStart;
+      const before = text.slice(0, pos);
+      // Skip trailing whitespace, then delete word chars
+      const m = before.match(/(\S+\s*)$/);
+      const del = m ? m[1].length : 0;
+      if (del > 0) {
+        const next = text.slice(0, pos - del) + text.slice(pos);
+        updateText(next);
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = pos - del;
+        });
+      }
       return;
     }
     if (e.key === 'Enter' && !e.shiftKey) {
