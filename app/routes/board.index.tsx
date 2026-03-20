@@ -29,6 +29,7 @@ import type { Card } from '../../src/shared/ws-protocol';
 
 type BoardContext = {
   search: string;
+  projectFilter: Set<number>;
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
@@ -84,7 +85,7 @@ function findColumnSlotAtPoint(x: number, y: number): number | null {
 }
 
 const ActiveBoard = observer(function ActiveBoard() {
-  const { search, selectCard, startNewCard, updateSlots } = useOutletContext<BoardContext>();
+  const { search, projectFilter, selectCard, startNewCard, updateSlots } = useOutletContext<BoardContext>();
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
 
@@ -316,16 +317,25 @@ const ActiveBoard = observer(function ActiveBoard() {
   }
 
   const filteredColumns = useMemo(() => {
-    if (!search) return columns;
+    const hasSearch = search.length > 0;
+    const hasProject = projectFilter.size > 0;
+    if (!hasSearch && !hasProject) return columns;
     const q = search.toLowerCase();
     const result = {} as ColumnCards;
     for (const col of ALL_COLUMNS) {
-      result[col] = columns[col].filter(
-        (c) => c.title.toLowerCase().includes(q) || (c.description && c.description.toLowerCase().includes(q)),
-      );
+      result[col] = columns[col].filter((c) => {
+        if (hasProject && !projectFilter.has(c.projectId ?? -1)) return false;
+        if (
+          hasSearch &&
+          !c.title.toLowerCase().includes(q) &&
+          !(c.description && c.description.toLowerCase().includes(q))
+        )
+          return false;
+        return true;
+      });
     }
     return result;
-  }, [columns, search]);
+  }, [columns, search, projectFilter]);
 
   const activeCard = useMemo(() => {
     if (!activeId) return null;

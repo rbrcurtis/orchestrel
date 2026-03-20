@@ -447,10 +447,6 @@ function PromptInput({
     }
   }, [storageKey]);
 
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
-
   function addFiles(newFiles: FileList | File[]) {
     const arr = Array.from(newFiles).filter((f) => f.size <= 25 * 1024 * 1024);
     setFiles((prev) => [...prev, ...arr]);

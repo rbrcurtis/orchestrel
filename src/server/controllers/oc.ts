@@ -52,6 +52,23 @@ export function wireSession(cardId: number, session: AgentSession, bus: MessageB
     }
   });
 
+  // Handler: reset context tokens after compaction
+  session.on('message', async (msg: AgentMessage) => {
+    if (msg.type !== 'system' || msg.meta?.subtype !== 'compact_boundary') return;
+    try {
+      const card = await Card.findOneBy({ id: cardId });
+      if (!card) return;
+      // Context was just compressed — real token count unknown until next turn.
+      // Reset to 0 so gauge shows empty rather than stale 100%.
+      card.contextTokens = 0;
+      card.updatedAt = new Date().toISOString();
+      await card.save();
+      console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 0`);
+    } catch (err) {
+      console.error(`[oc:${cardId}] failed to handle compact_boundary:`, err);
+    }
+  });
+
   // Handler: persist counters + move card to review on turn_end
   // These MUST be in one handler to avoid a lost-update race (both would
   // load the same row, mutate different fields, and the last save wins).

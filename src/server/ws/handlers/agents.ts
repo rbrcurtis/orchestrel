@@ -57,45 +57,20 @@ export async function handleAgentCompact(
   } = msg;
   console.log(`[session:${cardId}] agent:compact received`);
 
-  connections.send(ws, { type: 'mutation:ok', requestId });
-
-  // Send status + message directly to the calling WS (bus may not reach this client)
-  const card = await Card.findOneBy({ id: cardId });
-  const mkStatus = (active: boolean, status: string) => ({
-    type: 'agent:status' as const,
-    data: {
-      cardId,
-      active,
-      status: status as 'running' | 'completed',
-      sessionId: card?.sessionId ?? null,
-      promptsSent: card?.promptsSent ?? 0,
-      turnsCompleted: card?.turnsCompleted ?? 0,
-      contextTokens: card?.contextTokens ?? 0,
-      contextWindow: card?.contextWindow ?? 200_000,
-    },
-  });
-
-  connections.send(ws, mkStatus(true, 'running'));
-
   try {
-    await sessionService.compactSession(cardId);
-    // Send compact boundary message directly to calling WS
-    connections.send(ws, {
-      type: 'agent:message',
-      cardId,
-      data: {
-        type: 'system',
-        role: 'system',
-        content: 'Context compacted',
-        meta: { subtype: 'compact_boundary' },
-        timestamp: Date.now(),
-      },
+    connections.send(ws, { type: 'mutation:ok', requestId });
+    // compactSession creates a temp session with SSE + wireSession,
+    // so status changes and the summary stream via the normal bus → WS path
+    sessionService.compactSession(cardId).catch((err) => {
+      const error = err instanceof Error ? err.message : String(err);
+      console.error(`[session:${cardId}] compactSession error:`, error);
     });
-    connections.send(ws, mkStatus(false, 'completed'));
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    console.error(`[session:${cardId}] compactSession error:`, error);
-    connections.send(ws, mkStatus(false, 'completed'));
+    connections.send(ws, {
+      type: 'mutation:error',
+      requestId,
+      error: String(err instanceof Error ? err.message : err),
+    });
   }
 }
 

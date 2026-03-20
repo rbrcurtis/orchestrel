@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { Settings, Palette, Minus, Plus } from 'lucide-react';
+import { Settings, Palette, Minus, Plus, Filter } from 'lucide-react';
+import { ScrollArea } from '~/components/ui/scroll-area';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
+import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
+import { Checkbox } from '~/components/ui/checkbox';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
 import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import IconsModal from '~/routes/icons';
@@ -78,6 +81,7 @@ const BoardLayout = observer(function BoardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [projectFilter, setProjectFilter] = useState<Set<number>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
   const isDesktop = useIsDesktop();
@@ -265,6 +269,69 @@ const BoardLayout = observer(function BoardLayout() {
         <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
 
+          {/* Project filter */}
+          {projectStore.all.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`shrink-0 relative ${projectFilter.size > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                  title="Filter by project"
+                >
+                  <Filter className="size-4" />
+                  {projectFilter.size > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 size-4 rounded-full bg-primary text-primary-foreground text-[10px] font-medium flex items-center justify-center">
+                      {projectFilter.size}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-52 p-2">
+                <div className="flex items-center justify-between px-2 pb-2">
+                  <span className="text-xs font-medium text-muted-foreground">Projects</span>
+                  {projectFilter.size > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto py-0.5 px-1.5 text-xs text-muted-foreground"
+                      onClick={() => setProjectFilter(new Set())}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {projectStore.all.map((p) => (
+                    <label
+                      key={p.id}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={projectFilter.has(p.id)}
+                        onCheckedChange={(checked) => {
+                          setProjectFilter((prev) => {
+                            const next = new Set(prev);
+                            if (checked) next.add(p.id);
+                            else next.delete(p.id);
+                            return next;
+                          });
+                        }}
+                      />
+                      {p.color && (
+                        <span
+                          className="size-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: `var(--${p.color})` }}
+                        />
+                      )}
+                      <span className="text-sm truncate">{p.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
           {/* Column count stepper (desktop only) */}
           <div className="hidden lg:flex items-center gap-1 text-muted-foreground">
             <span className="text-xs mr-1">Columns</span>
@@ -314,9 +381,11 @@ const BoardLayout = observer(function BoardLayout() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left: rows area */}
-        <div className="flex-1 overflow-y-auto" style={{ minWidth: 272 }}>
-          <Outlet context={{ search, selectedCardId, selectCard, startNewCard, updateSlots, columnSlots }} />
-        </div>
+        <ScrollArea className="flex-1" style={{ minWidth: 272 }}>
+          <Outlet
+            context={{ search, projectFilter, selectedCardId, selectCard, startNewCard, updateSlots, columnSlots }}
+          />
+        </ScrollArea>
 
         {/* Resize handle (desktop only) */}
         <ResizeHandle onMouseDown={onMouseDown} />

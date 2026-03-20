@@ -13,11 +13,30 @@ export async function handleSessionLoad(
   const { requestId } = msg;
 
   try {
+    const alreadySubscribed = clientSubs.isSubscribed(ws, `card:${cardId}:message`);
+    console.log(
+      `[session:load] cardId=${cardId} sessionId=${sessionId ?? 'none'} alreadySubscribed=${alreadySubscribed} ` +
+        `wsTopics=[${clientSubs
+          .topicsFor(ws)
+          .filter((t) => t.startsWith(`card:${cardId}:`))
+          .join(', ')}] ` +
+        `busListeners:message=${clientSubs.listenerCount(`card:${cardId}:message`)}`,
+    );
+
     if (sessionId) {
       const messages = await sessionService.getHistory(sessionId, cardId);
+      console.log(`[session:load] cardId=${cardId} loaded ${messages.length} history messages`);
       connections.send(ws, { type: 'session:history', requestId, cardId, messages });
     }
     connections.send(ws, { type: 'mutation:ok', requestId });
+
+    // Already subscribed to this card's events — history was loaded above, nothing else to do
+    if (alreadySubscribed) {
+      console.log(`[session:load] cardId=${cardId} SKIPPING subscribe (already wired)`);
+      return;
+    }
+
+    console.log(`[session:load] cardId=${cardId} SUBSCRIBING to bus topics`);
 
     // Subscribe to live agent messages for this card
     clientSubs.subscribe(ws, `card:${cardId}:message`, (payload) => {

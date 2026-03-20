@@ -22,6 +22,7 @@ import type { Card } from '../../src/shared/ws-protocol';
 
 type BoardContext = {
   search: string;
+  projectFilter: Set<number>;
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
@@ -41,7 +42,7 @@ function calcPosition(items: { position: number }[], targetIndex: number): numbe
 }
 
 const ArchiveBoard = observer(function ArchiveBoard() {
-  const { search, selectCard } = useOutletContext<BoardContext>();
+  const { search, projectFilter, selectCard } = useOutletContext<BoardContext>();
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
 
@@ -114,12 +115,21 @@ const ArchiveBoard = observer(function ArchiveBoard() {
   }
 
   const filteredCards = useMemo(() => {
-    if (!search) return cards;
+    const hasSearch = search.length > 0;
+    const hasProject = projectFilter.size > 0;
+    if (!hasSearch && !hasProject) return cards;
     const q = search.toLowerCase();
-    return cards.filter(
-      (c) => c.title.toLowerCase().includes(q) || (c.description && c.description.toLowerCase().includes(q)),
-    );
-  }, [cards, search]);
+    return cards.filter((c) => {
+      if (hasProject && !projectFilter.has(c.projectId ?? -1)) return false;
+      if (
+        hasSearch &&
+        !c.title.toLowerCase().includes(q) &&
+        !(c.description && c.description.toLowerCase().includes(q))
+      )
+        return false;
+      return true;
+    });
+  }, [cards, search, projectFilter]);
 
   const activeCard = useMemo(() => {
     if (!activeId) return null;
