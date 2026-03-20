@@ -22,3 +22,5 @@ src/server/api/generated/swagger.json
 *.tsbuildinfo
 .worktrees/*
 data
+mobile-both-panels.png
+overflow-check.png

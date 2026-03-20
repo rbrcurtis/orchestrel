@@ -7,6 +7,7 @@ import type { AgentMessage, SessionStatus } from '../agents/types';
 import type { FileRef } from '../../shared/ws-protocol';
 import { copyOpencodeConfig, createWorktree, runSetupCommands, slugify, worktreeExists } from '../worktree';
 import { wireSession } from '../controllers/oc';
+import { messageBus } from '../bus';
 
 export interface SessionStatusData {
   cardId: number;
@@ -100,6 +101,72 @@ class SessionService {
     if (card.column !== 'running') card.column = 'running';
     card.updatedAt = new Date().toISOString();
     await card.save();
+  }
+
+  async compactSession(cardId: number): Promise<void> {
+    // Try in-memory session first (running sessions)
+    const session = sessionManager.get(cardId);
+    if (session && session instanceof OpenCodeSession) {
+      await session.compact();
+      // Emit compact boundary via bus so UI sees it
+      messageBus.publish(`card:${cardId}:message`, {
+        type: 'system',
+        role: 'system',
+        content: '',
+        meta: { subtype: 'compact_boundary' },
+        timestamp: Date.now(),
+      } satisfies AgentMessage);
+      return;
+    }
+
+    // Fall back to direct SDK call for idle/restarted sessions
+    const card = await Card.findOneByOrFail({ id: cardId });
+    if (!card.sessionId) throw new Error(`No session ID for card ${cardId}`);
+
+    const { openCodeServer } = await import('../opencode/server');
+    const sdk = openCodeServer.client;
+    if (!sdk) throw new Error('OpenCode server not ready');
+
+    type SummarizeSdk = { session: { summarize(opts: { sessionID: string; auto?: boolean }): Promise<unknown> } };
+
+    // Emit running status so UI shows activity (use session-status channel — forwarded directly)
+    const statusPayload = (active: boolean, status: SessionStatus) => ({
+      cardId,
+      active,
+      status,
+      sessionId: card.sessionId,
+      promptsSent: card.promptsSent ?? 0,
+      turnsCompleted: card.turnsCompleted ?? 0,
+      contextTokens: card.contextTokens ?? 0,
+      contextWindow: card.contextWindow ?? 200_000,
+    });
+    messageBus.publish(`card:${cardId}:session-status`, statusPayload(true, 'running'));
+
+    console.log(`[session:${cardId}] compact:start (direct SDK, session=${card.sessionId})`);
+    try {
+      await (sdk as unknown as SummarizeSdk).session.summarize({
+        sessionID: card.sessionId,
+        auto: false,
+      });
+      console.log(`[session:${cardId}] compact:requested`);
+
+      // Emit compact boundary so UI shows the marker
+      messageBus.publish(`card:${cardId}:message`, {
+        type: 'system',
+        role: 'system',
+        content: '',
+        meta: { subtype: 'compact_boundary' },
+        timestamp: Date.now(),
+      } satisfies AgentMessage);
+
+      // Emit idle status back
+      messageBus.publish(`card:${cardId}:session-status`, statusPayload(false, 'completed'));
+    } catch (err) {
+      console.error(`[session:${cardId}] compact:error`, err);
+      // Emit error status
+      messageBus.publish(`card:${cardId}:session-status`, statusPayload(false, 'completed'));
+      throw err;
+    }
   }
 
   /**
@@ -329,9 +396,10 @@ class SessionService {
     }
   }
 
-  getStatus(cardId: number): SessionStatusData | null {
+  async getStatus(cardId: number): Promise<SessionStatusData | null> {
     const session = sessionManager.get(cardId);
     if (!session) return null;
+    const card = await Card.findOneBy({ id: cardId });
     return {
       cardId,
       active: session.status === 'running' || session.status === 'starting' || session.status === 'retry',
@@ -339,8 +407,8 @@ class SessionService {
       sessionId: session.sessionId,
       promptsSent: session.promptsSent,
       turnsCompleted: session.turnsCompleted,
-      contextTokens: 0,
-      contextWindow: 200_000,
+      contextTokens: card?.contextTokens ?? 0,
+      contextWindow: card?.contextWindow ?? 200_000,
     };
   }
 

@@ -331,7 +331,7 @@ const BoardLayout = observer(function BoardLayout() {
                 setNewCardColumn(null);
               }}
             />
-            <div className="relative fixed top-0 right-0 bottom-0 z-40 w-full sm:w-[400px] flex flex-col border-l border-border bg-card overflow-hidden">
+            <div className="fixed top-0 right-0 bottom-0 z-40 w-full sm:w-[400px] flex flex-col border-l border-border bg-card overflow-hidden">
               {mobileFlash &&
                 (() => {
                   const mc = mobileCardId != null ? cardStore.getCard(mobileCardId) : undefined;

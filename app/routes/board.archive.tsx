@@ -41,7 +41,7 @@ function calcPosition(items: { position: number }[], targetIndex: number): numbe
 }
 
 const ArchiveBoard = observer(function ArchiveBoard() {
-  const { search, selectCard, startNewCard } = useOutletContext<BoardContext>();
+  const { search, selectCard } = useOutletContext<BoardContext>();
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
 
@@ -135,12 +135,7 @@ const ArchiveBoard = observer(function ArchiveBoard() {
       onDragCancel={handleDragCancel}
     >
       <div className="flex flex-col gap-2 p-4">
-        <StatusRow
-          id="archive"
-          cards={filteredCards}
-          onCardClick={selectCard}
-          onAddCard={() => startNewCard('archive')}
-        />
+        <StatusRow id="archive" cards={filteredCards} onCardClick={selectCard} />
       </div>
       {mounted &&
         createPortal(

@@ -195,7 +195,9 @@ const ActiveBoard = observer(function ActiveBoard() {
 
     if (activeCol === 'running') {
       // Queued cards (queuePosition != null) can move anywhere
-      const activeCard = Object.values(columns).flat().find(c => c.id === active.id);
+      const activeCard = Object.values(columns)
+        .flat()
+        .find((c) => c.id === active.id);
       if (activeCard?.queuePosition != null) {
         // allow — queued cards are freely movable
       } else if (overCol !== 'done' && overCol !== 'archive') {
@@ -267,8 +269,12 @@ const ActiveBoard = observer(function ActiveBoard() {
     // Running cards: queued cards can move freely, active cards only to done/archive
     if (originalCol === 'running') {
       const draggedCard = snapshotRef.current
-        ? Object.values(snapshotRef.current).flat().find(c => c.id === active.id)
-        : Object.values(columns).flat().find(c => c.id === active.id);
+        ? Object.values(snapshotRef.current)
+            .flat()
+            .find((c) => c.id === active.id)
+        : Object.values(columns)
+            .flat()
+            .find((c) => c.id === active.id);
       if (draggedCard?.queuePosition != null) {
         // Queued cards — allow move to any column
       } else if (currentCol !== 'done' && currentCol !== 'archive') {
@@ -348,7 +354,7 @@ const ActiveBoard = observer(function ActiveBoard() {
             id={col}
             cards={filteredColumns[col]}
             onCardClick={selectCard}
-            onAddCard={(column) => startNewCard(column)}
+            onAddCard={col !== 'review' && col !== 'done' ? (column) => startNewCard(column) : undefined}
           />
         ))}
       </div>

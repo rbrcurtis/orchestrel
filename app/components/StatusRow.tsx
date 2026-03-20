@@ -97,9 +97,11 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
       )}
       <h2 className="text-sm font-semibold text-muted-foreground">{displayNames[id]}</h2>
       <Badge variant="secondary">{cards.length}</Badge>
-      <Button variant="ghost" size="icon-xs" onClick={() => onAddCard?.(id)} title="Add card">
-        <Plus className="size-4" />
-      </Button>
+      {onAddCard && (
+        <Button variant="ghost" size="icon-xs" onClick={() => onAddCard(id)} title="Add card">
+          <Plus className="size-4" />
+        </Button>
+      )}
     </div>
   );
 
