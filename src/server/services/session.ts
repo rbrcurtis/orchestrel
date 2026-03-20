@@ -102,6 +102,12 @@ class SessionService {
     await card.save();
   }
 
+  /**
+   * Universal entry point for starting a session on a card.
+   * Handles queueing for non-worktree cards — callers never need to
+   * think about the queue. If the card must wait, its prompt is stashed
+   * and processQueue will call launchSession when it's promoted.
+   */
   async startSession(cardId: number, message?: string, files?: FileRef[]): Promise<void> {
     const existing = sessionManager.get(cardId);
     if (existing && (existing.status === 'running' || existing.status === 'starting')) {
@@ -110,38 +116,82 @@ class SessionService {
       return;
     }
 
-    // New session
     const card = await Card.findOneByOrFail({ id: cardId });
     if (!card.title?.trim()) throw new Error('Title is required for running');
     if (!card.description?.trim()) throw new Error('Description is required for running');
 
-    // Safety net: ensure card is in running. No-op when called via auto-start
-    // (card is already running). Required when called from handleAgentSend for
-    // cards in review — triggers board:changed so controller handlers subscribe.
+    // Stash the prompt so launchSession can pick it up later (or now)
+    if (message || files?.length) {
+      card.pendingPrompt = message ?? null;
+      card.pendingFiles = files?.length ? JSON.stringify(files) : null;
+      card.updatedAt = new Date().toISOString();
+    }
+
+    // Ensure card is in running — fires board:changed for UI
     if (card.column !== 'running') {
       card.column = 'running';
       card.updatedAt = new Date().toISOString();
       await card.save();
+      // board:changed → registerAutoStart → processQueue handles the rest
+      // for non-worktree cards. For worktree cards registerAutoStart calls
+      // startSession again, which will fall through to launchSession below.
+      if (!card.useWorktree && card.projectId) return;
+    } else {
+      // Already in running — save pending fields, then route
+      if (message || files?.length) await card.save();
     }
 
-    // Handle file attachments
-    let prompt = message ?? card.description;
-    if (!message) {
+    // Non-worktree: always go through the queue
+    if (!card.useWorktree && card.projectId) {
+      const { processQueue } = await import('./queue-gate');
+      console.log(`[session:${cardId}] startSession: routing to processQueue (project=${card.projectId})`);
+      await processQueue(card.projectId);
+      return;
+    }
+
+    // Worktree or no project: launch directly
+    await this.launchSession(card.id);
+  }
+
+  /**
+   * Actually creates and starts the OpenCode session.
+   * Only called by processQueue (for non-worktree) or startSession (for worktree).
+   * Reads and clears pendingPrompt/pendingFiles from the card.
+   */
+  async launchSession(cardId: number): Promise<void> {
+    const card = await Card.findOneByOrFail({ id: cardId });
+
+    // Read and clear pending prompt/files
+    const pendingMessage = card.pendingPrompt;
+    const pendingFiles: FileRef[] | undefined = card.pendingFiles
+      ? (JSON.parse(card.pendingFiles) as FileRef[])
+      : undefined;
+
+    if (card.pendingPrompt || card.pendingFiles) {
+      card.pendingPrompt = null;
+      card.pendingFiles = null;
+      card.updatedAt = new Date().toISOString();
+      await card.save();
+    }
+
+    // Build prompt
+    let prompt = pendingMessage ?? card.description;
+    if (!pendingMessage) {
       prompt = card.description;
     }
-    if (files?.length) {
-      for (const f of files) {
+    if (pendingFiles?.length) {
+      for (const f of pendingFiles) {
         if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
           throw new Error(`Invalid file path: ${f.path}`);
         }
       }
-      const fileList = files.map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`).join('\n');
+      const fileList = pendingFiles.map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`).join('\n');
       prompt = `I've attached the following files for you to review. Use the Read tool to read them:\n${fileList}\n\n${prompt}`;
     }
 
-    console.log(`[session:${cardId}] startSession: calling ensureWorktree`);
+    console.log(`[session:${cardId}] launchSession: calling ensureWorktree`);
     const cwd = await ensureWorktree(card);
-    console.log(`[session:${cardId}] startSession: worktree ready at ${cwd}`);
+    console.log(`[session:${cardId}] launchSession: worktree ready at ${cwd}`);
 
     let providerID = 'anthropic';
     let projectName: string | undefined;
@@ -155,7 +205,7 @@ class SessionService {
     }
 
     const isResume = !!card.sessionId;
-    console.log(`[session:${cardId}] startSession: creating session, provider=${providerID}, resume=${isResume}`);
+    console.log(`[session:${cardId}] launchSession: creating session, provider=${providerID}, resume=${isResume}`);
 
     const session = sessionManager.create(cardId, {
       cwd,
@@ -173,11 +223,11 @@ class SessionService {
 
     wireSession(cardId, session);
 
-    console.log(`[session:${cardId}] startSession: calling session.start()`);
+    console.log(`[session:${cardId}] launchSession: calling session.start()`);
     await session.start(prompt);
-    console.log(`[session:${cardId}] startSession: start() done, calling waitForReady()`);
+    console.log(`[session:${cardId}] launchSession: start() done, calling waitForReady()`);
     await session.waitForReady();
-    console.log(`[session:${cardId}] startSession: session ready, sessionId=${session.sessionId}`);
+    console.log(`[session:${cardId}] launchSession: session ready, sessionId=${session.sessionId}`);
 
     if (!isResume) {
       await card.reload();

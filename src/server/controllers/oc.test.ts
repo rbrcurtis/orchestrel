@@ -314,9 +314,9 @@ describe('OC controller: registerAutoStart queue assignment', () => {
     const { registerAutoStart } = await import('./oc');
     registerAutoStart(bus, { startSession: startMock, attachSession: vi.fn().mockResolvedValue(false) });
 
-    // Mock sessionService.startSession so processQueue can call it
+    // Mock sessionService.launchSession so processQueue can call it
     const { sessionService } = await import('../services/session');
-    const sessionStartMock = vi.spyOn(sessionService, 'startSession').mockResolvedValue(undefined);
+    const sessionStartMock = vi.spyOn(sessionService, 'launchSession').mockResolvedValue(undefined);
 
     const proj = Project.create({
       name: 'Solo proj',
@@ -342,7 +342,7 @@ describe('OC controller: registerAutoStart queue assignment', () => {
 
     await card.reload();
     expect(card.queuePosition).toBeNull();
-    // processQueue calls sessionService.startSession, not the mock starter
+    // processQueue calls sessionService.launchSession, not the mock starter
     expect(sessionStartMock).toHaveBeenCalledWith(card.id);
     sessionStartMock.mockRestore();
   });
@@ -450,9 +450,9 @@ describe('OC controller: registerAutoStart queue assignment', () => {
 
 describe('processQueue: queue processing on column exit', () => {
   it('promotes next card and renumbers when active card leaves running', async () => {
-    // Mock sessionService.startSession so processQueue can call it
+    // Mock sessionService.launchSession so processQueue can call it
     const { sessionService } = await import('../services/session');
-    const sessionStartMock = vi.spyOn(sessionService, 'startSession').mockResolvedValue(undefined);
+    const sessionStartMock = vi.spyOn(sessionService, 'launchSession').mockResolvedValue(undefined);
 
     const proj = Project.create({
       name: 'Promo proj',
