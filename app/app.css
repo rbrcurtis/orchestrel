@@ -194,6 +194,19 @@
   animation: slot-flash 500ms ease-out forwards;
 }
 
+/* Kill focus rings globally — re-enable per-element with .focus-ring */
+*:focus,
+*:focus-visible {
+  outline: none !important;
+  ring: none !important;
+  box-shadow: none !important;
+}
+
+.focus-ring:focus-visible {
+  border-color: var(--ring) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent) !important;
+}
+
 body {
   @apply bg-background text-foreground;
 }
