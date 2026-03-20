@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
+import { resolvePins } from '~/lib/resolve-pin';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
 import { Settings, Palette, Minus, Plus, Filter } from 'lucide-react';
 import { ScrollArea } from '~/components/ui/scroll-area';
@@ -22,6 +24,7 @@ const NAV_ITEMS = [
 const MIN_COLUMN_WIDTH = 350;
 const COLUMN_COUNT_KEY = 'dispatcher-column-count';
 const COLUMN_SLOTS_KEY = 'dispatcher-column-slots';
+const COLUMN_PINS_KEY = 'dispatcher-column-pins';
 
 function readLocalStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -97,6 +100,7 @@ const BoardLayout = observer(function BoardLayout() {
   // Multi-column state (persisted to localStorage)
   const [columnCount, setColumnCount] = useState(() => readLocalStorage(COLUMN_COUNT_KEY, 1));
   const [columnSlots, setColumnSlots] = useState<(number | null)[]>(() => readLocalStorage(COLUMN_SLOTS_KEY, [null]));
+  const [columnPins, setColumnPins] = useState<(number | null)[]>(() => readLocalStorage(COLUMN_PINS_KEY, [null]));
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<'icons' | 'settings' | null>(null);
 
@@ -113,6 +117,21 @@ const BoardLayout = observer(function BoardLayout() {
       }
       const next = prev.slice(0, columnCount);
       writeLocalStorage(COLUMN_SLOTS_KEY, next);
+      return next;
+    });
+  }, [columnCount]);
+
+  // Keep columnPins length in sync with columnCount
+  useEffect(() => {
+    setColumnPins((prev) => {
+      if (prev.length === columnCount) return prev;
+      if (prev.length < columnCount) {
+        const next = [...prev, ...(Array(columnCount - prev.length).fill(null) as null[])];
+        writeLocalStorage(COLUMN_PINS_KEY, next);
+        return next;
+      }
+      const next = prev.slice(0, columnCount);
+      writeLocalStorage(COLUMN_PINS_KEY, next);
       return next;
     });
   }, [columnCount]);
@@ -134,6 +153,14 @@ const BoardLayout = observer(function BoardLayout() {
     });
   }, []);
 
+  const updatePins = useCallback((updater: (prev: (number | null)[]) => (number | null)[]) => {
+    setColumnPins((prev) => {
+      const next = updater(prev);
+      writeLocalStorage(COLUMN_PINS_KEY, next);
+      return next;
+    });
+  }, []);
+
   // Evict cards that no longer exist (deleted)
   useEffect(() => {
     updateSlots((prev) => {
@@ -150,6 +177,40 @@ const BoardLayout = observer(function BoardLayout() {
       return changed ? next : prev;
     });
   }); // runs every render — MobX observer tracks card changes
+
+  // Resolve pinned slots — MobX reaction tracks card store changes
+  useEffect(() => {
+    const dispose = reaction(
+      () => {
+        const allCards = Array.from(cardStore.cards.values());
+        return { allCards, pins: columnPins };
+      },
+      ({ allCards, pins }) => {
+        const hasPins = pins.some((p) => p != null);
+        if (!hasPins) return;
+
+        const resolved = resolvePins(allCards, pins);
+
+        updateSlots((prev) => {
+          let changed = false;
+          const next = [...prev];
+          for (let i = 0; i < next.length; i++) {
+            if (pins[i] == null) continue;
+            if (next[i] !== resolved[i]) {
+              if (resolved[i] != null) {
+                setFlashSlot(i);
+              }
+              next[i] = resolved[i];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      },
+      { fireImmediately: true },
+    );
+    return dispose;
+  }, [columnPins]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mobile: track which single card is open for overlay
   const [mobileCardId, setMobileCardId] = useState<number | null>(null);
@@ -170,7 +231,7 @@ const BoardLayout = observer(function BoardLayout() {
       return;
     }
     if (id === null) return;
-    // Desktop: place in next open slot, or slot 0 if all full
+    // Desktop: place in next open unpinned slot, or slot 0 if all full
     updateSlots((prev) => {
       const existingIdx = prev.indexOf(id);
       if (existingIdx >= 0) {
@@ -179,7 +240,7 @@ const BoardLayout = observer(function BoardLayout() {
         return prev;
       }
       const next = [...prev];
-      const emptyIdx = next.indexOf(null);
+      const emptyIdx = next.findIndex((slot, i) => slot === null && columnPins[i] == null);
       next[emptyIdx >= 0 ? emptyIdx : 0] = id;
       return next;
     });
@@ -187,6 +248,12 @@ const BoardLayout = observer(function BoardLayout() {
 
   function closeSlot(index: number) {
     updateSlots((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
+    updatePins((prev) => {
+      if (prev[index] == null) return prev;
       const next = [...prev];
       next[index] = null;
       return next;
@@ -446,6 +513,8 @@ const BoardLayout = observer(function BoardLayout() {
                 onFlashDone={() => setFlashSlot(null)}
                 newCardColumn={newCardColumn}
                 updateSlots={updateSlots}
+                updatePins={updatePins}
+                pinProjectId={columnPins[idx] ?? null}
                 setNewCardColumn={setNewCardColumn}
                 closeSlot={closeSlot}
               />
@@ -468,6 +537,8 @@ type ColumnSlotProps = {
   onFlashDone: () => void;
   newCardColumn: string | null;
   updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
+  updatePins: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
+  pinProjectId: number | null;
   setNewCardColumn: (col: string | null) => void;
   closeSlot: (index: number) => void;
 };
@@ -480,6 +551,8 @@ const ColumnSlot = observer(function ColumnSlot({
   onFlashDone,
   newCardColumn,
   updateSlots,
+  updatePins,
+  pinProjectId,
   setNewCardColumn,
   closeSlot,
 }: ColumnSlotProps) {
@@ -517,6 +590,13 @@ const ColumnSlot = observer(function ColumnSlot({
         next[index] = srcCardId; // target slot gets the dragged card (replaces whatever was there)
         return next;
       });
+      updatePins((prev) => {
+        if (prev[srcIdx] == null && prev[index] == null) return prev;
+        const next = [...prev];
+        next[srcIdx] = null;
+        next[index] = null;
+        return next;
+      });
       return;
     }
 
@@ -531,6 +611,12 @@ const ColumnSlot = observer(function ColumnSlot({
           if (next[i] === draggedId) next[i] = null;
         }
         next[index] = draggedId;
+        return next;
+      });
+      updatePins((prev) => {
+        if (prev[index] == null) return prev;
+        const next = [...prev];
+        next[index] = null;
         return next;
       });
     }
