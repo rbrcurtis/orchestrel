@@ -9,7 +9,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 // overflow-y-auto) in JSX. Use Radix ScrollArea instead.
 // Disable per-line with: // eslint-disable-next-line local/no-overflow-auto
 // ---------------------------------------------------------------------------
-const OVERFLOW_RE = /\boverflow-(?:x-auto|y-auto|auto)\b/;
+const OVERFLOW_RE = /\boverflow-(?:x-auto|y-auto|auto|x-scroll|y-scroll|scroll)\b/;
 
 const noOverflowAutoRule = {
   meta: {
