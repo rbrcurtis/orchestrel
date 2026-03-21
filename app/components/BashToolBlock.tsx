@@ -50,7 +50,7 @@ export const BashToolBlock = observer(function BashToolBlock({
 
       {/* Terminal body */}
       <ScrollArea className="bg-[#0d0d1a] min-h-[2rem] max-h-80">
-        <div className="px-3 py-2 min-w-0 max-w-full overflow-x-auto">
+        <div className="px-3 py-2 min-w-0 max-w-full">
           {/* Command prompt */}
           <div className="flex gap-1.5 min-w-0">
             <span className="text-emerald-400 select-none flex-shrink-0">$</span>
@@ -59,7 +59,7 @@ export const BashToolBlock = observer(function BashToolBlock({
 
           {/* Output */}
           {displayOutput && (
-            <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed min-w-0 max-w-full overflow-x-auto">
+            <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed min-w-0 max-w-full">
               {displayOutput}
             </pre>
           )}

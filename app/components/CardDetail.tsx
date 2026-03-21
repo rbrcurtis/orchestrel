@@ -28,6 +28,7 @@ type Props = {
   cardId: number;
   onClose: () => void;
   slotIndex?: number;
+  pinned?: boolean;
 };
 
 const STATUSES = ['backlog', 'ready', 'running', 'review', 'done', 'archive'] as const;
@@ -50,7 +51,7 @@ type Draft = {
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
-export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIndex }: Props) {
+export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIndex, pinned }: Props) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const sessionStore = useSessionStore();
@@ -87,6 +88,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
   const [deletePending, setDeletePending] = useState(false);
   const [archivePending, setArchivePending] = useState(false);
   const archiveRef = useRef<HTMLButtonElement>(null);
+  const prevColumnRef = useRef<string | undefined>(undefined);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
@@ -106,6 +108,16 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
     // Auto-collapse when session exists
     setFormOpen(!card.sessionId && card.column !== 'running');
   }, [card?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-collapse when card moves to running with a brand-new session (no prior sessionId)
+  useEffect(() => {
+    if (!card) return;
+    const prev = prevColumnRef.current;
+    prevColumnRef.current = card.column;
+    if (prev && prev !== 'running' && card.column === 'running' && !card.sessionId) {
+      setFormOpen(false);
+    }
+  }, [card?.column, card?.sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-sync fields on update (but don't reset formOpen) — keyed on updatedAt to avoid resetting collapse state
   // Skip description sync if the textarea is focused to prevent cursor jumps during autosave
@@ -284,8 +296,13 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
           {cardProject && (
             <Badge
               variant="secondary"
-              className="text-xs shrink-0"
-              style={cardProject.color ? { borderLeft: `3px solid var(--${cardProject.color})` } : undefined}
+              className={`text-xs shrink-0 ${pinned && cardProject.color ? 'animate-review-glow' : ''}`}
+              style={{
+                ...(cardProject.color ? { borderLeft: `3px solid var(--${cardProject.color})` } : {}),
+                ...(pinned && cardProject.color
+                  ? ({ '--glow-color': `var(--${cardProject.color})` } as React.CSSProperties)
+                  : {}),
+              }}
             >
               {cardProject.name}
             </Badge>
@@ -334,6 +351,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
                     onBlur={() => saveAll()}
                     rows={4}
                     placeholder="Add a description..."
+                    // eslint-disable-next-line local/no-overflow-auto -- native textarea handles own scroll
                     className="resize-y max-h-40 overflow-y-auto"
                   />
                 )}
@@ -668,6 +686,7 @@ export const NewCardDetail = observer(function NewCardDetail({
               }}
               rows={4}
               placeholder="Add a description..."
+              // eslint-disable-next-line local/no-overflow-auto -- native textarea handles own scroll
               className="resize-y max-h-40 overflow-y-auto"
             />
           </div>

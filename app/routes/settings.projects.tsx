@@ -6,6 +6,7 @@ import { Button } from '~/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '~/components/ui/table';
 import { Card, CardContent } from '~/components/ui/card';
 import { X, Pencil, Trash2, Plus } from 'lucide-react';
+import { ScrollArea } from '~/components/ui/scroll-area';
 import { del, get, createStore } from 'idb-keyval';
 
 interface Project {
@@ -47,121 +48,123 @@ const SettingsProjectsModal = observer(function SettingsProjectsModal({ onClose 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background">
-      <div className="max-w-3xl mx-auto w-full px-4 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-bold text-foreground">Project Settings</h1>
-          <div className="flex items-center gap-2">
-            {!showAddForm && !editingProject && (
-              <Button size="sm" onClick={() => setShowAddForm(true)}>
-                <Plus />
-                Add Project
-              </Button>
-            )}
-            <button
-              onClick={onClose}
-              className="rounded-md p-1.5 transition-colors hover:bg-white/10 text-muted-foreground"
-            >
-              <X className="size-6" />
-            </button>
-          </div>
-        </div>
-
-        {/* Add form */}
-        {showAddForm && (
-          <div className="mb-6">
-            <ProjectForm onDone={closeForm} />
-          </div>
-        )}
-
-        {/* Edit form */}
-        {editingProject && (
-          <div className="mb-6">
-            <ProjectForm project={editingProject} onDone={closeForm} />
-          </div>
-        )}
-
-        {!showAddForm && !editingProject && (
-          <>
-            {/* Project list */}
-            {isLoading && <p className="text-sm text-muted-foreground">Loading projects...</p>}
-
-            {projectsList.length === 0 && !isLoading && (
-              <div className="text-center py-12 text-muted-foreground">
-                <p className="text-sm">No projects configured yet.</p>
-                <Button variant="link" onClick={() => setShowAddForm(true)} className="mt-2">
-                  Add your first project
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <ScrollArea className="flex-1">
+        <div className="max-w-3xl mx-auto w-full px-4 py-8">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-xl font-bold text-foreground">Project Settings</h1>
+            <div className="flex items-center gap-2">
+              {!showAddForm && !editingProject && (
+                <Button size="sm" onClick={() => setShowAddForm(true)}>
+                  <Plus />
+                  Add Project
                 </Button>
-              </div>
-            )}
-
-            {projectsList.length > 0 && (
-              <Card>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Project</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {projectsList.map((project) => (
-                        <TableRow key={project.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-2 min-w-0">
-                              {project.color && (
-                                <span
-                                  className="w-3 h-3 rounded-full shrink-0"
-                                  style={{ backgroundColor: `var(--${project.color})` }}
-                                />
-                              )}
-                              <div className="min-w-0">
-                                <span className="font-medium text-sm">{project.name}</span>
-                                <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                onClick={() => {
-                                  setShowAddForm(false);
-                                  setEditingProject(project as Project);
-                                }}
-                              >
-                                <Pencil />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                onClick={() => handleDelete(project.id)}
-                                disabled={deletePending === project.id}
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <Trash2 />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Cache management */}
-            <div className="mt-6">
-              <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
-              <CacheSection />
+              )}
+              <button
+                onClick={onClose}
+                className="rounded-md p-1.5 transition-colors hover:bg-white/10 text-muted-foreground"
+              >
+                <X className="size-6" />
+              </button>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+
+          {/* Add form */}
+          {showAddForm && (
+            <div className="mb-6">
+              <ProjectForm onDone={closeForm} />
+            </div>
+          )}
+
+          {/* Edit form */}
+          {editingProject && (
+            <div className="mb-6">
+              <ProjectForm project={editingProject} onDone={closeForm} />
+            </div>
+          )}
+
+          {!showAddForm && !editingProject && (
+            <>
+              {/* Project list */}
+              {isLoading && <p className="text-sm text-muted-foreground">Loading projects...</p>}
+
+              {projectsList.length === 0 && !isLoading && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p className="text-sm">No projects configured yet.</p>
+                  <Button variant="link" onClick={() => setShowAddForm(true)} className="mt-2">
+                    Add your first project
+                  </Button>
+                </div>
+              )}
+
+              {projectsList.length > 0 && (
+                <Card>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Project</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {projectsList.map((project) => (
+                          <TableRow key={project.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2 min-w-0">
+                                {project.color && (
+                                  <span
+                                    className="w-3 h-3 rounded-full shrink-0"
+                                    style={{ backgroundColor: `var(--${project.color})` }}
+                                  />
+                                )}
+                                <div className="min-w-0">
+                                  <span className="font-medium text-sm">{project.name}</span>
+                                  <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  onClick={() => {
+                                    setShowAddForm(false);
+                                    setEditingProject(project as Project);
+                                  }}
+                                >
+                                  <Pencil />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  onClick={() => handleDelete(project.id)}
+                                  disabled={deletePending === project.id}
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Cache management */}
+              <div className="mt-6">
+                <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
+                <CacheSection />
+              </div>
+            </>
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 });

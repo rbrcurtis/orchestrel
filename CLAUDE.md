@@ -52,6 +52,10 @@ This is a **purely event-driven system**. Every handler reacts to a single event
 - **Location:** `/mnt/D/Sync/orchestra-backups/orchestrel-YYYYMMDD-HHMMSS.db`
 - **Retention:** 3-day rolling (older backups auto-pruned)
 
+## UI Rules
+
+- **No native scrollbars.** Use Radix ScrollArea (`~/components/ui/scroll-area`) for all scrollable containers. For content that might overflow horizontally (code blocks, long text), wrap with `whitespace-pre-wrap break-all overflow-hidden` — never `overflow-x-auto`.
+
 ## Guardrails
 
 - **DB file:** `data/orchestrel.db` — Schema additions (`ALTER TABLE ADD COLUMN`) via sqlite3 CLI are safe anytime. NEVER modify data (INSERT/UPDATE/DELETE) outside the app — use WS mutations. NEVER run WAL management commands (`wal_checkpoint`, `PRAGMA journal_mode`, etc.) — SQLite handles this automatically. A `wal_checkpoint(TRUNCATE)` previously destroyed ~68 cards.

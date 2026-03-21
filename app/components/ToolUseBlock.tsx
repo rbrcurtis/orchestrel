@@ -27,7 +27,7 @@ export function ToolUseBlock({ name, input, output }: Props) {
     <Collapsible
       open={expanded}
       onOpenChange={setExpanded}
-      className="rounded border border-border overflow-x-auto my-1 min-w-0 max-w-full"
+      className="rounded border border-border overflow-hidden my-1 min-w-0 max-w-full"
     >
       <CollapsibleTrigger className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium bg-muted hover:bg-hover transition-colors min-w-0">
         {expanded ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
@@ -41,7 +41,7 @@ export function ToolUseBlock({ name, input, output }: Props) {
         )}
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="p-2 space-y-2 bg-muted min-w-0 overflow-x-auto">
+        <div className="p-2 space-y-2 bg-muted min-w-0 overflow-hidden">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Input</div>
             <ScrollArea className="max-h-60">
