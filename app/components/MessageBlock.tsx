@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ToolUseBlock } from './ToolUseBlock';
 import { BashToolBlock } from './BashToolBlock';
+import { ScrollArea, ScrollBar } from '~/components/ui/scroll-area';
 import type { AgentMessage } from '../../src/shared/ws-protocol';
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
@@ -109,7 +110,7 @@ function mdComponents(linkColor: string): Components {
       const linked = linkifyChildren(children, linkColor);
       if (isBlock) {
         return (
-          <pre className="bg-elevated rounded px-3 py-2 overflow-x-auto text-xs my-2 max-w-full">
+          <pre className="bg-elevated rounded px-3 py-2 text-xs my-2 max-w-full whitespace-pre-wrap break-all overflow-hidden">
             <code className={className} {...rest}>
               {linked}
             </code>
@@ -134,9 +135,10 @@ function mdComponents(linkColor: string): Components {
       <blockquote className="border-l-2 border-border pl-3 text-muted-foreground italic my-1">{children}</blockquote>
     ),
     table: ({ children }) => (
-      <div className="overflow-x-auto my-2">
+      <ScrollArea className="my-2">
         <table className="text-xs border-collapse">{children}</table>
-      </div>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
     ),
     th: ({ children }) => <th className="border border-border px-2 py-1 text-left font-semibold">{children}</th>,
     td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
@@ -178,7 +180,7 @@ function CopyButton({ text }: { text: string }) {
 
 function ThinkingBlock({ thinking }: { thinking: string }) {
   return (
-    <div className="text-xs text-muted-foreground min-w-0 overflow-x-auto">
+    <div className="text-xs text-muted-foreground min-w-0 overflow-hidden">
       <div className="whitespace-pre-wrap break-words pl-3 border-l border-border min-w-0">{thinking}</div>
     </div>
   );
@@ -226,7 +228,7 @@ const TextBlock = observer(function TextBlock({
 }) {
   const linkColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
   return (
-    <div className="group relative space-y-2 py-2 min-w-0 max-w-full overflow-x-auto">
+    <div className="group relative space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
       <CopyButton text={message.content} />
       <div className="text-sm text-foreground min-w-0 break-words">
         <Markdown text={message.content} linkColor={linkColor} />
@@ -259,7 +261,7 @@ function ToolCallBlock({ message, toolOutputs }: { message: AgentMessage; toolOu
   }
 
   return (
-    <div className="py-1 min-w-0 overflow-x-auto">
+    <div className="py-1 min-w-0 overflow-hidden">
       <ToolUseBlock name={tc.name} input={tc.params ?? {}} output={output} />
     </div>
   );
@@ -270,7 +272,7 @@ function ToolCallBlock({ message, toolOutputs }: { message: AgentMessage; toolOu
 function ToolProgressBlock({ message }: { message: AgentMessage }) {
   const elapsed = message.meta?.elapsedSeconds as number | undefined;
   return (
-    <div className="text-xs text-muted-foreground py-0.5 flex items-center gap-1.5 min-w-0 overflow-x-auto">
+    <div className="text-xs text-muted-foreground py-0.5 flex items-center gap-1.5 min-w-0 overflow-hidden">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
       <span className="min-w-0 truncate">
         {message.content} {elapsed != null && `(${elapsed.toFixed(0)}s)`}
@@ -286,7 +288,7 @@ function SystemBlock({ message }: { message: AgentMessage }) {
 
   if (subtype === 'init') {
     return (
-      <div className="text-xs text-muted-foreground py-1 min-w-0 overflow-x-auto">
+      <div className="text-xs text-muted-foreground py-1 min-w-0 overflow-hidden">
         Session started (model: {String(message.meta?.model ?? 'unknown')})
       </div>
     );
@@ -296,7 +298,7 @@ function SystemBlock({ message }: { message: AgentMessage }) {
     const attempt = message.meta?.attempt as number | undefined;
     const retryMsg = String(message.meta?.message ?? 'Retrying...');
     return (
-      <div className="text-xs text-neon-amber py-1 min-w-0 overflow-x-auto">
+      <div className="text-xs text-neon-amber py-1 min-w-0 overflow-hidden">
         {retryMsg}
         {attempt != null && ` (attempt ${attempt})`}
       </div>
@@ -306,7 +308,7 @@ function SystemBlock({ message }: { message: AgentMessage }) {
   if (subtype === 'compact_boundary') {
     const meta = message.meta?.compactMetadata as { pre_tokens?: number } | undefined;
     return (
-      <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground min-w-0 overflow-x-auto">
+      <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
         <div className="flex-1 border-t border-neon-amber/30 shrink min-w-2" />
         <span className="text-neon-amber shrink-0">
           Context compacted
@@ -319,14 +321,14 @@ function SystemBlock({ message }: { message: AgentMessage }) {
 
   if (subtype === 'local_command_output' && message.content) {
     return (
-      <div className="text-xs text-muted-foreground whitespace-pre-wrap break-words py-1 pl-3 border-l-2 border-neon-violet/40 min-w-0 overflow-x-auto">
+      <div className="text-xs text-muted-foreground whitespace-pre-wrap break-words py-1 pl-3 border-l-2 border-neon-violet/40 min-w-0 overflow-hidden">
         {message.content}
       </div>
     );
   }
 
   if (!message.content) return null;
-  return <div className="text-xs text-muted-foreground py-1 min-w-0 overflow-x-auto">{message.content}</div>;
+  return <div className="text-xs text-muted-foreground py-1 min-w-0 overflow-hidden">{message.content}</div>;
 }
 
 // --- Turn end block ---
@@ -353,7 +355,7 @@ function TurnEndBlock({ message }: { message: AgentMessage }) {
   const errors = Array.isArray(message.meta?.errors) ? (message.meta!.errors as string[]) : [];
 
   return (
-    <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground min-w-0 overflow-x-auto">
+    <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
       <div className="flex items-center gap-2 w-full min-w-0">
         <div className="flex-1 border-t border-border shrink min-w-2" />
         <span className={`shrink-0 ${isSuccess ? '' : 'text-destructive'}`}>
@@ -425,7 +427,7 @@ function UserBlock({ message, accentColor }: { message: AgentMessage; accentColo
   return (
     <div className="flex justify-end my-2 min-w-0">
       <div
-        className="group relative text-sm text-foreground bg-elevated rounded-lg pl-3 pr-8 py-2 max-w-[85%] border-l-2 min-w-0 overflow-x-auto"
+        className="group relative text-sm text-foreground bg-elevated rounded-lg pl-3 pr-8 py-2 max-w-[85%] border-l-2 min-w-0 overflow-hidden"
         style={{ borderLeftColor: accentVar }}
       >
         <CopyButton text={displayText || text} />

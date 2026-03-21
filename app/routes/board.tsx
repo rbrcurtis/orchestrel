@@ -6,6 +6,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router';
 import { Settings, Palette, Minus, Plus, Filter, X } from 'lucide-react';
 import { ProjectPinSelector } from '~/components/ProjectPinSelector';
 import { ScrollArea } from '~/components/ui/scroll-area';
+import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
@@ -200,9 +201,8 @@ const BoardLayout = observer(function BoardLayout() {
         const hasPins = pins.some((p) => p != null);
         if (!hasPins) return;
 
-        const resolved = resolvePins(allCards, pins);
-
         updateSlots((prev) => {
+          const resolved = resolvePins(allCards, pins, prev);
           let changed = false;
           const next = [...prev];
           for (let i = 0; i < next.length; i++) {
@@ -690,14 +690,32 @@ const ColumnSlot = observer(function ColumnSlot({
             onColorChange={setDraftColor}
           />
         ) : cardId != null ? (
-          <CardDetail cardId={cardId} onClose={() => closeSlot(index)} slotIndex={index} />
+          <CardDetail
+            cardId={cardId}
+            onClose={() => closeSlot(index)}
+            slotIndex={index}
+            pinned={pinProjectId != null}
+          />
         ) : pinProjectId != null ? (
           <div className="flex flex-col flex-1">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-              <span className="text-sm font-medium text-muted-foreground truncate">
-                {projectStore.getProject(pinProjectId)?.name ?? 'Unknown project'}
-              </span>
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => closeSlot(index)}>
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+              <span className="flex-1" />
+              {(() => {
+                const p = projectStore.getProject(pinProjectId);
+                return p ? (
+                  <Badge
+                    variant="secondary"
+                    className={`text-xs shrink-0 ${p.color ? 'animate-review-glow' : ''}`}
+                    style={{
+                      ...(p.color ? { borderLeft: `3px solid var(--${p.color})` } : {}),
+                      ...(p.color ? ({ '--glow-color': `var(--${p.color})` } as React.CSSProperties) : {}),
+                    }}
+                  >
+                    {p.name}
+                  </Badge>
+                ) : null;
+              })()}
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => closeSlot(index)}>
                 <X className="size-4" />
               </Button>
             </div>

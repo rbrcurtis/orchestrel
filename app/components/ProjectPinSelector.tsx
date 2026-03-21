@@ -18,9 +18,9 @@ export const ProjectPinSelector = observer(function ProjectPinSelector({ onSelec
   }
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4">
-      <span className="text-xs text-muted-foreground font-medium">Pin to project</span>
+    <div className="flex-1 flex items-center justify-center p-4">
       <div className="flex flex-col gap-1 w-full max-w-48">
+        <span className="text-xs text-muted-foreground font-medium px-3 mb-1">Pin to project</span>
         {projects.map((p) => (
           <button
             key={p.id}

@@ -89,6 +89,24 @@ describe('resolvePins', () => {
     expect(result).toEqual([null, 1, 2]);
   });
 
+  it('excludes cards already open in unpinned slots', () => {
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    // Card 1 is open in the hotseat (slot 0, unpinned)
+    const result = resolvePins(cards, [null, 10], [1, null]);
+    expect(result).toEqual([null, 2]); // skips card 1, shows card 2
+  });
+
+  it('shows empty when all qualifying cards are in unpinned slots', () => {
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePins(cards, [null, 10], [1, null]);
+    expect(result).toEqual([null, null]); // only card is in hotseat
+  });
+
   it('ignores cards in other columns (backlog, ready, done, archive)', () => {
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'backlog' }),

@@ -50,7 +50,7 @@ export function Card({ id, title, color, queuePosition, onClick }: CardProps) {
         {...attributes}
         {...listeners}
         onClick={() => onClick?.(id)}
-        className={`group relative w-full sm:w-50 sm:shrink-0 rounded bg-card border border-border px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${color ? 'border-l-3' : ''}`}
+        className={`group relative rounded bg-card border border-border px-3 py-2 shadow-sm cursor-grab active:cursor-grabbing select-none ${color ? 'border-l-3' : ''}`}
       >
         <div className="flex items-center gap-1">
           <p className="text-sm text-foreground truncate flex-1 min-w-0 self-center">{title}</p>
@@ -181,7 +181,7 @@ function QueueBadge({ id, queuePosition }: { id: number; queuePosition: number }
 export function CardOverlay({ title, color }: { title: string; color?: string | null }) {
   return (
     <div
-      className={`rounded bg-card border border-border px-3 py-2 shadow-lg cursor-grabbing select-none w-full sm:w-50 ${color ? 'border-l-3' : ''}`}
+      className={`rounded bg-card border border-border px-3 py-2 shadow-lg cursor-grabbing select-none ${color ? 'border-l-3' : ''}`}
       style={color ? { borderLeftColor: `var(--${color})` } : undefined}
     >
       <p className="text-sm text-foreground truncate">{title}</p>

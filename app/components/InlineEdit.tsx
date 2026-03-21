@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Pencil } from "lucide-react";
+import { useState, useRef, useEffect } from 'react';
+import { Pencil } from 'lucide-react';
 
 interface InlineEditProps {
   value: string;
@@ -17,9 +17,9 @@ export function InlineEdit({
   value,
   onSave,
   multiline = false,
-  className = "",
-  editClassName = "",
-  placeholder = "Click to edit...",
+  className = '',
+  editClassName = '',
+  placeholder = 'Click to edit...',
   disabled = false,
   minLength,
   maxLength,
@@ -82,24 +82,24 @@ export function InlineEdit({
       await onSave(trimmed);
       setEditing(false);
     } catch (err) {
-      console.error("InlineEdit save failed:", err);
-      setError(err instanceof Error ? err.message : "Failed to save.");
+      console.error('InlineEdit save failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save.');
     } finally {
       setSaving(false);
     }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") {
+    if (e.key === 'Escape') {
       handleCancel();
       return;
     }
-    if (!multiline && e.key === "Enter") {
+    if (!multiline && e.key === 'Enter') {
       e.preventDefault();
       handleSave();
       return;
     }
-    if (multiline && e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (multiline && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSave();
     }
@@ -111,29 +111,26 @@ export function InlineEdit({
     return (
       <div
         className={[
-          "group flex cursor-pointer items-start gap-1 rounded px-1 py-0.5 transition-colors hover:bg-muted/50",
-          disabled ? "cursor-default" : "",
+          'group flex cursor-pointer items-start gap-1 rounded px-1 py-0.5 transition-colors hover:bg-muted/50',
+          disabled ? 'cursor-default' : '',
           className,
         ]
           .filter(Boolean)
-          .join(" ")}
+          .join(' ')}
         onClick={startEdit}
-        role={disabled ? undefined : "button"}
+        role={disabled ? undefined : 'button'}
         tabIndex={disabled ? undefined : 0}
         onKeyDown={(e) => {
-          if (!disabled && (e.key === "Enter" || e.key === " ")) {
+          if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
             e.preventDefault();
             startEdit();
           }
         }}
       >
         <span
-          className={[
-            "flex-1 whitespace-pre-wrap break-words",
-            value ? "" : "text-muted-foreground",
-          ]
+          className={['flex-1 whitespace-pre-wrap break-words', value ? '' : 'text-muted-foreground']
             .filter(Boolean)
-            .join(" ")}
+            .join(' ')}
         >
           {value || placeholder}
         </span>
@@ -145,15 +142,15 @@ export function InlineEdit({
   }
 
   const sharedInputClass = [
-    "w-full rounded border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none",
-    "focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background",
+    'w-full rounded border border-ring bg-background px-2 py-1 text-sm text-foreground outline-none',
+    'focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background',
     editClassName,
   ]
     .filter(Boolean)
-    .join(" ");
+    .join(' ');
 
   return (
-    <div className={["flex flex-col gap-1.5", className].filter(Boolean).join(" ")}>
+    <div className={['flex flex-col gap-1.5', className].filter(Boolean).join(' ')}>
       {multiline ? (
         <textarea
           ref={inputRef as React.RefObject<HTMLTextAreaElement>}
@@ -161,7 +158,8 @@ export function InlineEdit({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={saving}
-          className={[sharedInputClass, "min-h-[100px] max-h-40 resize-y overflow-y-auto"].join(" ")}
+          // eslint-disable-next-line local/no-overflow-auto -- native textarea handles own scroll
+          className={[sharedInputClass, 'min-h-[100px] max-h-40 resize-y overflow-y-auto'].join(' ')}
           placeholder={placeholder}
         />
       ) : (
@@ -179,12 +177,7 @@ export function InlineEdit({
       )}
 
       {maxLength !== undefined && (
-        <span
-          className={[
-            "text-right text-xs",
-            overLimit ? "text-destructive" : "text-muted-foreground",
-          ].join(" ")}
-        >
+        <span className={['text-right text-xs', overLimit ? 'text-destructive' : 'text-muted-foreground'].join(' ')}>
           {draft.length} / {maxLength}
         </span>
       )}
@@ -207,7 +200,7 @@ export function InlineEdit({
             disabled={saving || overLimit}
             className="rounded bg-primary px-3 py-1 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       )}
