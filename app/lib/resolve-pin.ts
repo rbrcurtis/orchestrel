@@ -1,65 +1,65 @@
 import type { Card } from '../../src/shared/ws-protocol';
 
+export type SlotState =
+  | { type: 'pinned'; projectId: number; cardId?: number }
+  | { type: 'manual'; cardId: number }
+  | { type: 'empty' };
+
 /**
  * Resolve which card each pinned slot should display.
  *
+ * Returns Map<slotIndex, cardId> for every pinned slot with a qualifying card.
+ * Pinned slots with no qualifying card are absent from the map.
+ *
+ * Cards already visible in any slot (manual or pinned override) are excluded.
+ *
  * Priority per project:
  *   1. Review cards — oldest createdAt first
- *   2. Running cards — newest updatedAt first
- *
- * Multiple slots pinned to the same project get distributed
- * across the ranked list (lower slot index = higher priority card).
- *
- * Cards already open in unpinned slots are excluded to avoid
- * showing the same card in both the hotseat and a pinned slot.
- *
- * Slot 0 is never pinned (hotseat) — pins[0] should always be null.
- *
- * @param cards - All cards from the card store
- * @param pins - columnPins array: projectId or null per slot
- * @param slots - columnSlots array: cardId or null per slot (used to exclude manually-opened cards)
- * @returns Array of cardId or null, same length as pins
+ *   2. Active running (queuePosition == null) — newest updatedAt first
+ *   3. Queued running — queuePosition ascending, newest updatedAt as tiebreak
  */
-export function resolvePins(
-  cards: Card[],
-  pins: (number | null)[],
-  slots: (number | null)[] = [],
-): (number | null)[] {
-  // Collect card IDs that are manually placed in unpinned slots
-  const manualCardIds = new Set<number>();
-  for (let i = 0; i < slots.length; i++) {
-    if (pins[i] == null && slots[i] != null) {
-      manualCardIds.add(slots[i]!);
-    }
+export function resolvePinnedCards(slots: SlotState[], cards: Card[]): Map<number, number> {
+  // Build exclusion set: cards already stored in any slot
+  const usedCardIds = new Set<number>();
+  for (const slot of slots) {
+    if (slot.type === 'manual') usedCardIds.add(slot.cardId);
+    else if (slot.type === 'pinned' && slot.cardId != null) usedCardIds.add(slot.cardId);
   }
 
   // Group pinned slot indices by projectId
   const projectSlots = new Map<number, number[]>();
-  for (let i = 0; i < pins.length; i++) {
-    const pid = pins[i];
-    if (pid == null) continue;
-    const s = projectSlots.get(pid);
-    if (s) s.push(i);
-    else projectSlots.set(pid, [i]);
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    if (slot.type !== 'pinned') continue;
+    const existing = projectSlots.get(slot.projectId);
+    if (existing) existing.push(i);
+    else projectSlots.set(slot.projectId, [i]);
   }
 
-  const result: (number | null)[] = pins.map(() => null);
+  const result = new Map<number, number>();
 
   for (const [projectId, slotIndices] of projectSlots) {
-    // Build ranked card list for this project, excluding manually-opened cards
-    const review = cards
-      .filter((c) => c.projectId === projectId && c.column === 'review' && !manualCardIds.has(c.id))
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const eligible = cards.filter(
+      (c) => c.projectId === projectId && (c.column === 'review' || c.column === 'running') && !usedCardIds.has(c.id),
+    );
 
-    const running = cards
-      .filter((c) => c.projectId === projectId && c.column === 'running' && !manualCardIds.has(c.id))
+    const review = eligible.filter((c) => c.column === 'review').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+    const activeRunning = eligible
+      .filter((c) => c.column === 'running' && c.queuePosition == null)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
-    const ranked = [...review, ...running];
+    const queuedRunning = eligible
+      .filter((c) => c.column === 'running' && c.queuePosition != null)
+      .sort((a, b) => {
+        const qDiff = (a.queuePosition ?? 0) - (b.queuePosition ?? 0);
+        return qDiff !== 0 ? qDiff : b.updatedAt.localeCompare(a.updatedAt);
+      });
 
-    // Distribute across slots in slot-index order
+    const ranked = [...review, ...activeRunning, ...queuedRunning];
+
     for (let i = 0; i < slotIndices.length; i++) {
-      result[slotIndices[i]] = i < ranked.length ? ranked[i].id : null;
+      if (i < ranked.length) result.set(slotIndices[i], ranked[i].id);
     }
   }
 
