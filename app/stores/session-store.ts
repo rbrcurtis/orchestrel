@@ -241,13 +241,21 @@ export class SessionStore {
         newRows.push({ ...msg, id });
       }
 
-      // Filter out messages already delivered live (race: live sub fires before history arrives)
-      const existingIds = new Set(s.conversation.map((r) => r.id));
-      const deduped = newRows.filter((r) => !existingIds.has(r.id));
+      const isReload = s.conversation.length > 0;
 
-      if (deduped.length > 0) {
-        // Prepend history before any live messages
-        s.conversation.unshift(...deduped);
+      if (isReload) {
+        // Reconnect reload: replace conversation in place with full server history.
+        // This avoids the spinner flash from clearing and also picks up any
+        // messages that arrived while disconnected.
+        s.conversation.splice(0, s.conversation.length, ...newRows);
+      } else {
+        // Initial load: filter out any messages already delivered live
+        // (race: live sub fires before history arrives), then prepend.
+        const existingIds = new Set(s.conversation.map((r) => r.id));
+        const deduped = newRows.filter((r) => !existingIds.has(r.id));
+        if (deduped.length > 0) {
+          s.conversation.unshift(...deduped);
+        }
       }
 
       // Rebuild toolCallIdxMap from scratch after prepend (indices shifted)
@@ -357,11 +365,25 @@ export class SessionStore {
     s.promptsSent = (s.promptsSent ?? 0) + 1;
 
     const requestId = uuid();
-    await ws().mutate({
-      type: 'agent:send',
-      requestId,
-      data: { cardId, message, files },
-    });
+    try {
+      await ws().mutate({
+        type: 'agent:send',
+        requestId,
+        data: { cardId, message, files },
+      });
+    } catch (err) {
+      // On timeout or disconnect, verify what actually happened instead of
+      // assuming failure. The mutation may have succeeded (server sends
+      // mutation:ok immediately) but the ack was lost (e.g., PWA suspend,
+      // Vite restart, tunnel flap).
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'Mutation timeout' || msg === 'WebSocket disconnected') {
+        console.warn(`[session] agent:send ${msg} for card ${cardId}, verifying status…`);
+        this.requestStatus(cardId).catch(() => {});
+        return; // Don't propagate — let status check reconcile the UI
+      }
+      throw err; // Real errors (validation, etc.) still bubble up
+    }
   }
 
   async compactSession(cardId: number): Promise<void> {
@@ -408,14 +430,29 @@ export class SessionStore {
 
   async resubscribeAll(): Promise<void> {
     for (const cardId of this.subscribedCards) {
+      const s = this.sessions.get(cardId);
+
+      // Reset historyLoaded so ingestBatch will accept the fresh history payload.
+      // Keep existing conversation visible (no spinner) — ingestBatch will
+      // replace it in place once the server sends the full history.
+      if (s) {
+        s.historyLoaded = false;
+        s.activeTextIdx = null;
+        s.activeThinkingIdx = null;
+      }
+
+      const sid = s?.sessionId;
       const requestId = uuid();
       ws()
         .mutate({
           type: 'session:load',
           requestId,
-          data: { cardId },
+          data: { cardId, ...(sid ? { sessionId: sid } : {}) },
         })
         .catch((err) => console.warn('[ws] resubscribe failed for card', cardId, err));
+
+      // Also request fresh status so the UI knows if the session is running/idle/errored
+      this.requestStatus(cardId).catch((err) => console.warn('[ws] status request failed for card', cardId, err));
     }
   }
 }

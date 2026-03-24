@@ -27,6 +27,7 @@ import type { Column } from '../../src/shared/ws-protocol';
 type Props = {
   cardId: number;
   onClose: () => void;
+  clearSlot?: () => void;
   slotIndex?: number;
   pinned?: boolean;
 };
@@ -51,7 +52,7 @@ type Draft = {
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 };
 
-export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIndex, pinned }: Props) {
+export const CardDetail = observer(function CardDetail({ cardId, onClose, clearSlot, slotIndex, pinned }: Props) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const sessionStore = useSessionStore();
@@ -65,12 +66,13 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
   if (card) wasLoaded.current = true;
   useEffect(() => {
     if (!wasLoaded.current) return;
+    const dismiss = pinned && clearSlot ? clearSlot : onClose;
     if (!card) {
-      onClose();
+      dismiss();
       return;
     }
     // Only auto-close on archive transition, not if card was already archived when opened
-    if (card.column === 'archive' && initialColumn.current !== 'archive') onClose();
+    if (card.column === 'archive' && initialColumn.current !== 'archive') dismiss();
   }, [card, card?.column]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [draft, setDraft] = useState<Draft>({
@@ -184,7 +186,10 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
     if (newColumn === card.column) return;
     await cardStore.updateCard({ id: card.id, column: newColumn as Column });
     if (newColumn === 'done' || newColumn === 'archive') {
-      onClose();
+      // Pinned slots: just clear the card, let the resolver find the next one.
+      // Unpinned: full close (clears both slot and pin).
+      if (pinned && clearSlot) clearSlot();
+      else onClose();
     }
   }
 
@@ -459,7 +464,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
                           {config.getModel(cardProject?.providerID ?? 'anthropic', draft.model)?.label ?? draft.model}
                         </span>
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" className="max-h-60">
                         {config.getModels(cardProject?.providerID ?? 'anthropic').map(([alias, m]) => (
                           <SelectItem key={alias} value={alias}>
                             {m.label}
@@ -480,7 +485,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, slotIn
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent position="popper" className="max-h-60">
                         <SelectItem value="off">Off</SelectItem>
                         <SelectItem value="low">Low</SelectItem>
                         <SelectItem value="medium">Medium</SelectItem>
@@ -776,7 +781,7 @@ export const NewCardDetail = observer(function NewCardDetail({
                       {config.getModel(selectedProject.providerID ?? 'anthropic', draft.model)?.label ?? draft.model}
                     </span>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="max-h-60">
                     {config.getModels(selectedProject.providerID ?? 'anthropic').map(([alias, m]) => (
                       <SelectItem key={alias} value={alias}>
                         {m.label}
@@ -796,7 +801,7 @@ export const NewCardDetail = observer(function NewCardDetail({
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="max-h-60">
                     <SelectItem value="off">Off</SelectItem>
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>

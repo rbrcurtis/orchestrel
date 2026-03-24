@@ -208,6 +208,10 @@ const BoardLayout = observer(function BoardLayout() {
           for (let i = 0; i < next.length; i++) {
             if (pins[i] == null) continue;
             if (next[i] !== resolved[i]) {
+              // Don't swap out a review card — user may be reading it.
+              // Running cards can be swapped freely.
+              const cur = next[i] != null ? allCards.find((c) => c.id === next[i]) : null;
+              if (cur && cur.projectId === pins[i] && cur.column === 'review') continue;
               if (resolved[i] != null) {
                 setFlashSlot(i);
               }
@@ -261,6 +265,18 @@ const BoardLayout = observer(function BoardLayout() {
     updateSlots((prev) => {
       const next = [...prev];
       next[index] = null;
+      // If closing an unpinned slot, immediately fill any empty pinned slots
+      // whose project matches cards that were excluded (they're no longer manual).
+      if (columnPins[index] == null) {
+        const allCards = Array.from(cardStore.cards.values());
+        const resolved = resolvePins(allCards, columnPins, next);
+        for (let i = 0; i < next.length; i++) {
+          if (columnPins[i] == null) continue;
+          if (next[i] === null && resolved[i] != null) {
+            next[i] = resolved[i];
+          }
+        }
+      }
       return next;
     });
     updatePins((prev) => {
@@ -693,6 +709,13 @@ const ColumnSlot = observer(function ColumnSlot({
           <CardDetail
             cardId={cardId}
             onClose={() => closeSlot(index)}
+            clearSlot={() =>
+              updateSlots((prev) => {
+                const next = [...prev];
+                next[index] = null;
+                return next;
+              })
+            }
             slotIndex={index}
             pinned={pinProjectId != null}
           />

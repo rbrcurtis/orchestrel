@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, AlertCircle, ChevronDown, Paperclip, X } from 'lucide-react';
+import { Send, Square, AlertCircle, ChevronDown, Paperclip, X, WifiOff } from 'lucide-react';
 import { MessageBlock } from './MessageBlock';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
@@ -8,7 +8,7 @@ import { Badge } from '~/components/ui/badge';
 import { ContextGauge } from './ContextGauge';
 import { SubagentFeed } from './SubagentFeed';
 import { ScrollArea } from '~/components/ui/scroll-area';
-import { useSessionStore, useCardStore, useConfigStore } from '~/stores/context';
+import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
 
 type Props = {
@@ -56,6 +56,8 @@ export const SessionView = observer(function SessionView({
   const isStreamingRef = useRef(false); // mirrors isStreaming for ResizeObserver access
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
   const isStreaming = sessionActive || isStarting;
   isStreamingRef.current = isStreaming;
@@ -186,6 +188,18 @@ export const SessionView = observer(function SessionView({
     });
   }, [cardId]);
 
+  // After reconnect history reload: scroll to bottom once history re-ingests.
+  // historyLoaded transitions false→true when resubscribeAll clears + reloads.
+  const historyLoaded = session?.historyLoaded ?? false;
+  useEffect(() => {
+    if (historyLoaded && conversation.length > 0) {
+      nearBottomRef.current = true;
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+      });
+    }
+  }, [historyLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Extract tool outputs from conversation
   const toolOutputs = useMemo(() => {
     const map = new Map<string, string>();
@@ -220,8 +234,28 @@ export const SessionView = observer(function SessionView({
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
+  function handlePanelMouseDown(e: React.MouseEvent) {
+    mouseDownPos.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function handlePanelClick(e: React.MouseEvent) {
+    const down = mouseDownPos.current;
+    mouseDownPos.current = null;
+    if (!down) return;
+    const dx = e.clientX - down.x;
+    const dy = e.clientY - down.y;
+    if (dx * dx + dy * dy > 25) return; // dragged > 5px — skip
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, select, input, textarea, [role="button"], [data-interactive]')) return;
+    textareaRef.current?.focus();
+  }
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border">
+    <div
+      className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border"
+      onMouseDown={handlePanelMouseDown}
+      onClick={handlePanelClick}
+    >
       {/* Messages — scrollable middle area */}
       <div className="relative flex-1 min-h-0 min-w-0">
         <ScrollArea viewportRef={scrollRef} className="h-full">
@@ -323,6 +357,7 @@ export const SessionView = observer(function SessionView({
         sendPending={false}
         contextPercent={contextPercent}
         compacted={compacted}
+        textareaRef={textareaRef}
       />
     </div>
   );
@@ -402,6 +437,7 @@ function PromptInput({
   sendPending,
   contextPercent,
   compacted,
+  textareaRef,
 }: {
   cardId: number;
   isRunning: boolean;
@@ -413,6 +449,7 @@ function PromptInput({
   sendPending: boolean;
   contextPercent: number;
   compacted: boolean;
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const storageKey = `prompt-draft-${cardId}`;
   const [text, setText] = useState(() => {
@@ -425,7 +462,8 @@ function PromptInput({
   const [files, setFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const localRef = useRef<HTMLTextAreaElement>(null);
+  const ref = textareaRef ?? localRef;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync text to localStorage on every change
@@ -539,6 +577,20 @@ function PromptInput({
     }
   }
 
+  // Track WS connection state for reconnect button
+  const { ws: wsClient } = useStore();
+  const [wsConnected, setWsConnected] = useState(wsClient.connected);
+  useEffect(() => {
+    // Poll connection state — WsClient.connected isn't MobX-observable
+    const id = setInterval(() => setWsConnected(wsClient.connected), 500);
+    const onVis = () => setWsConnected(wsClient.connected);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [wsClient]);
+
   const disabled = isPending || sendPending || (!text.trim() && files.length === 0);
 
   return (
@@ -588,6 +640,18 @@ function PromptInput({
             rows={3}
             className="resize-none min-h-full pr-10 focus-ring"
           />
+          {/* Reconnect button - top right inside textarea, only when disconnected */}
+          {!wsConnected && (
+            <button
+              type="button"
+              onClick={() => wsClient.forceReconnect()}
+              className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-md bg-destructive/15 text-destructive text-xs font-medium hover:bg-destructive/25 transition-colors"
+              title="WebSocket disconnected — tap to reconnect"
+            >
+              <WifiOff className="size-3" />
+              Reconnect
+            </button>
+          )}
           {/* Paperclip button - bottom right inside textarea */}
           {(isRunning || hasSession) && (
             <button

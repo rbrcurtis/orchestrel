@@ -41,16 +41,18 @@ export class WsClient {
     // The socket thinks it's open, but the TCP connection may be dead.
     // Send a no-op message and if the socket errors, onclose → reconnect.
     // As a fallback, force-close if we don't get any response in 3s.
+    const ws = this.ws; // capture ref — don't close a newer socket if this one dies naturally
     const timer = setTimeout(() => {
+      if (this.ws !== ws) return; // socket already replaced by a reconnect
       console.warn('[ws] no response after resume, forcing reconnect');
-      this.ws?.close();
+      ws.close();
     }, 3_000);
     // Any incoming message proves the connection is alive
-    const origHandler = this.ws.onmessage;
-    this.ws.onmessage = (evt) => {
+    const origHandler = ws.onmessage;
+    ws.onmessage = (evt) => {
       clearTimeout(timer);
-      this.ws!.onmessage = origHandler;
-      origHandler?.call(this.ws!, evt);
+      ws.onmessage = origHandler;
+      origHandler?.call(ws, evt);
     };
     // Send a subscribe re-send (idempotent, already tracked server-side)
     if (this.subscribedColumns.length > 0) {
@@ -121,6 +123,16 @@ export class WsClient {
 
   get connected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Force-close and immediately reconnect (manual recovery for PWA resume) */
+  forceReconnect() {
+    if (this.disposed) return;
+    console.log('[ws] force reconnect requested');
+    // Close triggers onclose → scheduleReconnect with exponential backoff.
+    // Instead, reset attempt counter so reconnect is instant.
+    this.reconnectAttempt = 0;
+    this.ws?.close();
   }
 
   send(msg: ClientMessage) {

@@ -1,8 +1,7 @@
-// Service worker — stale-while-revalidate for same-origin assets.
-// Serves cached HTML/JS/CSS instantly on iOS PWA resume, then updates
-// cache in the background. HMR still works (WebSocket, not fetch).
+// Service worker — network-first for all same-origin assets.
+// Always fetches from server; falls back to cache only when offline.
 
-const CACHE = 'orchestrel-v4';
+const CACHE = 'orchestrel-v5';
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -31,19 +30,21 @@ self.addEventListener('fetch', (e) => {
   // Skip manifest (doesn't need caching, causes CORS errors behind CF Access)
   if (url.pathname === '/manifest.json') return;
 
+  // Network-first, cache fallback for all assets
   e.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(request);
-      const fresh = fetch(request).then((res) => {
-        // Don't cache redirects (e.g. CF Access login redirects)
-        if (res.ok && !res.redirected) cache.put(request, res.clone());
+    fetch(request)
+      .then((res) => {
+        if (res.ok && !res.redirected) {
+          const cache = caches.open(CACHE).then((c) => c.put(request, res.clone()));
+          cache.catch(() => {});
+        }
         return res;
-      });
-      if (cached) {
-        fresh.catch(() => {}); // revalidate in background, swallow errors
-        return cached;
-      }
-      return fresh.catch(() => Response.error());
-    }),
+      })
+      .catch(() =>
+        caches
+          .open(CACHE)
+          .then((c) => c.match(request))
+          .then((r) => r || Response.error()),
+      ),
   );
 });
