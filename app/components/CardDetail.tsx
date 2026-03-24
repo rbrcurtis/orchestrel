@@ -568,7 +568,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
 
 type NewCardProps = {
   column: string;
-  onCreated: (id: number) => void;
+  onCreated: (id: number, projectId: number | null) => void;
   onClose: () => void;
   onColorChange?: (color: string | null) => void;
 };
@@ -616,7 +616,7 @@ export const NewCardDetail = observer(function NewCardDetail({
         thinkingLevel: draft.thinkingLevel,
       });
       if (selectedColumn === 'running' && draft.projectId && draft.description.trim()) {
-        onCreated(card.id);
+        onCreated(card.id, card.projectId ?? null);
       } else {
         onClose();
       }

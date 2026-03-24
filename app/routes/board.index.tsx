@@ -26,6 +26,7 @@ import { useCardStore, useProjectStore } from '~/stores/context';
 import { StatusRow, ALL_COLUMNS, type ColumnId } from '~/components/StatusRow';
 import { CardOverlay } from '~/components/Card';
 import type { Card } from '../../src/shared/ws-protocol';
+import type { SlotState } from '~/lib/resolve-pin';
 
 type BoardContext = {
   search: string;
@@ -33,8 +34,9 @@ type BoardContext = {
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
-  updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
-  columnSlots: (number | null)[];
+  dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
+  onCardCreated: (cardId: number, projectId: number | null) => void;
+  slots: SlotState[];
 };
 
 const ACTIVE_COLUMNS: ColumnId[] = ['backlog', 'ready', 'running', 'review', 'done'];
@@ -85,7 +87,7 @@ function findColumnSlotAtPoint(x: number, y: number): number | null {
 }
 
 const ActiveBoard = observer(function ActiveBoard() {
-  const { search, projectFilter, selectCard, startNewCard, updateSlots } = useOutletContext<BoardContext>();
+  const { search, projectFilter, selectCard, startNewCard, dropCard } = useOutletContext<BoardContext>();
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
 
@@ -235,15 +237,10 @@ const ActiveBoard = observer(function ActiveBoard() {
     const slotIdx = findColumnSlotAtPoint(lastPointer.current.x, lastPointer.current.y);
     if (slotIdx != null) {
       const draggedId = active.id as number;
-      updateSlots((prev) => {
-        const next = [...prev];
-        // Remove from any existing slot to avoid duplicates
-        for (let i = 0; i < next.length; i++) {
-          if (next[i] === draggedId) next[i] = null;
-        }
-        next[slotIdx] = draggedId;
-        return next;
-      });
+      const draggedCard = Object.values(columns)
+        .flat()
+        .find((c) => c.id === draggedId);
+      dropCard(slotIdx, draggedId, draggedCard?.projectId ?? null);
       setActiveId(null);
       setDragOverride(null);
       snapshotRef.current = null;

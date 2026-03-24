@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { resolvePins } from '~/lib/resolve-pin';
+import { useSlots } from '~/lib/use-slots';
+import type { SlotState } from '~/lib/resolve-pin';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
 import { Settings, Palette, Minus, Plus, Filter, X } from 'lucide-react';
 import { ProjectPinSelector } from '~/components/ProjectPinSelector';
@@ -25,8 +25,6 @@ const NAV_ITEMS = [
 
 const MIN_COLUMN_WIDTH = 350;
 const COLUMN_COUNT_KEY = 'dispatcher-column-count';
-const COLUMN_SLOTS_KEY = 'dispatcher-column-slots';
-const COLUMN_PINS_KEY = 'dispatcher-column-pins';
 const PROJECT_FILTER_KEY = 'dispatcher-project-filter';
 
 function readLocalStorage<T>(key: string, fallback: T): T {
@@ -111,42 +109,23 @@ const BoardLayout = observer(function BoardLayout() {
 
   // Multi-column state (persisted to localStorage)
   const [columnCount, setColumnCount] = useState(() => readLocalStorage(COLUMN_COUNT_KEY, 1));
-  const [columnSlots, setColumnSlots] = useState<(number | null)[]>(() => readLocalStorage(COLUMN_SLOTS_KEY, [null]));
-  const [columnPins, setColumnPins] = useState<(number | null)[]>(() => readLocalStorage(COLUMN_PINS_KEY, [null]));
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<'icons' | 'settings' | null>(null);
 
   const maxColumns = useMaxColumns(panelRef);
 
-  // Keep columnSlots length in sync with columnCount
-  useEffect(() => {
-    setColumnSlots((prev) => {
-      if (prev.length === columnCount) return prev;
-      if (prev.length < columnCount) {
-        const next = [...prev, ...(Array(columnCount - prev.length).fill(null) as null[])];
-        writeLocalStorage(COLUMN_SLOTS_KEY, next);
-        return next;
-      }
-      const next = prev.slice(0, columnCount);
-      writeLocalStorage(COLUMN_SLOTS_KEY, next);
-      return next;
-    });
-  }, [columnCount]);
-
-  // Keep columnPins length in sync with columnCount
-  useEffect(() => {
-    setColumnPins((prev) => {
-      if (prev.length === columnCount) return prev;
-      if (prev.length < columnCount) {
-        const next = [...prev, ...(Array(columnCount - prev.length).fill(null) as null[])];
-        writeLocalStorage(COLUMN_PINS_KEY, next);
-        return next;
-      }
-      const next = prev.slice(0, columnCount);
-      writeLocalStorage(COLUMN_PINS_KEY, next);
-      return next;
-    });
-  }, [columnCount]);
+  const allCards = Array.from(cardStore.cards.values());
+  const {
+    slots: columnSlots,
+    resolvedCards,
+    pinSlot,
+    closeSlot,
+    selectCard: hookSelectCard,
+    dropCard,
+    onCardCreated,
+    flashSlot,
+    clearFlash: clearFlashSlot,
+  } = useSlots(columnCount, allCards);
 
   // Clamp columnCount if maxColumns shrinks below it
   useEffect(() => {
@@ -156,89 +135,14 @@ const BoardLayout = observer(function BoardLayout() {
     }
   }, [maxColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist slots to localStorage whenever they change
-  const updateSlots = useCallback((updater: (prev: (number | null)[]) => (number | null)[]) => {
-    setColumnSlots((prev) => {
-      const next = updater(prev);
-      writeLocalStorage(COLUMN_SLOTS_KEY, next);
-      return next;
-    });
-  }, []);
-
-  const updatePins = useCallback((updater: (prev: (number | null)[]) => (number | null)[]) => {
-    setColumnPins((prev) => {
-      const next = updater(prev);
-      writeLocalStorage(COLUMN_PINS_KEY, next);
-      return next;
-    });
-  }, []);
-
-  // Evict cards that no longer exist (deleted)
-  useEffect(() => {
-    updateSlots((prev) => {
-      let changed = false;
-      const next = prev.map((id) => {
-        if (id == null) return null;
-        const card = cardStore.getCard(id);
-        if (!card) {
-          changed = true;
-          return null;
-        }
-        return id;
-      });
-      return changed ? next : prev;
-    });
-  }); // runs every render — MobX observer tracks card changes
-
-  // Resolve pinned slots — MobX reaction tracks card store changes
-  useEffect(() => {
-    const dispose = reaction(
-      () => {
-        const allCards = Array.from(cardStore.cards.values());
-        return { allCards, pins: columnPins };
-      },
-      ({ allCards, pins }) => {
-        const hasPins = pins.some((p) => p != null);
-        if (!hasPins) return;
-
-        updateSlots((prev) => {
-          const resolved = resolvePins(allCards, pins, prev);
-          let changed = false;
-          const next = [...prev];
-          for (let i = 0; i < next.length; i++) {
-            if (pins[i] == null) continue;
-            if (next[i] !== resolved[i]) {
-              // Don't swap out a review card — user may be reading it.
-              // Running cards can be swapped freely.
-              const cur = next[i] != null ? allCards.find((c) => c.id === next[i]) : null;
-              if (cur && cur.projectId === pins[i] && cur.column === 'review') continue;
-              if (resolved[i] != null) {
-                setFlashSlot(i);
-              }
-              next[i] = resolved[i];
-              changed = true;
-            }
-          }
-          return changed ? next : prev;
-        });
-      },
-      { fireImmediately: true },
-    );
-    return dispose;
-  }, [columnPins]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Mobile: track which single card is open for overlay
   const [mobileCardId, setMobileCardId] = useState<number | null>(null);
   const [mobileFlash, setMobileFlash] = useState(false);
-
-  // Flash: which slot index should show the "already open" overlay
-  const [flashSlot, setFlashSlot] = useState<number | null>(null);
 
   function selectCard(id: number | null) {
     setNewCardColumn(null);
     if (!isDesktop) {
       if (id != null && mobileCardId === id) {
-        // Already open on mobile — flash it
         setMobileFlash(true);
         return;
       }
@@ -246,45 +150,7 @@ const BoardLayout = observer(function BoardLayout() {
       return;
     }
     if (id === null) return;
-    // Desktop: place in next open unpinned slot, or slot 0 if all full
-    updateSlots((prev) => {
-      const existingIdx = prev.indexOf(id);
-      if (existingIdx >= 0) {
-        // Already open — flash that slot
-        setFlashSlot(existingIdx);
-        return prev;
-      }
-      const next = [...prev];
-      const emptyIdx = next.findIndex((slot, i) => slot === null && columnPins[i] == null);
-      next[emptyIdx >= 0 ? emptyIdx : 0] = id;
-      return next;
-    });
-  }
-
-  function closeSlot(index: number) {
-    updateSlots((prev) => {
-      const next = [...prev];
-      next[index] = null;
-      // If closing an unpinned slot, immediately fill any empty pinned slots
-      // whose project matches cards that were excluded (they're no longer manual).
-      if (columnPins[index] == null) {
-        const allCards = Array.from(cardStore.cards.values());
-        const resolved = resolvePins(allCards, columnPins, next);
-        for (let i = 0; i < next.length; i++) {
-          if (columnPins[i] == null) continue;
-          if (next[i] === null && resolved[i] != null) {
-            next[i] = resolved[i];
-          }
-        }
-      }
-      return next;
-    });
-    updatePins((prev) => {
-      if (prev[index] == null) return prev;
-      const next = [...prev];
-      next[index] = null;
-      return next;
-    });
+    hookSelectCard(id);
   }
 
   function startNewCard(column: string) {
@@ -306,15 +172,6 @@ const BoardLayout = observer(function BoardLayout() {
     const next = columnCount - 1;
     setColumnCount(next);
     writeLocalStorage(COLUMN_COUNT_KEY, next);
-  }
-
-  function pinSlot(index: number, projectId: number) {
-    if (index === 0) return; // slot 0 is the hotseat, never pinnable
-    updatePins((prev) => {
-      const next = [...prev];
-      next[index] = projectId;
-      return next;
-    });
   }
 
   // Keyboard shortcuts
@@ -340,7 +197,7 @@ const BoardLayout = observer(function BoardLayout() {
   }, [activeModal, isDesktop]);
 
   // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
-  const selectedCardId = columnSlots[0] ?? null;
+  const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -484,7 +341,16 @@ const BoardLayout = observer(function BoardLayout() {
         {/* Left: rows area */}
         <ScrollArea className="flex-1" style={{ minWidth: 272 }}>
           <Outlet
-            context={{ search, projectFilter, selectedCardId, selectCard, startNewCard, updateSlots, columnSlots }}
+            context={{
+              search,
+              projectFilter,
+              selectedCardId,
+              selectCard,
+              startNewCard,
+              dropCard,
+              onCardCreated,
+              slots: columnSlots,
+            }}
           />
         </ScrollArea>
 
@@ -518,7 +384,7 @@ const BoardLayout = observer(function BoardLayout() {
               {newCardColumn ? (
                 <NewCardDetail
                   column={newCardColumn}
-                  onCreated={(id) => {
+                  onCreated={(id, _projectId) => {
                     setNewCardColumn(null);
                     setMobileCardId(id);
                   }}
@@ -533,26 +399,34 @@ const BoardLayout = observer(function BoardLayout() {
 
         {/* Desktop: multi-column card panels */}
         <div ref={panelRef} className="hidden lg:flex overflow-hidden" style={{ width: initialWidth }}>
-          {columnSlots.map((cardId, idx) => {
-            const pinProject = columnPins[idx] != null ? projectStore.getProject(columnPins[idx]!) : null;
-            const slotCard = cardId != null ? cardStore.getCard(cardId) : undefined;
+          {columnSlots.map((slot, idx) => {
+            const pinProjectId = slot.type === 'pinned' ? slot.projectId : null;
+            const displayedCardId =
+              slot.type === 'manual'
+                ? slot.cardId
+                : slot.type === 'pinned'
+                  ? (resolvedCards.get(idx) ?? slot.cardId ?? null)
+                  : null;
+            const slotCard = displayedCardId != null ? cardStore.getCard(displayedCardId) : undefined;
             const slotProject = slotCard?.projectId ? projectStore.getProject(slotCard.projectId) : null;
+            const pinProject = pinProjectId != null ? projectStore.getProject(pinProjectId) : null;
             const borderColor = pinProject?.color ?? slotProject?.color ?? null;
             return (
               <ColumnSlot
                 key={idx}
                 index={idx}
-                cardId={cardId}
+                slot={slot}
+                cardId={displayedCardId}
                 borderColor={borderColor}
                 flash={flashSlot === idx}
-                onFlashDone={() => setFlashSlot(null)}
+                onFlashDone={clearFlashSlot}
                 newCardColumn={newCardColumn}
-                updateSlots={updateSlots}
-                updatePins={updatePins}
-                pinProjectId={columnPins[idx] ?? null}
+                dropCard={dropCard}
+                pinProjectId={pinProjectId}
                 onPin={(projectId) => pinSlot(idx, projectId)}
                 setNewCardColumn={setNewCardColumn}
                 closeSlot={closeSlot}
+                onCardCreated={onCardCreated}
               />
             );
           })}
@@ -567,33 +441,36 @@ const BoardLayout = observer(function BoardLayout() {
 
 type ColumnSlotProps = {
   index: number;
+  slot: SlotState;
   cardId: number | null;
   borderColor: string | null;
   flash: boolean;
   onFlashDone: () => void;
   newCardColumn: string | null;
-  updateSlots: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
-  updatePins: (updater: (prev: (number | null)[]) => (number | null)[]) => void;
+  dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
   pinProjectId: number | null;
   onPin: (projectId: number) => void;
   setNewCardColumn: (col: string | null) => void;
   closeSlot: (index: number) => void;
+  onCardCreated: (cardId: number, projectId: number | null) => void;
 };
 
 const ColumnSlot = observer(function ColumnSlot({
   index,
+  slot,
   cardId,
   borderColor,
   flash,
   onFlashDone,
   newCardColumn,
-  updateSlots,
-  updatePins,
+  dropCard,
   pinProjectId,
   onPin,
   setNewCardColumn,
   closeSlot,
+  onCardCreated,
 }: ColumnSlotProps) {
+  const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const [dragOver, setDragOver] = useState(false);
   const [draftColor, setDraftColor] = useState<string | null>(null);
@@ -617,47 +494,19 @@ const ColumnSlot = observer(function ColumnSlot({
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragOver(false);
-
-    // Column-to-column header drag
     const slotData = e.dataTransfer.getData('application/x-card-slot');
     if (slotData) {
       const { cardId: srcCardId, slotIndex: srcIdx } = JSON.parse(slotData) as { cardId: number; slotIndex: number };
       if (srcIdx === index) return;
-      updateSlots((prev) => {
-        const next = [...prev];
-        next[srcIdx] = null; // source slot becomes empty
-        next[index] = srcCardId; // target slot gets the dragged card (replaces whatever was there)
-        return next;
-      });
-      // Clear pin on target slot only — source pin stays so resolver can refill it
-      updatePins((prev) => {
-        if (prev[index] == null) return prev;
-        const next = [...prev];
-        next[index] = null;
-        return next;
-      });
+      const srcCard = cardStore.getCard(srcCardId);
+      dropCard(index, srcCardId, srcCard?.projectId ?? null);
       return;
     }
-
-    // Kanban card drag
     const kanbanData = e.dataTransfer.getData('application/x-kanban-card');
     if (kanbanData) {
       const { cardId: draggedId } = JSON.parse(kanbanData) as { cardId: number };
-      updateSlots((prev) => {
-        const next = [...prev];
-        // Remove from any existing slot to avoid duplicates
-        for (let i = 0; i < next.length; i++) {
-          if (next[i] === draggedId) next[i] = null;
-        }
-        next[index] = draggedId;
-        return next;
-      });
-      updatePins((prev) => {
-        if (prev[index] == null) return prev;
-        const next = [...prev];
-        next[index] = null;
-        return next;
-      });
+      const draggedCard = cardStore.getCard(draggedId);
+      dropCard(index, draggedId, draggedCard?.projectId ?? null);
     }
   }
 
@@ -690,14 +539,10 @@ const ColumnSlot = observer(function ColumnSlot({
         {newCardColumn && index === 0 ? (
           <NewCardDetail
             column={newCardColumn}
-            onCreated={(id) => {
+            onCreated={(id, projectId) => {
               setDraftColor(null);
               setNewCardColumn(null);
-              updateSlots((prev) => {
-                const next = [...prev];
-                next[0] = id;
-                return next;
-              });
+              onCardCreated(id, projectId);
             }}
             onClose={() => {
               setDraftColor(null);
