@@ -182,7 +182,25 @@ export function applyColumnCountChange(slots: SlotState[], newCount: number): Sl
     const padding: SlotState[] = Array(newCount - slots.length).fill({ type: 'empty' as const });
     return [...slots, ...padding];
   }
-  return slots.slice(0, newCount);
+  // Shrink: drop empty first, then manual, then pinned. Rightmost first within each group.
+  // Slot 0 is never dropped.
+  const toDrop = slots.length - newCount;
+  const dropIndices = new Set<number>();
+  const dropOrder: number[][] = [[], [], []]; // [empties, manuals, pinned]
+  for (let i = slots.length - 1; i >= 1; i--) {
+    const slot = slots[i];
+    if (slot.type === 'empty') dropOrder[0].push(i);
+    else if (slot.type === 'manual') dropOrder[1].push(i);
+    else dropOrder[2].push(i);
+  }
+  for (const group of dropOrder) {
+    for (const idx of group) {
+      if (dropIndices.size >= toDrop) break;
+      dropIndices.add(idx);
+    }
+    if (dropIndices.size >= toDrop) break;
+  }
+  return slots.filter((_, i) => !dropIndices.has(i));
 }
 
 // ─── useSlots hook ────────────────────────────────────────────────────────────

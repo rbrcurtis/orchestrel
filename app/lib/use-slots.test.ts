@@ -340,8 +340,75 @@ describe('applyColumnCountChange', () => {
     expect(next[2]).toEqual({ type: 'empty' });
   });
 
-  it('truncates from the right when count shrinks', () => {
-    const slots: SlotState[] = [{ type: 'manual', cardId: 1 }, { type: 'pinned', projectId: 10 }, { type: 'empty' }];
+  it('drops empty slots first when shrinking', () => {
+    const slots: SlotState[] = [
+      { type: 'manual', cardId: 1 },
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+      { type: 'empty' },
+    ];
+    const next = applyColumnCountChange(slots, 2);
+    expect(next).toHaveLength(2);
+    expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
+    expect(next[1]).toEqual({ type: 'pinned', projectId: 10 });
+  });
+
+  it('drops manual slots after empty slots when shrinking', () => {
+    const slots: SlotState[] = [
+      { type: 'pinned', projectId: 10 },
+      { type: 'manual', cardId: 1 },
+      { type: 'pinned', projectId: 20 },
+    ];
+    // Need to drop 1 — no empty slots, so drop the manual slot
+    const next = applyColumnCountChange(slots, 2);
+    expect(next).toHaveLength(2);
+    expect(next[0]).toEqual({ type: 'pinned', projectId: 10 });
+    expect(next[1]).toEqual({ type: 'pinned', projectId: 20 });
+  });
+
+  it('drops rightmost empty slot first among multiple empties', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+      { type: 'empty' },
+      { type: 'empty' },
+    ];
+    const next = applyColumnCountChange(slots, 3);
+    expect(next).toHaveLength(3);
+    // Dropped the rightmost empty (index 3)
+    expect(next[0]).toEqual({ type: 'empty' });
+    expect(next[1]).toEqual({ type: 'pinned', projectId: 10 });
+    expect(next[2]).toEqual({ type: 'empty' });
+  });
+
+  it('drops pinned slots last when no empty or manual slots remain', () => {
+    const slots: SlotState[] = [
+      { type: 'manual', cardId: 1 },
+      { type: 'pinned', projectId: 10 },
+      { type: 'pinned', projectId: 20 },
+    ];
+    const next = applyColumnCountChange(slots, 1);
+    expect(next).toHaveLength(1);
+    expect(next[0]).toEqual({ type: 'manual', cardId: 1 }); // slot 0 always preserved
+  });
+
+  it('never drops slot 0', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const next = applyColumnCountChange(slots, 1);
+    expect(next).toHaveLength(1);
+    // Slot 0 is empty, slot 1 is pinned — but slot 0 is always kept
+    expect(next[0]).toEqual({ type: 'empty' });
+  });
+
+  it('drops multiple slots in priority order', () => {
+    const slots: SlotState[] = [
+      { type: 'manual', cardId: 1 }, // slot 0 — never drop
+      { type: 'pinned', projectId: 10 },
+      { type: 'empty' },
+      { type: 'manual', cardId: 2 },
+      { type: 'empty' },
+    ];
+    // Drop 3: first drop empties (indices 4, 2), then manual (index 3)
     const next = applyColumnCountChange(slots, 2);
     expect(next).toHaveLength(2);
     expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
@@ -353,10 +420,10 @@ describe('applyColumnCountChange', () => {
     expect(applyColumnCountChange(slots, 1)).toBe(slots);
   });
 
-  it('shrinks to 1, preserving slot 0', () => {
-    const slots: SlotState[] = [{ type: 'manual', cardId: 1 }, { type: 'pinned', projectId: 10 }, { type: 'empty' }];
+  it('shrinks to 1 preserving slot 0 regardless of type', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }, { type: 'manual', cardId: 1 }];
     const next = applyColumnCountChange(slots, 1);
     expect(next).toHaveLength(1);
-    expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
+    expect(next[0]).toEqual({ type: 'empty' });
   });
 });
