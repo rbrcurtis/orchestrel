@@ -571,6 +571,7 @@ type NewCardProps = {
   onCreated: (id: number, projectId: number | null) => void;
   onClose: () => void;
   onColorChange?: (color: string | null) => void;
+  initialProjectId?: number;
 };
 
 export const NewCardDetail = observer(function NewCardDetail({
@@ -578,6 +579,7 @@ export const NewCardDetail = observer(function NewCardDetail({
   onCreated,
   onClose,
   onColorChange,
+  initialProjectId,
 }: NewCardProps) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
@@ -585,20 +587,44 @@ export const NewCardDetail = observer(function NewCardDetail({
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   const [selectedColumn, setSelectedColumn] = useState(column);
-  const [draft, setDraft] = useState<Draft>({
-    title: '',
-    description: '',
-    projectId: null,
-    useWorktree: false,
-    sourceBranch: null,
-    model: 'sonnet',
-    thinkingLevel: 'high',
+  const [draft, setDraft] = useState<Draft>(() => {
+    if (initialProjectId != null) {
+      const proj = projectStore.getProject(initialProjectId);
+      if (proj) {
+        return {
+          title: '',
+          description: '',
+          projectId: initialProjectId,
+          useWorktree: proj.isGitRepo ? (proj.defaultWorktree ?? false) : false,
+          sourceBranch: null,
+          model: proj.defaultModel ?? 'sonnet',
+          thinkingLevel: proj.defaultThinkingLevel ?? 'high',
+        };
+      }
+    }
+    return {
+      title: '',
+      description: '',
+      projectId: null,
+      useWorktree: false,
+      sourceBranch: null,
+      model: 'sonnet',
+      thinkingLevel: 'high',
+    };
   });
   const [creating, setCreating] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
 
   useEffect(() => {
     descRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (initialProjectId != null) {
+      const proj = projectStore.getProject(initialProjectId);
+      onColorChange?.(proj?.color ?? null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleSave() {
