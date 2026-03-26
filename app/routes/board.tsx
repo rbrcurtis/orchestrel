@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { useSlots } from '~/lib/use-slots';
 import type { SlotState } from '~/lib/resolve-pin';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { Settings, Palette, Minus, Plus, Filter, X } from 'lucide-react';
+import { Settings, Minus, Plus, Filter, X } from 'lucide-react';
 import { ProjectPinSelector } from '~/components/ProjectPinSelector';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { Badge } from '~/components/ui/badge';
@@ -13,7 +13,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover
 import { Checkbox } from '~/components/ui/checkbox';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
 import { CardDetail, NewCardDetail } from '~/components/CardDetail';
-import IconsModal from '~/routes/icons';
 import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
@@ -110,7 +109,7 @@ const BoardLayout = observer(function BoardLayout() {
   // Multi-column state (persisted to localStorage)
   const [columnCount, setColumnCount] = useState(() => readLocalStorage(COLUMN_COUNT_KEY, 1));
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
-  const [activeModal, setActiveModal] = useState<'icons' | 'settings' | null>(null);
+  const [activeModal, setActiveModal] = useState<'settings' | null>(null);
 
   const maxColumns = useMaxColumns(panelRef);
 
@@ -320,15 +319,6 @@ const BoardLayout = observer(function BoardLayout() {
             variant="ghost"
             size="icon"
             className="shrink-0 text-muted-foreground"
-            onClick={() => setActiveModal('icons')}
-            title="Icon Colors"
-          >
-            <Palette className="size-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 text-muted-foreground"
             onClick={() => setActiveModal('settings')}
             title="Settings"
           >
@@ -433,7 +423,6 @@ const BoardLayout = observer(function BoardLayout() {
         </div>
       </div>
 
-      {activeModal === 'icons' && <IconsModal onClose={() => setActiveModal(null)} />}
       {activeModal === 'settings' && <SettingsProjectsModal onClose={() => setActiveModal(null)} />}
     </div>
   );
@@ -571,13 +560,7 @@ const ColumnSlot = observer(function ColumnSlot({
           <CardDetail
             cardId={cardId}
             onClose={() => closeSlot(index)}
-            clearSlot={() =>
-              updateSlots((prev) => {
-                const next = [...prev];
-                next[index] = null;
-                return next;
-              })
-            }
+            clearSlot={() => closeSlot(index)}
             slotIndex={index}
             pinned={pinProjectId != null}
           />

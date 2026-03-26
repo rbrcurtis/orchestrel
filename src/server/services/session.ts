@@ -145,7 +145,7 @@ class SessionService {
     // attach() subscribes to SSE so we receive the streamed summary
     await session.attach();
 
-    await session.compact();
+    if (session instanceof OpenCodeSession) await session.compact();
     // SSE loop handles session.compacted event → emits compact_boundary
     // and session.idle → emits turn_end + sets status to completed
   }
@@ -184,23 +184,29 @@ class SessionService {
       card.updatedAt = new Date().toISOString();
       await card.save();
       // board:changed → registerAutoStart → processQueue handles the rest
-      // for non-worktree cards. For worktree cards registerAutoStart calls
-      // startSession again, which will fall through to launchSession below.
-      if (!card.useWorktree && card.projectId) return;
+      // for non-worktree cards on git repos. For worktree cards or non-git-repo
+      // projects, registerAutoStart calls startSession again which launches directly.
+      if (!card.useWorktree && card.projectId) {
+        const proj = await Project.findOneBy({ id: card.projectId });
+        if (proj?.isGitRepo) return;
+      }
     } else {
       // Already in running — save pending fields, then route
       if (message || files?.length) await card.save();
     }
 
-    // Non-worktree: always go through the queue
+    // Non-worktree on a git repo: go through the queue to serialize access
     if (!card.useWorktree && card.projectId) {
-      const { processQueue } = await import('./queue-gate');
-      console.log(`[session:${cardId}] startSession: routing to processQueue (project=${card.projectId})`);
-      await processQueue(card.projectId);
-      return;
+      const proj = await Project.findOneBy({ id: card.projectId });
+      if (proj?.isGitRepo) {
+        const { processQueue } = await import('./queue-gate');
+        console.log(`[session:${cardId}] startSession: routing to processQueue (project=${card.projectId})`);
+        await processQueue(card.projectId);
+        return;
+      }
     }
 
-    // Worktree or no project: launch directly
+    // Worktree, no project, or non-git-repo project: launch directly
     await this.launchSession(card.id);
   }
 

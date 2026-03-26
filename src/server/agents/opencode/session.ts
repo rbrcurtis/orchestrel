@@ -171,6 +171,13 @@ export class OpenCodeSession extends AgentSession {
     }
   }
 
+  private hasActiveChildren(): boolean {
+    for (const child of this.childSessions.values()) {
+      if (child.status === 'running') return true;
+    }
+    return false;
+  }
+
   private extractShortTarget(tool: string, input: Record<string, unknown>): string {
     if (tool === 'bash') {
       const cmd = (input.command as string) ?? (input.description as string) ?? '';
@@ -263,6 +270,11 @@ export class OpenCodeSession extends AgentSession {
         this.clearPromptTimer('prompt:resolved');
         this.idleFallbackTimer = setTimeout(() => {
           if (this.status === 'running' || this.status === 'starting') {
+            if (this.hasActiveChildren()) {
+              this.log('idle:fallback — skipping, children still running');
+              this.resetPromptTimer('children-active');
+              return;
+            }
             this.log(
               `idle:fallback — no session.idle within 5s of prompt:resolved (status=${this._status}, turns=${this.turnsCompleted})`,
             );
@@ -641,6 +653,13 @@ export class OpenCodeSession extends AgentSession {
                 this.status = 'stopped';
                 this.emit('exit');
                 break;
+              }
+
+              // Subagents still running — don't treat as turn complete
+              if (this.hasActiveChildren()) {
+                this.log('session:idle — skipping turn_end, children still running');
+                this.resetPromptTimer('children-active');
+                continue;
               }
 
               this.turnsCompleted++;

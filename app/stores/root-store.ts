@@ -24,6 +24,10 @@ export class RootStore {
     setSessionStoreWs(this.ws);
 
     this.ws.onReconnect(() => this.sessions.resubscribeAll());
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }
 
   subscribe(columns: string[]) {
@@ -38,9 +42,19 @@ export class RootStore {
         this.config.hydrate(msg.providers);
         break;
 
-      case 'card:updated':
+      case 'card:updated': {
+        const prev = this.cards.getCard(msg.data.id);
+        if (
+          msg.data.column === 'review' &&
+          prev && prev.column !== 'review' &&
+          !document.hasFocus() &&
+          Notification.permission === 'granted'
+        ) {
+          new Notification(msg.data.title, { body: 'moved to review' });
+        }
         this.cards.handleUpdated(msg.data);
         break;
+      }
 
       case 'card:deleted':
         this.cards.handleDeleted(msg.data.id);
