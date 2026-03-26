@@ -55,7 +55,10 @@ export function resolvePinnedCards(
       (c) => c.projectId === projectId && (c.column === 'review' || c.column === 'running') && !usedCardIds.has(c.id),
     );
 
-    // Sticky pass: keep currently-displayed cards that are still eligible
+    // Sticky pass: keep currently-displayed cards that are still eligible.
+    // Exception: release running cards when review cards are waiting,
+    // so the slot switches to the next review card after a prompt is sent.
+    const hasReviewCards = eligible.some((c) => c.column === 'review');
     const stickyCardIds = new Set<number>();
     const unfilledSlots: number[] = [];
     for (const idx of slotIndices) {
@@ -68,6 +71,11 @@ export function resolvePinnedCards(
           (card.column === 'review' || card.column === 'running') &&
           !usedCardIds.has(card.id)
         ) {
+          // Release running cards when review cards are available
+          if (card.column === 'running' && hasReviewCards) {
+            unfilledSlots.push(idx);
+            continue;
+          }
           result.set(idx, prevCardId);
           stickyCardIds.add(prevCardId);
           continue;

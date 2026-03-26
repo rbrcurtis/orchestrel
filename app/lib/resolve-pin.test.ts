@@ -296,6 +296,35 @@ describe('resolvePinnedCards', () => {
     expect(result.get(3)).toBe(2); // remaining card fills remaining slot
   });
 
+  it('releases a running card when review cards are waiting (prompt sent)', () => {
+    // Card 2 was in review, user sent a prompt → it moved to running.
+    // Card 1 is a new review card. The slot should switch to card 1.
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 2]]); // slot 1 was showing card 2 (was review, now running)
+    const result = resolvePinnedCards(slots, cards, prev);
+    expect(result.get(1)).toBe(1); // switches to review card
+  });
+
+  it('keeps a running card sticky when no review cards are waiting', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 2, projectId: 10, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 2]]);
+    const result = resolvePinnedCards(slots, cards, prev);
+    expect(result.get(1)).toBe(2); // stays — no review cards to replace it
+  });
+
   it('works with no previous results (fresh start)', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
