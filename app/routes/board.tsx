@@ -119,6 +119,7 @@ const BoardLayout = observer(function BoardLayout() {
     resolvedCards,
     pinSlot,
     closeSlot,
+    unpinSlot,
     selectCard: hookSelectCard,
     dropCard,
     onCardCreated,
@@ -416,6 +417,7 @@ const BoardLayout = observer(function BoardLayout() {
                 onPin={(projectId) => pinSlot(idx, projectId)}
                 setNewCardColumn={setNewCardColumn}
                 closeSlot={closeSlot}
+                unpinSlot={unpinSlot}
                 onCardCreated={onCardCreated}
               />
             );
@@ -441,6 +443,7 @@ type ColumnSlotProps = {
   onPin: (projectId: number) => void;
   setNewCardColumn: (col: string | null) => void;
   closeSlot: (index: number) => void;
+  unpinSlot: (index: number) => void;
   onCardCreated: (cardId: number, projectId: number | null) => void;
 };
 
@@ -457,6 +460,7 @@ const ColumnSlot = observer(function ColumnSlot({
   onPin,
   setNewCardColumn,
   closeSlot,
+  unpinSlot,
   onCardCreated,
 }: ColumnSlotProps) {
   const cardStore = useCardStore();
@@ -559,7 +563,7 @@ const ColumnSlot = observer(function ColumnSlot({
         ) : cardId != null ? (
           <CardDetail
             cardId={cardId}
-            onClose={() => closeSlot(index)}
+            onClose={() => pinProjectId != null ? unpinSlot(index) : closeSlot(index)}
             clearSlot={() => closeSlot(index)}
             slotIndex={index}
             pinned={pinProjectId != null}
@@ -586,7 +590,7 @@ const ColumnSlot = observer(function ColumnSlot({
                   </Badge>
                 ) : null;
               })()}
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => closeSlot(index)}>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => unpinSlot(index)}>
                 <X className="size-4" />
               </Button>
             </div>

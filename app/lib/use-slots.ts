@@ -145,6 +145,13 @@ export function applyCloseSlot(slots: SlotState[], index: number): SlotState[] {
   return next;
 }
 
+/** Fully remove a slot's pin and card — used by X buttons to dismiss a column. */
+export function applyUnpinSlot(slots: SlotState[], index: number): SlotState[] {
+  const next = [...slots];
+  next[index] = { type: 'empty' };
+  return next;
+}
+
 export function applyPinSlot(slots: SlotState[], index: number, projectId: number): SlotState[] {
   if (index === 0) return slots;
   const next = [...slots];
@@ -215,6 +222,7 @@ export type UseSlotsResult = {
   resolvedCards: Map<number, number>;
   pinSlot: (index: number, projectId: number) => void;
   closeSlot: (index: number) => void;
+  unpinSlot: (index: number) => void;
   selectCard: (cardId: number) => void;
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
   onCardCreated: (cardId: number, projectId: number | null) => void;
@@ -289,6 +297,12 @@ export function useSlots(columnCount: number, cards: Card[]): UseSlotsResult {
     writeLocalStorage(SLOTS_KEY, next);
   }
 
+  function unpinSlot(index: number) {
+    const next = applyUnpinSlot(slots, index);
+    setSlots(next);
+    writeLocalStorage(SLOTS_KEY, next);
+  }
+
   function selectCard(cardId: number) {
     // resolvedCards is already computed above in the hook body — reuse it
     const { slots: next, flashIndex } = applySelectCard(slots, cardId, cards, resolvedCards);
@@ -319,6 +333,7 @@ export function useSlots(columnCount: number, cards: Card[]): UseSlotsResult {
     resolvedCards,
     pinSlot,
     closeSlot,
+    unpinSlot,
     selectCard,
     dropCard,
     onCardCreated,
