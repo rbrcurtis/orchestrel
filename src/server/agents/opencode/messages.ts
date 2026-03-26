@@ -12,7 +12,7 @@ export function normalizeOpenCodeEvent(event: {
   type: string
   properties: Record<string, unknown>
 }): AgentMessage | null {
-  const ts = Date.now()
+  const fallback = Date.now()
 
   switch (event.type) {
     case 'message.part.updated': {
@@ -26,9 +26,11 @@ export function normalizeOpenCodeEvent(event: {
           callID?: string
           state?: { status: string; input?: Record<string, unknown>; output?: string; error?: string; title?: string }
           metadata?: { output?: string }
+          time?: { start?: number; end?: number }
         }
         delta?: string
       }
+      const ts = part.time?.start ?? fallback
 
       if (part.type === 'text') {
         // Use delta for streaming, fall back to full text
@@ -103,8 +105,10 @@ export function normalizeOpenCodeEvent(event: {
       const info = event.properties.info as {
         role?: string
         parts?: Array<{ type: string; text?: string }>
+        time?: { created?: number }
       } | undefined
       if (info?.role === 'user') {
+        const ts = info.time?.created ?? fallback
         const textParts = info.parts?.filter((p) => p.type === 'text') ?? []
         const content = textParts.map((p) => p.text ?? '').join('\n')
         return {
@@ -124,7 +128,7 @@ export function normalizeOpenCodeEvent(event: {
         type: 'error',
         role: 'system',
         content: msg,
-        timestamp: ts,
+        timestamp: fallback,
       }
     }
 

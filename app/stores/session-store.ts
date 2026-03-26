@@ -60,6 +60,26 @@ function defaultSession(): SessionState {
   };
 }
 
+/** Find insertion index to maintain timestamp sort order (insert after equal timestamps). */
+function findSortedInsertIdx(conversation: ConversationRow[], timestamp: number): number {
+  // Walk backward from end — most inserts are at or near the tail
+  for (let i = conversation.length - 1; i >= 0; i--) {
+    if (conversation[i].timestamp <= timestamp) return i + 1;
+  }
+  return 0;
+}
+
+/** Rebuild the toolCall.id → conversation index map from scratch. */
+function rebuildToolCallIdxMap(s: SessionState): void {
+  s.toolCallIdxMap.clear();
+  for (let i = 0; i < s.conversation.length; i++) {
+    const row = s.conversation[i];
+    if (row.type === 'tool_call' && row.toolCall?.id) {
+      s.toolCallIdxMap.set(row.toolCall.id, i);
+    }
+  }
+}
+
 export class SessionStore {
   sessions = observable.map<number, SessionState>();
   subscribedCards = new Set<number>();
@@ -198,19 +218,29 @@ export class SessionStore {
           }
           return; // Either replaced or kept existing — never append a duplicate
         }
-        // New tool_call: register its future index for in-place updates
-        s.toolCallIdxMap.set(msg.toolCall.id, s.conversation.length);
       }
 
       const row: ConversationRow = { ...msg, id };
       if (msg.meta?.optimistic) row.optimistic = true;
-      s.conversation.push(row);
 
-      // Record the index of the newly pushed text/thinking row as the active block
+      // Sorted insert by timestamp: find the last item with timestamp <= this
+      // message's timestamp and insert after it. This ensures messages from
+      // the same logical moment (e.g., tool_call and tool_result sharing
+      // part.time.start) stay grouped, and earlier messages (e.g., user) sort
+      // before later ones (e.g., assistant response).
+      const insertIdx = findSortedInsertIdx(s.conversation, msg.timestamp);
+      s.conversation.splice(insertIdx, 0, row);
+
+      // Shift existing tracked indices that are at or after the insert point
+      if (s.activeTextIdx !== null && s.activeTextIdx >= insertIdx) s.activeTextIdx++;
+      if (s.activeThinkingIdx !== null && s.activeThinkingIdx >= insertIdx) s.activeThinkingIdx++;
+      rebuildToolCallIdxMap(s);
+
+      // Record the index of the newly inserted text/thinking row as the active block
       if (msg.type === 'text') {
-        s.activeTextIdx = s.conversation.length - 1;
+        s.activeTextIdx = insertIdx;
       } else if (msg.type === 'thinking') {
-        s.activeThinkingIdx = s.conversation.length - 1;
+        s.activeThinkingIdx = insertIdx;
       }
 
       const tokens = extractContextTokens(msg);
@@ -258,14 +288,7 @@ export class SessionStore {
         }
       }
 
-      // Rebuild toolCallIdxMap from scratch after prepend (indices shifted)
-      s.toolCallIdxMap.clear();
-      for (let i = 0; i < s.conversation.length; i++) {
-        const row = s.conversation[i];
-        if (row.type === 'tool_call' && row.toolCall?.id) {
-          s.toolCallIdxMap.set(row.toolCall.id, i);
-        }
-      }
+      rebuildToolCallIdxMap(s);
 
       // Scan backward through conversation to seed context state from most recent turn
       let foundTokens = false;
