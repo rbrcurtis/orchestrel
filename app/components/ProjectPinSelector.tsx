@@ -27,9 +27,7 @@ export const ProjectPinSelector = observer(function ProjectPinSelector({ onSelec
             className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent text-sm text-left transition-colors"
             onClick={() => onSelect(p.id)}
           >
-            {p.color && (
-              <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: `var(--${p.color})` }} />
-            )}
+            {p.color && <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />}
             <span className="truncate">{p.name}</span>
           </button>
         ))}

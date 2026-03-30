@@ -39,7 +39,7 @@ export function Card({ id, title, color, queuePosition, onClick }: CardProps) {
     transition: isDragging ? 'none' : transition,
     touchAction: 'none' as const,
     opacity: isDragging ? 0 : 1,
-    ...(color ? { borderLeftColor: `var(--${color})` } : {}),
+    ...(color ? { borderLeftColor: color } : {}),
   };
 
   return (
@@ -183,7 +183,7 @@ export function CardOverlay({ title, color }: { title: string; color?: string | 
   return (
     <div
       className={`rounded bg-card border border-border px-3 py-2 shadow-lg cursor-grabbing select-none ${color ? 'border-l-3' : ''}`}
-      style={color ? { borderLeftColor: `var(--${color})` } : undefined}
+      style={color ? { borderLeftColor: color } : undefined}
     >
       <p className="text-sm text-foreground truncate">{title}</p>
     </div>

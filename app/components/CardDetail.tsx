@@ -245,7 +245,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                 className={`uppercase text-xs tracking-wide ${col === 'review' && cardProject?.color ? 'animate-review-glow' : ''}`}
                 style={
                   col === 'review' && cardProject?.color
-                    ? ({ '--glow-color': `var(--${cardProject.color})` } as React.CSSProperties)
+                    ? ({ '--glow-color': cardProject.color } as React.CSSProperties)
                     : undefined
                 }
               >
@@ -290,8 +290,8 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
             style={
               card.useWorktree && cardProject?.color
                 ? {
-                    color: `var(--${cardProject.color})`,
-                    filter: `drop-shadow(0 0 4px var(--${cardProject.color}))`,
+                    color: cardProject.color,
+                    filter: `drop-shadow(0 0 4px ${cardProject.color})`,
                   }
                 : undefined
             }
@@ -303,10 +303,8 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
               variant="secondary"
               className={`text-xs shrink-0 ${pinned && cardProject.color ? 'animate-review-glow' : ''}`}
               style={{
-                ...(cardProject.color ? { borderLeft: `3px solid var(--${cardProject.color})` } : {}),
-                ...(pinned && cardProject.color
-                  ? ({ '--glow-color': `var(--${cardProject.color})` } as React.CSSProperties)
-                  : {}),
+                ...(cardProject.color ? { borderLeft: `3px solid ${cardProject.color}` } : {}),
+                ...(pinned && cardProject.color ? ({ '--glow-color': cardProject.color } as React.CSSProperties) : {}),
               }}
             >
               {cardProject.name}
@@ -393,7 +391,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                             {p.color && (
                               <span
                                 className="w-2.5 h-2.5 rounded-full shrink-0"
-                                style={{ backgroundColor: `var(--${p.color})` }}
+                                style={{ backgroundColor: p.color }}
                               />
                             )}
                             {p.name}
@@ -749,10 +747,7 @@ export const NewCardDetail = observer(function NewCardDetail({
                   <SelectItem key={p.id} value={String(p.id)}>
                     <span className="flex items-center gap-2">
                       {p.color && (
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: `var(--${p.color})` }}
-                        />
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
                       )}
                       {p.name}
                     </span>

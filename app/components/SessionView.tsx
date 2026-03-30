@@ -239,6 +239,7 @@ export const SessionView = observer(function SessionView({
   }
 
   function handlePanelClick(e: React.MouseEvent) {
+    if (e.detail !== 1) return; // only single clicks — let double/triple clicks select text
     const down = mouseDownPos.current;
     mouseDownPos.current = null;
     if (!down) return;

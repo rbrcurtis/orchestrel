@@ -9,44 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Checkbox } from '~/components/ui/checkbox';
 import { AlertCircle } from 'lucide-react';
-
-const NEON_COLORS = [
-  'neon-cyan',
-  'neon-magenta',
-  'neon-violet',
-  'neon-amber',
-  'neon-lime',
-  'neon-coral',
-  'neon-electric',
-  'neon-plasma',
-  'neon-ice',
-  'neon-rose',
-  'neon-teal',
-  'neon-gold',
-  'neon-indigo',
-  'neon-acid',
-  'neon-crimson',
-  'neon-sky',
-] as const;
-
-const COLOR_LABELS: Record<string, string> = {
-  'neon-cyan': 'Cyan',
-  'neon-magenta': 'Magenta',
-  'neon-violet': 'Violet',
-  'neon-amber': 'Amber',
-  'neon-lime': 'Lime',
-  'neon-coral': 'Coral',
-  'neon-electric': 'Electric',
-  'neon-plasma': 'Plasma',
-  'neon-ice': 'Ice',
-  'neon-rose': 'Rose',
-  'neon-teal': 'Teal',
-  'neon-gold': 'Gold',
-  'neon-indigo': 'Indigo',
-  'neon-acid': 'Acid',
-  'neon-crimson': 'Crimson',
-  'neon-sky': 'Sky',
-};
+import { GradientColorPicker } from './GradientColorPicker';
 
 interface Project {
   id: number;
@@ -56,7 +19,7 @@ interface Project {
   isGitRepo: boolean;
   defaultBranch: string | null;
   defaultWorktree: boolean;
-  color: string | null;
+  color: string;
   defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   providerID: string;
@@ -74,7 +37,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const isGitRepo = project?.isGitRepo ?? false;
   const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? '');
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
-  const [color, setColor] = useState(project?.color ?? '');
+  const [color, setColor] = useState(project?.color ?? '#00f0ff');
   const [defaultModel, setDefaultModel] = useState(project?.defaultModel ?? 'sonnet');
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(
     project?.defaultThinkingLevel ?? 'high',
@@ -106,7 +69,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       setupCommands: setupCommands || undefined,
       defaultBranch: (isGitRepo && defaultBranch ? defaultBranch : undefined) as 'main' | 'dev' | undefined,
       defaultWorktree: isGitRepo ? defaultWorktree : undefined,
-      color: color || undefined,
+      color,
       defaultModel,
       defaultThinkingLevel,
       providerID,
@@ -173,20 +136,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
               {/* Color */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Color</label>
-                <div className="flex gap-2 flex-wrap">
-                  {NEON_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setColor(c)}
-                      className={`w-7 h-7 rounded-full border-2 transition-all ${
-                        color === c ? 'border-foreground scale-110' : 'border-transparent'
-                      }`}
-                      style={{ backgroundColor: `var(--${c})` }}
-                      title={COLOR_LABELS[c]}
-                    />
-                  ))}
-                </div>
+                <GradientColorPicker value={color} onChange={setColor} />
               </div>
 
               {/* Setup Commands */}

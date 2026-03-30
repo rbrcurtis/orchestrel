@@ -19,7 +19,7 @@ interface Project {
   defaultWorktree: boolean;
   defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
-  color: string | null;
+  color: string;
   providerID: string;
   createdAt: string;
 }
@@ -116,7 +116,7 @@ const SettingsProjectsModal = observer(function SettingsProjectsModal({ onClose 
                                 {project.color && (
                                   <span
                                     className="w-3 h-3 rounded-full shrink-0"
-                                    style={{ backgroundColor: `var(--${project.color})` }}
+                                    style={{ backgroundColor: project.color }}
                                   />
                                 )}
                                 <div className="min-w-0">

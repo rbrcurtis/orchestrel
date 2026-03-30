@@ -40,7 +40,7 @@ export const projectSchema = z.object({
   defaultModel: z.string(),
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
   providerID: z.string(),
-  color: z.string().nullable(),
+  color: z.string(),
   createdAt: z.string(),
 });
 
@@ -78,7 +78,7 @@ export const projectCreateSchema = z.object({
   defaultModel: z.string().optional(),
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   providerID: z.string().optional(),
-  color: z.string().nullable().optional(),
+  color: z.string().optional(),
 });
 
 export const projectUpdateSchema = z.object({ id: z.number() }).merge(projectCreateSchema.partial());

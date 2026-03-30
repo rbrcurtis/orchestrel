@@ -30,14 +30,24 @@ export function useResizablePanel() {
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startWidth = widthRef.current;
+    const actualWidth = panelRef.current?.getBoundingClientRect().width;
+    const startWidth = actualWidth ?? widthRef.current;
 
+    if (actualWidth != null && Math.abs(actualWidth - widthRef.current) > 1) {
+      console.warn('[ResizeHandle] widthRef drift:', { ref: widthRef.current, dom: actualWidth });
+    }
+    console.log('[ResizeHandle] drag start', { startX, startWidth, refWidth: widthRef.current });
+
+    let moveCount = 0;
     function onMouseMove(ev: MouseEvent) {
       const delta = startX - ev.clientX;
       const newWidth = Math.max(MIN_WIDTH, startWidth + delta);
       widthRef.current = newWidth;
       if (panelRef.current) {
         panelRef.current.style.width = `${newWidth}px`;
+      }
+      if (moveCount++ < 3) {
+        console.log('[ResizeHandle] move', { delta, newWidth });
       }
     }
 
@@ -47,6 +57,7 @@ export function useResizablePanel() {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       localStorage.setItem(STORAGE_KEY, String(widthRef.current));
+      console.log('[ResizeHandle] drag end', { finalWidth: widthRef.current, moves: moveCount });
     }
 
     document.body.style.cursor = 'col-resize';
@@ -67,10 +78,10 @@ export function ResizeHandle({ onMouseDown, color }: ResizeHandleProps) {
   return (
     <div
       onMouseDown={onMouseDown}
-      className={`w-1 hover:w-1.5 cursor-col-resize transition-colors shrink-0 hidden lg:block ${
+      className={`w-1 cursor-col-resize transition-colors shrink-0 hidden lg:block ${
         color ? '' : 'bg-border hover:bg-neon-cyan'
       }`}
-      style={color ? { backgroundColor: `var(--${color})` } : undefined}
+      style={color ? { backgroundColor: color } : undefined}
     />
   );
 }

@@ -276,10 +276,7 @@ const BoardLayout = observer(function BoardLayout() {
                         }}
                       />
                       {p.color && (
-                        <span
-                          className="size-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: `var(--${p.color})` }}
-                        />
+                        <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
                       )}
                       <span className="text-sm truncate">{p.name}</span>
                     </label>
@@ -563,7 +560,7 @@ const ColumnSlot = observer(function ColumnSlot({
         ) : cardId != null ? (
           <CardDetail
             cardId={cardId}
-            onClose={() => pinProjectId != null ? unpinSlot(index) : closeSlot(index)}
+            onClose={() => (pinProjectId != null ? unpinSlot(index) : closeSlot(index))}
             clearSlot={() => closeSlot(index)}
             slotIndex={index}
             pinned={pinProjectId != null}
@@ -582,8 +579,8 @@ const ColumnSlot = observer(function ColumnSlot({
                     variant="secondary"
                     className={`text-xs shrink-0 ${p.color ? 'animate-review-glow' : ''}`}
                     style={{
-                      ...(p.color ? { borderLeft: `3px solid var(--${p.color})` } : {}),
-                      ...(p.color ? ({ '--glow-color': `var(--${p.color})` } as React.CSSProperties) : {}),
+                      ...(p.color ? { borderLeft: `3px solid ${p.color}` } : {}),
+                      ...(p.color ? ({ '--glow-color': p.color } as React.CSSProperties) : {}),
                     }}
                   >
                     {p.name}

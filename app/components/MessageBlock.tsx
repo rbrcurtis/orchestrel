@@ -226,7 +226,7 @@ const TextBlock = observer(function TextBlock({
   message: AgentMessage;
   accentColor?: string | null;
 }) {
-  const linkColor = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
+  const linkColor = accentColor || 'var(--neon-cyan)';
   return (
     <div className="group relative space-y-2 py-2 min-w-0 max-w-full overflow-hidden">
       <CopyButton text={message.content} />
@@ -422,7 +422,7 @@ function UserBlock({ message, accentColor }: { message: AgentMessage; accentColo
     displayText = fileMatch[2] || '';
   }
 
-  const accentVar = accentColor ? `var(--${accentColor})` : 'var(--neon-cyan)';
+  const accentVar = accentColor || 'var(--neon-cyan)';
 
   return (
     <div className="flex justify-end my-2 min-w-0">
