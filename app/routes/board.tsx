@@ -364,7 +364,7 @@ const BoardLayout = observer(function BoardLayout() {
                   return (
                     <div
                       className="absolute inset-0 z-10 pointer-events-none animate-slot-flash"
-                      style={{ backgroundColor: clr ? `var(--${clr})` : 'white' }}
+                      style={{ backgroundColor: clr ?? 'white' }}
                       onAnimationEnd={() => setMobileFlash(false)}
                     />
                   );
@@ -516,7 +516,7 @@ const ColumnSlot = observer(function ColumnSlot({
         return (
           <div
             className={`w-1 shrink-0 transition-colors ${c ? '' : 'bg-border'}`}
-            style={c ? { backgroundColor: `var(--${c})` } : undefined}
+            style={c ? { backgroundColor: c } : undefined}
           />
         );
       })()}
@@ -524,7 +524,7 @@ const ColumnSlot = observer(function ColumnSlot({
         {flash && (
           <div
             className="absolute inset-0 z-10 pointer-events-none animate-slot-flash"
-            style={{ backgroundColor: borderColor ? `var(--${borderColor})` : 'white' }}
+            style={{ backgroundColor: borderColor ?? 'white' }}
             onAnimationEnd={onFlashDone}
           />
         )}
