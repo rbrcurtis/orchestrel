@@ -280,24 +280,12 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
             <span className="text-sm font-medium truncate flex-1">{card.title}</span>
           )}
           {card.sessionId && <CopyResumeButton sessionId={card.sessionId} cardId={card.id} />}
-          <span
-            title={
-              card.useWorktree
-                ? `Worktree from: ${card.sourceBranch ?? cardProject?.defaultBranch ?? 'default branch'}`
-                : 'No worktree'
-            }
-            className="flex items-center shrink-0"
-            style={
-              card.useWorktree && cardProject?.color
-                ? {
-                    color: cardProject.color,
-                    filter: `drop-shadow(0 0 4px ${cardProject.color})`,
-                  }
-                : undefined
-            }
-          >
-            <GitBranch className={cn('size-3.5', !card.useWorktree && 'text-dim')} />
-          </span>
+          <CopyPathButton
+            worktreePath={card.worktreePath}
+            projectPath={cardProject?.path}
+            useWorktree={card.useWorktree}
+            color={card.useWorktree && cardProject?.color ? cardProject.color : undefined}
+          />
           {cardProject && (
             <Badge
               variant="secondary"
@@ -845,6 +833,45 @@ export const NewCardDetail = observer(function NewCardDetail({
     </div>
   );
 });
+
+function CopyPathButton({
+  worktreePath,
+  projectPath,
+  useWorktree,
+  color,
+}: {
+  worktreePath: string | null;
+  projectPath?: string;
+  useWorktree: boolean;
+  color?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const path = worktreePath ?? projectPath;
+
+  function handleCopy() {
+    if (!path) return;
+    navigator.clipboard.writeText(path);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      disabled={!path}
+      title={path ? `Copy path: ${path}` : 'No path available'}
+      className="flex items-center shrink-0 hover:opacity-70 transition-opacity disabled:opacity-30 disabled:cursor-default"
+      style={useWorktree && color ? { color, filter: `drop-shadow(0 0 4px ${color})` } : undefined}
+    >
+      {copied ? (
+        <Check className="size-3.5 text-success" />
+      ) : (
+        <GitBranch className={cn('size-3.5', !useWorktree && 'text-dim')} />
+      )}
+    </button>
+  );
+}
 
 function CopyResumeButton({ sessionId, cardId }: { sessionId: string; cardId: number }) {
   const [copied, setCopied] = useState(false);

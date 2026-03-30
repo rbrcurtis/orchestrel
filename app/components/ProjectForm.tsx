@@ -49,7 +49,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const projects = useProjectStore();
   const config = useConfigStore();
 
-  const isValid = name.trim() && path.trim() && (!isGitRepo || defaultBranch);
+  const isValid = name.trim() && path.trim();
 
   function handleProviderChange(newProvider: string) {
     setProviderID(newProvider);
