@@ -34,6 +34,7 @@ export interface SessionState {
   subagents: Map<string, { title: string; lastActivity: string; status: 'running' | 'idle' }>;
   activeTextIdx: number | null; // index of current open text block for delta accumulation
   activeThinkingIdx: number | null; // index of current open thinking block for delta accumulation
+  conversationIds: Set<string>; // content hashes for dedup
 }
 
 function extractContextTokens(msg: AgentMessage): number | null {
@@ -57,6 +58,7 @@ function defaultSession(): SessionState {
     subagents: observable.map(),
     activeTextIdx: null,
     activeThinkingIdx: null,
+    conversationIds: new Set(),
   };
 }
 
@@ -166,6 +168,9 @@ export class SessionStore {
 
       const { timestamp, ...stable } = msg;
       const id = contentHashSync(msg.type, stable);
+
+      if (s.conversationIds.has(id)) return;
+      s.conversationIds.add(id);
 
       // Server echo for a user message — confirm the optimistic row.
       // Use endsWith for matching: when files are attached the server prepends
@@ -289,6 +294,7 @@ export class SessionStore {
       }
 
       rebuildToolCallIdxMap(s);
+      s.conversationIds = new Set(s.conversation.map((r) => r.id));
 
       // Scan backward through conversation to seed context state from most recent turn
       let foundTokens = false;
