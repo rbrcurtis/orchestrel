@@ -50,6 +50,7 @@ export class OpenCodeSession extends AgentSession {
   private _stopRequested = false;
   private stopRetryInterval: ReturnType<typeof setInterval> | null = null;
   private static STOP_TIMEOUT_MS = 30_000;
+  private lastIdleTime = 0;
 
   constructor(
     private client: unknown,
@@ -409,7 +410,8 @@ export class OpenCodeSession extends AgentSession {
   private subscribeToEvents(): Promise<void> {
     const sdk = this.client as unknown as SdkClient;
     this.abortController?.abort(); // tear down previous SSE stream before reconnecting
-    this.abortController = new AbortController();
+    const controller = new AbortController();
+    this.abortController = controller;
     this.sseAlive = true;
 
     return new Promise<void>((resolveConnected) => {
@@ -417,7 +419,7 @@ export class OpenCodeSession extends AgentSession {
 
       const subscribe = async () => {
         try {
-          const events = await sdk.event.subscribe({ directory: this.cwd }, { signal: this.abortController!.signal });
+          const events = await sdk.event.subscribe({ directory: this.cwd }, { signal: controller.signal });
 
           // Resolve immediately once SSE connection is established
           // Don't wait for first event — that would deadlock if no other sessions are active
@@ -427,7 +429,7 @@ export class OpenCodeSession extends AgentSession {
           }
 
           for await (const event of events.stream) {
-            if (this.abortController?.signal.aborted) break;
+            if (controller.signal.aborted) break;
 
             // Auto-approve ALL permission requests (Orchestrel runs in full-trust mode)
             // Must run before session filter so subagent permissions are also approved
@@ -648,6 +650,12 @@ export class OpenCodeSession extends AgentSession {
               const sid = (event.properties as { sessionID?: string }).sessionID;
               if (sid && sid !== this.sessionId) continue;
 
+              // Dedup: OpenCode broadcasts idle 3× (multi-channel SSE).
+              // Skip if we already processed one within 2s.
+              const now = Date.now();
+              if (now - this.lastIdleTime < 2000) continue;
+              this.lastIdleTime = now;
+
               // Stop was requested — abort confirmed, clean up
               if (this._stopRequested) {
                 this.clearStopRetry();
@@ -746,7 +754,7 @@ export class OpenCodeSession extends AgentSession {
             resolved = true;
             resolveConnected();
           }
-          if (this.abortController?.signal.aborted || this.status === 'stopped') return;
+          if (controller.signal.aborted || this.status === 'stopped') return;
           this.log('sse:disconnect reason=' + String(err));
           this.status = 'errored';
           this.emit('message', {
@@ -775,7 +783,7 @@ export class OpenCodeSession extends AgentSession {
       };
 
       subscribe();
-      this.sseCleanup = () => this.abortController?.abort();
+      this.sseCleanup = () => controller.abort();
     });
   }
 }
