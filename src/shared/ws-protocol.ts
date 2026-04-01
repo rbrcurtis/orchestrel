@@ -254,7 +254,7 @@ export const serverMessage = z.discriminatedUnion('type', [
     cards: z.array(cardSchema),
     projects: z.array(projectSchema),
     providers: z.record(z.string(), providerConfigSchema),
-    user: userSchema,
+    user: userSchema.optional(),
     users: z.array(userSchema).optional(),
   }),
   z.object({ type: z.literal('card:updated'), data: cardSchema }),
