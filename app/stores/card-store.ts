@@ -30,6 +30,10 @@ export class CardStore {
     return items.sort((a, b) => a.position - b.position);
   }
 
+  get cardsByCreatedDesc(): Card[] {
+    return Array.from(this.cards.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   getCard(id: number): Card | undefined {
     return this.cards.get(id);
   }
@@ -86,6 +90,31 @@ export class CardStore {
         thinkingLevel: data.thinkingLevel,
         useWorktree: data.useWorktree,
         sourceBranch: data.sourceBranch,
+      },
+    });
+    runInAction(() => this.cards.set(card.id, card));
+    return card;
+  }
+
+  async createChatCard(data: {
+    description: string;
+    projectId: number;
+    model?: string;
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+  }): Promise<Card> {
+    const requestId = uuid();
+    const card = await ws().mutate<Card>({
+      type: 'card:create',
+      requestId,
+      data: {
+        title: 'New chat',
+        description: data.description,
+        column: 'running',
+        projectId: data.projectId,
+        model: data.model,
+        thinkingLevel: data.thinkingLevel,
+        useWorktree: false,
+        archiveOthers: true,
       },
     });
     runInAction(() => this.cards.set(card.id, card));
