@@ -42,10 +42,18 @@ export const projectSchema = z.object({
   providerID: z.string(),
   color: z.string(),
   createdAt: z.string(),
+  userIds: z.array(z.number()).optional(),
+});
+
+export const userSchema = z.object({
+  id: z.number(),
+  email: z.string(),
+  role: z.string(),
 });
 
 export type Card = z.infer<typeof cardSchema>;
 export type Project = z.infer<typeof projectSchema>;
+export type User = z.infer<typeof userSchema>;
 
 // ── Column enum ──────────────────────────────────────────────────────────────
 
@@ -81,7 +89,9 @@ export const projectCreateSchema = z.object({
   color: z.string().optional(),
 });
 
-export const projectUpdateSchema = z.object({ id: z.number() }).merge(projectCreateSchema.partial());
+export const projectUpdateSchema = z
+  .object({ id: z.number(), userIds: z.array(z.number()).optional() })
+  .merge(projectCreateSchema.partial());
 
 // ── Provider config schema ───────────────────────────────────────────────────
 
@@ -244,6 +254,8 @@ export const serverMessage = z.discriminatedUnion('type', [
     cards: z.array(cardSchema),
     projects: z.array(projectSchema),
     providers: z.record(z.string(), providerConfigSchema),
+    user: userSchema,
+    users: z.array(userSchema).optional(),
   }),
   z.object({ type: z.literal('card:updated'), data: cardSchema }),
   z.object({ type: z.literal('card:deleted'), data: z.object({ id: z.number() }) }),
