@@ -299,7 +299,7 @@ git commit -m "feat: auth returns email from CF JWT instead of bare boolean"
 
 Replace the entire file:
 
-```typescript
+````typescript
 // src/server/ws/connections.ts
 import type { WebSocket } from 'ws';
 import type { ServerMessage } from '../../shared/ws-protocol';
@@ -327,77 +327,24 @@ export class ConnectionManager {
     return this.identities.get(ws);
   }
 
-  /** Get all connections that can see a given project ID */
-  connectionsForProject(projectId: number): WebSocket[] {
-    const result: WebSocket[] = [];
-    for (const [ws, identity] of this.identities) {
-      if (identity.role === 'admin') {
-        result.push(ws);
-      }
-      // For non-admin, caller must check project_users — this method
-      // only handles the admin shortcut. Use withVisibility() for full check.
-    }
-    return result;
+  /** Iterate all connections with their identities */
+  *entries(): IterableIterator<[WebSocket, UserIdentity]> {
+    yield* this.identities.entries();
   }
 
   send(ws: WebSocket, msg: ServerMessage) {
     if (ws.readyState === 1) ws.send(JSON.stringify(msg));
   }
 }
-```
 
-Note: The `connectionsForProject` method above is a partial helper — full visibility checks happen in the handler layer using `userService.visibleProjectIds()`. Remove `connectionsForProject` if it proves unnecessary during implementation.
+- [ ] **Step 2: Resolve identity in upgrade handler, pass via req to connection handler**
 
-- [ ] **Step 2: Update all callers of `connections.add(ws)` to pass identity**
-
-In `src/server/ws/server.ts` (line 22), the `wss.on('connection')` handler needs the identity. We need to pass `req` through the connection event. Update `createWsServer`:
-
-```typescript
-// src/server/ws/server.ts — update createWsServer function
-// The wss.on('connection') callback receives (ws, req) — req is passed via handleUpgrade
-
-wss.on('connection', async (ws, req) => {
-  const { validateCfAccess: validate } = await import('./auth');
-  const { userService, LOCAL_ADMIN } = await import('../services/user');
-
-  // Identity was already validated in upgrade handler — extract it here
-  const auth = await validate(req);
-  let identity: import('../services/user').UserIdentity;
-  if (auth.isLocal || !auth.email) {
-    identity = LOCAL_ADMIN;
-  } else {
-    identity = await userService.findOrCreate(auth.email);
-  }
-
-  connections.add(ws, identity);
-  console.log(`[ws] connection opened: ${identity.email} (${identity.role})`);
-
-  ws.on('message', (raw) => {
-    try {
-      const data = JSON.parse(raw.toString());
-      handleMessage(ws, data, connections);
-    } catch (err) {
-      console.error('WS message parse error:', err);
-    }
-  });
-
-  ws.on('close', () => {
-    clientSubs.unsubscribeAll(ws);
-    connections.remove(ws);
-  });
-});
-```
-
-Wait — the current `createWsServer` takes `handleMessage` and `clientSubs` as params but doesn't have access to `req` in the right place. Actually, looking at `server.ts:176-178`, the `wss.emit('connection', ws, req)` already passes `req` as the second arg. So the `wss.on('connection', (ws, req) => ...)` callback already receives it — it's just not used today.
-
-The challenge is that `createWsServer` is a standalone function. We need to restructure it slightly so the connection handler can resolve identity. The simplest approach: instead of resolving identity in the connection handler, resolve it in the upgrade handler and stash it on the request object.
-
-Better approach — resolve identity in the upgrade handler (where we already validate CF Access) and attach it to `req`:
+The approach: resolve identity in the upgrade handler (where CF Access is already validated) and stash it on `req`. The `wss.on('connection')` callback already receives `(ws, req)` from the ws library — just read it back.
 
 In `src/server/ws/server.ts`, update the upgrade handler (lines 164-179):
 
 ```typescript
-// In the upgrade handler, after validateCfAccess:
+// In the upgrade handler, replace the existing validateCfAccess + handleUpgrade block:
 const auth = await validateCfAccess(req);
 if (!auth.valid) {
   socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -415,7 +362,7 @@ wss!.handleUpgrade(req, socket, head, (ws) => {
 });
 ```
 
-Then in `createWsServer`, update the connection handler:
+Then in `createWsServer`, update the connection handler to read identity from req:
 
 ```typescript
 wss.on('connection', (ws, req) => {
@@ -423,11 +370,9 @@ wss.on('connection', (ws, req) => {
   connections.add(ws, identity);
   console.log(`[ws] connection: ${identity.email} (${identity.role})`);
 
-  // ... rest unchanged
+  // ... rest of handler unchanged (message parsing, close cleanup)
 });
 ```
-
-Update `createWsServer` signature to accept `req` in the connection callback — actually, `wss.on('connection')` already receives `(ws, req)` by default from the ws library. Just update the callback signature.
 
 - [ ] **Step 3: Apply the same changes to `src/server/init.ts`**
 
@@ -690,23 +635,48 @@ const { userIds, ...projectData } = msg.data;
 // Update the project with projectData (without userIds)
 const project = await projectService.updateProject(projectData.id, projectData);
 
-// If admin sent userIds, update project user assignments
+// If admin sent userIds, update project user assignments and re-sync affected clients
 if (userIds !== undefined) {
   const identity = connections.getIdentity(ws);
   if (identity?.role === 'admin') {
     const { userService } = await import('../../services/user');
     await userService.setProjectUsers(projectData.id, userIds);
 
-    // Trigger re-sync for all connected clients affected by the change
-    // (New approach: just re-sync everyone — simple and correct)
-    // TODO: This could be optimized to only re-sync affected users
+    // Re-sync all connected non-admin clients so their visibility updates.
+    // Each client gets a fresh sync with their updated visible projects/cards.
+    // This is simple and correct — assignment changes are infrequent.
+    for (const [clientWs, clientIdentity] of connections.entries()) {
+      if (clientWs === ws) continue; // admin who made the change gets mutation:ok
+      if (clientIdentity.role === 'admin') continue; // admins see everything, no change needed
+
+      const visible = await userService.visibleProjectIds(clientIdentity);
+      const [syncCards, syncProjects] = await Promise.all([
+        cardService.listCards(),
+        projectService.listProjects(),
+      ]);
+
+      const filteredCards = visible === 'all'
+        ? syncCards
+        : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+      const filteredProjects = visible === 'all'
+        ? syncProjects
+        : syncProjects.filter((p) => (visible as number[]).includes(p.id));
+
+      connections.send(clientWs, {
+        type: 'sync',
+        cards: filteredCards as unknown as Card[],
+        projects: filteredProjects as unknown as Project[],
+        providers: getProvidersForClient(),
+        user: { id: clientIdentity.id, email: clientIdentity.email, role: clientIdentity.role },
+      });
+    }
   }
 }
 
 connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: project });
 ```
 
-Read the existing `handleProjectUpdate` first to see the exact structure before modifying.
+Note: This handler needs access to `cardService`, `projectService`, `getProvidersForClient`, and the Card/Project types. Import them at the top of the handler file, or pass them through. Read the existing `handleProjectUpdate` first to see how it currently accesses these.
 
 - [ ] **Step 2: Commit**
 
@@ -726,35 +696,19 @@ git commit -m "feat: handle userIds in project:update for user assignment"
 
 - [ ] **Step 1: Add currentUser to RootStore**
 
-In `app/stores/root-store.ts`, add a `currentUser` observable:
+`RootStore` currently doesn't use `makeAutoObservable`. Since `currentUser` needs to be reactive (the settings button conditionally renders based on role), add MobX observability to `RootStore`:
 
-```typescript
-import { makeAutoObservable } from 'mobx';
-import type { User } from '../../src/shared/ws-protocol';
-
-// In the RootStore class:
-currentUser: User | null = null;
-
-// In the constructor, make it observable:
-constructor() {
-  // ... existing code
-  makeAutoObservable(this, {}, { autoBind: true });
-  // Or just add currentUser as an observable field
-}
-```
-
-Wait — `RootStore` doesn't use `makeAutoObservable`. The stores are separate MobX stores. The simplest approach: add `currentUser` as a plain property on `RootStore` (it doesn't need to be reactive since it's set once on sync and doesn't change).
-
-Actually, for the settings button visibility to react to `currentUser`, it should be observable. Add MobX:
+In `app/stores/root-store.ts`:
 
 ```typescript
 import { makeAutoObservable } from 'mobx';
 
 export class RootStore {
   currentUser: { id: number; email: string; role: string } | null = null;
-  // ... existing fields
+  // ... existing fields (cards, config, projects, sessions, ws)
 
   constructor() {
+    // Add makeAutoObservable, marking sub-stores and ws as non-observable
     makeAutoObservable(this, {
       ws: false,
       cards: false,
@@ -762,9 +716,8 @@ export class RootStore {
       projects: false,
       sessions: false,
     });
-    // ... rest of constructor
+    // ... rest of existing constructor unchanged
   }
-}
 ```
 
 Update `handleMessage` for the sync case (lines 39-43):
@@ -932,3 +885,4 @@ Set `ADMIN_EMAILS=test@example.com` and restart. Local access should still be ad
 git add -A
 git commit -m "fix: end-to-end verification fixes"
 ```
+````
