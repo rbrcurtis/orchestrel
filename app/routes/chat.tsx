@@ -4,7 +4,7 @@ import { Outlet, useNavigate, useParams, Link, useLocation } from 'react-router'
 import { Settings, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { ChatSidebar } from '~/components/ChatSidebar';
 import { Button } from '~/components/ui/button';
-import { useStore, useCardStore, useProjectStore } from '~/stores/context';
+import { useStore } from '~/stores/context';
 import SettingsProjectsModal from '~/routes/settings.projects';
 
 const SIDEBAR_KEY = 'chat-sidebar-open';
