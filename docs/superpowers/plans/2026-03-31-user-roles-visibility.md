@@ -506,7 +506,6 @@ case 'subscribe': {
 
   // For admin, attach userIds to each project and include full user list
   let users: Array<{ id: number; email: string; role: string }> | undefined;
-  const projectsWithUsers = projects as unknown as Card[]; // will be cast properly
   if (identity.role === 'admin') {
     users = await userService.listUsers();
     // Attach userIds to each project for the admin UI
@@ -524,8 +523,12 @@ case 'subscribe': {
     users,
   });
 
-  // Subscribe to board:changed — forward only if card's project is visible
-  clientSubs.subscribe(ws, 'board:changed', (payload) => {
+  // Subscribe to board:changed — forward only if card's project is visible.
+  // IMPORTANT: Use dynamic visibility check (query DB each time) instead of
+  // closing over the `visible` snapshot. This ensures that when an admin changes
+  // project assignments and sends a re-sync, the broadcast handler also picks up
+  // the new visibility without requiring a reconnect.
+  clientSubs.subscribe(ws, 'board:changed', async (payload) => {
     const { card, oldColumn, newColumn, id } = payload as {
       card: CardEntity | null;
       oldColumn: string | null;
@@ -537,9 +540,14 @@ case 'subscribe': {
       return;
     }
 
-    // Check project visibility
-    if (visible !== 'all' && (card.projectId == null || !visible.includes(card.projectId))) {
-      return;
+    // Dynamic visibility check — re-query on each event
+    const currentIdentity = connections.getIdentity(ws);
+    if (!currentIdentity) return;
+    if (currentIdentity.role !== 'admin') {
+      const currentVisible = await userService.visibleProjectIds(currentIdentity);
+      if (currentVisible !== 'all' && (card.projectId == null || !currentVisible.includes(card.projectId))) {
+        return;
+      }
     }
 
     const relevant =
@@ -551,19 +559,29 @@ case 'subscribe': {
     }
   });
 
-  // Subscribe to project updates — only for visible projects
-  const projectsToSubscribe = visible === 'all'
-    ? allProjects
-    : allProjects.filter((p) => visible.includes(p.id));
-
-  for (const p of projectsToSubscribe) {
-    clientSubs.subscribe(ws, `project:${p.id}:updated`, (payload) => {
+  // Subscribe to project updates — admins get all, regular users get visible.
+  // For regular users, subscribe to ALL projects so that when assignments change,
+  // the handler can dynamically check visibility. The handler filters before sending.
+  for (const p of allProjects) {
+    clientSubs.subscribe(ws, `project:${p.id}:updated`, async (payload) => {
+      const currentIdentity = connections.getIdentity(ws);
+      if (!currentIdentity) return;
+      if (currentIdentity.role !== 'admin') {
+        const currentVisible = await userService.visibleProjectIds(currentIdentity);
+        if (currentVisible !== 'all' && !currentVisible.includes(p.id)) return;
+      }
       connections.send(ws, {
         type: 'project:updated',
         data: payload as import('../../shared/ws-protocol').Project,
       });
     });
-    clientSubs.subscribe(ws, `project:${p.id}:deleted`, (payload) => {
+    clientSubs.subscribe(ws, `project:${p.id}:deleted`, async (payload) => {
+      const currentIdentity = connections.getIdentity(ws);
+      if (!currentIdentity) return;
+      if (currentIdentity.role !== 'admin') {
+        const currentVisible = await userService.visibleProjectIds(currentIdentity);
+        if (currentVisible !== 'all' && !currentVisible.includes(p.id)) return;
+      }
       connections.send(ws, { type: 'project:deleted', data: payload as { id: number } });
     });
   }
@@ -598,17 +616,11 @@ case 'subscribe': {
 }
 ```
 
-- [ ] **Step 2: Handle visibility caveat for board:changed**
-
-The `visible` variable captured in the subscribe closure is a snapshot. If a user gets added to a new project, the `board:changed` handler won't know about it until the user reconnects. This is fine because the spec says assignment changes trigger a fresh `sync` — so the user will get re-subscribed.
-
-No code change needed — just documenting the behavior.
-
-- [ ] **Step 3: Verify cards are still synced correctly for local connections**
+- [ ] **Step 2: Verify cards are still synced correctly for local connections**
 
 Restart dev server, verify the board loads with all cards (local = admin).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add src/server/ws/handlers.ts
