@@ -63,6 +63,7 @@ export const cardCreateSchema = z.object({
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   useWorktree: z.boolean().optional(),
   sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
+  archiveOthers: z.boolean().optional(),
 });
 
 export const cardUpdateSchema = z

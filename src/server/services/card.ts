@@ -36,7 +36,7 @@ class CardService {
     return cards.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  async createCard(data: Partial<Card>): Promise<Card> {
+  async createCard(data: Partial<Card> & { archiveOthers?: boolean }): Promise<Card> {
     const col = (data.column ?? 'backlog') as Column;
 
     // Compute next position in column
@@ -71,6 +71,10 @@ class CardService {
       updatedAt: now,
     });
     await card.save();
+
+    if (data.archiveOthers) {
+      await this.archiveAllNonArchived(card.id);
+    }
 
     return card;
   }
@@ -144,6 +148,27 @@ class CardService {
     card.updatedAt = new Date().toISOString();
     await card.save();
     return card;
+  }
+
+  async archiveAllNonArchived(excludeId?: number): Promise<void> {
+    const toArchive = await Card.find({
+      where: [
+        { column: 'backlog' as Column },
+        { column: 'ready' as Column },
+        { column: 'running' as Column },
+        { column: 'review' as Column },
+      ],
+    });
+
+    const filtered = excludeId ? toArchive.filter((c) => c.id !== excludeId) : toArchive;
+    if (filtered.length === 0) return;
+
+    const now = new Date().toISOString();
+    for (const c of filtered) {
+      c.column = 'archive' as Column;
+      c.updatedAt = now;
+    }
+    await Card.save(filtered);
   }
 
   async suggestTitle(description: string): Promise<string> {
