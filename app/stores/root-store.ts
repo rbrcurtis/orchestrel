@@ -46,11 +46,16 @@ export class RootStore {
         const prev = this.cards.getCard(msg.data.id);
         if (
           msg.data.column === 'review' &&
-          prev && prev.column !== 'review' &&
+          prev &&
+          prev.column !== 'review' &&
           !document.hasFocus() &&
           Notification.permission === 'granted'
         ) {
-          new Notification(msg.data.title, { body: 'moved to review' });
+          const n = new Notification(msg.data.title, { body: 'moved to review' });
+          n.onclick = () => {
+            window.focus();
+            window.dispatchEvent(new CustomEvent('orchestrel:focus-card', { detail: { cardId: msg.data.id } }));
+          };
         }
         this.cards.handleUpdated(msg.data);
         break;

@@ -75,6 +75,7 @@ export class ProjectStore {
       data: {
         ...data,
         setupCommands: data.setupCommands ?? undefined,
+        color: data.color ?? undefined,
       },
     });
     this.projects.set(project.id, project);
@@ -104,6 +105,7 @@ export class ProjectStore {
         data: {
           ...data,
           setupCommands: data.setupCommands ?? undefined,
+          color: data.color ?? undefined,
         },
       });
       this.projects.set(project.id, project);

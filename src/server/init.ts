@@ -100,7 +100,7 @@ export async function initBackend(): Promise<{
   const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', (ws, req) => {
-    const identity = (req as Record<string, unknown>).__userIdentity as import('./services/user').UserIdentity;
+    const identity = (req as unknown as Record<string, unknown>).__userIdentity as import('./services/user').UserIdentity;
     connections.add(ws, identity);
     console.log(`[ws] connection: ${identity.email} (${identity.role})`);
     ws.on('message', (raw) => {
@@ -129,7 +129,7 @@ export async function initBackend(): Promise<{
       }
       const { userService, LOCAL_ADMIN } = await import('./services/user');
       const identity = auth.isLocal || !auth.email ? LOCAL_ADMIN : await userService.findOrCreate(auth.email);
-      (req as Record<string, unknown>).__userIdentity = identity;
+      (req as unknown as Record<string, unknown>).__userIdentity = identity;
 
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);

@@ -139,6 +139,15 @@ const BoardLayout = observer(function BoardLayout() {
   const [mobileCardId, setMobileCardId] = useState<number | null>(null);
   const [mobileFlash, setMobileFlash] = useState(false);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
+      selectCard(cardId);
+    };
+    window.addEventListener('orchestrel:focus-card', handler);
+    return () => window.removeEventListener('orchestrel:focus-card', handler);
+  }); // intentionally no deps — selectCard is a local function that closes over current state
+
   function selectCard(id: number | null) {
     setNewCardColumn(null);
     if (!isDesktop) {
