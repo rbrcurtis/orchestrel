@@ -4,6 +4,7 @@ import { join } from 'path';
 import { mkdirSync } from 'fs';
 import { Card, CardSubscriber } from './Card';
 import { Project, ProjectSubscriber } from './Project';
+import { User, ProjectUser } from './User';
 
 const DB_DIR = join(process.cwd(), 'data');
 mkdirSync(DB_DIR, { recursive: true });
@@ -11,7 +12,7 @@ mkdirSync(DB_DIR, { recursive: true });
 export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
   database: join(DB_DIR, 'orchestrel.db'),
-  entities: [Card, Project],
+  entities: [Card, Project, User, ProjectUser],
   subscribers: [CardSubscriber, ProjectSubscriber],
   synchronize: false,
 });
@@ -48,6 +49,24 @@ export async function initDatabase(): Promise<void> {
     }
     // Fill any nulls with default
     await runner.query(`UPDATE projects SET color = '#00f0ff' WHERE color IS NULL OR color = ''`);
+    // Create users and project_users tables if they don't exist
+    await runner.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL DEFAULT 'user',
+        created_at TEXT NOT NULL
+      )
+    `);
+    await runner.query(`
+      CREATE TABLE IF NOT EXISTS project_users (
+        project_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        PRIMARY KEY (project_id, user_id),
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
     await runner.release();
   }
 }
