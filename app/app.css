@@ -158,24 +158,33 @@
     'Noto Color Emoji';
 }
 
-@keyframes review-glow {
+@keyframes review-glow-pulse {
   0%,
   100% {
-    box-shadow:
-      0 0 4px color-mix(in srgb, var(--glow-color) 40%, transparent),
-      0 0 10px color-mix(in srgb, var(--glow-color) 20%, transparent);
-    border-color: color-mix(in srgb, var(--glow-color) 60%, transparent);
+    opacity: 0.4;
   }
   50% {
-    box-shadow:
-      0 0 8px color-mix(in srgb, var(--glow-color) 60%, transparent),
-      0 0 20px color-mix(in srgb, var(--glow-color) 30%, transparent);
-    border-color: var(--glow-color);
+    opacity: 1;
   }
 }
 
 .animate-review-glow {
-  animation: review-glow 2s ease-in-out infinite;
+  position: relative;
+  border-color: var(--glow-color);
+  overflow: visible;
+}
+
+.animate-review-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  box-shadow:
+    0 0 8px color-mix(in srgb, var(--glow-color) 60%, transparent),
+    0 0 20px color-mix(in srgb, var(--glow-color) 30%, transparent);
+  animation: review-glow-pulse 2s ease-in-out infinite;
+  will-change: opacity;
+  pointer-events: none;
 }
 
 @keyframes slot-flash {

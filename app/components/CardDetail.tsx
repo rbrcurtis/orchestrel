@@ -284,6 +284,8 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
             worktreePath={card.worktreePath}
             projectPath={cardProject?.path}
             useWorktree={card.useWorktree}
+            worktreeBranch={card.worktreeBranch}
+            sourceBranch={card.sourceBranch}
             color={card.useWorktree && cardProject?.color ? cardProject.color : undefined}
           />
           {cardProject && (
@@ -838,11 +840,15 @@ function CopyPathButton({
   worktreePath,
   projectPath,
   useWorktree,
+  worktreeBranch,
+  sourceBranch,
   color,
 }: {
   worktreePath: string | null;
   projectPath?: string;
   useWorktree: boolean;
+  worktreeBranch?: string | null;
+  sourceBranch?: string | null;
   color?: string;
 }) {
   const [copied, setCopied] = useState(false);
@@ -855,12 +861,18 @@ function CopyPathButton({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  const tooltip = worktreeBranch
+    ? `${worktreeBranch}${sourceBranch ? ` from ${sourceBranch}` : ''}`
+    : path
+      ? `Copy path: ${path}`
+      : 'No path available';
+
   return (
     <button
       type="button"
       onClick={handleCopy}
       disabled={!path}
-      title={path ? `Copy path: ${path}` : 'No path available'}
+      title={tooltip}
       className="flex items-center shrink-0 hover:opacity-70 transition-opacity disabled:opacity-30 disabled:cursor-default"
       style={useWorktree && color ? { color, filter: `drop-shadow(0 0 4px ${color})` } : undefined}
     >
