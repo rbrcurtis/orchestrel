@@ -1,5 +1,5 @@
 import { makeAutoObservable } from 'mobx';
-import type { Project } from '../../src/shared/ws-protocol';
+import type { Project, User } from '../../src/shared/ws-protocol';
 import type { WsClient } from '../lib/ws-client';
 import { uuid } from '../lib/utils';
 
@@ -16,6 +16,7 @@ function ws(): WsClient {
 
 export class ProjectStore {
   projects = new Map<number, Project>();
+  users: User[] = [];
 
   constructor() {
     makeAutoObservable(this);
@@ -33,12 +34,13 @@ export class ProjectStore {
 
   // ── Hydration ───────────────────────────────────────────────────────────────
 
-  hydrate(items: unknown[], replace = false) {
+  hydrate(items: unknown[], replace = false, users?: User[]) {
     if (replace) this.projects.clear();
     for (const p of items) {
       const project = p as Project;
       this.projects.set(project.id, project);
     }
+    if (users) this.users = users;
   }
 
   handleUpdated(project: Project) {
@@ -93,6 +95,7 @@ export class ProjectStore {
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     color?: string | null;
     providerID?: string;
+    userIds?: number[];
   }): Promise<Project> {
     const existing = this.projects.get(data.id);
     if (existing) this.projects.set(data.id, { ...existing, ...data } as Project);

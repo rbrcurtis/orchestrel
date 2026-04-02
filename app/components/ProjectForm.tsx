@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useProjectStore, useConfigStore } from '~/stores/context';
+import { useProjectStore, useConfigStore, useStore } from '~/stores/context';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Textarea } from '~/components/ui/textarea';
@@ -23,6 +23,7 @@ interface Project {
   defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   providerID: string;
+  userIds?: number[];
 }
 
 interface ProjectFormProps {
@@ -48,6 +49,8 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
 
   const projects = useProjectStore();
   const config = useConfigStore();
+  const store = useStore();
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>(project?.userIds ?? []);
 
   const isValid = name.trim() && path.trim();
 
@@ -73,6 +76,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       defaultModel,
       defaultThinkingLevel,
       providerID,
+      userIds: selectedUserIds,
     };
 
     try {
@@ -217,6 +221,29 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* User Assignment — admin only */}
+              {store.currentUser?.role === 'admin' && projects.users.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-muted-foreground mb-1">Assigned Users</label>
+                  <div className="space-y-1">
+                    {projects.users.map((u) => (
+                      <label key={u.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={selectedUserIds.includes(u.id)}
+                          onCheckedChange={() =>
+                            setSelectedUserIds((prev) =>
+                              prev.includes(u.id) ? prev.filter((uid) => uid !== u.id) : [...prev, u.id],
+                            )
+                          }
+                        />
+                        <span>{u.email}</span>
+                        {u.role === 'admin' && <span className="text-xs text-muted-foreground">(admin)</span>}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Error display */}

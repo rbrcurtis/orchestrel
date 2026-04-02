@@ -1,11 +1,13 @@
+import { makeAutoObservable } from 'mobx';
 import { WsClient } from '../lib/ws-client';
 import { CardStore, setCardStoreWs } from './card-store';
 import { ConfigStore } from './config-store';
 import { ProjectStore, setProjectStoreWs } from './project-store';
 import { SessionStore, setSessionStoreWs } from './session-store';
-import type { Column, ServerMessage } from '../../src/shared/ws-protocol';
+import type { Column, ServerMessage, User } from '../../src/shared/ws-protocol';
 
 export class RootStore {
+  currentUser: User | null = null;
   readonly cards: CardStore;
   readonly config: ConfigStore;
   readonly projects: ProjectStore;
@@ -18,6 +20,14 @@ export class RootStore {
     this.projects = new ProjectStore();
     this.sessions = new SessionStore();
     this.ws = new WsClient((msg) => this.handleMessage(msg));
+
+    makeAutoObservable(this, {
+      ws: false,
+      cards: false,
+      config: false,
+      projects: false,
+      sessions: false,
+    });
 
     setCardStoreWs(this.ws);
     setProjectStoreWs(this.ws);
@@ -37,8 +47,9 @@ export class RootStore {
   private handleMessage(msg: ServerMessage) {
     switch (msg.type) {
       case 'sync':
+        this.currentUser = msg.user ?? null;
         this.cards.hydrate(msg.cards, true);
-        this.projects.hydrate(msg.projects, true);
+        this.projects.hydrate(msg.projects, true, msg.users);
         this.config.hydrate(msg.providers);
         break;
 

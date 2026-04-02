@@ -44,17 +44,47 @@ export function handleMessage(ws: WebSocket, raw: unknown, connections: Connecti
     case 'subscribe': {
       const cols = msg.columns;
 
-      // Send initial sync
-      Promise.all([cardService.listCards(cols.length > 0 ? cols : undefined), projectService.listProjects()])
-        .then(([syncCards, syncProjects]) => {
+      // Send initial sync — scoped by user visibility
+      void (async () => {
+        try {
+          const identity = connections.getIdentity(ws);
+          if (!identity) return;
+
+          const { userService } = await import('../services/user');
+          const visible = await userService.visibleProjectIds(identity);
+
+          const [allCards, allProjects] = await Promise.all([
+            cardService.listCards(cols.length > 0 ? cols : undefined),
+            projectService.listProjects(),
+          ]);
+
+          const cards = visible === 'all'
+            ? allCards
+            : allCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+          const projects = visible === 'all'
+            ? allProjects
+            : allProjects.filter((p) => (visible as number[]).includes(p.id));
+
+          let users: Array<{ id: number; email: string; role: string }> | undefined;
+          if (identity.role === 'admin') {
+            users = await userService.listUsers();
+            for (const p of projects) {
+              (p as unknown as Record<string, unknown>).userIds = await userService.projectUserIds(p.id);
+            }
+          }
+
           connections.send(ws, {
             type: 'sync',
-            cards: syncCards as unknown as Card[],
-            projects: syncProjects as unknown as Project[],
+            cards: cards as unknown as Card[],
+            projects: projects as unknown as Project[],
             providers: getProvidersForClient(),
+            user: { id: identity.id, email: identity.email, role: identity.role },
+            users,
           });
-        })
-        .catch((err) => console.error('[ws] subscribe sync error:', err));
+        } catch (err) {
+          console.error('[ws] subscribe sync error:', err);
+        }
+      })();
 
       // Subscribe to board:changed — forward card:updated or card:deleted
       clientSubs.subscribe(ws, 'board:changed', (payload) => {

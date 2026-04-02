@@ -32,8 +32,6 @@ function isLocalRequest(req: IncomingMessage): boolean {
  * In dev mode or on localhost/LAN, skip validation.
  */
 export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult> {
-  if (process.env.NODE_ENV === 'development') return { valid: true, isLocal: true };
-
   // Localhost/LAN connections bypass CF Access (they don't go through the tunnel)
   if (isLocalRequest(req)) return { valid: true, isLocal: true };
 

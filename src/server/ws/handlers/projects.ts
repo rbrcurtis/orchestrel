@@ -24,9 +24,44 @@ export async function handleProjectUpdate(
 ): Promise<void> {
   const { requestId, data } = msg
   const { id, ...rest } = data
+  const { userIds, ...projectData } = rest as typeof rest & { userIds?: number[] }
   try {
-    const project = await projectService.updateProject(id, rest)
+    const project = await projectService.updateProject(id, projectData)
     connections.send(ws, { type: 'mutation:ok', requestId, data: project })
+
+    if (userIds !== undefined) {
+      const identity = connections.getIdentity(ws)
+      if (identity?.role === 'admin') {
+        const { userService } = await import('../../services/user')
+        await userService.setProjectUsers(id, userIds)
+
+        // Re-sync non-admin clients so their visibility updates
+        for (const [clientWs, clientIdentity] of connections.entries()) {
+          if (clientWs === ws || clientIdentity.role === 'admin') continue
+
+          const visible = await userService.visibleProjectIds(clientIdentity)
+          const { cardService } = await import('../../services/card')
+          const { getProvidersForClient } = await import('../../config/providers')
+          const [syncCards, syncProjects] = await Promise.all([
+            cardService.listCards(),
+            projectService.listProjects(),
+          ])
+
+          const filteredCards = visible === 'all' ? syncCards
+            : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId))
+          const filteredProjects = visible === 'all' ? syncProjects
+            : syncProjects.filter((p) => (visible as number[]).includes(p.id))
+
+          connections.send(clientWs, {
+            type: 'sync',
+            cards: filteredCards as unknown as import('../../../shared/ws-protocol').Card[],
+            projects: filteredProjects as unknown as import('../../../shared/ws-protocol').Project[],
+            providers: getProvidersForClient(),
+            user: { id: clientIdentity.id, email: clientIdentity.email, role: clientIdentity.role },
+          })
+        }
+      }
+    }
   } catch (err) {
     connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
   }
