@@ -144,64 +144,7 @@ export const agentStatusSchema = z.object({
   contextWindow: z.number(),
 });
 
-export const agentMessageSchema = z.object({
-  type: z.enum([
-    'text',
-    'tool_call',
-    'tool_result',
-    'thinking',
-    'system',
-    'turn_end',
-    'error',
-    'user',
-    'tool_progress',
-    'subagent',
-  ]),
-  role: z.enum(['user', 'assistant', 'system']),
-  content: z.string(),
-  toolCall: z
-    .object({
-      id: z.string(),
-      name: z.string(),
-      params: z.record(z.string(), z.unknown()).optional(),
-      streamingOutput: z.string().optional(),
-    })
-    .optional(),
-  toolResult: z
-    .object({
-      id: z.string(),
-      output: z.string(),
-      isError: z.boolean().optional(),
-    })
-    .optional(),
-  usage: z
-    .object({
-      inputTokens: z.number(),
-      outputTokens: z.number(),
-      cacheRead: z.number().optional(),
-      cacheWrite: z.number().optional(),
-      contextWindow: z.number().optional(),
-    })
-    .optional(),
-  modelUsage: z
-    .record(
-      z.string(),
-      z.object({
-        inputTokens: z.number(),
-        outputTokens: z.number(),
-        cacheReadInputTokens: z.number(),
-        cacheCreationInputTokens: z.number(),
-        costUSD: z.number(),
-        contextWindow: z.number().optional(),
-      }),
-    )
-    .optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
-  timestamp: z.number(),
-});
-
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
-export type AgentMessage = z.infer<typeof agentMessageSchema>;
 
 // ── Client → Server messages ─────────────────────────────────────────────────
 
