@@ -76,7 +76,11 @@ export class SessionManager {
       (async function* () {
         yield {
           type: 'user' as const,
-          content: [{ type: 'text' as const, text: message }],
+          message: {
+            role: 'user' as const,
+            content: [{ type: 'text' as const, text: message }],
+          },
+          parent_tool_use_id: null,
         };
       })(),
     );

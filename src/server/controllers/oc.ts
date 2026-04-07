@@ -13,7 +13,8 @@ export function registerCardSession(cardId: number): void {
   const repo = AppDataSource.getRepository(Card);
 
   // SDK messages: persist counters on result, reset context on compact
-  const sdkHandler = async (msg: Record<string, unknown>) => {
+  const sdkHandler = async (payload: unknown) => {
+    const msg = payload as Record<string, unknown>;
     if (msg.type === 'result') {
       const card = await repo.findOneBy({ id: cardId });
       if (!card) return;
@@ -48,7 +49,8 @@ export function registerCardSession(cardId: number): void {
   };
 
   // Exit: move to review if errored/stopped, unsubscribe
-  const exitHandler = async (payload: { sessionId: string | null; status: string }) => {
+  const exitHandler = async (rawPayload: unknown) => {
+    const payload = rawPayload as { sessionId: string | null; status: string };
     if (payload.status === 'errored' || payload.status === 'stopped') {
       const card = await repo.findOneBy({ id: cardId });
       if (card && card.column === 'running') {

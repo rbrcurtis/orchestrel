@@ -94,11 +94,11 @@ class CardService {
     // Kill session when card leaves running/review
     const liveColumns = new Set<string>(['running', 'review']);
     if (data.column && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
-      const { sessionManager } = await import('../agents/manager');
-      const session = sessionManager.get(id);
-      if (session) {
-        console.log(`[session:${id}] killing: card moving ${card.column} → ${data.column}`);
-        sessionManager.requestStop(id);
+      const initState = await import('../init-state');
+      const sm = initState.getSessionManager();
+      if (sm?.isActive(id)) {
+        console.log(`[session:${id}] stopping: card moving ${card.column} → ${data.column}`);
+        sm.stop(id);
       }
     }
 
@@ -110,11 +110,11 @@ class CardService {
   }
 
   async deleteCard(id: number): Promise<void> {
-    const { sessionManager } = await import('../agents/manager');
-    const session = sessionManager.get(id);
-    if (session) {
-      console.log(`[session:${id}] killing: card deleted`);
-      sessionManager.requestStop(id);
+    const initState = await import('../init-state');
+    const sm = initState.getSessionManager();
+    if (sm?.isActive(id)) {
+      console.log(`[session:${id}] stopping: card deleted`);
+      sm.stop(id);
     }
     const card = await Card.findOneByOrFail({ id });
     await card.remove();

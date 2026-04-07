@@ -16,12 +16,11 @@ export async function initBackend(): Promise<{
   restRouter: ExpressRouter;
   attachWs: (httpServer: HttpServer) => void;
 }> {
-  const [{ initDatabase }, { handleMessage }, { clientSubs }, { openCodeServer }, { validateCfAccess }] =
+  const [{ initDatabase }, { handleMessage }, { clientSubs }, { validateCfAccess }] =
     await Promise.all([
       import('./models/index'),
       import('./ws/handlers'),
       import('./ws/subscriptions'),
-      import('./opencode/server'),
       import('./ws/auth'),
     ]);
 
@@ -138,44 +137,35 @@ export async function initBackend(): Promise<{
     console.log('[ws] WebSocket server attached');
   }
 
-  // --- OC controllers + OpenCode server ---
+  // --- OC controllers + SessionManager ---
   const { registerAutoStart, registerWorktreeCleanup } = await import('./controllers/oc');
-  const { sessionService } = await import('./services/session');
-  const { removeWorktree, worktreeExists } = await import('./worktree');
-  registerAutoStart(undefined, sessionService);
-  registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists });
+  const initState = await import('./init-state');
+
+  let sm = initState.getSessionManager();
+  if (!sm) {
+    const { SessionManager } = await import('./sessions/manager');
+    sm = new SessionManager();
+    initState.setSessionManager(sm);
+  }
+
+  registerAutoStart();
+  registerWorktreeCleanup();
   console.log('[oc] controller listeners registered');
 
-  openCodeServer
-    .start()
-    .then(async () => {
-      try {
-        const { Card } = await import('./models/Card');
-        const cards = await Card.find({ where: { column: 'running' } });
-        for (const card of cards) {
-          if (!card.sessionId) continue;
-          if (card.queuePosition != null) continue; // queued, not actively running
-          try {
-            const attached = await sessionService.attachSession(card.id);
-            if (attached) {
-              console.log(`[startup] re-attached to session for card ${card.id}`);
-            } else {
-              card.column = 'review';
-              card.updatedAt = new Date().toISOString();
-              await card.save();
-              console.log(`[startup] session dead for card ${card.id}, moved to review`);
-            }
-          } catch (err) {
-            console.error(`[startup] re-attach failed for card ${card.id}:`, err);
-          }
-        }
-      } catch (err) {
-        console.error('[startup] re-attach scan failed:', err);
-      }
-    })
-    .catch((err: unknown) => {
-      console.error('[opencode] failed to start:', err);
-    });
+  // Move stale running cards to review (sessions don't survive restart)
+  try {
+    const { Card } = await import('./models/Card');
+    const cards = await Card.find({ where: { column: 'running' } });
+    for (const card of cards) {
+      if (card.queuePosition != null) continue; // queued, not stale
+      card.column = 'review';
+      card.updatedAt = new Date().toISOString();
+      await card.save();
+      console.log(`[startup] card ${card.id} moved to review (no active session)`);
+    }
+  } catch (err) {
+    console.error('[startup] stale card scan failed:', err);
+  }
 
   return { restRouter: router, attachWs };
 }
