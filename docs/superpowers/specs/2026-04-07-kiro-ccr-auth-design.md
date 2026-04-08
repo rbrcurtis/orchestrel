@@ -240,7 +240,6 @@ Only Kiro providers hit CCR, so every request has a prefix. If somehow a non-pre
 ```
 
 The `apiKey: "placeholder"` is overridden per-request by the transformer's `transformRequestIn` return value. The `transformer: "kiro-auth"` references the transformer by its `name` property. The transformer reads `req.provider` to determine which pool to use (provider name = pool name).
-```
 
 Port 3457 (avoids 3456 which is occupied). No anthropic provider — Orchestrel sends anthropic requests directly.
 
