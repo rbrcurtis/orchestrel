@@ -35,6 +35,7 @@ export interface SdkSystemMessage {
   type: 'system';
   subtype: 'init' | 'compact_boundary';
   session_id?: string;
+  model?: string;
 }
 
 export interface SdkStreamEvent {

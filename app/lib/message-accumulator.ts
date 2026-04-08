@@ -54,7 +54,7 @@ export type ConversationEntry =
   | { kind: 'result'; data: TurnResult }
   | { kind: 'tool_activity'; data: ToolActivity }
   | { kind: 'user'; content: string; optimistic?: boolean }
-  | { kind: 'system'; subtype: string }
+  | { kind: 'system'; subtype: string; model?: string }
   | { kind: 'error'; message: string }
   | { kind: 'compact' };
 
@@ -99,7 +99,10 @@ export class MessageAccumulator {
         this.retryAfterMs = msg.retry_after_ms;
         break;
       case 'system':
-        if (msg.subtype === 'compact_boundary') {
+        if (msg.subtype === 'init') {
+          this.finalizeBlocks();
+          this.conversation.push({ kind: 'system', subtype: 'init', model: msg.model });
+        } else if (msg.subtype === 'compact_boundary') {
           this.finalizeBlocks();
           this.conversation.push({ kind: 'compact' });
         }

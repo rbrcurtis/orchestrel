@@ -223,7 +223,15 @@ export const MessageBlock = observer(function MessageBlock({ entry, index: _inde
         </div>
       );
     case 'system':
-      return (
+      return entry.subtype === 'init' ? (
+        <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
+          <div className="flex items-center gap-2 w-full min-w-0">
+            <div className="flex-1 border-t border-border shrink min-w-2" />
+            <span className="shrink-0">Session started · {entry.model ?? 'unknown'}</span>
+            <div className="flex-1 border-t border-border shrink min-w-2" />
+          </div>
+        </div>
+      ) : (
         <div className="text-xs text-muted-foreground py-1 min-w-0 overflow-hidden">
           {entry.subtype}
         </div>

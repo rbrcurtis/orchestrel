@@ -43,7 +43,7 @@ export async function consumeSession(
 
   try {
     for await (const msg of session.query) {
-      const sdkMsg = msg as Record<string, unknown>;
+      let sdkMsg = msg as Record<string, unknown>;
 
       switch (sdkMsg.type) {
         case 'system': {
@@ -53,6 +53,8 @@ export async function consumeSession(
             session.status = 'running';
             log(`init sessionId=${sys.session_id}`);
             messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
+            // Enrich init message with model info for the UI
+            sdkMsg = { ...sdkMsg, model: session.model };
           }
           break;
         }
@@ -99,7 +101,7 @@ export async function consumeSession(
   } catch (err) {
     // Ignore "Query closed" errors — these happen when stop() is called during cleanup
     const errMsg = String(err);
-    if (errMsg.includes('Query closed before response received') || errMsg.includes('Operation aborted')) {
+    if (errMsg.includes('Query closed before response received') || errMsg.includes('Operation aborted') || errMsg.includes('Request was aborted')) {
       log(`consumer stopped cleanly: ${errMsg}`);
       if (session.status !== 'completed') session.status = 'stopped';
     } else {
