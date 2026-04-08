@@ -40,7 +40,7 @@ export class SessionManager {
         env: {
           ...process.env,
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
-          ...(isKiroProvider ? { ANTHROPIC_BASE_URL: process.env.CCR_URL ?? 'http://127.0.0.1:3457' } : {}),
+          ...(isKiroProvider ? { ANTHROPIC_BASE_URL: process.env.KIRO_PROXY_URL ?? 'http://127.0.0.1:3457' } : {}),
         },
       },
     });
