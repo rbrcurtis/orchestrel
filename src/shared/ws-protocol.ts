@@ -19,6 +19,7 @@ export const cardSchema = z.object({
   useWorktree: sqliteBool,
   sourceBranch: z.enum(['main', 'dev']).nullable(),
   model: z.string(),
+  provider: z.string(),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
@@ -68,6 +69,7 @@ export const cardCreateSchema = z.object({
   column: columnEnum.optional(),
   projectId: z.number().nullable().optional(),
   model: z.string().optional(),
+  provider: z.string().optional(),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   useWorktree: z.boolean().optional(),
   sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
@@ -104,7 +106,6 @@ export const modelConfigSchema = z.object({
 
 export const providerConfigSchema = z.object({
   label: z.string(),
-  ocProviderID: z.string().optional(),
   models: z.record(z.string(), modelConfigSchema),
 });
 
@@ -143,64 +144,7 @@ export const agentStatusSchema = z.object({
   contextWindow: z.number(),
 });
 
-export const agentMessageSchema = z.object({
-  type: z.enum([
-    'text',
-    'tool_call',
-    'tool_result',
-    'thinking',
-    'system',
-    'turn_end',
-    'error',
-    'user',
-    'tool_progress',
-    'subagent',
-  ]),
-  role: z.enum(['user', 'assistant', 'system']),
-  content: z.string(),
-  toolCall: z
-    .object({
-      id: z.string(),
-      name: z.string(),
-      params: z.record(z.string(), z.unknown()).optional(),
-      streamingOutput: z.string().optional(),
-    })
-    .optional(),
-  toolResult: z
-    .object({
-      id: z.string(),
-      output: z.string(),
-      isError: z.boolean().optional(),
-    })
-    .optional(),
-  usage: z
-    .object({
-      inputTokens: z.number(),
-      outputTokens: z.number(),
-      cacheRead: z.number().optional(),
-      cacheWrite: z.number().optional(),
-      contextWindow: z.number().optional(),
-    })
-    .optional(),
-  modelUsage: z
-    .record(
-      z.string(),
-      z.object({
-        inputTokens: z.number(),
-        outputTokens: z.number(),
-        cacheReadInputTokens: z.number(),
-        cacheCreationInputTokens: z.number(),
-        costUSD: z.number(),
-        contextWindow: z.number().optional(),
-      }),
-    )
-    .optional(),
-  meta: z.record(z.string(), z.unknown()).optional(),
-  timestamp: z.number(),
-});
-
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
-export type AgentMessage = z.infer<typeof agentMessageSchema>;
 
 // ── Client → Server messages ─────────────────────────────────────────────────
 
@@ -232,6 +176,12 @@ export const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('agent:compact'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
   z.object({ type: z.literal('agent:stop'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
   z.object({ type: z.literal('agent:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
+
+  z.object({
+    type: z.literal('session:set-model'),
+    requestId: z.string(),
+    data: z.object({ cardId: z.number(), provider: z.string(), model: z.string() }),
+  }),
 
   z.object({
     type: z.literal('session:load'),
@@ -276,10 +226,11 @@ export const serverMessage = z.discriminatedUnion('type', [
     type: z.literal('session:history'),
     requestId: z.string(),
     cardId: z.number(),
-    messages: z.array(agentMessageSchema),
+    messages: z.array(z.unknown()),
   }),
 
-  z.object({ type: z.literal('agent:message'), cardId: z.number(), data: agentMessageSchema }),
+  z.object({ type: z.literal('session:message'), cardId: z.number(), message: z.unknown() }),
+  z.object({ type: z.literal('session:exit'), cardId: z.number(), sessionId: z.string().nullable() }),
   z.object({ type: z.literal('agent:status'), data: agentStatusSchema }),
 
   z.object({ type: z.literal('project:browse:result'), requestId: z.string(), data: z.unknown() }),

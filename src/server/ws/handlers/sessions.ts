@@ -1,8 +1,10 @@
 import type { WebSocket } from 'ws';
-import type { ClientMessage, AgentMessage } from '../../../shared/ws-protocol';
+import type { ClientMessage } from '../../../shared/ws-protocol';
 import type { ConnectionManager } from '../connections';
 import { clientSubs } from '../subscriptions';
-import { sessionService } from '../../services/session';
+import { Card } from '../../models/Card';
+import { Project } from '../../models/Project';
+import { getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
 
 export async function handleSessionLoad(
   ws: WebSocket,
@@ -13,24 +15,24 @@ export async function handleSessionLoad(
   const { requestId } = msg;
 
   try {
-    const alreadySubscribed = clientSubs.isSubscribed(ws, `card:${cardId}:message`);
+    const alreadySubscribed = clientSubs.isSubscribed(ws, `card:${cardId}:sdk`);
     console.log(
-      `[session:load] cardId=${cardId} sessionId=${sessionId ?? 'none'} alreadySubscribed=${alreadySubscribed} ` +
-        `wsTopics=[${clientSubs
-          .topicsFor(ws)
-          .filter((t) => t.startsWith(`card:${cardId}:`))
-          .join(', ')}] ` +
-        `busListeners:message=${clientSubs.listenerCount(`card:${cardId}:message`)}`,
+      `[session:load] cardId=${cardId} sessionId=${sessionId ?? 'none'} alreadySubscribed=${alreadySubscribed}`,
     );
 
     if (sessionId) {
-      const messages = await sessionService.getHistory(sessionId, cardId);
+      const card = await Card.findOneBy({ id: cardId });
+      let dir = card?.worktreePath ?? undefined;
+      if (!dir && card?.projectId) {
+        const proj = await Project.findOneBy({ id: card.projectId });
+        dir = proj?.path;
+      }
+      const messages = await getSessionMessages(sessionId, { dir });
       console.log(`[session:load] cardId=${cardId} loaded ${messages.length} history messages`);
-      connections.send(ws, { type: 'session:history', requestId, cardId, messages });
+      connections.send(ws, { type: 'session:history', requestId, cardId, messages: messages as unknown[] });
     }
     connections.send(ws, { type: 'mutation:ok', requestId });
 
-    // Already subscribed to this card's events — history was loaded above, nothing else to do
     if (alreadySubscribed) {
       console.log(`[session:load] cardId=${cardId} SKIPPING subscribe (already wired)`);
       return;
@@ -38,52 +40,36 @@ export async function handleSessionLoad(
 
     console.log(`[session:load] cardId=${cardId} SUBSCRIBING to bus topics`);
 
-    // Subscribe to live agent messages for this card
-    clientSubs.subscribe(ws, `card:${cardId}:message`, (payload) => {
-      connections.send(ws, {
-        type: 'agent:message',
-        cardId,
-        data: payload as AgentMessage,
-      });
+    // Subscribe to live SDK messages for this card
+    clientSubs.subscribe(ws, `card:${cardId}:sdk`, (msg: unknown) => {
+      connections.send(ws, { type: 'session:message', cardId, message: msg });
     });
 
-    // Subscribe to card data updates (e.g., column changes)
+    // Subscribe to card data updates
     clientSubs.subscribe(ws, `card:${cardId}:updated`, (payload) => {
       connections.send(ws, { type: 'card:updated', data: payload as import('../../../shared/ws-protocol').Card });
     });
 
-    // Subscribe to status updates (prompts/turns counters, sessionId)
-    clientSubs.subscribe(ws, `card:${cardId}:status`, async (payload) => {
-      const card = payload as import('../../models/Card').Card;
-      const live = await sessionService.getStatus(cardId);
-      connections.send(ws, {
-        type: 'agent:status',
-        data: live ?? {
-          cardId,
-          active: false,
-          status: 'completed',
-          sessionId: card.sessionId,
-          promptsSent: card.promptsSent,
-          turnsCompleted: card.turnsCompleted,
-          contextTokens: card.contextTokens ?? 0,
-          contextWindow: card.contextWindow ?? 200_000,
-        },
-      });
+    // Subscribe to status updates
+    clientSubs.subscribe(ws, `card:${cardId}:status`, (data: unknown) => {
+      connections.send(ws, { type: 'agent:status', data: data as import('../../../shared/ws-protocol').AgentStatus });
     });
 
     // Subscribe to session exit events
-    clientSubs.subscribe(ws, `card:${cardId}:exit`, (payload) => {
+    clientSubs.subscribe(ws, `card:${cardId}:exit`, (payload: unknown) => {
+      const p = payload as { sessionId: string | null; status: string };
       connections.send(ws, {
         type: 'agent:status',
-        data: payload as import('../../../shared/ws-protocol').AgentStatus,
-      });
-    });
-
-    // Subscribe to live session status changes (starting→running, etc.)
-    clientSubs.subscribe(ws, `card:${cardId}:session-status`, (payload) => {
-      connections.send(ws, {
-        type: 'agent:status',
-        data: payload as import('../../../shared/ws-protocol').AgentStatus,
+        data: {
+          cardId,
+          active: false,
+          status: p.status as 'completed',
+          sessionId: p.sessionId,
+          promptsSent: 0,
+          turnsCompleted: 0,
+          contextTokens: 0,
+          contextWindow: 200_000,
+        },
       });
     });
   } catch (err) {

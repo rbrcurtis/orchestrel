@@ -62,7 +62,6 @@ export function wsServerPlugin(): Plugin {
         import('./handlers'),
         import('./subscriptions'),
         import('../bus'),
-        import('../opencode/server'),
         import('../init-state'),
       ])
         .then(
@@ -71,7 +70,6 @@ export function wsServerPlugin(): Plugin {
             { handleMessage },
             { clientSubs },
             { messageBus: _messageBus },
-            { openCodeServer },
             initState,
           ]) => {
             await initDatabase();
@@ -185,48 +183,38 @@ export function wsServerPlugin(): Plugin {
             );
             console.log('[ws] WebSocket server attached');
 
-            // --- One-time init: OC listeners, OpenCode server ---
+            // --- One-time init: SessionManager + controller listeners ---
             if (initState.initialized) return;
+
+            const { SessionManager } = await import('../sessions/manager');
+            const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc');
+
+            let sm = initState.getSessionManager();
+            if (!sm) {
+              sm = new SessionManager();
+              initState.setSessionManager(sm);
+            }
+
+            registerAutoStart();
+            registerWorktreeCleanup();
+            console.log('[sessions] SessionManager initialized, controller listeners registered');
+
             initState.markInitialized();
 
-            const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc');
-            const { sessionService } = await import('../services/session');
-            const { removeWorktree, worktreeExists } = await import('../worktree');
-            registerAutoStart(undefined, sessionService);
-            registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists });
-            console.log('[oc] controller listeners registered');
-
-            openCodeServer
-              .start()
-              .then(async () => {
-                // Re-attach to any running sessions that survived an orchestrel restart
-                try {
-                  const { Card } = await import('../models/Card');
-                  const cards = await Card.find({ where: { column: 'running' } });
-                  for (const card of cards) {
-                    if (!card.sessionId) continue;
-                    if (card.queuePosition != null) continue; // queued, not actively running
-                    try {
-                      const attached = await sessionService.attachSession(card.id);
-                      if (attached) {
-                        console.log(`[startup] re-attached to session for card ${card.id}`);
-                      } else {
-                        card.column = 'review';
-                        card.updatedAt = new Date().toISOString();
-                        await card.save();
-                        console.log(`[startup] session dead for card ${card.id}, moved to review`);
-                      }
-                    } catch (err) {
-                      console.error(`[startup] re-attach failed for card ${card.id}:`, err);
-                    }
-                  }
-                } catch (err) {
-                  console.error('[startup] re-attach scan failed:', err);
-                }
-              })
-              .catch((err: unknown) => {
-                console.error('[opencode] failed to start:', err);
-              });
+            // Move stale running cards to review (no session re-attach with SDK — sessions don't survive restart)
+            try {
+              const { Card } = await import('../models/Card');
+              const cards = await Card.find({ where: { column: 'running' } });
+              for (const card of cards) {
+                if (card.queuePosition != null) continue; // queued, not stale
+                card.column = 'review';
+                card.updatedAt = new Date().toISOString();
+                await card.save();
+                console.log(`[startup] card ${card.id} moved to review (no active session)`);
+              }
+            } catch (err) {
+              console.error('[startup] stale card scan failed:', err);
+            }
           },
         )
         .catch((err) => {

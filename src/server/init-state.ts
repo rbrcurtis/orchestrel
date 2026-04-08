@@ -16,7 +16,13 @@ import type { Duplex } from 'stream'
 type AnyHttpServer = HttpServer | Http2SecureServer
 type UpgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer) => void
 
-/** True after WSS, OC bus listeners, and OpenCode are initialized. */
+/** SessionManager — survives Vite restarts. */
+import type { SessionManager } from './sessions/manager'
+let _sessionManager: SessionManager | null = null
+export function getSessionManager(): SessionManager | null { return _sessionManager }
+export function setSessionManager(sm: SessionManager): void { _sessionManager = sm }
+
+/** True after WSS, bus listeners, and SessionManager are initialized. */
 export let initialized = false
 export function markInitialized() { initialized = true }
 

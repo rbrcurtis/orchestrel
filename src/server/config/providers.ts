@@ -10,7 +10,6 @@ const modelConfigSchema = z.object({
 
 const providerConfigSchema = z.object({
   label: z.string(),
-  ocProviderID: z.string().optional(),
   models: z.record(z.string(), modelConfigSchema),
 });
 
@@ -59,12 +58,6 @@ export function getDefaultModel(providerID: string): string {
   if (!provider) return 'sonnet';
   const keys = Object.keys(provider.models);
   return keys[0] ?? 'sonnet';
-}
-
-/** Resolve Orchestrel provider ID → OpenCode provider ID */
-export function getOcProviderID(providerID: string): string {
-  const config = loadProviders();
-  return config.providers[providerID]?.ocProviderID ?? providerID;
 }
 
 /** Get the first provider key from config (used as system-wide default) */

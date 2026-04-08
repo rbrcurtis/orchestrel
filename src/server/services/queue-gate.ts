@@ -35,14 +35,12 @@ async function processQueueImpl(projectId: number): Promise<void> {
       group.map((c) => `#${c.id}(qP=${c.queuePosition})`).join(', '),
   );
 
-  const { sessionManager } = await import('../agents/manager');
-  const activeCard = group.find((c) => {
-    const s = sessionManager.get(c.id);
-    return s && (s.status === 'running' || s.status === 'starting' || s.status === 'retry');
-  });
+  const initState = await import('../init-state');
+  const sm = initState.getSessionManager();
+  const activeCard = group.find((c) => sm?.isActive(c.id) ?? false);
 
   if (activeCard) {
-    const s = sessionManager.get(activeCard.id);
+    const s = sm?.get(activeCard.id);
     console.log(
       `[queue-gate] project=${projectId}: card #${activeCard.id} active ` +
         `(status=${s?.status}, sid=${s?.sessionId ?? 'none'}), renumbering queue`,
@@ -104,7 +102,22 @@ async function processQueueImpl(projectId: number): Promise<void> {
     }
   }
 
-  const { sessionService } = await import('./session');
+  if (!sm) throw new Error('SessionManager not initialized');
+
   console.log(`[queue-gate] project=${projectId}: launching session for card #${toStart.id}`);
-  await sessionService.launchSession(toStart.id);
+  const prompt = toStart.pendingPrompt ?? toStart.description ?? '';
+  toStart.pendingPrompt = null;
+  toStart.pendingFiles = null;
+  toStart.updatedAt = new Date().toISOString();
+  await toStart.save();
+
+  await sm.start(toStart.id, prompt, {
+    provider: toStart.provider,
+    model: toStart.model,
+    cwd: process.cwd(),
+    resume: toStart.sessionId ?? undefined,
+  });
+
+  const { registerCardSession } = await import('../controllers/oc');
+  registerCardSession(toStart.id);
 }

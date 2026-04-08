@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Send, Square, AlertCircle, ChevronDown, Paperclip, X, WifiOff } from 'lucide-react';
 import { MessageBlock } from './MessageBlock';
@@ -34,7 +34,8 @@ export const SessionView = observer(function SessionView({
 
   const session = sessionStore.getSession(cardId);
   const card = cardStore.getCard(cardId);
-  const conversation = session?.conversation ?? [];
+  const conversation = session?.accumulator.conversation ?? [];
+  const currentBlocks = session?.accumulator.currentBlocks ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
   const promptsSent = session?.promptsSent ?? 0;
@@ -42,7 +43,7 @@ export const SessionView = observer(function SessionView({
   const sessionStoreId = session?.sessionId ?? null;
   const contextTokens = session?.contextTokens || card?.contextTokens || 0;
   const contextWindow = session?.contextWindow || card?.contextWindow || 200_000;
-  const subagents = session?.subagents ?? new Map();
+  const subagents = session?.accumulator.subagents ?? new Map();
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
 
@@ -101,8 +102,8 @@ export const SessionView = observer(function SessionView({
   // Show notification when session errors
   useEffect(() => {
     if (sessionStatus === 'errored') {
-      const last = conversation.findLast((m) => m.type === 'error');
-      if (last?.content) setNotification(last.content);
+      const last = conversation.findLast((m) => m.kind === 'error');
+      if (last && last.kind === 'error') setNotification(last.message);
     } else {
       setNotification(null);
     }
@@ -172,7 +173,7 @@ export const SessionView = observer(function SessionView({
       return;
     }
     const last = conversation[len - 1];
-    if (last.type === 'system' && last.meta?.subtype === 'compact_boundary') {
+    if (last.kind === 'compact') {
       setCompacted(true);
       setTimeout(() => setCompacted(false), 600);
     }
@@ -200,22 +201,12 @@ export const SessionView = observer(function SessionView({
     }
   }, [historyLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Extract tool outputs from conversation
-  const toolOutputs = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const row of conversation) {
-      if (row.type !== 'tool_result' || !row.toolResult) continue;
-      if (row.toolResult.output) {
-        map.set(row.toolResult.id, row.toolResult.output);
-      }
-    }
-    return map;
-  }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
-  const retryInfo =
-    sessionStatus === 'retry' ? conversation.findLast((m) => m.type === 'system' && m.meta?.subtype === 'retry') : null;
+  const retryAfterMs = session?.accumulator.retryAfterMs ?? null;
+  const retryInfo = sessionStatus === 'retry' && retryAfterMs != null
+    ? { retryAfterMs }
+    : null;
 
   async function handleSend(message: string, files?: FileRef[]) {
     try {
@@ -262,8 +253,15 @@ export const SessionView = observer(function SessionView({
         <ScrollArea viewportRef={scrollRef} className="h-full">
           <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0 max-w-full overflow-x-hidden">
             {conversation.map((row, i) => (
-              <MessageBlock key={`${row.id}-${i}`} message={row} toolOutputs={toolOutputs} accentColor={accentColor} />
+              <MessageBlock key={i} entry={row} index={i} accentColor={accentColor} />
             ))}
+            {currentBlocks.length > 0 && (
+              <MessageBlock
+                entry={{ kind: 'blocks', blocks: currentBlocks }}
+                index={conversation.length}
+                accentColor={accentColor}
+              />
+            )}
             <div ref={bottomRef} />
           </div>
         </ScrollArea>
@@ -295,8 +293,7 @@ export const SessionView = observer(function SessionView({
           />
           {retryInfo && (
             <span className="text-[11px] text-neon-amber truncate min-w-0">
-              {String(retryInfo.meta?.message ?? 'Waiting...')}
-              {retryInfo.meta?.attempt != null && ` (attempt ${retryInfo.meta.attempt})`}
+              Rate limited — retrying in {Math.ceil(retryInfo.retryAfterMs / 1000)}s
             </span>
           )}
           {showCounters && (

@@ -84,8 +84,12 @@ export class RootStore {
         this.projects.handleDeleted(msg.data.id);
         break;
 
-      case 'agent:message':
-        this.sessions.ingest(msg.cardId, msg.data);
+      case 'session:message':
+        this.sessions.ingestSdkMessage(msg.cardId, msg.message);
+        break;
+
+      case 'session:exit':
+        this.sessions.handleSessionExit(msg.cardId);
         break;
 
       case 'agent:status':
@@ -93,7 +97,7 @@ export class RootStore {
         break;
 
       case 'session:history':
-        this.sessions.ingestBatch(msg.cardId, msg.messages);
+        this.sessions.ingestHistory(msg.cardId, msg.messages as unknown[]);
         break;
 
       // page:result, search:result, project:browse:result — not routed to stores;

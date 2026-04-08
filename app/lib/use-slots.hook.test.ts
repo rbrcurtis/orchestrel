@@ -20,6 +20,7 @@ function makeCard(overrides: Partial<Card> & { id: number }): Card {
     useWorktree: true,
     sourceBranch: null,
     model: 'sonnet',
+    provider: 'anthropic',
     thinkingLevel: 'high',
     promptsSent: 0,
     turnsCompleted: 0,

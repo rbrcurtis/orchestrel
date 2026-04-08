@@ -129,12 +129,11 @@ export function handleMessage(ws: WebSocket, raw: unknown, connections: Connecti
       clientSubs.subscribe(ws, 'system:error', (payload) => {
         const { message } = payload as { message: string };
         connections.send(ws, {
-          type: 'agent:message',
+          type: 'session:message',
           cardId: -1,
-          data: {
+          message: {
             type: 'error',
-            role: 'system',
-            content: message,
+            message,
             timestamp: Date.now(),
           },
         });
@@ -230,6 +229,33 @@ export function handleMessage(ws: WebSocket, raw: unknown, connections: Connecti
     case 'agent:status':
       void handleAgentStatus(ws, msg, connections);
       break;
+
+    case 'session:set-model': {
+      const { cardId, provider, model } = msg.data;
+      void (async () => {
+        try {
+          const initState = await import('../init-state');
+          const sm = initState.getSessionManager();
+          sm?.setModel(cardId, provider, model);
+          const { Card } = await import('../models/Card');
+          const card = await Card.findOneBy({ id: cardId });
+          if (card) {
+            card.provider = provider;
+            card.model = model;
+            card.updatedAt = new Date().toISOString();
+            await card.save();
+          }
+          connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId });
+        } catch (err) {
+          connections.send(ws, {
+            type: 'mutation:error',
+            requestId: msg.requestId,
+            error: String(err instanceof Error ? err.message : err),
+          });
+        }
+      })();
+      break;
+    }
 
     case 'queue:reorder':
       void handleQueueReorder(ws, msg, connections);

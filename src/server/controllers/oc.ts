@@ -1,169 +1,82 @@
 import { Card } from '../models/Card';
 import { Project } from '../models/Project';
 import { messageBus, type MessageBus } from '../bus';
-import type { AgentSession, AgentMessage } from '../agents/types';
+import { AppDataSource } from '../models/index';
 import { processQueue } from '../services/queue-gate';
 
-const DISPLAY_TYPES = new Set([
-  'user',
-  'text',
-  'tool_call',
-  'tool_result',
-  'tool_progress',
-  'thinking',
-  'system',
-  'turn_end',
-  'error',
-  'subagent',
-]);
-
 /**
- * Wire independent event handlers on an OC session.
- * Each handler is a separate session.on() call — no handler blocks another.
- * The bus parameter defaults to the singleton for production; tests inject a fresh instance.
+ * Register per-card session event handlers.
+ * Called when a session starts for a card — subscribes to bus topics
+ * published by the consumer loop.
  */
-export function wireSession(cardId: number, session: AgentSession, bus: MessageBus = messageBus): void {
-  // Handler: forward displayable content to domain bus
-  session.on('message', (msg: AgentMessage) => {
-    if (!DISPLAY_TYPES.has(msg.type)) return;
-    bus.publish(`card:${cardId}:message`, msg);
-  });
+export function registerCardSession(cardId: number): void {
+  const repo = AppDataSource.getRepository(Card);
 
-  // Handler: if messages arrive for a card not in running, move it back.
-  // This handles the case where the agent keeps producing output after a
-  // failed stop attempt or after the card was moved away prematurely.
-  const CONTENT_TYPES = new Set(['text', 'tool_call', 'thinking']);
-  let cardMoveInFlight = false;
-  session.on('message', async (msg: AgentMessage) => {
-    if (!CONTENT_TYPES.has(msg.type) || cardMoveInFlight) return;
-    try {
-      cardMoveInFlight = true;
-      const card = await Card.findOneBy({ id: cardId });
-      if (card && card.column !== 'running' && card.column !== 'archive' && card.column !== 'done') {
-        console.log(`[oc:${cardId}] message arrived while card in ${card.column} — moving to running`);
-        card.column = 'running';
-        card.updatedAt = new Date().toISOString();
-        await card.save();
-      }
-    } catch (err) {
-      console.error(`[oc:${cardId}] failed to move card to running on message:`, err);
-    } finally {
-      cardMoveInFlight = false;
-    }
-  });
-
-  // Handler: reset context tokens after compaction
-  session.on('message', async (msg: AgentMessage) => {
-    if (msg.type !== 'system' || msg.meta?.subtype !== 'compact_boundary') return;
-    try {
-      const card = await Card.findOneBy({ id: cardId });
+  // SDK messages: persist counters on result, reset context on compact
+  const sdkHandler = async (payload: unknown) => {
+    const msg = payload as Record<string, unknown>;
+    if (msg.type === 'result') {
+      const card = await repo.findOneBy({ id: cardId });
       if (!card) return;
-      // Context was just compressed — real token count unknown until next turn.
-      // Reset to 0 so gauge shows empty rather than stale 100%.
-      card.contextTokens = 0;
-      card.updatedAt = new Date().toISOString();
-      await card.save();
-      console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 0`);
-    } catch (err) {
-      console.error(`[oc:${cardId}] failed to handle compact_boundary:`, err);
-    }
-  });
 
-  // Handler: persist counters + move card to review on turn_end
-  // These MUST be in one handler to avoid a lost-update race (both would
-  // load the same row, mutate different fields, and the last save wins).
-  session.on('message', async (msg: AgentMessage) => {
-    if (msg.type !== 'turn_end') return;
-    try {
-      const card = await Card.findOneBy({ id: cardId });
-      if (!card) return;
-      card.promptsSent = session.promptsSent;
-      card.turnsCompleted = session.turnsCompleted;
-      if (msg.usage) {
-        const u = msg.usage;
-        card.contextTokens = (u.inputTokens ?? 0) + (u.cacheWrite ?? 0) + (u.cacheRead ?? 0);
-        if (u.contextWindow) card.contextWindow = u.contextWindow;
+      const initState = await import('../init-state');
+      const sm = initState.getSessionManager();
+      const session = sm?.get(cardId);
+      if (session) {
+        card.promptsSent = session.promptsSent;
+        card.turnsCompleted = session.turnsCompleted;
+        card.sessionId = session.sessionId;
       }
+
       if (card.column === 'running') card.column = 'review';
       card.updatedAt = new Date().toISOString();
-      await card.save();
-    } catch (err) {
-      console.error(`[oc:${cardId}] failed to handle turn_end:`, err);
+      await repo.save(card);
     }
-  });
 
-  // Handler: move card to review on exit (errored/stopped only)
-  session.on('exit', async () => {
-    if (session.status === 'errored' || session.status === 'stopped') {
-      try {
-        const card = await Card.findOneBy({ id: cardId });
-        if (card && card.column === 'running') {
-          card.column = 'review';
-          card.promptsSent = session.promptsSent;
-          card.turnsCompleted = session.turnsCompleted;
-          // contextTokens/contextWindow already persisted by turn_end handler
+    // Compact boundary: reset context tokens
+    if (msg.type === 'system') {
+      const sys = msg as { subtype?: string };
+      if (sys.subtype === 'compact_boundary') {
+        const card = await repo.findOneBy({ id: cardId });
+        if (card) {
+          card.contextTokens = 0;
           card.updatedAt = new Date().toISOString();
-          await card.save();
+          await repo.save(card);
+          console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 0`);
         }
-      } catch (err) {
-        console.error(`[oc:${cardId}] failed to move card to review on exit:`, err);
       }
     }
-  });
+  };
 
-  // Handler: publish exit status to domain bus
-  session.on('exit', async () => {
-    const card = await Card.findOneBy({ id: cardId });
-    bus.publish(`card:${cardId}:exit`, {
-      cardId,
-      active: false,
-      status: session.status,
-      sessionId: session.sessionId,
-      promptsSent: session.promptsSent,
-      turnsCompleted: session.turnsCompleted,
-      contextTokens: card?.contextTokens ?? 0,
-      contextWindow: card?.contextWindow ?? 200_000,
-    });
-  });
-
-  // Handler: forward session status changes to domain bus
-  // If session goes to running but card isn't in running column, move it back
-  session.on('statusChange', async () => {
-    let card: Card | null = null;
-    if (session.status === 'running') {
-      try {
-        card = await Card.findOneBy({ id: cardId });
-        if (card && card.column !== 'running' && card.column !== 'archive' && card.column !== 'done') {
-          card.column = 'running';
-          card.updatedAt = new Date().toISOString();
-          await card.save();
-        }
-      } catch (err) {
-        console.error(`[oc:${cardId}] failed to move card to running on statusChange:`, err);
+  // Exit: move to review if errored/stopped, unsubscribe
+  const exitHandler = async (rawPayload: unknown) => {
+    const payload = rawPayload as { sessionId: string | null; status: string };
+    if (payload.status === 'errored' || payload.status === 'stopped') {
+      const card = await repo.findOneBy({ id: cardId });
+      if (card && card.column === 'running') {
+        card.column = 'review';
+        card.updatedAt = new Date().toISOString();
+        await repo.save(card);
       }
     }
-    if (!card) card = await Card.findOneBy({ id: cardId });
-    bus.publish(`card:${cardId}:session-status`, {
-      cardId,
-      active: session.status === 'running' || session.status === 'starting' || session.status === 'retry',
-      status: session.status,
-      sessionId: session.sessionId,
-      promptsSent: session.promptsSent,
-      turnsCompleted: session.turnsCompleted,
-      contextTokens: card?.contextTokens ?? 0,
-      contextWindow: card?.contextWindow ?? 200_000,
-    });
-  });
+
+    // Process queue for non-worktree cards
+    const card = await repo.findOneBy({ id: cardId });
+    if (card && !card.useWorktree && card.projectId) {
+      processQueue(card.projectId).catch((err) => {
+        console.error(`[oc:${cardId}] processQueue failed on exit:`, err);
+      });
+    }
+
+    messageBus.unsubscribe(`card:${cardId}:sdk`, sdkHandler);
+    messageBus.unsubscribe(`card:${cardId}:exit`, exitHandler);
+  };
+
+  messageBus.subscribe(`card:${cardId}:sdk`, sdkHandler);
+  messageBus.subscribe(`card:${cardId}:exit`, exitHandler);
 }
 
-// --- Domain bus listeners (registered once at startup) ---
-
-interface SessionStarter {
-  startSession(cardId: number, message?: string): Promise<void>;
-  attachSession(cardId: number): Promise<boolean>;
-}
-
-export function registerAutoStart(bus: MessageBus = messageBus, starter: SessionStarter): void {
+export function registerAutoStart(bus: MessageBus = messageBus): void {
   bus.subscribe('board:changed', async (payload) => {
     const { card, oldColumn, newColumn } = payload as {
       card: Card | null;
@@ -174,46 +87,53 @@ export function registerAutoStart(bus: MessageBus = messageBus, starter: Session
 
     // Card entered running
     if (newColumn === 'running' && oldColumn !== 'running') {
+      const initState = await import('../init-state');
+      const sm = initState.getSessionManager();
+      if (!sm) return;
+
+      const fullCard = await repo().findOneBy({ id: card.id });
+      if (!fullCard) return;
+
       // Non-worktree cards on git repos: delegate to queue processing
-      if (!card.useWorktree && card.projectId) {
-        const proj = await Project.findOneBy({ id: card.projectId });
+      if (!fullCard.useWorktree && fullCard.projectId) {
+        const proj = await Project.findOneBy({ id: fullCard.projectId });
         if (proj?.isGitRepo) {
           console.log(
             `[oc:auto-start] card #${card.id} entered running ` +
               `(non-worktree, project=${card.projectId}, qP=${card.queuePosition})`,
           );
-          processQueue(card.projectId).catch((err) => {
+          processQueue(fullCard.projectId).catch((err) => {
             console.error(`[oc:auto-start] processQueue failed for card #${card.id}:`, err);
           });
           return;
         }
       }
 
-      // Worktree cards or no project: start directly
+      // Direct start (worktree or no project)
       console.log(
         `[oc:auto-start] card #${card.id} entered running ` +
           `(worktree=${card.useWorktree}, project=${card.projectId})`,
       );
-      if (card.sessionId) {
-        try {
-          const attached = await starter.attachSession(card.id);
-          if (attached) {
-            console.log(`[oc:auto-start] card #${card.id}: attached to live session (sid=${card.sessionId})`);
-            return;
-          }
-          console.log(`[oc:auto-start] card #${card.id}: session not active (sid=${card.sessionId}), will resume`);
-        } catch (err) {
-          console.error(`[oc:auto-start] card #${card.id}: attach failed:`, err);
-        }
-      }
-      starter.startSession(card.id, undefined).catch((err) => {
-        console.error(`[oc:auto-start] card #${card.id}: startSession failed:`, err);
+      const prompt = fullCard.pendingPrompt ?? fullCard.description ?? '';
+      fullCard.pendingPrompt = null;
+      fullCard.pendingFiles = null;
+      await repo().save(fullCard);
+
+      await sm.start(fullCard.id, prompt, {
+        provider: fullCard.provider,
+        model: fullCard.model,
+        cwd: process.cwd(),
+        resume: fullCard.sessionId ?? undefined,
       });
-      return;
+      registerCardSession(fullCard.id);
     }
 
-    // Card left running — trigger queue processing for remaining cards (git repos only)
+    // Card left running: stop + process queue
     if (oldColumn === 'running' && newColumn !== 'running') {
+      const initState = await import('../init-state');
+      const sm = initState.getSessionManager();
+      sm?.stop(card.id);
+
       if (!card.useWorktree && card.projectId) {
         const proj = await Project.findOneBy({ id: card.projectId });
         if (proj?.isGitRepo) {
@@ -230,12 +150,7 @@ export function registerAutoStart(bus: MessageBus = messageBus, starter: Session
   });
 }
 
-interface WorktreeOps {
-  removeWorktree(repoPath: string, worktreePath: string): void;
-  worktreeExists(worktreePath: string): boolean;
-}
-
-export function registerWorktreeCleanup(bus: MessageBus = messageBus, ops: WorktreeOps): void {
+export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
   bus.subscribe('board:changed', async (payload) => {
     const { card, oldColumn, newColumn } = payload as {
       card: Card | null;
@@ -250,12 +165,14 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus, ops: Workt
 
     try {
       const proj = await Project.findOneBy({ id: c.projectId });
-      if (!proj || !ops.worktreeExists(c.worktreePath)) return;
-      ops.removeWorktree(proj.path, c.worktreePath);
-      console.log(`[oc:worktree] removed ${c.worktreePath}`);
+      if (!proj) return;
 
-      // Clear worktree path so re-entering running recreates the worktree
-      // sessionId is preserved — resume will pick up the conversation
+      const { removeWorktree, worktreeExists } = await import('../worktree');
+      if (worktreeExists(c.worktreePath)) {
+        removeWorktree(proj.path, c.worktreePath);
+        console.log(`[oc:worktree] removed ${c.worktreePath}`);
+      }
+
       const fresh = await Card.findOneBy({ id: c.id });
       if (fresh) {
         fresh.worktreePath = null;
@@ -266,4 +183,8 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus, ops: Workt
       console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
     }
   });
+}
+
+function repo() {
+  return AppDataSource.getRepository(Card);
 }

@@ -1,8 +1,8 @@
 import type { WebSocket } from 'ws';
 import type { ClientMessage } from '../../../shared/ws-protocol';
 import type { ConnectionManager } from '../connections';
-import { sessionService } from '../../services/session';
 import { Card } from '../../models/Card';
+import { registerCardSession } from '../../controllers/oc';
 
 export async function handleAgentSend(
   ws: WebSocket,
@@ -11,37 +11,37 @@ export async function handleAgentSend(
 ): Promise<void> {
   const {
     requestId,
-    data: { cardId, message, files },
+    data: { cardId, message },
   } = msg;
-  console.log(`[session:${cardId}] agent:send, len=${message.length}, files=${files?.length ?? 0}`);
+  console.log(`[session:${cardId}] agent:send, len=${message.length}`);
 
   try {
     connections.send(ws, { type: 'mutation:ok', requestId });
 
-    // startSession handles everything: follow-ups to active sessions,
-    // queueing for non-worktree cards, and direct launch for worktree cards.
-    sessionService.startSession(cardId, message, files).catch((err) => {
-      const error = err instanceof Error ? err.message : String(err);
-      console.error(`[session:${cardId}] startSession error:`, error);
-      connections.send(ws, {
-        type: 'agent:status',
-        data: {
-          cardId,
-          active: false,
-          status: 'errored',
-          sessionId: null,
-          promptsSent: 0,
-          turnsCompleted: 0,
-          contextTokens: 0,
-          contextWindow: 200_000,
-        },
+    const initState = await import('../../init-state');
+    const sm = initState.getSessionManager();
+    if (!sm) throw new Error('SessionManager not initialized');
+
+    const card = await Card.findOneByOrFail({ id: cardId });
+
+    if (sm.isActive(cardId)) {
+      sm.sendFollowUp(cardId, message);
+    } else {
+      await sm.start(cardId, message, {
+        provider: card.provider,
+        model: card.model,
+        cwd: process.cwd(),
+        resume: card.sessionId ?? undefined,
       });
-    });
+      registerCardSession(cardId);
+    }
   } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[session:${cardId}] agent:send error:`, error);
     connections.send(ws, {
       type: 'mutation:error',
       requestId,
-      error: String(err instanceof Error ? err.message : err),
+      error,
     });
   }
 }
@@ -59,12 +59,11 @@ export async function handleAgentCompact(
 
   try {
     connections.send(ws, { type: 'mutation:ok', requestId });
-    // compactSession creates a temp session with SSE + wireSession,
-    // so status changes and the summary stream via the normal bus → WS path
-    sessionService.compactSession(cardId).catch((err) => {
-      const error = err instanceof Error ? err.message : String(err);
-      console.error(`[session:${cardId}] compactSession error:`, error);
-    });
+    const initState = await import('../../init-state');
+    const sm = initState.getSessionManager();
+    if (sm?.isActive(cardId)) {
+      sm.sendFollowUp(cardId, 'Please compact your context window. Summarize the conversation so far and continue.');
+    }
   } catch (err) {
     connections.send(ws, {
       type: 'mutation:error',
@@ -85,9 +84,9 @@ export async function handleAgentStop(
   } = msg;
   console.log(`[session:${cardId}] agent:stop received`);
   connections.send(ws, { type: 'mutation:ok', requestId });
-  sessionService.stopSession(cardId).catch((err) => {
-    console.error(`[session:${cardId}] stopSession error:`, err);
-  });
+  const initState = await import('../../init-state');
+  const sm = initState.getSessionManager();
+  sm?.stop(cardId);
 }
 
 export async function handleAgentStatus(
@@ -100,14 +99,27 @@ export async function handleAgentStatus(
     data: { cardId },
   } = msg;
   try {
-    const live = await sessionService.getStatus(cardId);
-    if (live) {
-      connections.send(ws, { type: 'agent:status', data: live });
+    const initState = await import('../../init-state');
+    const sm = initState.getSessionManager();
+    const session = sm?.get(cardId);
+
+    if (session) {
+      connections.send(ws, {
+        type: 'agent:status',
+        data: {
+          cardId,
+          active: sm!.isActive(cardId),
+          status: session.status,
+          sessionId: session.sessionId,
+          promptsSent: session.promptsSent,
+          turnsCompleted: session.turnsCompleted,
+          contextTokens: 0,
+          contextWindow: 200_000,
+        },
+      });
     } else {
-      // No active session — read counters from DB via model
       const card = await Card.findOneBy({ id: cardId });
       // Stale running card with no active session → move to review
-      // But skip queued cards — they're waiting for their turn, not stale
       if (card && card.column === 'running' && card.queuePosition == null) {
         card.column = 'review';
         card.updatedAt = new Date().toISOString();
