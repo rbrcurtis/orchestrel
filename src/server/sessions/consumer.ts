@@ -77,9 +77,7 @@ export async function consumeSession(
           };
           session.turnsCompleted++;
           session.turnCost = result.total_cost_usd ?? 0;
-          session.status = 'completed';
           log(`result subtype=${result.subtype} cost=$${session.turnCost} turns=${session.turnsCompleted}`);
-          messageBus.publish(`card:${cardId}:status`, statusPayload(session, false));
           break;
         }
 
@@ -114,6 +112,7 @@ export async function consumeSession(
       });
     }
   } finally {
+    if (session.status === 'running') session.status = 'completed';
     log(`consumer exited (status=${session.status})`);
     messageBus.publish(`card:${cardId}:exit`, {
       sessionId: session.sessionId,
