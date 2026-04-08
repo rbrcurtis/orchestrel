@@ -160,29 +160,31 @@ Index on `(pool, is_healthy)` for fast selection.
 
 ## CCR Custom Transformer
 
-Loaded by CCR per Kiro provider. Receives `{ pool: "trackable" }` as constructor options.
+Loaded via CCR's top-level `"transformers"` config array. The transformer class receives `{ pool: "trackable" }` as constructor options. CCR's `transformRequestIn` hook runs per-request before the provider sends the request.
 
-### `auth(body, provider)` — called per-request
+### `transformRequestIn(body, provider, { req })` — called per-request
 
-1. Query DB for accounts in pool: `SELECT * FROM accounts WHERE pool = ? AND is_healthy = 1 AND rate_limit_reset < ? ORDER BY used_count ASC, last_used ASC LIMIT 1`
-2. If no healthy accounts, try unhealthy ones (fail_count < 10, not permanently failed)
-3. If selected account's token expires within buffer (5 min default):
+1. Determine pool from `req.provider` name (matches pool name in config)
+2. Query DB for best account: `SELECT * FROM accounts WHERE pool = ? AND is_healthy = 1 AND rate_limit_reset < ? ORDER BY used_count ASC, last_used ASC LIMIT 1`
+3. If no healthy accounts, try unhealthy ones (fail_count < 10, not permanently failed)
+4. If selected account's token expires within buffer (5 min default):
    - Refresh via `POST https://oidc.{oidcRegion}.amazonaws.com/token` with `{ refreshToken, clientId, clientSecret, grantType: "refresh_token" }`
    - Update DB with new accessToken, refreshToken, expiresAt
    - On refresh failure: mark unhealthy, select next account
-4. Inject `profileArn` into request body (CodeWhisperer requires it)
-5. Return `{ body, config: { headers: { Authorization: "Bearer {accessToken}" } } }`
+5. Inject `profileArn` into request body (CodeWhisperer requires it)
+6. Return `{ body, config: { headers: { Authorization: "Bearer {accessToken}" } } }` — this overrides the default Authorization header
 
-### Response handling
+The transformer also increments `used_count` and updates `last_used` on each request.
 
-The transformer needs to handle post-request feedback to update account state:
+### `transformResponseIn(response, ctx)` — called per-response
 
-- **Success**: increment `used_count`, update `last_used`, reset `fail_count` to 0 if > 0
-- **429 (rate limited)**: set `rate_limit_reset` to `now + retryAfterMs`, don't increment `fail_count`
+Handles post-response feedback to update account health:
+
+- **429 (rate limited)**: set `rate_limit_reset` to `now + retryAfterMs`
 - **401/403 (auth failure)**: increment `fail_count`, mark `is_healthy = 0` after 3 consecutive failures
-- **Usage limit response**: update `used_count` and `limit_count` from response headers if available
+- **Success**: reset `fail_count` to 0 if > 0
 
-How CCR exposes response status to the transformer needs verification during implementation. If the transformer only has the `auth()` hook (pre-request), we may need to use `transformRequestOut()` or another hook for post-response tracking. Worst case, the usage tracking relies on the `getUsageLimits` call during periodic refresh rather than per-request.
+Usage limits (`used_count`/`limit_count`) are updated from the `getUsageLimits` API during login and manual refresh, not per-request.
 
 ## CCR Custom Router
 
@@ -212,25 +214,32 @@ Only Kiro providers hit CCR, so every request has a prefix. If somehow a non-pre
 {
   "PORT": 3457,
   "CUSTOM_ROUTER_PATH": "~/Code/kiro-ccr-auth/dist/custom-router.js",
+  "transformers": [
+    {
+      "path": "~/Code/kiro-ccr-auth/dist/transformer.js",
+      "options": {}
+    }
+  ],
   "Providers": [
     {
       "name": "trackable",
       "type": "codewhisperer",
-      "endpoint": "https://codewhisperer.us-east-1.amazonaws.com",
-      "transformer": {
-        "use": [["~/Code/kiro-ccr-auth/dist/transformer.js", { "pool": "trackable" }]]
-      }
+      "baseUrl": "https://codewhisperer.us-east-1.amazonaws.com",
+      "apiKey": "placeholder",
+      "transformer": "kiro-auth"
     },
     {
       "name": "okkanti",
       "type": "codewhisperer",
-      "endpoint": "https://codewhisperer.us-east-1.amazonaws.com",
-      "transformer": {
-        "use": [["~/Code/kiro-ccr-auth/dist/transformer.js", { "pool": "okkanti" }]]
-      }
+      "baseUrl": "https://codewhisperer.us-east-1.amazonaws.com",
+      "apiKey": "placeholder",
+      "transformer": "kiro-auth"
     }
   ]
 }
+```
+
+The `apiKey: "placeholder"` is overridden per-request by the transformer's `transformRequestIn` return value. The `transformer: "kiro-auth"` references the transformer by its `name` property. The transformer reads `req.provider` to determine which pool to use (provider name = pool name).
 ```
 
 Port 3457 (avoids 3456 which is occupied). No anthropic provider — Orchestrel sends anthropic requests directly.
@@ -293,9 +302,6 @@ open              — Open browser for device login
 
 Zero external auth libraries — the OIDC flow is simple enough to implement with `fetch()`.
 
-## Risk: Transformer Response Hooks
+## CCR Package Note
 
-The design assumes the CCR transformer can track response status (429, 401, etc.) to update account health. The official CCR transformer API has `auth()` (pre-request) and `transformRequestIn/Out()`. Whether there's a post-response hook for error handling needs verification. If not available, health tracking falls back to:
-- Token refresh failures mark accounts unhealthy
-- Periodic `getUsageLimits` calls update usage counters
-- Usage data from the login/refresh flow provides limit info
+The official package is `@musistudio/claude-code-router@2.0.0` (npm). The currently installed `claude-code-router@2.1.1` is a different fork by a different author — it must be replaced. The transformer API (`transformRequestIn` returning `{ body, config: { headers } }`) is verified from the official package source and matches the built-in `vertex-gemini` transformer pattern.
