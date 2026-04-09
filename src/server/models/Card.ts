@@ -162,13 +162,6 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
         newColumn: card.column,
       });
     }
-    if (
-      prev?.promptsSent !== card.promptsSent ||
-      prev?.turnsCompleted !== card.turnsCompleted ||
-      prev?.sessionId !== card.sessionId
-    ) {
-      messageBus.publish(`card:${card.id}:status`, card);
-    }
   }
 
   afterRemove(event: RemoveEvent<Card>) {

@@ -49,12 +49,16 @@ export async function consumeSession(
         case 'system': {
           const sys = sdkMsg as { subtype?: string; session_id?: string };
           if (sys.subtype === 'init' && sys.session_id) {
-            session.sessionId = sys.session_id;
-            session.status = 'running';
-            log(`init sessionId=${sys.session_id}`);
-            messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
-            // Enrich init message with model info for the UI
-            sdkMsg = { ...sdkMsg, model: session.model };
+            if (!session.sessionId) {
+              session.sessionId = sys.session_id;
+              session.status = 'running';
+              log(`init sessionId=${sys.session_id}`);
+              messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
+              sdkMsg = { ...sdkMsg, model: session.model };
+            } else {
+              // Streaming input mode re-emits init after each turn — suppress
+              break;
+            }
           }
           break;
         }
@@ -78,6 +82,9 @@ export async function consumeSession(
           session.turnsCompleted++;
           session.turnCost = result.total_cost_usd ?? 0;
           log(`result subtype=${result.subtype} cost=$${session.turnCost} turns=${session.turnsCompleted}`);
+          // Close the prompt channel so the SDK finishes up and the subprocess exits.
+          // Follow-ups will reconnect via resume.
+          session.closeInput();
           break;
         }
 

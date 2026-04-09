@@ -55,7 +55,7 @@ export default defineConfig(({ isSsrBuild }) => ({
     host: process.env.HOST || '0.0.0.0',
     allowedHosts: true,
     watch: {
-      ignored: ['**/.worktrees/**'],
+      ignored: ['**/.worktrees/**', '**/data/**'],
     },
   },
   plugins: [wsServerPlugin(), pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],

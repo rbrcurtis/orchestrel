@@ -66,28 +66,6 @@ describe('Card entity', () => {
     messageBus.unsubscribe('board:changed', boardHandler)
   })
 
-  it('publishes card:status when promptsSent changes', async () => {
-    const card = ds.getRepository(Card).create({
-      title: 'Status card',
-      description: 'desc',
-      column: 'running',
-      position: 0,
-      promptsSent: 0,
-      turnsCompleted: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    })
-    await card.save()
-
-    const statusHandler = vi.fn()
-    messageBus.subscribe(`card:${card.id}:status`, statusHandler)
-    card.promptsSent = 1
-    await card.save()
-
-    expect(statusHandler).toHaveBeenCalledOnce()
-    messageBus.unsubscribe(`card:${card.id}:status`, statusHandler)
-  })
-
   it('publishes card:deleted and board:changed on remove', async () => {
     const card = ds.getRepository(Card).create({
       title: 'Delete me',
