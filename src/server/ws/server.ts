@@ -1,7 +1,6 @@
-import { WebSocketServer } from 'ws';
 import type { Plugin } from 'vite';
-import { ConnectionManager } from './connections';
-import { validateCfAccess } from './auth';
+import { Server as IoServer } from 'socket.io';
+import type { ClientToServerEvents, ServerToClientEvents, SocketData } from '../../shared/ws-protocol';
 
 // NOTE: TypeORM entity imports must be lazy (dynamic import) because Vite bundles
 // vite.config.ts with esbuild which uses TC39 decorators, not legacy TypeScript
@@ -9,37 +8,6 @@ import { validateCfAccess } from './auth';
 //
 // State that must survive Vite restarts lives in src/server/init-state.ts (dynamically
 // imported, so Node.js module cache preserves it across re-bundles).
-
-export const connections = new ConnectionManager();
-
-function createWsServer(
-  handleMessage: (ws: import('ws').WebSocket, raw: unknown, connections: ConnectionManager) => void,
-  clientSubs: { unsubscribeAll: (ws: import('ws').WebSocket) => void },
-) {
-  const wss = new WebSocketServer({ noServer: true });
-
-  wss.on('connection', (ws, req) => {
-    const identity = (req as unknown as Record<string, unknown>).__userIdentity as import('../services/user').UserIdentity;
-    connections.add(ws, identity);
-    console.log(`[ws] connection: ${identity.email} (${identity.role})`);
-
-    ws.on('message', (raw) => {
-      try {
-        const data = JSON.parse(raw.toString());
-        handleMessage(ws, data, connections);
-      } catch (err) {
-        console.error('WS message parse error:', err);
-      }
-    });
-
-    ws.on('close', () => {
-      clientSubs.unsubscribeAll(ws);
-      connections.remove(ws);
-    });
-  });
-
-  return wss;
-}
 
 export function wsServerPlugin(): Plugin {
   return {
@@ -61,15 +29,15 @@ export function wsServerPlugin(): Plugin {
         import('../models/index'),
         import('./handlers'),
         import('./subscriptions'),
-        import('../bus'),
+        import('./auth'),
         import('../init-state'),
       ])
         .then(
           async ([
             { initDatabase },
-            { handleMessage },
-            { clientSubs },
-            { messageBus: _messageBus },
+            { registerSocketEvents },
+            { busRoomBridge },
+            { socketAuthMiddleware },
             initState,
           ]) => {
             await initDatabase();
@@ -82,9 +50,7 @@ export function wsServerPlugin(): Plugin {
             router.use(express.default.json());
             RegisterRoutes(router);
 
-            // File upload route — multer handles multipart/form-data parsing.
-            // Note: app runs in React Router SPA mode so route actions never execute server-side;
-            // uploads must live here in the Express router alongside the other API routes.
+            // File upload route
             const multer = (await import('multer')).default;
             const { writeFileSync, mkdirSync } = await import('fs');
             const { join } = await import('path');
@@ -153,35 +119,25 @@ export function wsServerPlugin(): Plugin {
             restApp = router;
             console.log('[rest] API routes registered');
 
-            // --- WSS: create once, re-attach upgrade handler on each restart ---
-            let wss = initState.wss;
-            if (!wss) {
-              wss = createWsServer(handleMessage, clientSubs);
-              initState.setWss(wss);
+            // --- Socket.IO: create once, persists across Vite restarts ---
+            let io = initState.io;
+            if (!io) {
+              const httpServer = await initState.getHttpServer();
+              io = new IoServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
+                httpServer as import('http').Server,
+                {
+                  serveClient: false,
+                  pingInterval: 10_000,
+                  pingTimeout: 5_000,
+                  cors: { origin: true, credentials: true },
+                },
+              );
+              io.use(socketAuthMiddleware);
+              io.on('connection', (socket) => registerSocketEvents(socket, io!));
+              busRoomBridge.init(io);
+              initState.setIo(io);
+              console.log('[ws] Socket.IO server created');
             }
-
-            const httpServer = await initState.getHttpServer();
-            initState.attachUpgradeHandler(
-              httpServer,
-              async (req: import('http').IncomingMessage, socket: import('stream').Duplex, head: Buffer) => {
-                if (req.url !== '/ws') return;
-
-                const auth = await validateCfAccess(req);
-                if (!auth.valid) {
-                  socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-                  socket.destroy();
-                  return;
-                }
-                const { userService, LOCAL_ADMIN } = await import('../services/user');
-                const identity = auth.isLocal || !auth.email ? LOCAL_ADMIN : await userService.findOrCreate(auth.email);
-                (req as unknown as Record<string, unknown>).__userIdentity = identity;
-
-                wss!.handleUpgrade(req, socket, head, (ws) => {
-                  wss!.emit('connection', ws, req);
-                });
-              },
-            );
-            console.log('[ws] WebSocket server attached');
 
             // --- One-time init: SessionManager + controller listeners ---
             if (initState.initialized) return;
@@ -201,12 +157,12 @@ export function wsServerPlugin(): Plugin {
 
             initState.markInitialized();
 
-            // Move stale running cards to review (no session re-attach with SDK — sessions don't survive restart)
+            // Move stale running cards to review
             try {
               const { Card } = await import('../models/Card');
               const cards = await Card.find({ where: { column: 'running' } });
               for (const card of cards) {
-                if (card.queuePosition != null) continue; // queued, not stale
+                if (card.queuePosition != null) continue;
                 card.column = 'review';
                 card.updatedAt = new Date().toISOString();
                 await card.save();

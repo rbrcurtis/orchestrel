@@ -1,22 +1,13 @@
 import type { Server as HttpServer } from 'http';
-import type { Duplex } from 'stream';
-import type { IncomingMessage } from 'http';
 import type { Router as ExpressRouter, Request, Response, NextFunction } from 'express';
+import { Server as IoServer } from 'socket.io';
+import type { ClientToServerEvents, ServerToClientEvents, SocketData } from '../shared/ws-protocol';
 
-/**
- * Initialise the full backend stack: DB, REST API, WebSocket server, and OpenCode.
- *
- * In dev mode this is called from the Vite plugin (`wsServerPlugin`).
- * In production it's called directly from server.js.
- *
- * Returns the Express router for REST API routes and a function to attach
- * the WS upgrade handler to an HTTP server.
- */
 export async function initBackend(): Promise<{
   restRouter: ExpressRouter;
-  attachWs: (httpServer: HttpServer) => void;
+  attachSocketIo: (httpServer: HttpServer) => void;
 }> {
-  const [{ initDatabase }, { handleMessage }, { clientSubs }, { validateCfAccess }] =
+  const [{ initDatabase }, { registerSocketEvents }, { busRoomBridge }, { socketAuthMiddleware }] =
     await Promise.all([
       import('./models/index'),
       import('./ws/handlers'),
@@ -79,7 +70,6 @@ export async function initBackend(): Promise<{
   });
   router.use('/api/docs', swaggerUi.serve, swaggerUi.setup(spec));
 
-  // tsoa validation error handler
   router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err && typeof err === 'object' && 'status' in err) {
       const e = err as { status: number; message?: string; fields?: Record<string, unknown> };
@@ -91,50 +81,21 @@ export async function initBackend(): Promise<{
 
   console.log('[rest] API routes registered');
 
-  // --- WebSocket ---
-  const { WebSocketServer } = await import('ws');
-  const { ConnectionManager } = await import('./ws/connections');
-
-  const connections = new ConnectionManager();
-  const wss = new WebSocketServer({ noServer: true });
-
-  wss.on('connection', (ws, req) => {
-    const identity = (req as unknown as Record<string, unknown>).__userIdentity as import('./services/user').UserIdentity;
-    connections.add(ws, identity);
-    console.log(`[ws] connection: ${identity.email} (${identity.role})`);
-    ws.on('message', (raw) => {
-      try {
-        const data = JSON.parse(raw.toString());
-        handleMessage(ws, data, connections);
-      } catch (err) {
-        console.error('WS message parse error:', err);
-      }
-    });
-    ws.on('close', () => {
-      clientSubs.unsubscribeAll(ws);
-      connections.remove(ws);
-    });
-  });
-
-  function attachWs(httpServer: HttpServer) {
-    httpServer.on('upgrade', async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-      if (req.url !== '/ws') return;
-
-      const auth = await validateCfAccess(req);
-      if (!auth.valid) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        return;
-      }
-      const { userService, LOCAL_ADMIN } = await import('./services/user');
-      const identity = auth.isLocal || !auth.email ? LOCAL_ADMIN : await userService.findOrCreate(auth.email);
-      (req as unknown as Record<string, unknown>).__userIdentity = identity;
-
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
-      });
-    });
-    console.log('[ws] WebSocket server attached');
+  // --- Socket.IO creation deferred to attachSocketIo ---
+  function attachSocketIo(httpServer: HttpServer) {
+    const io = new IoServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
+      httpServer,
+      {
+        serveClient: false,
+        pingInterval: 10_000,
+        pingTimeout: 5_000,
+        cors: { origin: true, credentials: true },
+      },
+    );
+    io.use(socketAuthMiddleware);
+    io.on('connection', (socket) => registerSocketEvents(socket, io));
+    busRoomBridge.init(io);
+    console.log('[ws] Socket.IO server attached');
   }
 
   // --- OC controllers + SessionManager ---
@@ -152,12 +113,12 @@ export async function initBackend(): Promise<{
   registerWorktreeCleanup();
   console.log('[oc] controller listeners registered');
 
-  // Move stale running cards to review (sessions don't survive restart)
+  // Move stale running cards to review
   try {
     const { Card } = await import('./models/Card');
     const cards = await Card.find({ where: { column: 'running' } });
     for (const card of cards) {
-      if (card.queuePosition != null) continue; // queued, not stale
+      if (card.queuePosition != null) continue;
       card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await card.save();
@@ -167,5 +128,5 @@ export async function initBackend(): Promise<{
     console.error('[startup] stale card scan failed:', err);
   }
 
-  return { restRouter: router, attachWs };
+  return { restRouter: router, attachSocketIo };
 }

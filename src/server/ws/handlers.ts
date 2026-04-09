@@ -1,7 +1,5 @@
-import type { WebSocket } from 'ws';
-import type { ConnectionManager } from './connections';
-import { clientSubs } from './subscriptions';
-import { clientMessage } from '../../shared/ws-protocol';
+import type { AppSocket, AppServer } from './types';
+import { busRoomBridge } from './subscriptions';
 import { cardService } from '../services/card';
 import { projectService } from '../services/project';
 import { getProvidersForClient } from '../config/providers';
@@ -22,252 +20,144 @@ import {
 import { handleSessionLoad } from './handlers/sessions';
 import { handleAgentSend, handleAgentCompact, handleAgentStop, handleAgentStatus } from './handlers/agents';
 import { handleQueueReorder } from './handlers/queue';
-import type { Card, Project } from '../../shared/ws-protocol';
-import type { Card as CardEntity } from '../models/Card';
+import type { Card, Column, Project } from '../../shared/ws-protocol';
 
-export function handleMessage(ws: WebSocket, raw: unknown, connections: ConnectionManager) {
-  const parsed = clientMessage.safeParse(raw);
-  if (!parsed.success) {
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId: ((raw as Record<string, unknown>)?.requestId as string) ?? 'unknown',
-      error: `Invalid message: ${parsed.error.message}`,
-    });
-    return;
-  }
+export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
+  const identity = socket.data.identity;
+  console.log(`[ws] connection: ${identity.email} (${identity.role})`);
 
-  const msg = parsed.data;
-  const rid = 'requestId' in msg ? (msg as { requestId?: string }).requestId : undefined;
-  if (rid) console.log(`[ws] → ${msg.type} requestId=${rid}`);
+  // ── Subscribe ────────────────────────────────────────────────────────────
+  socket.on('subscribe', async (columns, callback) => {
+    try {
+      // Leave old column rooms, join new ones
+      for (const room of socket.rooms) {
+        if (room.startsWith('col:')) socket.leave(room);
+      }
+      for (const col of columns) socket.join(`col:${col}`);
 
-  switch (msg.type) {
-    case 'subscribe': {
-      const cols = msg.columns;
+      // Build sync payload scoped by user visibility
+      const { userService } = await import('../services/user');
+      const visible = await userService.visibleProjectIds(identity as import('../services/user').UserIdentity);
 
-      // Send initial sync — scoped by user visibility
-      void (async () => {
-        try {
-          const identity = connections.getIdentity(ws);
-          if (!identity) return;
+      const [allCards, allProjects] = await Promise.all([
+        cardService.listCards(columns.length > 0 ? columns as Column[] : undefined),
+        projectService.listProjects(),
+      ]);
 
-          const { userService } = await import('../services/user');
-          const visible = await userService.visibleProjectIds(identity);
+      const cards = visible === 'all'
+        ? allCards
+        : allCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+      const projects = visible === 'all'
+        ? allProjects
+        : allProjects.filter((p) => (visible as number[]).includes(p.id));
 
-          const [allCards, allProjects] = await Promise.all([
-            cardService.listCards(cols.length > 0 ? cols : undefined),
-            projectService.listProjects(),
-          ]);
-
-          const cards = visible === 'all'
-            ? allCards
-            : allCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
-          const projects = visible === 'all'
-            ? allProjects
-            : allProjects.filter((p) => (visible as number[]).includes(p.id));
-
-          let users: Array<{ id: number; email: string; role: string }> | undefined;
-          if (identity.role === 'admin') {
-            users = await userService.listUsers();
-            for (const p of projects) {
-              (p as unknown as Record<string, unknown>).userIds = await userService.projectUserIds(p.id);
-            }
-          }
-
-          connections.send(ws, {
-            type: 'sync',
-            cards: cards as unknown as Card[],
-            projects: projects as unknown as Project[],
-            providers: getProvidersForClient(),
-            user: { id: identity.id, email: identity.email, role: identity.role },
-            users,
-          });
-        } catch (err) {
-          console.error('[ws] subscribe sync error:', err);
+      let users: Array<{ id: number; email: string; role: string }> | undefined;
+      if (identity.role === 'admin') {
+        users = await userService.listUsers();
+        for (const p of projects) {
+          (p as unknown as Record<string, unknown>).userIds = await userService.projectUserIds(p.id);
         }
-      })();
+      }
 
-      // Subscribe to board:changed — forward card:updated or card:deleted
-      clientSubs.subscribe(ws, 'board:changed', (payload) => {
-        const { card, oldColumn, newColumn, id } = payload as {
-          card: CardEntity | null;
-          oldColumn: string | null;
-          newColumn: string | null;
-          id?: number;
-        };
-        if (!card) {
-          if (id) connections.send(ws, { type: 'card:deleted', data: { id } });
-          return;
-        }
-        const relevant =
-          cols.length === 0 ||
-          (oldColumn && cols.includes(oldColumn as never)) ||
-          (newColumn && cols.includes(newColumn as never));
-        if (relevant) {
-          connections.send(ws, { type: 'card:updated', data: card as Card });
-        }
+      callback({
+        data: {
+          cards: cards as unknown as Card[],
+          projects: projects as unknown as Project[],
+          providers: getProvidersForClient(),
+          user: { id: identity.id, email: identity.email, role: identity.role },
+          users,
+        },
       });
+    } catch (err) {
+      console.error('[ws] subscribe error:', err);
+      callback({ error: String(err instanceof Error ? err.message : err) });
+    }
+  });
 
-      // Subscribe to project updates for all known projects
-      projectService
-        .listProjects()
-        .then((projs) => {
-          for (const p of projs) {
-            clientSubs.subscribe(ws, `project:${p.id}:updated`, (payload) => {
-              connections.send(ws, {
-                type: 'project:updated',
-                data: payload as import('../../shared/ws-protocol').Project,
-              });
-            });
-            clientSubs.subscribe(ws, `project:${p.id}:deleted`, (payload) => {
-              connections.send(ws, { type: 'project:deleted', data: payload as { id: number } });
-            });
-          }
-        })
-        .catch((err) => console.error('[ws] subscribe project listing error:', err));
-
-      // Subscribe to system errors — forward to all subscribed clients
-      clientSubs.subscribe(ws, 'system:error', (payload) => {
-        const { message } = payload as { message: string };
-        connections.send(ws, {
-          type: 'session:message',
-          cardId: -1,
-          message: {
-            type: 'error',
-            message,
-            timestamp: Date.now(),
-          },
-        });
+  // ── Page ─────────────────────────────────────────────────────────────────
+  socket.on('page', async (data, callback) => {
+    try {
+      const result = await cardService.pageCards(data.column as Column, data.cursor, data.limit);
+      callback({
+        data: {
+          column: data.column as Column,
+          cards: result.cards as unknown as Card[],
+          nextCursor: result.nextCursor,
+          total: result.total,
+        },
       });
-
-      break;
+    } catch (err) {
+      console.error('[ws] page error:', err);
+      callback({ error: String(err instanceof Error ? err.message : err) });
     }
+  });
 
-    case 'page': {
-      const { column, cursor, limit } = msg;
-      cardService
-        .pageCards(column, cursor, limit)
-        .then((result) => {
-          connections.send(ws, {
-            type: 'page:result',
-            column,
-            cards: result.cards as Card[],
-            nextCursor: result.nextCursor,
-            total: result.total,
-          });
-        })
-        .catch((err) => console.error('[ws] page error:', err));
-      break;
+  // ── Search ───────────────────────────────────────────────────────────────
+  socket.on('search', async (data, callback) => {
+    try {
+      const { cards, total } = await cardService.searchCards(data.query);
+      callback({ data: { cards: cards as unknown as Card[], total } });
+    } catch (err) {
+      console.error('[ws] search error:', err);
+      callback({ error: String(err instanceof Error ? err.message : err) });
     }
+  });
 
-    case 'search': {
-      const { query, requestId } = msg;
-      cardService
-        .searchCards(query)
-        .then(({ cards, total }) => {
-          connections.send(ws, { type: 'search:result', requestId, cards: cards as Card[], total });
-        })
-        .catch((err) => console.error('[ws] search error:', err));
-      break;
+  // ── Card CRUD ────────────────────────────────────────────────────────────
+  socket.on('card:create', (data, cb) => void handleCardCreate(data, cb));
+  socket.on('card:update', (data, cb) => void handleCardUpdate(data, cb));
+  socket.on('card:delete', (data, cb) => void handleCardDelete(data, cb));
+  socket.on('card:generateTitle', (data, cb) => void handleCardGenerateTitle(data, cb));
+  socket.on('card:suggestTitle', (data, cb) => void handleCardSuggestTitle(data, cb));
+
+  // ── Project CRUD ─────────────────────────────────────────────────────────
+  socket.on('project:create', (data, cb) => void handleProjectCreate(data, cb));
+  socket.on('project:update', (data, cb) => void handleProjectUpdate(data, cb, socket, io));
+  socket.on('project:delete', (data, cb) => void handleProjectDelete(data, cb));
+  socket.on('project:browse', (data, cb) => void handleProjectBrowse(data, cb));
+  socket.on('project:mkdir', (data, cb) => void handleProjectMkdir(data, cb));
+
+  // ── Agent ────────────────────────────────────────────────────────────────
+  socket.on('agent:send', (data, cb) => void handleAgentSend(data, cb));
+  socket.on('agent:compact', (data, cb) => void handleAgentCompact(data, cb));
+  socket.on('agent:stop', (data, cb) => void handleAgentStop(data, cb));
+  socket.on('agent:status', (data, cb) => void handleAgentStatus(data, cb, socket));
+
+  // ── Session ──────────────────────────────────────────────────────────────
+  socket.on('session:load', (data, cb) => void handleSessionLoad(data, cb, socket));
+
+  socket.on('session:set-model', async (data, callback) => {
+    const { cardId, provider, model } = data;
+    try {
+      const initState = await import('../init-state');
+      const sm = initState.getSessionManager();
+      sm?.setModel(cardId, provider, model);
+      const { Card } = await import('../models/Card');
+      const card = await Card.findOneBy({ id: cardId });
+      if (card) {
+        card.provider = provider;
+        card.model = model;
+        card.updatedAt = new Date().toISOString();
+        await card.save();
+      }
+      callback({});
+    } catch (err) {
+      callback({ error: String(err instanceof Error ? err.message : err) });
     }
+  });
 
-    case 'card:create':
-      void handleCardCreate(ws, msg, connections);
-      break;
+  // ── Queue ────────────────────────────────────────────────────────────────
+  socket.on('queue:reorder', (data, cb) => void handleQueueReorder(data, cb));
 
-    case 'card:update':
-      void handleCardUpdate(ws, msg, connections);
-      break;
-
-    case 'card:delete':
-      handleCardDelete(ws, msg, connections);
-      break;
-
-    case 'card:generateTitle':
-      void handleCardGenerateTitle(ws, msg, connections);
-      break;
-
-    case 'card:suggestTitle':
-      void handleCardSuggestTitle(ws, msg, connections);
-      break;
-
-    case 'project:create':
-      void handleProjectCreate(ws, msg, connections);
-      break;
-
-    case 'project:update':
-      void handleProjectUpdate(ws, msg, connections);
-      break;
-
-    case 'project:delete':
-      handleProjectDelete(ws, msg, connections);
-      break;
-
-    case 'project:browse':
-      void handleProjectBrowse(ws, msg, connections);
-      break;
-
-    case 'project:mkdir':
-      void handleProjectMkdir(ws, msg, connections);
-      break;
-
-    case 'session:load':
-      void handleSessionLoad(ws, msg, connections);
-      break;
-
-    case 'agent:send':
-      void handleAgentSend(ws, msg, connections);
-      break;
-
-    case 'agent:compact':
-      void handleAgentCompact(ws, msg, connections);
-      break;
-
-    case 'agent:stop':
-      void handleAgentStop(ws, msg, connections);
-      break;
-
-    case 'agent:status':
-      void handleAgentStatus(ws, msg, connections);
-      break;
-
-    case 'session:set-model': {
-      const { cardId, provider, model } = msg.data;
-      void (async () => {
-        try {
-          const initState = await import('../init-state');
-          const sm = initState.getSessionManager();
-          sm?.setModel(cardId, provider, model);
-          const { Card } = await import('../models/Card');
-          const card = await Card.findOneBy({ id: cardId });
-          if (card) {
-            card.provider = provider;
-            card.model = model;
-            card.updatedAt = new Date().toISOString();
-            await card.save();
-          }
-          connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId });
-        } catch (err) {
-          connections.send(ws, {
-            type: 'mutation:error',
-            requestId: msg.requestId,
-            error: String(err instanceof Error ? err.message : err),
-          });
-        }
-      })();
-      break;
+  // ── Disconnect ───────────────────────────────────────────────────────────
+  socket.on('disconnect', () => {
+    console.log(`[ws] disconnect: ${identity.email}`);
+    // Clean up card room bus listeners if rooms are now empty
+    for (const room of socket.rooms) {
+      const match = room.match(/^card:(\d+)$/);
+      if (match) {
+        busRoomBridge.cleanupCardIfEmpty(Number(match[1]));
+      }
     }
-
-    case 'queue:reorder':
-      void handleQueueReorder(ws, msg, connections);
-      break;
-
-    default: {
-      const exhausted = msg as { type: string; requestId?: string };
-      connections.send(ws, {
-        type: 'mutation:error',
-        requestId: exhausted.requestId ?? 'unknown',
-        error: `Handler not implemented: ${exhausted.type}`,
-      });
-    }
-  }
+  });
 }
