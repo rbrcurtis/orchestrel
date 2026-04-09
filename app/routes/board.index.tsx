@@ -50,7 +50,6 @@ interface CardItem {
   projectId: number | null;
   prUrl: string | null;
   sessionId: string | null;
-  worktreePath: string | null;
   worktreeBranch: string | null;
   promptsSent: number;
   turnsCompleted: number;

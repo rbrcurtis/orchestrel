@@ -74,7 +74,7 @@ export class CardStore {
     projectId?: number | null;
     model?: string;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
-    useWorktree?: boolean;
+    worktreeBranch?: string | null;
     sourceBranch?: 'main' | 'dev' | null;
   }): Promise<Card> {
     const requestId = uuid();
@@ -88,7 +88,7 @@ export class CardStore {
         projectId: data.projectId,
         model: data.model,
         thinkingLevel: data.thinkingLevel,
-        useWorktree: data.useWorktree,
+        worktreeBranch: data.worktreeBranch,
         sourceBranch: data.sourceBranch,
       },
     });
@@ -113,7 +113,6 @@ export class CardStore {
         projectId: data.projectId,
         model: data.model,
         thinkingLevel: data.thinkingLevel,
-        useWorktree: false,
         archiveOthers: true,
       },
     });
@@ -130,7 +129,7 @@ export class CardStore {
     projectId?: number | null;
     model?: string;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
-    useWorktree?: boolean;
+    worktreeBranch?: string | null;
     sourceBranch?: 'main' | 'dev' | null;
   }): Promise<Card> {
     const existing = this.cards.get(data.id);
