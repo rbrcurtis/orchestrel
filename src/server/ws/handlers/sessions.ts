@@ -1,8 +1,6 @@
 import type { AckResponse } from '../../../shared/ws-protocol';
 import type { AppSocket } from '../types';
-import { Card } from '../../models/Card';
-import { Project } from '../../models/Project';
-import { getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
+import { getMessages } from '../../sessions/conversation-store';
 import { busRoomBridge } from '../subscriptions';
 
 export async function handleSessionLoad(
@@ -10,30 +8,16 @@ export async function handleSessionLoad(
   callback: (res: AckResponse<{ messages: unknown[] }>) => void,
   socket: AppSocket,
 ): Promise<void> {
-  const { cardId, sessionId } = data;
+  const { cardId } = data;
 
   try {
     const room = `card:${cardId}`;
     const alreadyJoined = socket.rooms.has(room);
     console.log(
-      `[session:load] cardId=${cardId} sessionId=${sessionId ?? 'none'} alreadyJoined=${alreadyJoined}`,
+      `[session:load] cardId=${cardId} alreadyJoined=${alreadyJoined}`,
     );
 
-    let messages: unknown[] = [];
-    if (sessionId) {
-      const card = await Card.findOneBy({ id: cardId });
-      let dir: string | undefined;
-      if (card?.projectId) {
-        const proj = await Project.findOneBy({ id: card.projectId });
-        if (proj) {
-          const { resolveWorkDir } = await import('../../../shared/worktree');
-          dir = resolveWorkDir(card.worktreeBranch, proj.path);
-        }
-      }
-      const loaded = await getSessionMessages(sessionId, { dir });
-      console.log(`[session:load] cardId=${cardId} loaded ${loaded.length} history messages`);
-      messages = loaded as unknown[];
-    }
+    const messages = getMessages(cardId) as unknown[];
 
     // Join the card room for live events
     if (!alreadyJoined) {
@@ -44,7 +28,7 @@ export async function handleSessionLoad(
 
     callback({ data: { messages } });
   } catch (err) {
-    console.error(`[session:load] error loading session ${sessionId}:`, err);
+    console.error(`[session:load] error loading session:`, err);
     callback({ error: `Failed to load session: ${err}` });
   }
 }
