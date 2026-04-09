@@ -1,20 +1,10 @@
+// src/server/sessions/consumer.ts
+
 import type { ActiveSession } from './types';
 import { messageBus } from '../bus';
-
-/** SDK message types to forward to the UI */
-const FORWARD_TYPES = new Set([
-  'system',
-  'stream_event',
-  'assistant',
-  'result',
-  'tool_progress',
-  'tool_use_summary',
-  'task_started',
-  'task_progress',
-  'task_notification',
-  'rate_limit',
-  'status',
-]);
+import { sendToMeridian } from './meridian-client';
+import { translateEvent, buildResultMessage } from './event-translator';
+import { getMessages, addAssistantMessage } from './conversation-store';
 
 function statusPayload(session: ActiveSession, active: boolean) {
   return {
@@ -30,83 +20,86 @@ function statusPayload(session: ActiveSession, active: boolean) {
 }
 
 /**
- * Consumes the SDK Query async generator for a session.
- * Updates session state, publishes forwarded messages to the bus.
- * Runs as a fire-and-forget async task — one per active session.
+ * Send a request to meridian and consume the SSE stream.
+ * Publishes translated events to the message bus.
  */
 export async function consumeSession(
   session: ActiveSession,
+  systemPrompt: string,
   onExit: (session: ActiveSession) => void,
 ): Promise<void> {
   const { cardId } = session;
   const log = (msg: string) => console.log(`[session:${session.sessionId ?? cardId}] ${msg}`);
+  const profile = session.provider === 'anthropic' ? undefined : session.provider;
 
   try {
-    for await (const msg of session.query) {
-      let sdkMsg = msg as Record<string, unknown>;
+    const meridian = await sendToMeridian({
+      model: session.model,
+      messages: getMessages(cardId),
+      system: systemPrompt,
+      sessionId: session.meridianSessionId,
+      profile,
+      signal: session.abortController.signal,
+    });
 
-      switch (sdkMsg.type) {
-        case 'system': {
-          const sys = sdkMsg as { subtype?: string; session_id?: string };
-          if (sys.subtype === 'init' && sys.session_id) {
-            if (!session.sessionId) {
-              session.sessionId = sys.session_id;
-              session.status = 'running';
-              log(`init sessionId=${sys.session_id}`);
-              messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
-              sdkMsg = { ...sdkMsg, model: session.model };
-            } else {
-              // Streaming input mode re-emits init after each turn — suppress
-              break;
-            }
-          }
-          break;
+    session.status = 'running';
+    messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
+
+    const contentBlocks: unknown[] = [];
+    let usage: Record<string, unknown> | null = null;
+
+    for await (const sse of meridian.events) {
+      const msg = translateEvent(sse);
+      if (!msg) continue;
+
+      // Track session ID from message_start
+      if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
+        if (!session.sessionId) {
+          session.sessionId = msg.session_id as string;
+          log(`init sessionId=${session.sessionId}`);
         }
-
-        case 'assistant':
-        case 'stream_event':
-          if (session.status !== 'running') {
-            session.status = 'running';
-            messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
-          }
-          break;
-
-        case 'result': {
-          const result = sdkMsg as {
-            subtype?: string;
-            total_cost_usd?: number;
-            usage?: Record<string, unknown>;
-            num_turns?: number;
-            duration_ms?: number;
-          };
-          session.turnsCompleted++;
-          session.turnCost = result.total_cost_usd ?? 0;
-          log(`result subtype=${result.subtype} cost=$${session.turnCost} turns=${session.turnsCompleted}`);
-          // Close the prompt channel so the SDK finishes up and the subprocess exits.
-          // Follow-ups will reconnect via resume.
-          session.closeInput();
-          break;
-        }
-
-        case 'rate_limit':
-          session.status = 'retry';
-          log('rate_limit');
-          messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
-          break;
-
-        default:
-          break;
       }
 
-      // Forward displayable messages to UI subscribers
-      if (FORWARD_TYPES.has(sdkMsg.type as string)) {
-        messageBus.publish(`card:${cardId}:sdk`, sdkMsg);
+      // Track content blocks for conversation store
+      if (msg.type === 'stream_event') {
+        const evt = msg.event as Record<string, unknown>;
+        if (evt.type === 'content_block_start') {
+          contentBlocks.push(evt.content_block);
+        }
+        if (evt.type === 'content_block_delta') {
+          // Update last content block with delta
+          const idx = evt.index as number;
+          const delta = evt.delta as Record<string, unknown>;
+          const block = contentBlocks[idx] as Record<string, unknown> | undefined;
+          if (block?.type === 'text' && delta.type === 'text_delta') {
+            block.text = ((block.text as string) ?? '') + (delta.text as string);
+          }
+        }
+        if (evt.type === 'message_delta') {
+          usage = (evt.usage as Record<string, unknown>) ?? null;
+        }
       }
+
+      // Forward to UI
+      messageBus.publish(`card:${cardId}:sdk`, msg);
     }
+
+    // Store assistant response in conversation
+    if (contentBlocks.length > 0) {
+      addAssistantMessage(cardId, contentBlocks);
+    }
+
+    session.turnsCompleted++;
+    session.turnCost = 0; // meridian doesn't expose cost in SSE yet
+    log(`turn complete turns=${session.turnsCompleted}`);
+
+    // Publish result
+    messageBus.publish(`card:${cardId}:sdk`, buildResultMessage(session.turnCost, usage));
+
+    session.status = 'completed';
   } catch (err) {
-    // Ignore "Query closed" errors — these happen when stop() is called during cleanup
     const errMsg = String(err);
-    if (errMsg.includes('Query closed before response received') || errMsg.includes('Operation aborted') || errMsg.includes('Request was aborted')) {
+    if (errMsg.includes('aborted') || errMsg.includes('AbortError')) {
       log(`consumer stopped cleanly: ${errMsg}`);
       if (session.status !== 'completed') session.status = 'stopped';
     } else {
