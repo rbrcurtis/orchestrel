@@ -24,17 +24,18 @@ export async function handleAgentSend(
     if (sm.isActive(cardId)) {
       sm.sendFollowUp(cardId, prompt);
     } else {
-      if (card.column !== 'running') {
-        card.column = 'running';
-        card.updatedAt = new Date().toISOString();
-        await card.save();
-      }
+      // Start session BEFORE updating column — prevents auto-start race
       await sm.start(cardId, prompt, {
         provider: card.provider,
         model: card.model,
         resume: card.sessionId ?? undefined,
       });
       registerCardSession(cardId);
+      if (card.column !== 'running') {
+        card.column = 'running';
+        card.updatedAt = new Date().toISOString();
+        await card.save();
+      }
     }
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);

@@ -47,16 +47,30 @@ export async function consumeSession(
 
     const contentBlocks: unknown[] = [];
     let usage: Record<string, unknown> | null = null;
+    let initSent = false;
 
     for await (const sse of meridian.events) {
       const msg = translateEvent(sse);
       if (!msg) continue;
 
-      // Track session ID from message_start
-      if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-        if (!session.sessionId) {
-          session.sessionId = msg.session_id as string;
-          log(`init sessionId=${session.sessionId}`);
+      // Track session ID from first message_start only.
+      // Subsequent message_start events (from multi-turn agentic loops in
+      // non-passthrough mode) are forwarded as stream_events so the
+      // accumulator resets blocks between turns without rendering
+      // duplicate "Session started" entries.
+      if (msg.type === 'system' && msg.subtype === 'init') {
+        if (!initSent) {
+          if (msg.session_id) {
+            session.sessionId = msg.session_id as string;
+            log(`init sessionId=${session.sessionId}`);
+          }
+          initSent = true;
+        } else {
+          messageBus.publish(`card:${cardId}:sdk`, {
+            type: 'stream_event',
+            event: { type: 'message_start' },
+          });
+          continue;
         }
       }
 

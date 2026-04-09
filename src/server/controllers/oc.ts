@@ -131,7 +131,6 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
       await sm.start(fullCard.id, prompt, {
         provider: fullCard.provider,
         model: fullCard.model,
-        cwd: process.cwd(),
         resume: fullCard.sessionId ?? undefined,
       });
       registerCardSession(fullCard.id);
