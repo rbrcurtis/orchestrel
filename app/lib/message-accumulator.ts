@@ -14,13 +14,23 @@ import type {
   HistoryAssistantContentBlock,
 } from './sdk-types';
 
-export interface ContentBlock {
+export class ContentBlock {
   type: 'text' | 'thinking' | 'tool_use';
   content: string;
   id?: string;
   name?: string;
   input?: string;
   complete: boolean;
+
+  constructor(init: { type: 'text' | 'thinking' | 'tool_use'; content: string; id?: string; name?: string; input?: string; complete: boolean }) {
+    this.type = init.type;
+    this.content = init.content;
+    this.id = init.id;
+    this.name = init.name;
+    this.input = init.input;
+    this.complete = init.complete;
+    makeAutoObservable(this, { type: false, id: false, name: false });
+  }
 }
 
 export interface TurnResult {
@@ -152,20 +162,20 @@ export class MessageAccumulator {
           })
           .map((b: HistoryAssistantContentBlock) => {
             if (b.type === 'tool_use') {
-              return {
-                type: 'tool_use' as const,
+              return new ContentBlock({
+                type: 'tool_use',
                 content: b.name ?? '',
                 id: b.id,
                 name: b.name,
                 input: b.input !== undefined ? JSON.stringify(b.input) : '',
                 complete: true,
-              };
+              });
             }
             if (b.type === 'thinking') {
-              return { type: 'thinking' as const, content: b.thinking ?? '', complete: true };
+              return new ContentBlock({ type: 'thinking', content: b.thinking ?? '', complete: true });
             }
             // text
-            return { type: 'text' as const, content: b.text ?? '', complete: true };
+            return new ContentBlock({ type: 'text', content: b.text ?? '', complete: true });
           });
         if (blocks.length > 0) {
           this.conversation.push({ kind: 'blocks', blocks, model: msg.message.model });
@@ -200,14 +210,14 @@ export class MessageAccumulator {
   }
 
   private onContentBlockStart(evt: ContentBlockStart): void {
-    const block: ContentBlock = {
+    const block = new ContentBlock({
       type: evt.content_block.type as 'text' | 'thinking' | 'tool_use',
       content: evt.content_block.text ?? evt.content_block.thinking ?? '',
       id: evt.content_block.id,
       name: evt.content_block.name,
       input: '',
       complete: false,
-    };
+    });
     this.currentBlocks.push(block);
   }
 
