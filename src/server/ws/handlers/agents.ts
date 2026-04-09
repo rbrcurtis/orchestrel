@@ -32,7 +32,6 @@ export async function handleAgentSend(
       await sm.start(cardId, prompt, {
         provider: card.provider,
         model: card.model,
-        cwd: process.cwd(),
         resume: card.sessionId ?? undefined,
       });
       registerCardSession(cardId);
