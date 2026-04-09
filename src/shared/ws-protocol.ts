@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
-// ── Entity schemas (standalone Zod — no Drizzle dependency) ──────────────────
+// ── Entity schemas (unchanged) ─────────────────────────────────────────────
 
-// SQLite stores booleans as 0/1 integers; coerce to real booleans at parse time
 const sqliteBool = z.union([z.boolean(), z.number()]).transform((v) => !!v);
 
 export const cardSchema = z.object({
@@ -56,12 +55,12 @@ export type Card = z.infer<typeof cardSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type User = z.infer<typeof userSchema>;
 
-// ── Column enum ──────────────────────────────────────────────────────────────
+// ── Column enum ────────────────────────────────────────────────────────────
 
 export const columnEnum = z.enum(['backlog', 'ready', 'running', 'review', 'done', 'archive']);
 export type Column = z.infer<typeof columnEnum>;
 
-// ── Mutation input schemas ───────────────────────────────────────────────────
+// ── Mutation input schemas (unchanged) ─────────────────────────────────────
 
 export const cardCreateSchema = z.object({
   title: z.string(),
@@ -96,7 +95,7 @@ export const projectUpdateSchema = z
   .object({ id: z.number(), userIds: z.array(z.number()).optional() })
   .merge(projectCreateSchema.partial());
 
-// ── Provider config schema ───────────────────────────────────────────────────
+// ── Provider config schema (unchanged) ─────────────────────────────────────
 
 export const modelConfigSchema = z.object({
   label: z.string(),
@@ -113,7 +112,7 @@ export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type ProvidersMap = Record<string, ProviderConfig>;
 
-// ── File ref schema ──────────────────────────────────────────────────────────
+// ── File ref schema (unchanged) ────────────────────────────────────────────
 
 export const fileRefSchema = z.object({
   id: z.string(),
@@ -125,7 +124,7 @@ export const fileRefSchema = z.object({
 
 export type FileRef = z.infer<typeof fileRefSchema>;
 
-// ── Agent schemas ───────────────────────────────────────────────────────────
+// ── Agent schemas (unchanged) ──────────────────────────────────────────────
 
 export const agentSendSchema = z.object({
   cardId: z.number(),
@@ -146,94 +145,78 @@ export const agentStatusSchema = z.object({
 
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 
-// ── Client → Server messages ─────────────────────────────────────────────────
+// ── Socket.IO Typed Events ─────────────────────────────────────────────────
 
-export const clientMessage = z.discriminatedUnion('type', [
-  // No requestId — subscription control
-  z.object({ type: z.literal('subscribe'), columns: z.array(columnEnum) }),
-  z.object({ type: z.literal('page'), column: columnEnum, cursor: z.number().optional(), limit: z.number() }),
+/** Standard ack response — every mutation callback receives this shape */
+export interface AckResponse<T = unknown> {
+  data?: T;
+  error?: string;
+}
 
-  // Has requestId — request/response
-  z.object({ type: z.literal('search'), query: z.string(), requestId: z.string() }),
+/** Sync payload pushed after subscribe */
+export interface SyncPayload {
+  cards: Card[];
+  projects: Project[];
+  providers: Record<string, ProviderConfig>;
+  user?: User;
+  users?: User[];
+}
 
-  z.object({ type: z.literal('card:create'), requestId: z.string(), data: cardCreateSchema }),
-  z.object({ type: z.literal('card:update'), requestId: z.string(), data: cardUpdateSchema }),
-  z.object({ type: z.literal('card:delete'), requestId: z.string(), data: z.object({ id: z.number() }) }),
-  z.object({ type: z.literal('card:generateTitle'), requestId: z.string(), data: z.object({ id: z.number() }) }),
-  z.object({
-    type: z.literal('card:suggestTitle'),
-    requestId: z.string(),
-    data: z.object({ description: z.string() }),
-  }),
+/** Page result payload */
+export interface PageResult {
+  column: Column;
+  cards: Card[];
+  nextCursor?: number;
+  total: number;
+}
 
-  z.object({ type: z.literal('project:create'), requestId: z.string(), data: projectCreateSchema }),
-  z.object({ type: z.literal('project:update'), requestId: z.string(), data: projectUpdateSchema }),
-  z.object({ type: z.literal('project:delete'), requestId: z.string(), data: z.object({ id: z.number() }) }),
-  z.object({ type: z.literal('project:browse'), requestId: z.string(), data: z.object({ path: z.string() }) }),
-  z.object({ type: z.literal('project:mkdir'), requestId: z.string(), data: z.object({ path: z.string() }) }),
+/** Client → Server events */
+export interface ClientToServerEvents {
+  // Subscription control (with ack for sync payload)
+  subscribe: (columns: Column[], ack: (res: AckResponse<SyncPayload>) => void) => void;
+  page: (data: { column: Column; cursor?: number; limit: number }, ack: (res: AckResponse<PageResult>) => void) => void;
+  search: (data: { query: string }, ack: (res: AckResponse<{ cards: Card[]; total: number }>) => void) => void;
 
-  z.object({ type: z.literal('agent:send'), requestId: z.string(), data: agentSendSchema }),
-  z.object({ type: z.literal('agent:compact'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
-  z.object({ type: z.literal('agent:stop'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
-  z.object({ type: z.literal('agent:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
+  // Card mutations
+  'card:create': (data: z.infer<typeof cardCreateSchema>, ack: (res: AckResponse<Card>) => void) => void;
+  'card:update': (data: z.infer<typeof cardUpdateSchema>, ack: (res: AckResponse<Card>) => void) => void;
+  'card:delete': (data: { id: number }, ack: (res: AckResponse) => void) => void;
+  'card:generateTitle': (data: { id: number }, ack: (res: AckResponse<Card>) => void) => void;
+  'card:suggestTitle': (data: { description: string }, ack: (res: AckResponse<string>) => void) => void;
 
-  z.object({
-    type: z.literal('session:set-model'),
-    requestId: z.string(),
-    data: z.object({ cardId: z.number(), provider: z.string(), model: z.string() }),
-  }),
+  // Project mutations
+  'project:create': (data: z.infer<typeof projectCreateSchema>, ack: (res: AckResponse<Project>) => void) => void;
+  'project:update': (data: z.infer<typeof projectUpdateSchema>, ack: (res: AckResponse<Project>) => void) => void;
+  'project:delete': (data: { id: number }, ack: (res: AckResponse) => void) => void;
+  'project:browse': (data: { path: string }, ack: (res: AckResponse<unknown>) => void) => void;
+  'project:mkdir': (data: { path: string }, ack: (res: AckResponse<{ success: boolean }>) => void) => void;
 
-  z.object({
-    type: z.literal('session:load'),
-    requestId: z.string(),
-    data: z.object({ sessionId: z.string().optional(), cardId: z.number() }),
-  }),
+  // Agent mutations
+  'agent:send': (data: z.infer<typeof agentSendSchema>, ack: (res: AckResponse) => void) => void;
+  'agent:compact': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
+  'agent:stop': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
+  'agent:status': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
 
-  z.object({ type: z.literal('queue:reorder'), requestId: z.string(), cardId: z.number(), newPosition: z.number() }),
-]);
+  // Session
+  'session:load': (data: { cardId: number; sessionId?: string }, ack: (res: AckResponse<{ messages: unknown[] }>) => void) => void;
+  'session:set-model': (data: { cardId: number; provider: string; model: string }, ack: (res: AckResponse) => void) => void;
 
-export type ClientMessage = z.infer<typeof clientMessage>;
+  // Queue
+  'queue:reorder': (data: { cardId: number; newPosition: number }, ack: (res: AckResponse) => void) => void;
+}
 
-// ── Server → Client messages ─────────────────────────────────────────────────
+/** Server → Client push events */
+export interface ServerToClientEvents {
+  sync: (data: SyncPayload) => void;
+  'card:updated': (data: Card) => void;
+  'card:deleted': (data: { id: number }) => void;
+  'project:updated': (data: Project) => void;
+  'project:deleted': (data: { id: number }) => void;
+  'session:message': (data: { cardId: number; message: unknown }) => void;
+  'agent:status': (data: AgentStatus) => void;
+}
 
-export const serverMessage = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('mutation:ok'), requestId: z.string(), data: z.unknown().optional() }),
-  z.object({ type: z.literal('mutation:error'), requestId: z.string(), error: z.string() }),
-
-  z.object({
-    type: z.literal('sync'),
-    cards: z.array(cardSchema),
-    projects: z.array(projectSchema),
-    providers: z.record(z.string(), providerConfigSchema),
-    user: userSchema.optional(),
-    users: z.array(userSchema).optional(),
-  }),
-  z.object({ type: z.literal('card:updated'), data: cardSchema }),
-  z.object({ type: z.literal('card:deleted'), data: z.object({ id: z.number() }) }),
-  z.object({ type: z.literal('project:updated'), data: projectSchema }),
-  z.object({ type: z.literal('project:deleted'), data: z.object({ id: z.number() }) }),
-
-  z.object({
-    type: z.literal('page:result'),
-    column: columnEnum,
-    cards: z.array(cardSchema),
-    nextCursor: z.number().optional(),
-    total: z.number(),
-  }),
-  z.object({ type: z.literal('search:result'), requestId: z.string(), cards: z.array(cardSchema), total: z.number() }),
-
-  z.object({
-    type: z.literal('session:history'),
-    requestId: z.string(),
-    cardId: z.number(),
-    messages: z.array(z.unknown()),
-  }),
-
-  z.object({ type: z.literal('session:message'), cardId: z.number(), message: z.unknown() }),
-  z.object({ type: z.literal('session:exit'), cardId: z.number(), sessionId: z.string().nullable() }),
-  z.object({ type: z.literal('agent:status'), data: agentStatusSchema }),
-
-  z.object({ type: z.literal('project:browse:result'), requestId: z.string(), data: z.unknown() }),
-]);
-
-export type ServerMessage = z.infer<typeof serverMessage>;
+/** Server-side socket.data shape */
+export interface SocketData {
+  identity: { id: number; email: string; role: string };
+}
