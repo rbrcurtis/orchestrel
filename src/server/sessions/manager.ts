@@ -1,4 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { createPromptChannel, userMessage } from './prompt-channel';
 import type { ActiveSession, SessionStartOpts } from './types';
 import { consumeSession } from './consumer';
 import { ensureWorktree } from './worktree';
@@ -24,10 +25,13 @@ export class SessionManager {
     const card = await AppDataSource.getRepository(Card).findOneByOrFail({ id: cardId });
     const cwd = await ensureWorktree(card);
 
+    const channel = createPromptChannel();
+    channel.push(userMessage(prompt));
+
     const isKiroProvider = opts.provider !== 'anthropic';
     const modelStr = isKiroProvider ? `${opts.provider}:${opts.model}` : opts.model;
     const q = query({
-      prompt,
+      prompt: channel.iterator,
       options: {
         model: modelStr,
         cwd,
@@ -57,12 +61,18 @@ export class SessionManager {
       turnCost: 0,
       turnUsage: null,
       cwd,
+      pushMessage: channel.push,
+      closeInput: channel.close,
+      stopTimeout: null,
     };
 
     this.sessions.set(cardId, session);
 
     // Fire-and-forget consumer loop
-    consumeSession(session, (s) => this.sessions.delete(s.cardId));
+    consumeSession(session, (s) => {
+      if (s.stopTimeout) clearTimeout(s.stopTimeout);
+      this.sessions.delete(s.cardId);
+    });
 
     return session;
   }
