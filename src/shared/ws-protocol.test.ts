@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cardSchema, clientMessage, serverMessage } from './ws-protocol'
+import { cardSchema, projectSchema, agentStatusSchema } from './ws-protocol'
 
 describe('cardSchema', () => {
   it('validates a full card row', () => {
@@ -17,6 +17,7 @@ describe('cardSchema', () => {
       useWorktree: true,
       sourceBranch: null,
       model: 'sonnet',
+      provider: 'anthropic',
       thinkingLevel: 'high',
       promptsSent: 0,
       turnsCompleted: 0,
@@ -45,6 +46,7 @@ describe('cardSchema', () => {
       useWorktree: false,
       sourceBranch: null,
       model: 'sonnet',
+      provider: 'anthropic',
       thinkingLevel: 'off',
       promptsSent: 0,
       turnsCompleted: 0,
@@ -57,111 +59,102 @@ describe('cardSchema', () => {
     const result = cardSchema.safeParse(card)
     expect(result.success).toBe(false)
   })
-})
 
-describe('clientMessage', () => {
-  it('parses subscribe', () => {
-    const msg = { type: 'subscribe', columns: ['backlog', 'ready'] }
-    const result = clientMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('subscribe')
-  })
-
-  it('parses page', () => {
-    const msg = { type: 'page', column: 'backlog', limit: 20 }
-    const result = clientMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('page')
-  })
-
-  it('parses search', () => {
-    const msg = { type: 'search', query: 'foo', requestId: 'r1' }
-    const result = clientMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('search')
-  })
-
-  it('rejects unknown type', () => {
-    const msg = { type: 'unknown:action', data: {} }
-    const result = clientMessage.safeParse(msg)
-    expect(result.success).toBe(false)
-  })
-})
-
-describe('serverMessage', () => {
-  it('parses sync', () => {
-    const msg = {
-      type: 'sync',
-      cards: [],
-      projects: [],
-      providers: {},
-    }
-    const result = serverMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-  })
-
-  it('parses mutation:ok without data', () => {
-    const msg = { type: 'mutation:ok', requestId: 'req-1' }
-    const result = serverMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('mutation:ok')
-  })
-
-  it('parses mutation:ok with data', () => {
-    const msg = { type: 'mutation:ok', requestId: 'req-1', data: { id: 42 } }
-    const result = serverMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('mutation:ok')
-  })
-
-  it('parses mutation:error', () => {
-    const msg = { type: 'mutation:error', requestId: 'req-1', error: 'something went wrong' }
-    const result = serverMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('mutation:error')
-  })
-
-  it('parses card:updated', () => {
+  it('coerces sqlite integer booleans', () => {
     const card = {
-      id: 3,
-      title: 'Updated',
+      id: 2,
+      title: 'Task',
       description: '',
-      column: 'done',
+      column: 'backlog',
       position: 0,
       projectId: null,
       prUrl: null,
       sessionId: null,
       worktreePath: null,
       worktreeBranch: null,
-      useWorktree: false,
+      useWorktree: 1, // sqlite stores booleans as integers
       sourceBranch: null,
       model: 'sonnet',
+      provider: 'anthropic',
       thinkingLevel: 'off',
+      promptsSent: 0,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
+      createdAt: '2024-01-01T00:00:00',
+      updatedAt: '2024-01-01T00:00:00',
+      queuePosition: null,
+    }
+    const result = cardSchema.safeParse(card)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.useWorktree).toBe(true)
+  })
+})
+
+describe('projectSchema', () => {
+  it('validates a full project row', () => {
+    const project = {
+      id: 1,
+      name: 'My Project',
+      path: '/home/user/code/project',
+      setupCommands: '',
+      isGitRepo: true,
+      defaultBranch: 'main',
+      defaultWorktree: false,
+      defaultModel: 'sonnet',
+      defaultThinkingLevel: 'off',
+      providerID: 'anthropic',
+      color: '#ff0000',
+      createdAt: '2024-01-01T00:00:00',
+    }
+    const result = projectSchema.safeParse(project)
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('agentStatusSchema', () => {
+  it('validates running status', () => {
+    const status = {
+      cardId: 1,
+      active: true,
+      status: 'running',
+      sessionId: 'sess-abc',
+      promptsSent: 3,
+      turnsCompleted: 2,
+      contextTokens: 5000,
+      contextWindow: 200000,
+    }
+    const result = agentStatusSchema.safeParse(status)
+    expect(result.success).toBe(true)
+  })
+
+  it('validates completed status', () => {
+    const status = {
+      cardId: 2,
+      active: false,
+      status: 'completed',
+      sessionId: null,
       promptsSent: 1,
       turnsCompleted: 1,
       contextTokens: 0,
       contextWindow: 200000,
-      createdAt: '2024-01-01T00:00:00',
-      updatedAt: '2024-01-02T00:00:00',
-      queuePosition: null,
     }
-    const msg = { type: 'card:updated', data: card }
-    const result = serverMessage.safeParse(msg)
+    const result = agentStatusSchema.safeParse(status)
     expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('card:updated')
   })
 
-  it('parses page:result', () => {
-    const msg = { type: 'page:result', column: 'backlog', cards: [], total: 0 }
-    const result = serverMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('page:result')
-  })
-
-  it('parses search:result', () => {
-    const msg = { type: 'search:result', requestId: 'r1', cards: [], total: 0 }
-    const result = serverMessage.safeParse(msg)
-    expect(result.success).toBe(true)
-    if (result.success) expect(result.data.type).toBe('search:result')
+  it('rejects invalid status value', () => {
+    const status = {
+      cardId: 1,
+      active: false,
+      status: 'unknown_status',
+      sessionId: null,
+      promptsSent: 0,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
+    }
+    const result = agentStatusSchema.safeParse(status)
+    expect(result.success).toBe(false)
   })
 })
