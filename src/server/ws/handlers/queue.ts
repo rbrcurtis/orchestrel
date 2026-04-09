@@ -22,13 +22,11 @@ export async function handleQueueReorder(
 
     const oldPosition = card.queuePosition
 
-    const queued = await Card.find({
-      where: {
-        column: 'running',
-        projectId: card.projectId,
-        useWorktree: false as unknown as boolean,
-      },
-    })
+    const queued = await Card.createQueryBuilder('card')
+      .where('card.column = :col', { col: 'running' })
+      .andWhere('card.project_id = :pid', { pid: card.projectId })
+      .andWhere('card.worktree_branch IS NULL')
+      .getMany()
     const queuedOnly = queued.filter(c => c.queuePosition != null)
 
     if (newPosition < 1 || newPosition > queuedOnly.length) {
