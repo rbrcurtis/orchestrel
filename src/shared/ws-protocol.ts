@@ -14,9 +14,7 @@ export const cardSchema = z.object({
   projectId: z.number().nullable(),
   prUrl: z.string().nullable(),
   sessionId: z.string().nullable(),
-  worktreePath: z.string().nullable(),
   worktreeBranch: z.string().nullable(),
-  useWorktree: sqliteBool,
   sourceBranch: z.enum(['main', 'dev']).nullable(),
   model: z.string(),
   provider: z.string(),
@@ -71,7 +69,7 @@ export const cardCreateSchema = z.object({
   model: z.string().optional(),
   provider: z.string().optional(),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
-  useWorktree: z.boolean().optional(),
+  worktreeBranch: z.string().nullable().optional(),
   sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
   archiveOthers: z.boolean().optional(),
 });
