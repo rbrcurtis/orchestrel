@@ -1,12 +1,11 @@
 import { resolve } from 'path';
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import { createPromptChannel, userMessage } from './prompt-channel';
 import type { ActiveSession, SessionStartOpts } from './types';
 import type { FileRef } from '../../shared/ws-protocol';
 import { consumeSession } from './consumer';
 import { ensureWorktree } from './worktree';
 import { Card } from '../models/Card';
 import { AppDataSource } from '../models/index';
+import { addUserMessage, getMessages } from './conversation-store';
 
 /** Prepend file-path instructions to a prompt when files are attached. */
 export function buildPromptWithFiles(message: string, files?: FileRef[]): string {
@@ -18,6 +17,11 @@ export function buildPromptWithFiles(message: string, files?: FileRef[]): string
   }
   const fileList = files.map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`).join('\n');
   return `I've attached the following files for you to review. Use the Read tool to read them:\n${fileList}\n\n${message}`;
+}
+
+/** Build system prompt with working directory for meridian's extractClientCwd. */
+function buildSystemPrompt(cwd: string): string {
+  return `<env>\nWorking directory: ${cwd}\n</env>`;
 }
 
 export class SessionManager {
@@ -39,34 +43,15 @@ export class SessionManager {
     const card = await AppDataSource.getRepository(Card).findOneByOrFail({ id: cardId });
     const cwd = await ensureWorktree(card);
 
-    const channel = createPromptChannel();
-    channel.push(userMessage(prompt));
+    // Add user message to conversation store
+    addUserMessage(cardId, prompt);
 
-    const isKiroProvider = opts.provider !== 'anthropic';
-    const modelStr = isKiroProvider ? `${opts.provider}:${opts.model}` : opts.model;
-    const q = query({
-      prompt: channel.iterator,
-      options: {
-        model: modelStr,
-        cwd,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
-        settingSources: ['user', 'project'],
-        includePartialMessages: true,
-        ...(opts.resume ? { resume: opts.resume } : {}),
-        env: {
-          ...process.env,
-          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
-          ...(isKiroProvider ? { ANTHROPIC_BASE_URL: process.env.KIRO_PROXY_URL ?? 'http://127.0.0.1:3457' } : {}),
-        },
-      },
-    });
+    const meridianSessionId = opts.resume ?? `card-${cardId}-${Date.now()}`;
 
     const session: ActiveSession = {
       cardId,
-      query: q,
       sessionId: null,
+      meridianSessionId,
       provider: opts.provider,
       model: opts.model,
       status: 'starting',
@@ -75,15 +60,14 @@ export class SessionManager {
       turnCost: 0,
       turnUsage: null,
       cwd,
-      pushMessage: channel.push,
-      closeInput: channel.close,
+      abortController: new AbortController(),
       stopTimeout: null,
     };
 
     this.sessions.set(cardId, session);
 
-    // Fire-and-forget consumer loop
-    consumeSession(session, (s) => {
+    // Fire-and-forget consumer
+    consumeSession(session, buildSystemPrompt(cwd), (s) => {
       if (s.stopTimeout) clearTimeout(s.stopTimeout);
       this.sessions.delete(s.cardId);
     });
@@ -95,9 +79,16 @@ export class SessionManager {
     const session = this.sessions.get(cardId);
     if (!session) throw new Error(`No active session for card ${cardId}`);
 
+    // Add to conversation store
+    addUserMessage(cardId, message);
     session.promptsSent++;
     session.status = 'starting';
-    session.pushMessage(userMessage(message));
+
+    // Start a new consumer for the follow-up (new HTTP request to meridian)
+    consumeSession(session, buildSystemPrompt(session.cwd), (s) => {
+      if (s.stopTimeout) clearTimeout(s.stopTimeout);
+      this.sessions.delete(s.cardId);
+    });
   }
 
   stop(cardId: number): void {
@@ -106,16 +97,13 @@ export class SessionManager {
 
     console.log(`[session:${session.sessionId ?? cardId}] stop requested`);
     session.status = 'stopped';
-    session.query.interrupt().catch((err) => {
-      console.log(`[session:${session.sessionId ?? cardId}] interrupt cleanup: ${err}`);
-    });
+    session.abortController.abort();
 
-    // Hard kill fallback if interrupt doesn't terminate the session
+    // Hard kill fallback
     session.stopTimeout = setTimeout(() => {
       if (!this.sessions.has(cardId)) return;
-      console.log(`[session:${session.sessionId ?? cardId}] interrupt timeout, forcing close`);
-      session.closeInput();
-      session.query.close();
+      console.log(`[session:${session.sessionId ?? cardId}] abort timeout, forcing cleanup`);
+      this.sessions.delete(cardId);
     }, 5_000);
   }
 
@@ -123,11 +111,9 @@ export class SessionManager {
     const session = this.sessions.get(cardId);
     if (!session) return;
 
-    const modelStr = `${provider}:${model}`;
-    session.query.setModel(modelStr);
     session.provider = provider;
     session.model = model;
-    console.log(`[session:${session.sessionId ?? cardId}] model changed to ${modelStr}`);
+    console.log(`[session:${session.sessionId ?? cardId}] model changed to ${provider}:${model}`);
   }
 
   get(cardId: number): ActiveSession | undefined {
