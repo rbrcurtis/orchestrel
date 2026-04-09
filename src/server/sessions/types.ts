@@ -1,4 +1,4 @@
-import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
 export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry';
 
@@ -21,6 +21,9 @@ export interface ActiveSession {
   turnCost: number;
   turnUsage: Usage | null;
   cwd: string;
+  pushMessage: (msg: SDKUserMessage) => void;
+  closeInput: () => void;
+  stopTimeout: ReturnType<typeof setTimeout> | null;
 }
 
 export interface SessionStartOpts {
