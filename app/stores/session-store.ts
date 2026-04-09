@@ -82,9 +82,19 @@ export class SessionStore {
 
       // Extract context info from result messages
       if (sdkMsg.type === 'result') {
-        const r = sdkMsg as { usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } };
+        const r = sdkMsg as { usage?: {
+          input_tokens: number;
+          output_tokens: number;
+          cache_read_input_tokens?: number;
+          cache_creation_input_tokens?: number;
+          iterations?: { input_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }[];
+        } };
         if (r.usage) {
-          s.contextTokens = (r.usage.input_tokens ?? 0) + (r.usage.cache_creation_input_tokens ?? 0) + (r.usage.cache_read_input_tokens ?? 0);
+          // Top-level usage is cumulative across all iterations in the turn.
+          // Use the last iteration to get the actual current context window state.
+          const last = r.usage.iterations?.at(-1);
+          const u = last ?? r.usage;
+          s.contextTokens = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
         }
       }
     });
