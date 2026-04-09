@@ -22,7 +22,7 @@ import {
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import { cn } from '~/lib/utils';
-import { slugify } from '~/shared/worktree';
+import { slugify } from '../../src/shared/worktree';
 import type { Column } from '../../src/shared/ws-protocol';
 
 type Props = {
