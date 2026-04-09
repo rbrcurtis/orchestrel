@@ -48,6 +48,7 @@ export default defineConfig(({ isSsrBuild }) => ({
       '@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities',
       'class-variance-authority', 'clsx', 'tailwind-merge',
       'idb-keyval', 'zod', 'react-markdown', 'remark-gfm',
+      'socket.io-client',
     ],
   },
   server: {
