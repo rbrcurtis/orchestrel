@@ -1,96 +1,64 @@
-import type { WebSocket } from 'ws';
-import type { ClientMessage } from '../../../shared/ws-protocol';
-import type { ConnectionManager } from '../connections';
+import type { AckResponse, Card } from '../../../shared/ws-protocol';
 import { cardService } from '../../services/card';
 
 export async function handleCardCreate(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'card:create' }>,
-  connections: ConnectionManager,
+  data: { title: string; description?: string; column?: string; projectId?: number | null; model?: string; provider?: string; thinkingLevel?: string; useWorktree?: boolean; sourceBranch?: 'main' | 'dev' | null; archiveOthers?: boolean },
+  callback: (res: AckResponse<Card>) => void,
 ): Promise<void> {
-  const { requestId, data } = msg;
   try {
     if (!data.projectId) throw new Error('projectId is required');
     const card = await cardService.createCard(data);
-    connections.send(ws, { type: 'mutation:ok', requestId, data: card });
+    callback({ data: card as unknown as Card });
   } catch (err) {
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId,
-      error: String(err instanceof Error ? err.message : err),
-    });
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
 
 export async function handleCardUpdate(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'card:update' }>,
-  connections: ConnectionManager,
+  data: { id: number; [key: string]: unknown },
+  callback: (res: AckResponse<Card>) => void,
 ): Promise<void> {
-  const { requestId, data } = msg;
   const { id, ...rest } = data;
   try {
     const card = await cardService.updateCard(id, rest);
-    connections.send(ws, { type: 'mutation:ok', requestId, data: card });
+    callback({ data: card as unknown as Card });
   } catch (err) {
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId,
-      error: String(err instanceof Error ? err.message : err),
-    });
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
 
-export function handleCardDelete(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'card:delete' }>,
-  connections: ConnectionManager,
-): void {
-  const { requestId, data } = msg;
-  cardService
-    .deleteCard(data.id)
-    .then(() => connections.send(ws, { type: 'mutation:ok', requestId }))
-    .catch((err) =>
-      connections.send(ws, {
-        type: 'mutation:error',
-        requestId,
-        error: String(err instanceof Error ? err.message : err),
-      }),
-    );
+export async function handleCardDelete(
+  data: { id: number },
+  callback: (res: AckResponse) => void,
+): Promise<void> {
+  try {
+    await cardService.deleteCard(data.id);
+    callback({});
+  } catch (err) {
+    callback({ error: String(err instanceof Error ? err.message : err) });
+  }
 }
 
 export async function handleCardGenerateTitle(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'card:generateTitle' }>,
-  connections: ConnectionManager,
+  data: { id: number },
+  callback: (res: AckResponse<Card>) => void,
 ): Promise<void> {
-  const { requestId, data } = msg;
   try {
     const card = await cardService.generateTitle(data.id);
-    connections.send(ws, { type: 'mutation:ok', requestId, data: card });
+    callback({ data: card as unknown as Card });
   } catch (err) {
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId,
-      error: String(err instanceof Error ? err.message : err),
-    });
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
 
 export async function handleCardSuggestTitle(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'card:suggestTitle' }>,
-  connections: ConnectionManager,
+  data: { description: string },
+  callback: (res: AckResponse<string>) => void,
 ): Promise<void> {
-  const { requestId, data } = msg;
   try {
     const title = await cardService.suggestTitle(data.description);
-    connections.send(ws, { type: 'mutation:ok', requestId, data: title });
+    callback({ data: title });
   } catch (err) {
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId,
-      error: String(err instanceof Error ? err.message : err),
-    });
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }

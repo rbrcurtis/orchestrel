@@ -1,107 +1,100 @@
-import type { WebSocket } from 'ws'
-import type { ClientMessage } from '../../../shared/ws-protocol'
-import type { ConnectionManager } from '../connections'
-import { projectService } from '../../services/project'
+import type { AckResponse, Project } from '../../../shared/ws-protocol';
+import type { AppSocket, AppServer } from '../types';
+import { projectService } from '../../services/project';
+import { getProvidersForClient } from '../../config/providers';
 
 export async function handleProjectCreate(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'project:create' }>,
-  connections: ConnectionManager,
+  data: { name: string; path: string; [key: string]: unknown },
+  callback: (res: AckResponse<Project>) => void,
 ): Promise<void> {
-  const { requestId, data } = msg
   try {
-    const project = await projectService.createProject(data)
-    connections.send(ws, { type: 'mutation:ok', requestId, data: project })
+    const project = await projectService.createProject(data);
+    callback({ data: project as unknown as Project });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
 
 export async function handleProjectUpdate(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'project:update' }>,
-  connections: ConnectionManager,
+  data: { id: number; userIds?: number[]; [key: string]: unknown },
+  callback: (res: AckResponse<Project>) => void,
+  socket: AppSocket,
+  io: AppServer,
 ): Promise<void> {
-  const { requestId, data } = msg
-  const { id, ...rest } = data
-  const { userIds, ...projectData } = rest as typeof rest & { userIds?: number[] }
+  const { id, userIds, ...projectData } = data;
   try {
-    const project = await projectService.updateProject(id, projectData)
-    connections.send(ws, { type: 'mutation:ok', requestId, data: project })
+    const project = await projectService.updateProject(id, projectData);
+    callback({ data: project as unknown as Project });
 
     if (userIds !== undefined) {
-      const identity = connections.getIdentity(ws)
+      const identity = socket.data.identity;
       if (identity?.role === 'admin') {
-        const { userService } = await import('../../services/user')
-        await userService.setProjectUsers(id, userIds)
+        const { userService } = await import('../../services/user');
+        await userService.setProjectUsers(id, userIds);
 
         // Re-sync non-admin clients so their visibility updates
-        for (const [clientWs, clientIdentity] of connections.entries()) {
-          if (clientWs === ws || clientIdentity.role === 'admin') continue
+        for (const [, clientSocket] of io.sockets.sockets) {
+          const clientIdentity = clientSocket.data.identity;
+          if (clientSocket.id === socket.id || clientIdentity?.role === 'admin') continue;
 
-          const visible = await userService.visibleProjectIds(clientIdentity)
-          const { cardService } = await import('../../services/card')
-          const { getProvidersForClient } = await import('../../config/providers')
+          const visible = await userService.visibleProjectIds(clientIdentity as import('../../services/user').UserIdentity);
+          const { cardService } = await import('../../services/card');
           const [syncCards, syncProjects] = await Promise.all([
             cardService.listCards(),
             projectService.listProjects(),
-          ])
+          ]);
 
           const filteredCards = visible === 'all' ? syncCards
-            : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId))
+            : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
           const filteredProjects = visible === 'all' ? syncProjects
-            : syncProjects.filter((p) => (visible as number[]).includes(p.id))
+            : syncProjects.filter((p) => (visible as number[]).includes(p.id));
 
-          connections.send(clientWs, {
-            type: 'sync',
+          clientSocket.emit('sync', {
             cards: filteredCards as unknown as import('../../../shared/ws-protocol').Card[],
             projects: filteredProjects as unknown as import('../../../shared/ws-protocol').Project[],
             providers: getProvidersForClient(),
-            user: { id: clientIdentity.id, email: clientIdentity.email, role: clientIdentity.role },
-          })
+            user: { id: clientIdentity!.id, email: clientIdentity!.email, role: clientIdentity!.role },
+          });
         }
       }
     }
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
 
-export function handleProjectDelete(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'project:delete' }>,
-  connections: ConnectionManager,
-): void {
-  const { requestId, data } = msg
-  projectService.deleteProject(data.id)
-    .then(() => connections.send(ws, { type: 'mutation:ok', requestId }))
-    .catch(err => connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) }))
+export async function handleProjectDelete(
+  data: { id: number },
+  callback: (res: AckResponse) => void,
+): Promise<void> {
+  try {
+    await projectService.deleteProject(data.id);
+    callback({});
+  } catch (err) {
+    callback({ error: String(err instanceof Error ? err.message : err) });
+  }
 }
 
 export async function handleProjectBrowse(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'project:browse' }>,
-  connections: ConnectionManager,
+  data: { path: string },
+  callback: (res: AckResponse<unknown>) => void,
 ): Promise<void> {
-  const { requestId, data: { path } } = msg
   try {
-    const dirs = await projectService.browse(path)
-    connections.send(ws, { type: 'project:browse:result', requestId, data: dirs })
+    const dirs = await projectService.browse(data.path);
+    callback({ data: dirs });
   } catch {
-    connections.send(ws, { type: 'project:browse:result', requestId, data: [] })
+    callback({ data: [] });
   }
 }
 
 export async function handleProjectMkdir(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'project:mkdir' }>,
-  connections: ConnectionManager,
+  data: { path: string },
+  callback: (res: AckResponse<{ success: boolean }>) => void,
 ): Promise<void> {
-  const { requestId, data: { path } } = msg
   try {
-    await projectService.mkdir(path)
-    connections.send(ws, { type: 'mutation:ok', requestId, data: { success: true } })
+    await projectService.mkdir(data.path);
+    callback({ data: { success: true } });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }

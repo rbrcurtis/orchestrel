@@ -1,23 +1,18 @@
-import type { WebSocket } from 'ws';
-import type { ClientMessage } from '../../../shared/ws-protocol';
-import type { ConnectionManager } from '../connections';
+import type { AckResponse } from '../../../shared/ws-protocol';
 import { Card } from '../../models/Card';
 import { registerCardSession } from '../../controllers/oc';
 import { buildPromptWithFiles } from '../../sessions/manager';
 
 export async function handleAgentSend(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'agent:send' }>,
-  connections: ConnectionManager,
+  data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
+  callback: (res: AckResponse) => void,
 ): Promise<void> {
-  const {
-    requestId,
-    data: { cardId, message, files },
-  } = msg;
+  const { cardId, message, files } = data;
   console.log(`[session:${cardId}] agent:send, len=${message.length}`);
 
   try {
-    connections.send(ws, { type: 'mutation:ok', requestId });
+    // Ack immediately — session start is async
+    callback({});
 
     const initState = await import('../../init-state');
     const sm = initState.getSessionManager();
@@ -45,113 +40,83 @@ export async function handleAgentSend(
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     console.error(`[session:${cardId}] agent:send error:`, error);
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId,
-      error,
-    });
+    // Can't send error via callback (already called). Error surfaces via agent:status.
   }
 }
 
 export async function handleAgentCompact(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'agent:compact' }>,
-  connections: ConnectionManager,
+  data: { cardId: number },
+  callback: (res: AckResponse) => void,
 ): Promise<void> {
-  const {
-    requestId,
-    data: { cardId },
-  } = msg;
+  const { cardId } = data;
   console.log(`[session:${cardId}] agent:compact received`);
 
   try {
-    connections.send(ws, { type: 'mutation:ok', requestId });
+    callback({});
     const initState = await import('../../init-state');
     const sm = initState.getSessionManager();
     if (sm?.isActive(cardId)) {
       sm.sendFollowUp(cardId, 'Please compact your context window. Summarize the conversation so far and continue.');
     }
   } catch (err) {
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId,
-      error: String(err instanceof Error ? err.message : err),
-    });
+    console.error(`[session:${cardId}] agent:compact error:`, err);
   }
 }
 
 export async function handleAgentStop(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'agent:stop' }>,
-  connections: ConnectionManager,
+  data: { cardId: number },
+  callback: (res: AckResponse) => void,
 ): Promise<void> {
-  const {
-    requestId,
-    data: { cardId },
-  } = msg;
+  const { cardId } = data;
   console.log(`[session:${cardId}] agent:stop received`);
-  connections.send(ws, { type: 'mutation:ok', requestId });
+  callback({});
   const initState = await import('../../init-state');
   const sm = initState.getSessionManager();
   sm?.stop(cardId);
 }
 
 export async function handleAgentStatus(
-  ws: WebSocket,
-  msg: Extract<ClientMessage, { type: 'agent:status' }>,
-  connections: ConnectionManager,
+  data: { cardId: number },
+  callback: (res: AckResponse) => void,
+  socket: import('../types').AppSocket,
 ): Promise<void> {
-  const {
-    requestId,
-    data: { cardId },
-  } = msg;
+  const { cardId } = data;
   try {
     const initState = await import('../../init-state');
     const sm = initState.getSessionManager();
     const session = sm?.get(cardId);
 
     if (session) {
-      connections.send(ws, {
-        type: 'agent:status',
-        data: {
-          cardId,
-          active: sm!.isActive(cardId),
-          status: session.status,
-          sessionId: session.sessionId,
-          promptsSent: session.promptsSent,
-          turnsCompleted: session.turnsCompleted,
-          contextTokens: 0,
-          contextWindow: 200_000,
-        },
+      socket.emit('agent:status', {
+        cardId,
+        active: sm!.isActive(cardId),
+        status: session.status,
+        sessionId: session.sessionId,
+        promptsSent: session.promptsSent,
+        turnsCompleted: session.turnsCompleted,
+        contextTokens: 0,
+        contextWindow: 200_000,
       });
     } else {
       const card = await Card.findOneBy({ id: cardId });
-      // Stale running card with no active session → move to review
       if (card && card.column === 'running' && card.queuePosition == null) {
         card.column = 'review';
         card.updatedAt = new Date().toISOString();
         await card.save();
       }
-      connections.send(ws, {
-        type: 'agent:status',
-        data: {
-          cardId,
-          active: false,
-          status: 'completed',
-          sessionId: card?.sessionId ?? null,
-          promptsSent: card?.promptsSent ?? 0,
-          turnsCompleted: card?.turnsCompleted ?? 0,
-          contextTokens: card?.contextTokens ?? 0,
-          contextWindow: card?.contextWindow ?? 200_000,
-        },
+      socket.emit('agent:status', {
+        cardId,
+        active: false,
+        status: 'completed',
+        sessionId: card?.sessionId ?? null,
+        promptsSent: card?.promptsSent ?? 0,
+        turnsCompleted: card?.turnsCompleted ?? 0,
+        contextTokens: card?.contextTokens ?? 0,
+        contextWindow: card?.contextWindow ?? 200_000,
       });
     }
-    connections.send(ws, { type: 'mutation:ok', requestId });
+    callback({});
   } catch (err) {
-    connections.send(ws, {
-      type: 'mutation:error',
-      requestId,
-      error: String(err instanceof Error ? err.message : err),
-    });
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
