@@ -22,6 +22,7 @@ import {
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import { cn } from '~/lib/utils';
+import { slugify } from '~/shared/worktree';
 import type { Column } from '../../src/shared/ws-protocol';
 
 type Props = {
@@ -46,7 +47,7 @@ type Draft = {
   title: string;
   description: string;
   projectId: number | null;
-  useWorktree: boolean;
+  worktreeBranch: string | null;
   sourceBranch: string | null;
   model: string;
   thinkingLevel: 'off' | 'low' | 'medium' | 'high';
@@ -79,7 +80,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
     title: '',
     description: '',
     projectId: null,
-    useWorktree: false,
+    worktreeBranch: null,
     sourceBranch: null,
     model: 'sonnet',
     thinkingLevel: 'high',
@@ -102,7 +103,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
       title: card.title,
       description: card.description ?? '',
       projectId: card.projectId,
-      useWorktree: card.useWorktree,
+      worktreeBranch: card.worktreeBranch,
       sourceBranch: card.sourceBranch,
       model: card.model,
       thinkingLevel: card.thinkingLevel,
@@ -131,7 +132,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
       title: titleFocused ? d.title : card.title,
       description: descFocused ? d.description : (card.description ?? ''),
       projectId: card.projectId,
-      useWorktree: card.useWorktree,
+      worktreeBranch: card.worktreeBranch,
       sourceBranch: card.sourceBranch,
       model: card.model,
       thinkingLevel: card.thinkingLevel,
@@ -154,7 +155,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
     ? draft.title !== card.title ||
       draft.description !== (card.description ?? '') ||
       draft.projectId !== card.projectId ||
-      draft.useWorktree !== card.useWorktree ||
+      draft.worktreeBranch !== card.worktreeBranch ||
       draft.sourceBranch !== card.sourceBranch ||
       draft.model !== card.model ||
       draft.thinkingLevel !== card.thinkingLevel
@@ -170,7 +171,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
       title: merged.title,
       description: merged.description,
       projectId: merged.projectId,
-      useWorktree: merged.useWorktree,
+      worktreeBranch: merged.worktreeBranch,
       sourceBranch: merged.sourceBranch as 'main' | 'dev' | null | undefined,
       model: merged.model,
       thinkingLevel: merged.thinkingLevel,
@@ -281,12 +282,10 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
           )}
           {card.sessionId && <CopyResumeButton sessionId={card.sessionId} cardId={card.id} />}
           <CopyPathButton
-            worktreePath={card.worktreePath}
-            projectPath={cardProject?.path}
-            useWorktree={card.useWorktree}
             worktreeBranch={card.worktreeBranch}
+            projectPath={cardProject?.path}
             sourceBranch={card.sourceBranch}
-            color={card.useWorktree && cardProject?.color ? cardProject.color : undefined}
+            color={card.worktreeBranch && cardProject?.color ? cardProject.color : undefined}
           />
           {cardProject && (
             <Badge
@@ -361,7 +360,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                       const proj = pid != null ? projectStore.getProject(pid) : undefined;
                       const updates = {
                         projectId: pid,
-                        useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
+                        worktreeBranch: proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || card.title) : null,
                         sourceBranch: null as string | null,
                         model: proj?.defaultModel ?? draft.model,
                         thinkingLevel: proj?.defaultThinkingLevel ?? draft.thinkingLevel,
@@ -398,12 +397,12 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="useWorktree"
-                    checked={draft.useWorktree}
-                    disabled={!!card.worktreePath}
+                    checked={!!draft.worktreeBranch}
+                    disabled={!!card.worktreeBranch}
                     onCheckedChange={(checked) => {
-                      const v = checked === true;
-                      setDraft((d) => ({ ...d, useWorktree: v }));
-                      saveAll({ useWorktree: v });
+                      const branch = checked === true ? slugify(draft.title || card.title) : null;
+                      setDraft((d) => ({ ...d, worktreeBranch: branch }));
+                      saveAll({ worktreeBranch: branch });
                     }}
                   />
                   <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
@@ -413,7 +412,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
               )}
 
               {/* Source Branch */}
-              {!!selectedProject?.isGitRepo && draft.useWorktree && (
+              {!!selectedProject?.isGitRepo && !!draft.worktreeBranch && (
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
                   <Select
@@ -583,7 +582,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           title: '',
           description: '',
           projectId: initialProjectId,
-          useWorktree: proj.isGitRepo ? (proj.defaultWorktree ?? false) : false,
+          worktreeBranch: null,  // can't slugify empty title; server auto-sets if project.defaultWorktree
           sourceBranch: null,
           model: proj.defaultModel ?? 'sonnet',
           thinkingLevel: proj.defaultThinkingLevel ?? 'high',
@@ -594,7 +593,7 @@ export const NewCardDetail = observer(function NewCardDetail({
       title: '',
       description: '',
       projectId: null,
-      useWorktree: false,
+      worktreeBranch: null,  // can't slugify empty title; server auto-sets if project.defaultWorktree
       sourceBranch: null,
       model: 'sonnet',
       thinkingLevel: 'high',
@@ -624,7 +623,7 @@ export const NewCardDetail = observer(function NewCardDetail({
         description: draft.description || undefined,
         column: selectedColumn as Column,
         projectId: draft.projectId,
-        useWorktree: draft.useWorktree,
+        worktreeBranch: draft.worktreeBranch,
         sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
         model: draft.model,
         thinkingLevel: draft.thinkingLevel,
@@ -720,7 +719,7 @@ export const NewCardDetail = observer(function NewCardDetail({
                 setDraft((d) => ({
                   ...d,
                   projectId: pid,
-                  useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
+                  worktreeBranch: proj?.isGitRepo && proj.defaultWorktree ? (slugify(d.title) || null) : null,
                   sourceBranch: null,
                   model: proj?.defaultModel ?? d.model,
                   thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
@@ -751,8 +750,11 @@ export const NewCardDetail = observer(function NewCardDetail({
             <div className="flex items-center gap-2">
               <Checkbox
                 id="newUseWorktree"
-                checked={draft.useWorktree}
-                onCheckedChange={(checked) => setDraft((d) => ({ ...d, useWorktree: checked === true }))}
+                checked={!!draft.worktreeBranch}
+                onCheckedChange={(checked) => setDraft((d) => ({
+                  ...d,
+                  worktreeBranch: checked === true ? (slugify(d.title) || null) : null,
+                }))}
               />
               <label htmlFor="newUseWorktree" className="text-sm font-medium text-muted-foreground">
                 Use worktree
@@ -760,7 +762,7 @@ export const NewCardDetail = observer(function NewCardDetail({
             </div>
           )}
 
-          {!!selectedProject?.isGitRepo && draft.useWorktree && (
+          {!!selectedProject?.isGitRepo && !!draft.worktreeBranch && (
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
               <Select
@@ -837,22 +839,20 @@ export const NewCardDetail = observer(function NewCardDetail({
 });
 
 function CopyPathButton({
-  worktreePath,
-  projectPath,
-  useWorktree,
   worktreeBranch,
+  projectPath,
   sourceBranch,
   color,
 }: {
-  worktreePath: string | null;
+  worktreeBranch: string | null;
   projectPath?: string;
-  useWorktree: boolean;
-  worktreeBranch?: string | null;
   sourceBranch?: string | null;
   color?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const path = worktreePath ?? projectPath;
+  const path = worktreeBranch && projectPath
+    ? `${projectPath}/.worktrees/${worktreeBranch}`
+    : projectPath;
 
   function handleCopy() {
     if (!path) return;
@@ -874,12 +874,12 @@ function CopyPathButton({
       disabled={!path}
       title={tooltip}
       className="flex items-center shrink-0 hover:opacity-70 transition-opacity disabled:opacity-30 disabled:cursor-default"
-      style={useWorktree && color ? { color, filter: `drop-shadow(0 0 4px ${color})` } : undefined}
+      style={worktreeBranch && color ? { color, filter: `drop-shadow(0 0 4px ${color})` } : undefined}
     >
       {copied ? (
         <Check className="size-3.5 text-success" />
       ) : (
-        <GitBranch className={cn('size-3.5', !useWorktree && 'text-dim')} />
+        <GitBranch className={cn('size-3.5', !worktreeBranch && 'text-dim')} />
       )}
     </button>
   );
