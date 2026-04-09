@@ -75,7 +75,6 @@ describe('CardsController GET /api/cards', () => {
     expect(card).not.toHaveProperty('column')
     expect(card).not.toHaveProperty('position')
     expect(card).not.toHaveProperty('sessionId')
-    expect(card).not.toHaveProperty('worktreePath')
     expect(card).not.toHaveProperty('model')
     expect(card).not.toHaveProperty('createdAt')
     expect(card).not.toHaveProperty('updatedAt')

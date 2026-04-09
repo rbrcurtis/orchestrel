@@ -103,9 +103,7 @@ describe('Card REST serialization', () => {
       position: 0,
       model: 'sonnet',
       sessionId: 'secret-session',
-      worktreePath: '/tmp/wt',
       worktreeBranch: 'feat-x',
-      useWorktree: true,
       sourceBranch: 'main',
       thinkingLevel: 'high',
       promptsSent: 3,
@@ -126,7 +124,6 @@ describe('Card REST serialization', () => {
     expect(plain).not.toHaveProperty('column')
     expect(plain).not.toHaveProperty('sessionId')
     expect(plain).not.toHaveProperty('model')
-    expect(plain).not.toHaveProperty('worktreePath')
   })
 
   it('handles null projectId', () => {
