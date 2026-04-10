@@ -264,14 +264,16 @@ export class MessageAccumulator {
         cacheWrite: msg.usage?.cache_creation_input_tokens ?? 0,
         numTurns: msg.num_turns,
         durationMs: msg.duration_ms,
-        modelUsage: msg.model_usage
-          ? Object.fromEntries(
-              Object.entries(msg.model_usage).map(([k, v]) => [
-                k,
-                { inputTokens: v?.input_tokens ?? 0, outputTokens: v?.output_tokens ?? 0, costUsd: v?.cost_usd ?? 0 },
-              ]),
-            )
-          : undefined,
+        modelUsage: (() => {
+          const raw = msg.modelUsage ?? msg.model_usage;
+          if (!raw) return undefined;
+          return Object.fromEntries(
+            Object.entries(raw).map(([k, v]) => [
+              k,
+              { inputTokens: v?.input_tokens ?? 0, outputTokens: v?.output_tokens ?? 0, costUsd: v?.cost_usd ?? 0 },
+            ]),
+          );
+        })(),
       },
     });
   }

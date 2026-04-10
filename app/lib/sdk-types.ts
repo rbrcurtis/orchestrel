@@ -52,12 +52,15 @@ export interface SdkAssistantMessage {
 
 export interface SdkResultMessage {
   type: 'result';
-  subtype: 'success' | 'error_max_turns' | 'error_during_execution' | 'error_max_budget_usd';
+  subtype: 'success' | 'error_max_turns' | 'error_during_execution' | 'error_max_budget_usd' | 'error_max_structured_output_retries';
   result?: string;
   total_cost_usd: number;
   usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
   num_turns: number;
   duration_ms: number;
+  duration_api_ms?: number;
+  modelUsage?: Record<string, { input_tokens: number; output_tokens: number; cost_usd: number }>;
+  // Keep model_usage as alias for backwards compat with existing history
   model_usage?: Record<string, { input_tokens: number; output_tokens: number; cost_usd: number }>;
 }
 
