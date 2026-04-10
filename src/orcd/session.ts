@@ -3,9 +3,9 @@ import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
-import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage } from '../shared/orcd-protocol';
+import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage, SessionExitMessage } from '../shared/orcd-protocol';
 
-export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage) => void;
+export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage) => void;
 
 /**
  * Map effort string to SDK options for thinking/effort.
@@ -109,6 +109,8 @@ export class OrcdSession {
         const sdkEvent = event as Record<string, unknown>;
         const eventIndex = this.buffer.push(sdkEvent);
 
+        log(JSON.stringify(sdkEvent));
+
         if (sdkEvent.type === 'result') {
           const msg: SessionResultMessage = {
             type: 'result',
@@ -131,7 +133,7 @@ export class OrcdSession {
       if (this.state !== 'stopped') {
         this.state = 'completed';
       }
-      log(`completed (state=${this.state})`);
+      log(`exited (state=${this.state})`);
     } catch (err) {
       const errStr = String(err);
       if (errStr.includes('abort') || errStr.includes('AbortError')) {
@@ -149,6 +151,12 @@ export class OrcdSession {
       }
     } finally {
       this.activeQuery = null;
+      const exitMsg: SessionExitMessage = {
+        type: 'session_exit',
+        sessionId: this.id,
+        state: this.state as 'completed' | 'errored' | 'stopped',
+      };
+      for (const cb of this.subscribers) cb(exitMsg);
     }
   }
 
