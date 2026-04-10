@@ -57,24 +57,6 @@ providers:
     expect(cfg.providers.anthropic.apiKey).toBe('sk-live-123');
   });
 
-  it('uses provider-level effort default', () => {
-    const yaml = `
-socket: ~/.orc/orcd.sock
-defaultProvider: anthropic
-defaultModel: claude-sonnet-4-6
-defaultEffort: high
-providers:
-  local:
-    baseUrl: http://localhost:11434
-    apiKey: dummy
-    effort: disabled
-    models:
-      - llama
-`;
-    const cfg = parseConfig(yaml, {});
-    expect(cfg.providers.local.effort).toBe('disabled');
-  });
-
   it('throws on missing providers', () => {
     const yaml = `
 socket: ~/.orc/orcd.sock

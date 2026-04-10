@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from 'http'
 import type { Http2SecureServer } from 'http2'
-import type { Server as IoServer } from 'socket.io'
+import type { AppServer } from './ws/types'
 
 type AnyHttpServer = HttpServer | Http2SecureServer
 
@@ -15,8 +15,8 @@ export let initialized = false
 export function markInitialized() { initialized = true }
 
 /** Cached Socket.IO Server — reused across Vite restarts. */
-export let io: IoServer | null = null
-export function setIo(instance: IoServer) { io = instance }
+export let io: AppServer | null = null
+export function setIo(instance: AppServer) { io = instance }
 
 /** httpServer from server.js — arrives via process event, persists across restarts. */
 let _httpServer: AnyHttpServer | null = null

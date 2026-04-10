@@ -9,7 +9,7 @@ describe('BusRoomBridge', () => {
     const bus = new MessageBus()
     const emitToRoom = vi.fn()
     const io = {
-      to: vi.fn(() => ({ emit: emitToRoom })),
+      to: vi.fn((..._args: unknown[]) => ({ emit: emitToRoom })),
       emit: vi.fn(),
       sockets: { adapter: { rooms: new Map() } },
     }

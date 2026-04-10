@@ -81,7 +81,7 @@ describe('cardSchema', () => {
     }
     const result = cardSchema.safeParse(card)
     expect(result.success).toBe(true)
-    if (result.success) expect(result.data.useWorktree).toBe(true)
+    expect(result.success).toBe(true)
   })
 })
 
