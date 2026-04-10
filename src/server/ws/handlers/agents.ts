@@ -1,7 +1,7 @@
 import type { AckResponse } from '../../../shared/ws-protocol';
 import { Card } from '../../models/Card';
 import { buildPromptWithFiles } from '../../sessions/manager';
-import { registerCardSession } from '../../controllers/oc';
+import { registerCardSession } from '../../controllers/card-sessions';
 import { ensureWorktree } from '../../sessions/worktree';
 
 export async function handleAgentSend(
@@ -21,9 +21,14 @@ export async function handleAgentSend(
     const card = await Card.findOneByOrFail({ id: cardId });
     const prompt = buildPromptWithFiles(message, files);
 
+    // Increment prompts sent
+    card.promptsSent = (card.promptsSent ?? 0) + 1;
+
     if (card.sessionId && client.isActive(card.sessionId)) {
       // Follow-up to active session
       client.message(card.sessionId, prompt);
+      card.updatedAt = new Date().toISOString();
+      await card.save();
     } else {
       // New session or resume
       const cwd = await ensureWorktree(card);

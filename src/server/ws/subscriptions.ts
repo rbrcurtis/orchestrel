@@ -8,13 +8,29 @@ let _io: AppServer | null = null;
 /** Per-card bus listeners — cleaned up when room empties */
 const cardListeners = new Map<number, Map<string, (payload: unknown) => void>>();
 
+/** Global bus listeners — cleaned up on re-init (Vite restart) */
+const globalListeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = [];
+
 export const busRoomBridge = {
   /** Initialize with the Socket.IO server and register global bus listeners */
   init(io: AppServer) {
+    // Clean up previous listeners (survives Vite dev restarts)
+    for (const { event, handler } of globalListeners) {
+      messageBus.removeListener(event, handler);
+    }
+    globalListeners.length = 0;
+
+    for (const [cardId, listeners] of cardListeners) {
+      for (const [suffix, handler] of listeners) {
+        messageBus.removeListener(`card:${cardId}:${suffix}`, handler);
+      }
+    }
+    cardListeners.clear();
+
     _io = io;
 
     // board:changed → emit to column rooms
-    messageBus.on('board:changed', (payload) => {
+    const boardHandler = (payload: unknown) => {
       const { card, oldColumn, newColumn, id } = payload as {
         card: CardEntity | null;
         oldColumn: string | null;
@@ -29,16 +45,20 @@ export const busRoomBridge = {
       if (oldColumn) rooms.push(`col:${oldColumn}`);
       if (newColumn && newColumn !== oldColumn) rooms.push(`col:${newColumn}`);
       if (rooms.length) io.to(rooms).emit('card:updated', card as unknown as Card);
-    });
+    };
+    messageBus.on('board:changed', boardHandler);
+    globalListeners.push({ event: 'board:changed', handler: boardHandler });
 
     // system:error → broadcast to all
-    messageBus.on('system:error', (payload) => {
+    const errorHandler = (payload: unknown) => {
       const { message } = payload as { message: string };
       io.emit('session:message', {
         cardId: -1,
         message: { type: 'error', message, timestamp: Date.now() },
       });
-    });
+    };
+    messageBus.on('system:error', errorHandler);
+    globalListeners.push({ event: 'system:error', handler: errorHandler });
 
     console.log('[bus-bridge] global listeners registered');
   },
@@ -63,15 +83,17 @@ export const busRoomBridge = {
     messageBus.on(`card:${cardId}:status`, statusHandler);
     listeners.set('status', statusHandler);
 
-    const contextHandler = (payload: unknown) => {
+    const contextHandler = async (payload: unknown) => {
       const ctx = payload as { contextTokens: number; contextWindow: number };
+      const { Card: CardModel } = await import('../models/Card');
+      const card = await CardModel.findOneBy({ id: cardId });
       io.to(room).emit('agent:status', {
         cardId,
         active: true,
         status: 'running' as const,
-        sessionId: null,
-        promptsSent: 0,
-        turnsCompleted: 0,
+        sessionId: card?.sessionId ?? null,
+        promptsSent: card?.promptsSent ?? 0,
+        turnsCompleted: card?.turnsCompleted ?? 0,
         contextTokens: ctx.contextTokens,
         contextWindow: ctx.contextWindow,
       });
@@ -79,17 +101,19 @@ export const busRoomBridge = {
     messageBus.on(`card:${cardId}:context`, contextHandler);
     listeners.set('context', contextHandler);
 
-    const exitHandler = (payload: unknown) => {
+    const exitHandler = async (payload: unknown) => {
       const p = payload as { sessionId: string | null; status: string };
+      const { Card: CardModel } = await import('../models/Card');
+      const card = await CardModel.findOneBy({ id: cardId });
       io.to(room).emit('agent:status', {
         cardId,
         active: false,
         status: p.status as 'completed',
         sessionId: p.sessionId,
-        promptsSent: 0,
-        turnsCompleted: 0,
-        contextTokens: 0,
-        contextWindow: 200_000,
+        promptsSent: card?.promptsSent ?? 0,
+        turnsCompleted: card?.turnsCompleted ?? 0,
+        contextTokens: card?.contextTokens ?? 0,
+        contextWindow: card?.contextWindow ?? 200_000,
       });
     };
     messageBus.on(`card:${cardId}:exit`, exitHandler);

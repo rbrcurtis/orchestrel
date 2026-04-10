@@ -17,7 +17,7 @@ async function ollamaSuggestTitle(description: string): Promise<string> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gemma3:4b',
+      model: 'llama3.2-cpu:latest',
       stream: false,
       prompt: `Generate a kanban card title of 3 words or fewer based on this description. Return only the title text, no quotes, no prefix.\n\nDescription: ${description}`,
     }),
