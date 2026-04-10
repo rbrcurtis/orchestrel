@@ -35,11 +35,13 @@ export class SessionStore {
   subscribedCards = new Set<number>();
   stoppingCards = observable.set<number>();
   private stopIntervals = new Map<number, NodeJS.Timeout>();
+  private loadingCards = new Set<number>();
   private _ws: WsClient | null = null;
 
   constructor() {
-    makeAutoObservable<this, 'stopIntervals' | '_ws'>(this, {
+    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws'>(this, {
       stopIntervals: false,
+      loadingCards: false,
       _ws: false,
     });
   }
@@ -201,14 +203,20 @@ export class SessionStore {
   }
 
   async loadHistory(cardId: number, sessionId?: string | null): Promise<void> {
+    if (this.loadingCards.has(cardId)) return;
+    this.loadingCards.add(cardId);
     this.subscribedCards.add(cardId);
-    const result = (await this.ws().emit('session:load', {
-      cardId,
-      ...(sessionId ? { sessionId } : {}),
-    })) as { messages: unknown[] } | undefined;
+    try {
+      const result = (await this.ws().emit('session:load', {
+        cardId,
+        ...(sessionId ? { sessionId } : {}),
+      })) as { messages: unknown[] } | undefined;
 
-    if (result?.messages) {
-      this.ingestHistory(cardId, result.messages);
+      if (result?.messages) {
+        this.ingestHistory(cardId, result.messages);
+      }
+    } finally {
+      this.loadingCards.delete(cardId);
     }
   }
 
