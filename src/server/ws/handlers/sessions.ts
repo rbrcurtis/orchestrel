@@ -1,7 +1,10 @@
 import type { AckResponse } from '../../../shared/ws-protocol';
 import type { AppSocket } from '../types';
-import { getMessages } from '../../sessions/conversation-store';
+import { readSessionHistory } from '../../sessions/jsonl-reader';
 import { busRoomBridge } from '../subscriptions';
+import { Card } from '../../models/Card';
+import { Project } from '../../models/Project';
+import { resolveWorkDir } from '../../../shared/worktree';
 
 export async function handleSessionLoad(
   data: { cardId: number; sessionId?: string },
@@ -17,7 +20,16 @@ export async function handleSessionLoad(
       `[session:load] cardId=${cardId} alreadyJoined=${alreadyJoined}`,
     );
 
-    const messages = getMessages(cardId) as unknown[];
+    let messages: unknown[] = [];
+    const card = await Card.findOneBy({ id: cardId });
+    if (card?.sessionId && card.projectId) {
+      const proj = await Project.findOneBy({ id: card.projectId });
+      if (proj) {
+        const cwd = resolveWorkDir(card.worktreeBranch ?? null, proj.path);
+        messages = await readSessionHistory(card.sessionId, cwd);
+        console.log(`[session:load] cardId=${cardId} loaded ${messages.length} messages from JSONL`);
+      }
+    }
 
     // Join the card room for live events
     if (!alreadyJoined) {

@@ -24,7 +24,10 @@ export function translateEvent(sse: SSEEvent): TranslatedMessage | null {
       return {
         type: 'system',
         subtype: 'init',
-        session_id: (data.message as Record<string, unknown>)?.id ?? null,
+        // Don't use data.message.id here — that's the Anthropic API message ID (msg_...),
+        // not the CC session UUID. The real session ID is resolved post-stream via
+        // meridian's /v1/sessions/:key/recover endpoint.
+        session_id: null,
         model: (data.message as Record<string, unknown>)?.model,
       };
 

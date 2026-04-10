@@ -95,9 +95,12 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
     const card = event.entity as Card;
     const prev = event.databaseEntity as Card;
     if (prev?.sessionId && card.sessionId !== prev.sessionId) {
-      throw new Error(
-        `[card:${card.id}] sessionId is immutable once set (was ${prev.sessionId}, attempted ${card.sessionId})`,
-      );
+      // Allow replacing a stale msg_ ID with the real CC session UUID
+      if (!prev.sessionId.startsWith('msg_')) {
+        throw new Error(
+          `[card:${card.id}] sessionId is immutable once set (was ${prev.sessionId}, attempted ${card.sessionId})`,
+        );
+      }
     }
 
     // Card entering running as non-worktree on a git repo: check for conflicts, assign queue position.

@@ -68,6 +68,63 @@ This is a **purely event-driven system**. Every handler reacts to a single event
 
 - **No native scrollbars.** Use Radix ScrollArea (`~/components/ui/scroll-area`) for all scrollable containers. For content that might overflow horizontally (code blocks, long text), wrap with `whitespace-pre-wrap break-all overflow-hidden` — never `overflow-x-auto`.
 
+## DB Schema
+
+```sql
+CREATE TABLE projects (
+  id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+  name text NOT NULL,
+  path text NOT NULL,
+  setup_commands text DEFAULT '',
+  is_git_repo integer DEFAULT false NOT NULL,
+  default_branch text,
+  default_worktree integer DEFAULT false NOT NULL,
+  color text,
+  created_at text DEFAULT (datetime('now')) NOT NULL,
+  default_model text DEFAULT 'sonnet' NOT NULL,
+  default_thinking_level text DEFAULT 'high' NOT NULL,
+  provider_id text DEFAULT 'anthropic' NOT NULL
+);
+
+CREATE TABLE cards (
+  id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+  title text NOT NULL,
+  description text DEFAULT '',
+  column text DEFAULT 'backlog' NOT NULL,
+  position real DEFAULT 0 NOT NULL,
+  project_id integer REFERENCES projects(id) ON DELETE SET NULL,
+  pr_url text,
+  session_id text,
+  worktree_branch text,
+  source_branch text,
+  prompts_sent integer DEFAULT 0 NOT NULL,
+  turns_completed integer DEFAULT 0 NOT NULL,
+  created_at text DEFAULT (datetime('now')) NOT NULL,
+  updated_at text DEFAULT (datetime('now')) NOT NULL,
+  model text DEFAULT 'sonnet' NOT NULL,
+  thinking_level text DEFAULT 'high' NOT NULL,
+  context_tokens INTEGER NOT NULL DEFAULT 0,
+  context_window INTEGER NOT NULL DEFAULT 200000,
+  queue_position INTEGER DEFAULT NULL,
+  pending_prompt TEXT DEFAULT NULL,
+  pending_files TEXT DEFAULT NULL,
+  provider TEXT NOT NULL DEFAULT 'anthropic'
+);
+
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE project_users (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (project_id, user_id)
+);
+```
+
 ## Guardrails
 
 - **DB file:** `data/orchestrel.db` — Schema additions (`ALTER TABLE ADD COLUMN`) via sqlite3 CLI are safe anytime. NEVER truncate DB files or run WAL management commands (`wal_checkpoint`, `PRAGMA journal_mode`, etc.) — SQLite handles this automatically. A `wal_checkpoint(TRUNCATE)` previously destroyed ~68 cards.

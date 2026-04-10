@@ -5,7 +5,6 @@ import { consumeSession } from './consumer';
 import { ensureWorktree } from './worktree';
 import { Card } from '../models/Card';
 import { AppDataSource } from '../models/index';
-import { addUserMessage, getMessages } from './conversation-store';
 
 /** Prepend file-path instructions to a prompt when files are attached. */
 export function buildPromptWithFiles(message: string, files?: FileRef[]): string {
@@ -43,10 +42,9 @@ export class SessionManager {
     const card = await AppDataSource.getRepository(Card).findOneByOrFail({ id: cardId });
     const cwd = await ensureWorktree(card);
 
-    // Add user message to conversation store
-    addUserMessage(cardId, prompt);
-
-    const meridianSessionId = opts.resume ?? `card-${cardId}-${Date.now()}`;
+    // Stable key for meridian's session store — must be the same across resumes
+    // so meridian can find and resume the existing CC session.
+    const meridianSessionId = `card-${cardId}`;
 
     const session: ActiveSession = {
       cardId,
@@ -67,7 +65,7 @@ export class SessionManager {
     this.sessions.set(cardId, session);
 
     // Fire-and-forget consumer
-    consumeSession(session, buildSystemPrompt(cwd), (s) => {
+    consumeSession(session, prompt, buildSystemPrompt(cwd), (s) => {
       if (s.stopTimeout) clearTimeout(s.stopTimeout);
       this.sessions.delete(s.cardId);
     });
@@ -79,13 +77,11 @@ export class SessionManager {
     const session = this.sessions.get(cardId);
     if (!session) throw new Error(`No active session for card ${cardId}`);
 
-    // Add to conversation store
-    addUserMessage(cardId, message);
     session.promptsSent++;
     session.status = 'starting';
 
     // Start a new consumer for the follow-up (new HTTP request to meridian)
-    consumeSession(session, buildSystemPrompt(session.cwd), (s) => {
+    consumeSession(session, message, buildSystemPrompt(session.cwd), (s) => {
       if (s.stopTimeout) clearTimeout(s.stopTimeout);
       this.sessions.delete(s.cardId);
     });

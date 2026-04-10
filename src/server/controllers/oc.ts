@@ -35,10 +35,11 @@ export function registerCardSession(cardId: number): void {
     if (msg.type === 'system') {
       const sys = msg as { subtype?: string; session_id?: string };
 
-      // Session init: persist sessionId immediately so UI can show copy button
+      // Session init: persist sessionId so UI can show copy button.
+      // Allow overwriting a stale msg_ ID with the real CC session UUID.
       if (sys.subtype === 'init' && sys.session_id) {
         const card = await repo.findOneBy({ id: cardId });
-        if (card && !card.sessionId) {
+        if (card && (!card.sessionId || card.sessionId.startsWith('msg_'))) {
           card.sessionId = sys.session_id;
           card.updatedAt = new Date().toISOString();
           await repo.save(card);

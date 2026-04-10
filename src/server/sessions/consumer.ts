@@ -2,9 +2,8 @@
 
 import type { ActiveSession } from './types';
 import { messageBus } from '../bus';
-import { sendToMeridian } from './meridian-client';
+import { sendToMeridian, getClaudeSessionId } from './meridian-client';
 import { translateEvent, buildResultMessage } from './event-translator';
-import { getMessages, addAssistantMessage } from './conversation-store';
 
 function statusPayload(session: ActiveSession, active: boolean) {
   return {
@@ -25,6 +24,7 @@ function statusPayload(session: ActiveSession, active: boolean) {
  */
 export async function consumeSession(
   session: ActiveSession,
+  prompt: string,
   systemPrompt: string,
   onExit: (session: ActiveSession) => void,
 ): Promise<void> {
@@ -35,7 +35,7 @@ export async function consumeSession(
   try {
     const meridian = await sendToMeridian({
       model: session.model,
-      messages: getMessages(cardId),
+      messages: [{ role: 'user', content: prompt }],
       system: systemPrompt,
       sessionId: session.meridianSessionId,
       profile,
@@ -45,7 +45,6 @@ export async function consumeSession(
     session.status = 'running';
     messageBus.publish(`card:${cardId}:status`, statusPayload(session, true));
 
-    const contentBlocks: unknown[] = [];
     let usage: Record<string, unknown> | null = null;
     let initSent = false;
 
@@ -60,10 +59,6 @@ export async function consumeSession(
       // duplicate "Session started" entries.
       if (msg.type === 'system' && msg.subtype === 'init') {
         if (!initSent) {
-          if (msg.session_id) {
-            session.sessionId = msg.session_id as string;
-            log(`init sessionId=${session.sessionId}`);
-          }
           initSent = true;
         } else {
           messageBus.publish(`card:${cardId}:sdk`, {
@@ -74,21 +69,8 @@ export async function consumeSession(
         }
       }
 
-      // Track content blocks for conversation store
       if (msg.type === 'stream_event') {
         const evt = msg.event as Record<string, unknown>;
-        if (evt.type === 'content_block_start') {
-          contentBlocks.push(evt.content_block);
-        }
-        if (evt.type === 'content_block_delta') {
-          // Update last content block with delta
-          const idx = evt.index as number;
-          const delta = evt.delta as Record<string, unknown>;
-          const block = contentBlocks[idx] as Record<string, unknown> | undefined;
-          if (block?.type === 'text' && delta.type === 'text_delta') {
-            block.text = ((block.text as string) ?? '') + (delta.text as string);
-          }
-        }
         if (evt.type === 'message_delta') {
           usage = (evt.usage as Record<string, unknown>) ?? null;
         }
@@ -98,9 +80,20 @@ export async function consumeSession(
       messageBus.publish(`card:${cardId}:sdk`, msg);
     }
 
-    // Store assistant response in conversation
-    if (contentBlocks.length > 0) {
-      addAssistantMessage(cardId, contentBlocks);
+    // Resolve real Claude Code session UUID from meridian's session store.
+    // Must happen after stream ends — meridian stores the mapping post-response.
+    if (!session.sessionId || session.sessionId.startsWith('msg_')) {
+      const ccSessionId = await getClaudeSessionId(session.meridianSessionId);
+      if (ccSessionId) {
+        session.sessionId = ccSessionId;
+        log(`resolved claudeSessionId=${ccSessionId}`);
+        // Publish so oc.ts persists it to the card
+        messageBus.publish(`card:${cardId}:sdk`, {
+          type: 'system',
+          subtype: 'init',
+          session_id: ccSessionId,
+        });
+      }
     }
 
     session.turnsCompleted++;

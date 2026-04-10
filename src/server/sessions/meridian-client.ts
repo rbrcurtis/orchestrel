@@ -21,6 +21,35 @@ export interface MeridianSession {
 /**
  * Send a streaming request to meridian and return the SSE event stream.
  */
+/**
+ * Query meridian's session recovery endpoint to get the real Claude Code session UUID.
+ * Meridian prefixes session keys with "{profileId}:" for non-default profiles,
+ * so we try multiple key formats.
+ */
+export async function getClaudeSessionId(meridianSessionId: string): Promise<string | null> {
+  // Try the raw key, then common profile-prefixed variants
+  const candidates = [
+    meridianSessionId,
+    `kiro:${meridianSessionId}`,
+  ];
+
+  for (const key of candidates) {
+    try {
+      const res = await fetch(`${MERIDIAN_URL}/v1/sessions/${encodeURIComponent(key)}/recover`);
+      if (res.ok) {
+        const data = await res.json() as { claudeSessionId?: string };
+        if (data.claudeSessionId) return data.claudeSessionId;
+      }
+    } catch {
+      // continue to next candidate
+    }
+  }
+  return null;
+}
+
+/**
+ * Send a streaming request to meridian and return the SSE event stream.
+ */
 export async function sendToMeridian(opts: MeridianRequestOpts): Promise<MeridianSession> {
   const controller = new AbortController();
   if (opts.signal) {
