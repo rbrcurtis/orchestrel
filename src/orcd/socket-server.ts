@@ -3,6 +3,7 @@ import { mkdirSync, existsSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
+import { expandSlashCommand } from './skill-resolver';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { ProviderConfig } from './config';
 
@@ -146,8 +147,10 @@ export class OrcdServer {
       ...(providerCfg.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {}),
     }, action.env) as Record<string, string>;
 
+    const prompt = action.sessionId ? action.prompt : expandSlashCommand(action.prompt, action.cwd);
+
     session.run({
-      prompt: action.prompt,
+      prompt,
       resume: !!action.sessionId,
       env,
       effort,
@@ -177,7 +180,9 @@ export class OrcdServer {
       ...(providerCfg?.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {}),
     }) as Record<string, string>;
 
-    session.sendMessage(action.prompt, env).finally(() => {
+    const prompt = expandSlashCommand(action.prompt, session.cwd);
+
+    session.sendMessage(prompt, env).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }
