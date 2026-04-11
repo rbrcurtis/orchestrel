@@ -117,6 +117,7 @@ export class OrcdClient {
     effort?: string;
     sessionId?: string;
     env?: Record<string, string>;
+    contextWindow?: number;
   }): Promise<string> {
     return new Promise((resolve) => {
       const tempCb = (sessionId: string) => resolve(sessionId);
@@ -130,6 +131,7 @@ export class OrcdClient {
         effort: opts.effort,
         sessionId: opts.sessionId,
         env: opts.env,
+        contextWindow: opts.contextWindow,
       });
 
       // The session_created message will have the sessionId.

@@ -9,6 +9,7 @@ export interface CreateAction {
   effort?: string;       // 'high' | 'medium' | 'low' | 'disabled'
   sessionId?: string;    // Resume existing session
   env?: Record<string, string>;  // ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY
+  contextWindow?: number;
 }
 
 export interface MessageAction {
