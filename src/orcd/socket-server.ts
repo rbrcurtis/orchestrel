@@ -147,7 +147,7 @@ export class OrcdServer {
       ...(providerCfg.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {}),
     }, action.env) as Record<string, string>;
 
-    const prompt = action.sessionId ? action.prompt : expandSlashCommand(action.prompt, action.cwd);
+    const prompt = expandSlashCommand(action.prompt, action.cwd);
 
     session.run({
       prompt,
@@ -181,6 +181,11 @@ export class OrcdServer {
     }) as Record<string, string>;
 
     const prompt = expandSlashCommand(action.prompt, session.cwd);
+
+    if (!prompt.trim()) {
+      this.send(client, { type: 'error', sessionId: action.sessionId, error: 'empty prompt' });
+      return;
+    }
 
     session.sendMessage(prompt, env).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
