@@ -361,4 +361,122 @@ describe('resolvePinnedCards', () => {
     expect(result.get(1)).toBe(2);
     expect(result.get(2)).toBe(3);
   });
+
+  // ─── "all" pin resolution ──────────────────────────────────────────────────
+
+  it('resolves cards from any project into an "all" pinned slot', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // oldest review first
+  });
+
+  it('distributes all-project cards across multiple "all" slots', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1);
+    expect(result.get(2)).toBe(2);
+  });
+
+  it('excludes cards already claimed by per-project pins from "all" slots', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // project-specific pin takes card 1
+    expect(result.get(2)).toBe(2); // "all" gets remaining card 2
+  });
+
+  it('excludes cards in manual slots from "all" resolution', () => {
+    const slots: SlotState[] = [
+      { type: 'manual', cardId: 1 },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(2); // card 1 excluded (manual), card 2 fills
+  });
+
+  it('uses same priority ranking in "all" slots: review > active running > queued', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+      { type: 'pinned', projectId: 'all' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', queuePosition: 1 }),
+      makeCard({ id: 2, projectId: 20, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 3, projectId: 30, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(3); // review first
+    expect(result.get(2)).toBe(2); // active running second
+    expect(result.get(3)).toBe(1); // queued running last
+  });
+
+  it('sticky behavior works for "all" slots', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 2]]); // slot 1 was showing card 2
+    const result = resolvePinnedCards(slots, cards, prev);
+    expect(result.get(1)).toBe(2); // sticky
+    expect(result.get(2)).toBe(1); // remaining card
+  });
+
+  it('releases running cards in "all" slots when review cards are available', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 2]]); // slot 1 was showing running card 2
+    const result = resolvePinnedCards(slots, cards, prev);
+    expect(result.get(1)).toBe(1); // review card takes priority, running released
+  });
+
+  it('returns empty for "all" slot when no eligible cards exist', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'backlog' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.has(1)).toBe(false);
+  });
 });
