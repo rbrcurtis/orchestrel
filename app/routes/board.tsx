@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useSlots } from '~/lib/use-slots';
-import type { SlotState } from '~/lib/resolve-pin';
+import type { SlotState, PinTarget } from '~/lib/resolve-pin';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
 import { Settings, Minus, Plus, Filter, X } from 'lucide-react';
 import { ProjectPinSelector } from '~/components/ProjectPinSelector';
@@ -406,8 +406,8 @@ const BoardLayout = observer(function BoardLayout() {
                   : null;
             const slotCard = displayedCardId != null ? cardStore.getCard(displayedCardId) : undefined;
             const slotProject = slotCard?.projectId ? projectStore.getProject(slotCard.projectId) : null;
-            const pinProject = pinProjectId != null ? projectStore.getProject(pinProjectId) : null;
-            const borderColor = pinProject?.color ?? slotProject?.color ?? null;
+            const pinProject = typeof pinProjectId === 'number' ? projectStore.getProject(pinProjectId) : null;
+            const borderColor = pinProjectId === 'all' ? (slotProject?.color ?? null) : (pinProject?.color ?? slotProject?.color ?? null);
             return (
               <ColumnSlot
                 key={idx}
@@ -445,8 +445,8 @@ type ColumnSlotProps = {
   onFlashDone: () => void;
   newCardColumn: string | null;
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
-  pinProjectId: number | null;
-  onPin: (projectId: number) => void;
+  pinProjectId: PinTarget | null;
+  onPin: (projectId: PinTarget) => void;
   setNewCardColumn: (col: string | null) => void;
   closeSlot: (index: number) => void;
   unpinSlot: (index: number) => void;
@@ -551,7 +551,7 @@ const ColumnSlot = observer(function ColumnSlot({
             }}
             onColorChange={setDraftColor}
           />
-        ) : creatingCard && pinProjectId != null ? (
+        ) : creatingCard && typeof pinProjectId === 'number' ? (
           <NewCardDetail
             column="running"
             initialProjectId={pinProjectId}
@@ -577,11 +577,23 @@ const ColumnSlot = observer(function ColumnSlot({
         ) : pinProjectId != null ? (
           <div className="flex flex-col flex-1">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => setCreatingCard(true)}>
-                <Plus className="size-4" />
-              </Button>
+              {typeof pinProjectId === 'number' && (
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => setCreatingCard(true)}>
+                  <Plus className="size-4" />
+                </Button>
+              )}
               <span className="flex-1" />
-              {(() => {
+              {pinProjectId === 'all' ? (
+                <Badge variant="secondary" className="text-xs shrink-0">
+                  <span
+                    className="inline-block size-2 rounded-full mr-1.5"
+                    style={{
+                      background: 'conic-gradient(from 0deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7, #ef4444)',
+                    }}
+                  />
+                  All Projects
+                </Badge>
+              ) : (() => {
                 const p = projectStore.getProject(pinProjectId);
                 return p ? (
                   <Badge
