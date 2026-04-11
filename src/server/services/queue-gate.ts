@@ -117,6 +117,7 @@ async function processQueueImpl(projectId: number): Promise<void> {
     provider: toStart.provider,
     model: toStart.model,
     sessionId: toStart.sessionId ?? undefined,
+    contextWindow: toStart.contextWindow,
   });
 
   toStart.sessionId = sessionId;

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
+import { AUTO_COMPACT_RATIO } from '../shared/constants';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
 import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage, SessionExitMessage } from '../shared/orcd-protocol';
@@ -27,6 +28,7 @@ export class OrcdSession {
   readonly cwd: string;
   readonly model: string;
   readonly provider: string;
+  readonly contextWindow: number | undefined;
   readonly buffer: RingBuffer<unknown>;
 
   private activeQuery: Query | null = null;
@@ -38,11 +40,13 @@ export class OrcdSession {
     provider: string;
     bufferSize?: number;
     sessionId?: string;  // For resume — use existing CC session UUID
+    contextWindow?: number;
   }) {
     this.id = opts.sessionId ?? randomUUID();
     this.cwd = opts.cwd;
     this.model = opts.model;
     this.provider = opts.provider;
+    this.contextWindow = opts.contextWindow;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
   }
 
@@ -83,6 +87,11 @@ export class OrcdSession {
 
     const thinkingOpts = effortToOptions(opts.effort);
 
+    // SDK validates autoCompactWindow as min(100000), silently drops values below
+    const autoCompactWindow = this.contextWindow
+      ? Math.max(Math.floor(this.contextWindow * AUTO_COMPACT_RATIO), 100_000)
+      : undefined;
+
     const q = sdkQuery({
       prompt: opts.prompt,
       options: {
@@ -96,6 +105,7 @@ export class OrcdSession {
         pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
         env: opts.env,
         ...thinkingOpts,
+        ...(autoCompactWindow ? { settings: { autoCompactWindow } } : {}),
       },
     });
 

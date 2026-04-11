@@ -176,6 +176,7 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
         provider: fullCard.provider,
         model: fullCard.model,
         sessionId: fullCard.sessionId ?? undefined,
+        contextWindow: fullCard.contextWindow,
       });
 
       fullCard.sessionId = sessionId;

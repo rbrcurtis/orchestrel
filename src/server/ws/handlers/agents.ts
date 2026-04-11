@@ -38,6 +38,7 @@ export async function handleAgentSend(
         provider: card.provider,
         model: card.model,
         sessionId: card.sessionId ?? undefined,
+        contextWindow: card.contextWindow,
       });
 
       card.sessionId = sessionId;

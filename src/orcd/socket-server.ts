@@ -128,6 +128,7 @@ export class OrcdServer {
       model: action.model,
       provider: action.provider,
       sessionId: action.sessionId,
+      contextWindow: action.contextWindow,
     });
 
     this.store.add(session);
