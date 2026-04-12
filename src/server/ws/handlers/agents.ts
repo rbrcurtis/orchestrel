@@ -25,7 +25,8 @@ export async function handleAgentSend(
     card.promptsSent = (card.promptsSent ?? 0) + 1;
 
     if (card.sessionId && client.isActive(card.sessionId)) {
-      // Follow-up to active session
+      // Follow-up to active session — ensure handler registered (may be lost after server restart)
+      registerCardSession(cardId, card.sessionId);
       client.message(card.sessionId, prompt);
       card.updatedAt = new Date().toISOString();
       await card.save();

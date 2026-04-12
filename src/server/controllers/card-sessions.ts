@@ -3,14 +3,22 @@ import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
 import type { OrcdMessage } from '../../shared/orcd-protocol';
 
+/** Track which card+session pairs have active handlers (survives within process lifetime) */
+const registeredSessions = new Set<string>();
+
 /**
  * Register per-card session event handlers.
  * Listens to OrcdClient messages for the given sessionId and:
  * - Forwards SDK events to card's messageBus topic (for Socket.IO bridge)
  * - Persists session counters to DB on result
  * - Moves card to review on session exit
+ *
+ * Idempotent: safe to call multiple times for the same card+session.
  */
 export function registerCardSession(cardId: number, sessionId: string): void {
+  const key = `${cardId}:${sessionId}`;
+  if (registeredSessions.has(key)) return;
+  registeredSessions.add(key);
   const repo = AppDataSource.getRepository(Card);
   let registered = true;
 
@@ -98,6 +106,7 @@ export function registerCardSession(cardId: number, sessionId: string): void {
 
   const unregister = async () => {
     registered = false;
+    registeredSessions.delete(key);
     const initState = await import('../init-state');
     const client = initState.getOrcdClient();
     client?.offMessage(handler);
