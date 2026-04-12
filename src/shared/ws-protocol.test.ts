@@ -23,7 +23,6 @@ describe('cardSchema', () => {
       contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
-      queuePosition: null,
     }
     const result = cardSchema.safeParse(card)
     expect(result.success).toBe(true)
@@ -50,7 +49,6 @@ describe('cardSchema', () => {
       contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
-      queuePosition: null,
     }
     const result = cardSchema.safeParse(card)
     expect(result.success).toBe(false)
@@ -77,7 +75,6 @@ describe('cardSchema', () => {
       contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
-      queuePosition: null,
     }
     const result = cardSchema.safeParse(card)
     expect(result.success).toBe(true)

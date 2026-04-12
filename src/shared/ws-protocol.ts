@@ -24,7 +24,6 @@ export const cardSchema = z.object({
   contextWindow: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  queuePosition: z.number().nullable(),
 });
 
 export const projectSchema = z.object({
@@ -199,8 +198,6 @@ export interface ClientToServerEvents {
   'session:load': (data: { cardId: number; sessionId?: string }, ack: (res: AckResponse<{ messages: unknown[] }>) => void) => void;
   'session:set-model': (data: { cardId: number; provider: string; model: string }, ack: (res: AckResponse) => void) => void;
 
-  // Queue
-  'queue:reorder': (data: { cardId: number; newPosition: number }, ack: (res: AckResponse) => void) => void;
 }
 
 /** Server → Client push events */
