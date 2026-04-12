@@ -32,7 +32,6 @@ function makeCard(overrides: Partial<Card> & { id: number }): Card {
     contextWindow: 200000,
     createdAt: '2026-03-20T00:00:00.000Z',
     updatedAt: '2026-03-20T00:00:00.000Z',
-    queuePosition: null,
     ...overrides,
   };
 }
