@@ -2,60 +2,64 @@ import { Card } from '../models/Card';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
 import type { OrcdMessage } from '../../shared/orcd-protocol';
+import type { OrcdClient } from '../orcd-client';
 
-/** Track which card+session pairs have active handlers (survives within process lifetime) */
-const registeredSessions = new Set<string>();
+// ── Session → Card routing map ───────────────────────────────────────────────
+
+const sessionCardMap = new Map<string, number>();
+
+/** Register a sessionId → cardId mapping so the global router can route messages. */
+export function trackSession(cardId: number, sessionId: string): void {
+  sessionCardMap.set(sessionId, cardId);
+  console.log(`[orcd-router] tracking session ${sessionId.slice(0, 8)} → card ${cardId}`);
+}
+
+/** Remove a session from the routing map. */
+export function untrackSession(sessionId: string): void {
+  sessionCardMap.delete(sessionId);
+}
+
+// ── Global orcd message router ───────────────────────────────────────────────
 
 /**
- * Register per-card session event handlers.
- * Listens to OrcdClient messages for the given sessionId and:
- * - Forwards SDK events to card's messageBus topic (for Socket.IO bridge)
- * - Persists session counters to DB on result
- * - Moves card to review on session exit
- *
- * Idempotent: safe to call multiple times for the same card+session.
+ * Register a single global onMessage handler on the OrcdClient.
+ * Routes messages by looking up sessionId → cardId in the map.
+ * Call once at startup — survives for the process lifetime.
  */
-export function registerCardSession(cardId: number, sessionId: string): void {
-  const key = `${cardId}:${sessionId}`;
-  if (registeredSessions.has(key)) return;
-  registeredSessions.add(key);
-  const repo = AppDataSource.getRepository(Card);
-  let registered = true;
+export function initOrcdRouter(
+  client: OrcdClient,
+  bus: MessageBus = messageBus,
+): void {
+  const repo = () => AppDataSource.getRepository(Card);
 
-  const handler = async (msg: OrcdMessage) => {
-    if (!registered) return;
-
-    // Only handle events for our session
-    if (!('sessionId' in msg) || msg.sessionId !== sessionId) return;
+  client.onMessage(async (msg: OrcdMessage) => {
+    if (!('sessionId' in msg)) return;
+    const cardId = sessionCardMap.get(msg.sessionId);
+    if (cardId == null) return;
 
     if (msg.type === 'stream_event') {
       const sdkEvent = msg.event as Record<string, unknown>;
+      bus.publish(`card:${cardId}:sdk`, sdkEvent);
 
-      // Forward to messageBus for Socket.IO bridge
-      messageBus.publish(`card:${cardId}:sdk`, sdkEvent);
-
-      // Handle system messages
       if (sdkEvent.type === 'system') {
         const sys = sdkEvent as { subtype?: string; session_id?: string };
 
-        // Session init: persist sessionId
         if (sys.subtype === 'init' && sys.session_id) {
-          const card = await repo.findOneBy({ id: cardId });
+          const card = await repo().findOneBy({ id: cardId });
           if (card && (!card.sessionId || card.sessionId.startsWith('msg_'))) {
             card.sessionId = sys.session_id;
             card.updatedAt = new Date().toISOString();
-            await repo.save(card);
+            await repo().save(card);
             console.log(`[oc:${cardId}] init: persisted sessionId=${sys.session_id}`);
           }
         }
 
-        // Compact boundary: reset context tokens
         if (sys.subtype === 'compact_boundary') {
-          const card = await repo.findOneBy({ id: cardId });
+          const card = await repo().findOneBy({ id: cardId });
           if (card) {
             card.contextTokens = 0;
             card.updatedAt = new Date().toISOString();
-            await repo.save(card);
+            await repo().save(card);
             console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 0`);
           }
         }
@@ -64,62 +68,53 @@ export function registerCardSession(cardId: number, sessionId: string): void {
 
     if (msg.type === 'result') {
       const result = msg.result as Record<string, unknown>;
-      messageBus.publish(`card:${cardId}:sdk`, result);
+      bus.publish(`card:${cardId}:sdk`, result);
 
-      // Persist turn count (result = one turn done, but session may still be alive for background tasks)
-      const card = await repo.findOneBy({ id: cardId });
+      const card = await repo().findOneBy({ id: cardId });
       if (card) {
         card.turnsCompleted = (card.turnsCompleted ?? 0) + 1;
         card.updatedAt = new Date().toISOString();
-        await repo.save(card);
+        await repo().save(card);
       }
     }
 
     if (msg.type === 'context_usage') {
-      const card = await repo.findOneBy({ id: cardId });
+      const card = await repo().findOneBy({ id: cardId });
       if (card) {
         card.contextTokens = msg.contextTokens;
         card.contextWindow = msg.contextWindow;
         card.updatedAt = new Date().toISOString();
-        await repo.save(card);
+        await repo().save(card);
       }
-      messageBus.publish(`card:${cardId}:context`, {
+      bus.publish(`card:${cardId}:context`, {
         contextTokens: msg.contextTokens,
         contextWindow: msg.contextWindow,
       });
     }
 
     if (msg.type === 'error') {
-      messageBus.publish(`card:${cardId}:sdk`, {
+      bus.publish(`card:${cardId}:sdk`, {
         type: 'error',
         message: msg.error,
         timestamp: Date.now(),
       });
     }
 
-    // Session actually exited (orcd iterator closed) — now move card to review
     if (msg.type === 'session_exit') {
-      await handleSessionExit(cardId);
-      unregister();
+      await handleSessionExit(cardId, bus);
+      untrackSession(msg.sessionId);
     }
-  };
-
-  const unregister = async () => {
-    registered = false;
-    registeredSessions.delete(key);
-    const initState = await import('../init-state');
-    const client = initState.getOrcdClient();
-    client?.offMessage(handler);
-  };
-
-  // Register handler on OrcdClient
-  import('../init-state').then((initState) => {
-    const client = initState.getOrcdClient();
-    client?.onMessage(handler);
   });
+
+  console.log('[orcd-router] global handler registered');
 }
 
-async function handleSessionExit(cardId: number): Promise<void> {
+// ── Session exit ─────────────────────────────────────────────────────────────
+
+async function handleSessionExit(
+  cardId: number,
+  bus: MessageBus = messageBus,
+): Promise<void> {
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
 
@@ -129,11 +124,13 @@ async function handleSessionExit(cardId: number): Promise<void> {
     await repo.save(card);
   }
 
-  messageBus.publish(`card:${cardId}:exit`, {
+  bus.publish(`card:${cardId}:exit`, {
     sessionId: card?.sessionId,
     status: 'completed',
   });
 }
+
+// ── Board event listeners ────────────────────────────────────────────────────
 
 export function registerAutoStart(bus: MessageBus = messageBus): void {
   bus.subscribe('board:changed', async (payload) => {
@@ -177,7 +174,7 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
       fullCard.updatedAt = new Date().toISOString();
       await repo().save(fullCard);
 
-      registerCardSession(fullCard.id, sessionId);
+      trackSession(fullCard.id, sessionId);
     }
 
     // Card left running: cancel session
