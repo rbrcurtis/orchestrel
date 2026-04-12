@@ -407,7 +407,7 @@ function StatusBadge({ status }: { status: string }) {
       break;
     case 'retry':
       variant = 'outline';
-      label = 'Queued';
+      label = 'Retrying...';
       break;
     default:
       variant = 'destructive';
