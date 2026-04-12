@@ -74,15 +74,6 @@ export class Card extends BaseEntity {
 
   @Column({ name: 'updated_at', type: 'text' })
   updatedAt!: string;
-
-  @Column({ name: 'queue_position', type: 'integer', nullable: true, default: null })
-  queuePosition!: number | null;
-
-  @Column({ name: 'pending_prompt', type: 'text', nullable: true, default: null })
-  pendingPrompt!: string | null;
-
-  @Column({ name: 'pending_files', type: 'text', nullable: true, default: null })
-  pendingFiles!: string | null;
 }
 
 @EventSubscriber()
@@ -96,37 +87,6 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
     const prev = event.databaseEntity as Card;
     if (prev?.sessionId && card.sessionId !== prev.sessionId) {
       console.log(`[card:${card.id}] sessionId changed: ${prev.sessionId} → ${card.sessionId}`);
-    }
-
-    // Card entering running as non-worktree on a git repo: check for conflicts, assign queue position.
-    // Non-git-repo projects don't need serialization — no shared working directory to protect.
-    if (prev?.column !== 'running' && card.column === 'running' && !card.worktreeBranch && card.projectId) {
-      const { Project } = await import('./Project');
-      const proj = await Project.findOneBy({ id: card.projectId });
-      if (proj?.isGitRepo) {
-        const others = await Card.createQueryBuilder('card')
-          .where('card.column = :col', { col: 'running' })
-          .andWhere('card.project_id = :pid', { pid: card.projectId })
-          .andWhere('card.worktree_branch IS NULL')
-          .getMany();
-        const conflict = others.filter((c) => c.id !== card.id);
-        if (conflict.length > 0) {
-          const maxPos = conflict.reduce((mx, c) => Math.max(mx, c.queuePosition ?? 0), 0);
-          card.queuePosition = maxPos + 1;
-          console.log(
-            `[card:${card.id}] entering running with ${conflict.length} conflict(s), ` +
-              `assigned queuePosition=${card.queuePosition}`,
-          );
-        } else {
-          console.log(`[card:${card.id}] entering running, no conflicts in project ${card.projectId}`);
-        }
-      }
-    }
-
-    // Invariant: queuePosition only exists on running cards.
-    if (card.column !== 'running' && card.queuePosition != null) {
-      console.log(`[card:${card.id}] leaving running, clearing queuePosition (was ${card.queuePosition})`);
-      card.queuePosition = null;
     }
   }
 
@@ -145,7 +105,7 @@ export class CardSubscriber implements EntitySubscriberInterface<Card> {
 
     messageBus.publish(`card:${card.id}:updated`, card);
 
-    if (prev?.column !== card.column || prev?.queuePosition !== card.queuePosition) {
+    if (prev?.column !== card.column) {
       messageBus.publish('board:changed', {
         card,
         oldColumn: prev?.column ?? null,
