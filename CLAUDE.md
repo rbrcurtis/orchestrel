@@ -116,9 +116,6 @@ CREATE TABLE cards (
   thinking_level text DEFAULT 'high' NOT NULL,
   context_tokens INTEGER NOT NULL DEFAULT 0,
   context_window INTEGER NOT NULL DEFAULT 200000,
-  queue_position INTEGER DEFAULT NULL,
-  pending_prompt TEXT DEFAULT NULL,
-  pending_files TEXT DEFAULT NULL,
   provider TEXT NOT NULL DEFAULT 'anthropic'
 );
 
