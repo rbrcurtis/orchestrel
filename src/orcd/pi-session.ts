@@ -42,8 +42,7 @@ function effortToThinkingLevel(effort: string | undefined): ThinkingLevel {
 /**
  * PiSession wraps a pi-coding-agent AgentSession to match the orcd protocol.
  *
- * Drop-in replacement for OrcdSession — same external interface consumed
- * by the socket server and session store.
+ * Consumed by the socket server and session store.
  */
 export class PiSession {
   readonly id: string;
