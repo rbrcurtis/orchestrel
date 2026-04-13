@@ -10,7 +10,8 @@
     "lint": "eslint . --fix --max-warnings 0",
     "format": "prettier --write .",
     "tsoa:generate": "tsoa spec-and-routes",
-    "orcd": "~/.bun/bin/bun src/orcd/index.ts"
+    "orcd": "~/.bun/bin/bun src/orcd/index.ts",
+    "test:e2e": "npx vitest run --config e2e/vitest.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.98",
