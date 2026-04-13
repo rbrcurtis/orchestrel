@@ -15,6 +15,7 @@ export class OrcdClient {
   private socket: Socket | null = null;
   private buf = '';
   private connected = false;
+  private hasConnectedBefore = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private handlers = new Set<MessageHandler>();
 
@@ -24,7 +25,18 @@ export class OrcdClient {
   /** Track which sessions we consider active (running in orcd) */
   private activeSessions = new Set<string>();
 
+  /** Callback invoked when OrcdClient reconnects (orcd restarted) */
+  private reconnectCallback: (() => void) | null = null;
+
   constructor(private socketPath?: string) {}
+
+  /**
+   * Register a callback for when OrcdClient reconnects to orcd.
+   * Fires on re-connections only (not the initial connect).
+   */
+  onReconnect(cb: () => void): void {
+    this.reconnectCallback = cb;
+  }
 
   /**
    * Connect to orcd. Reconnects automatically on disconnect.
@@ -35,7 +47,12 @@ export class OrcdClient {
       const sock = createConnection({ path }, () => {
         this.connected = true;
         this.buf = '';
-        console.log('[orcd-client] connected');
+        const isReconnect = this.hasConnectedBefore;
+        this.hasConnectedBefore = true;
+        console.log(`[orcd-client] ${isReconnect ? 're' : ''}connected`);
+        if (isReconnect) {
+          this.reconnectCallback?.();
+        }
         resolve();
       });
 
@@ -177,10 +194,25 @@ export class OrcdClient {
   }
 
   /**
-   * List all active sessions.
+   * List all active sessions. Returns the session list from orcd.
    */
-  list(): void {
-    this.send({ action: 'list' });
+  list(): Promise<import('../shared/orcd-protocol').SessionListMessage> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.offMessage(cb);
+        reject(new Error('list timeout'));
+      }, 5000);
+
+      const cb = (msg: OrcdMessage) => {
+        if (msg.type === 'session_list') {
+          clearTimeout(timeout);
+          this.offMessage(cb);
+          resolve(msg);
+        }
+      };
+      this.onMessage(cb);
+      this.send({ action: 'list' });
+    });
   }
 
   isConnected(): boolean {
@@ -189,6 +221,14 @@ export class OrcdClient {
 
   isActive(sessionId: string): boolean {
     return this.activeSessions.has(sessionId);
+  }
+
+  /**
+   * Mark a session as active in the local tracking set.
+   * Used at startup to seed activeSessions for sessions that survived a web server restart.
+   */
+  markActive(sessionId: string): void {
+    this.activeSessions.add(sessionId);
   }
 
   private dispatch(msg: OrcdMessage): void {

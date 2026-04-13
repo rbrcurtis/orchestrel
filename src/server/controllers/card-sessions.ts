@@ -134,6 +134,45 @@ async function handleSessionExit(
   });
 }
 
+// ── Reconciliation ──────────────────────────────────────────────────────────
+
+/**
+ * Check all running cards against orcd's active sessions.
+ * Cards whose sessions are no longer in orcd get moved to review.
+ * Called at startup and on OrcdClient reconnect (orcd restart).
+ */
+export async function reconcileRunningCards(
+  client: OrcdClient,
+  bus: MessageBus = messageBus,
+): Promise<void> {
+  const r = AppDataSource.getRepository(Card);
+  const runningCards = await r.find({ where: { column: 'running' } });
+  if (runningCards.length === 0) return;
+
+  const activeList = await client.list();
+  const activeIds = new Set(activeList.sessions.map((s) => s.id));
+
+  for (const card of runningCards) {
+    if (card.sessionId && activeIds.has(card.sessionId)) {
+      trackSession(card.id, card.sessionId);
+      client.markActive(card.sessionId);
+      console.log(`[reconcile] card ${card.id} still active in orcd, tracking`);
+    } else {
+      card.column = 'review';
+      card.updatedAt = new Date().toISOString();
+      await r.save(card);
+      if (card.sessionId) untrackSession(card.sessionId);
+      bus.publish(`card:${card.id}:exit`, {
+        sessionId: card.sessionId,
+        status: 'stopped',
+      });
+      console.log(
+        `[reconcile] card ${card.id} moved to review (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
+      );
+    }
+  }
+}
+
 // ── Board event listeners ────────────────────────────────────────────────────
 
 export function registerAutoStart(bus: MessageBus = messageBus): void {
