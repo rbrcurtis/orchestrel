@@ -1,17 +1,17 @@
-import { OrcdSession } from './session';
+import { PiSession } from './pi-session';
 import type { SessionInfo } from './types';
 
 /**
  * In-memory store of active sessions.
  */
 export class SessionStore {
-  private sessions = new Map<string, OrcdSession>();
+  private sessions = new Map<string, PiSession>();
 
-  get(id: string): OrcdSession | undefined {
+  get(id: string): PiSession | undefined {
     return this.sessions.get(id);
   }
 
-  add(session: OrcdSession): void {
+  add(session: PiSession): void {
     this.sessions.set(session.id, session);
   }
 

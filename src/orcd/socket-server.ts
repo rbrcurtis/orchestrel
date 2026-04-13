@@ -1,9 +1,8 @@
 import { createServer, type Server, type Socket } from 'net';
 import { mkdirSync, existsSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
-import { OrcdSession, type SessionEventCallback } from './session';
+import { PiSession, type SessionEventCallback } from './pi-session';
 import { SessionStore } from './session-store';
-import { expandSlashCommand } from './skill-resolver';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { ProviderConfig } from './config';
 
@@ -123,12 +122,18 @@ export class OrcdServer {
       return;
     }
 
-    const session = new OrcdSession({
+    const effort = action.effort ?? 'high';
+    const openrouterCfg = this.providers['openrouter'];
+
+    const session = new PiSession({
       cwd: action.cwd,
       model: action.model,
       provider: action.provider,
+      providerConfig: providerCfg,
+      ...(openrouterCfg ? { openrouterConfig: openrouterCfg } : {}),
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
+      effort,
     });
 
     this.store.add(session);
@@ -140,20 +145,11 @@ export class OrcdServer {
 
     this.send(client, { type: 'session_created', sessionId: session.id });
 
-    const effort = action.effort ?? 'high';
-
-    const env = Object.assign({}, process.env, {
-      ANTHROPIC_BASE_URL: providerCfg.baseUrl,
-      ANTHROPIC_API_KEY: providerCfg.apiKey,
-      ...(providerCfg.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {}),
-    }, action.env) as Record<string, string>;
-
-    const prompt = expandSlashCommand(action.prompt, action.cwd);
+    const prompt = action.prompt.trim();
 
     session.run({
       prompt,
       resume: !!action.sessionId,
-      env,
       effort,
     }).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
@@ -174,30 +170,20 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    const providerCfg = this.providers[session.provider];
-    const env = Object.assign({}, process.env, {
-      ANTHROPIC_BASE_URL: providerCfg?.baseUrl ?? '',
-      ANTHROPIC_API_KEY: providerCfg?.apiKey ?? '',
-      ...(providerCfg?.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {}),
-    }) as Record<string, string>;
-
-    const prompt = expandSlashCommand(action.prompt, session.cwd);
-
-    if (!prompt.trim()) {
+    const prompt = action.prompt.trim();
+    if (!prompt) {
       this.send(client, { type: 'error', sessionId: action.sessionId, error: 'empty prompt' });
       return;
     }
 
-    session.sendMessage(prompt, env).finally(() => {
+    session.sendMessage(prompt).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }
 
   private handleSetEffort(action: OrcdAction & { action: 'set_effort' }): void {
-    const session = this.store.get(action.sessionId);
-    session?.setEffort(action.effort).catch((err: unknown) => {
-      console.error(`[orcd] setEffort error:`, err);
-    });
+    // PiSession sets effort per-prompt, not mid-session. No-op for now.
+    console.log(`[orcd] set_effort ignored (effort is per-prompt in pi): ${action.effort}`);
   }
 
   private handleSubscribe(client: ClientState, action: OrcdAction & { action: 'subscribe' }): void {
