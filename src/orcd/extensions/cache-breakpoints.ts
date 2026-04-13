@@ -39,7 +39,7 @@ export function injectBreakpoints(payload: unknown, opts: BreakpointOptions): un
   const MAX_BREAKPOINTS = 4;
 
   // Breakpoint 1: last system block
-  if (payload.system.length > 0 && breakpoints < MAX_BREAKPOINTS) {
+  if (payload.system.length > 0) {
     addBreakpointToLastBlock(payload.system);
     breakpoints++;
   }
@@ -55,13 +55,10 @@ export function injectBreakpoints(payload: unknown, opts: BreakpointOptions): un
 
   // Breakpoint 3: last user message
   if (breakpoints < MAX_BREAKPOINTS) {
-    // Find the last user message
     for (let i = payload.messages.length - 1; i >= 0; i--) {
       const msg = payload.messages[i];
       if (msg.role === 'user' && Array.isArray(msg.content) && msg.content.length > 0) {
-        // Only add if this isn't already the boundary message we just marked
         addBreakpointToLastBlock(msg.content);
-        breakpoints++;
         break;
       }
     }

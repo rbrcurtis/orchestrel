@@ -106,7 +106,7 @@ export async function initBackend(): Promise<{
   let client = initState.getOrcdClient();
   if (!client) {
     const { OrcdClient } = await import('./orcd-client');
-    client = new OrcdClient();
+    client = new OrcdClient(process.env.ORCD_SOCKET);
     await client.connect();
     initState.setOrcdClient(client);
   }

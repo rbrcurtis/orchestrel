@@ -20,18 +20,6 @@ const openAiProvider: ProviderConfig = {
   models: ['gpt-4o'],
 };
 
-const googleProvider: ProviderConfig = {
-  baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-  apiKey: 'google-test',
-  models: ['gemini-2.0-flash'],
-};
-
-const vertexProvider: ProviderConfig = {
-  baseUrl: 'https://us-east5-aiplatform.googleapis.com/v1beta1',
-  apiKey: '',
-  models: ['gemini-2.0-flash'],
-};
-
 const kppProvider: ProviderConfig = {
   baseUrl: 'http://localhost:3019',
   apiKey: 'sk-ant-test',

@@ -1,5 +1,5 @@
 import type { AgentTool, AgentToolResult } from '@oh-my-pi/pi-agent-core';
-import { Type, type TObject } from '@sinclair/typebox';
+import { Type } from '@sinclair/typebox';
 
 // ─── config ──────────────────────────────────────────────────────────────────
 
@@ -68,13 +68,33 @@ function errorResult(err: unknown): AgentToolResult {
   return textResult(`Error: ${msg}`);
 }
 
-// ─── tool definitions ────────────────────────────────────────────────────────
+// ─── schemas ─────────────────────────────────────────────────────────────────
 
-interface SearchMemoryParams {
-  query: string;
-  project?: string;
-  limit?: number;
-}
+const SearchSchema = Type.Object({
+  query: Type.String({ description: 'Semantic search query' }),
+  project: Type.Optional(Type.String({ description: 'Filter by project name' })),
+  limit: Type.Optional(Type.Number({ description: 'Max results (default 10)' })),
+});
+
+const StoreSchema = Type.Object({
+  title: Type.String({ description: 'Short descriptive title for semantic search' }),
+  text: Type.String({ description: 'Full memory content' }),
+  project: Type.Optional(Type.String({ description: 'Project name to associate with' })),
+  tags: Type.Optional(Type.Array(Type.String(), { description: 'Tags for categorization' })),
+});
+
+const UpdateSchema = Type.Object({
+  id: Type.String({ description: 'Memory ID to update' }),
+  title: Type.Optional(Type.String({ description: 'New title' })),
+  text: Type.Optional(Type.String({ description: 'New text content' })),
+});
+
+const LoadSchema = Type.Object({
+  ids: Type.Array(Type.String(), { description: 'Memory IDs to load' }),
+  project: Type.Optional(Type.String({ description: 'Project context for loading' })),
+});
+
+// ─── tool definitions ────────────────────────────────────────────────────────
 
 interface SearchResult {
   id: string;
@@ -82,18 +102,21 @@ interface SearchResult {
   score: number;
 }
 
-function createSearchMemoryTool(cfg: MemoryConfig): AgentTool<TObject> {
+interface LoadedMemory {
+  id: string;
+  title: string;
+  text: string;
+  [key: string]: unknown;
+}
+
+function createSearchMemoryTool(cfg: MemoryConfig): AgentTool<typeof SearchSchema> {
   return {
     name: 'search_memory',
     label: 'Search Memory',
     description:
       'Search shared agent memory by semantic similarity. Returns memory titles, IDs, and relevance scores. Use load_memories to retrieve full text.',
-    parameters: Type.Object({
-      query: Type.String({ description: 'Semantic search query' }),
-      project: Type.Optional(Type.String({ description: 'Filter by project name' })),
-      limit: Type.Optional(Type.Number({ description: 'Max results (default 10)' })),
-    }),
-    async execute(_toolCallId, params: SearchMemoryParams): Promise<AgentToolResult> {
+    parameters: SearchSchema,
+    async execute(_toolCallId, params) {
       try {
         const p: Record<string, string> = { query: params.query };
         if (params.project) p.project = params.project;
@@ -120,26 +143,14 @@ function createSearchMemoryTool(cfg: MemoryConfig): AgentTool<TObject> {
   };
 }
 
-interface StoreMemoryParams {
-  title: string;
-  text: string;
-  project?: string;
-  tags?: string[];
-}
-
-function createStoreMemoryTool(cfg: MemoryConfig): AgentTool<TObject> {
+function createStoreMemoryTool(cfg: MemoryConfig): AgentTool<typeof StoreSchema> {
   return {
     name: 'store_memory',
     label: 'Store Memory',
     description:
       'Store a new memory in shared agent memory. One concept per memory with a descriptive title for semantic search.',
-    parameters: Type.Object({
-      title: Type.String({ description: 'Short descriptive title for semantic search' }),
-      text: Type.String({ description: 'Full memory content' }),
-      project: Type.Optional(Type.String({ description: 'Project name to associate with' })),
-      tags: Type.Optional(Type.Array(Type.String(), { description: 'Tags for categorization' })),
-    }),
-    async execute(_toolCallId, params: StoreMemoryParams): Promise<AgentToolResult> {
+    parameters: StoreSchema,
+    async execute(_toolCallId, params) {
       try {
         const body: Record<string, unknown> = {
           title: params.title,
@@ -162,24 +173,14 @@ function createStoreMemoryTool(cfg: MemoryConfig): AgentTool<TObject> {
   };
 }
 
-interface UpdateMemoryParams {
-  id: string;
-  title?: string;
-  text?: string;
-}
-
-function createUpdateMemoryTool(cfg: MemoryConfig): AgentTool<TObject> {
+function createUpdateMemoryTool(cfg: MemoryConfig): AgentTool<typeof UpdateSchema> {
   return {
     name: 'update_memory',
     label: 'Update Memory',
     description:
       'Update an existing memory by ID. Provide new title and/or text to replace.',
-    parameters: Type.Object({
-      id: Type.String({ description: 'Memory ID to update' }),
-      title: Type.Optional(Type.String({ description: 'New title' })),
-      text: Type.Optional(Type.String({ description: 'New text content' })),
-    }),
-    async execute(_toolCallId, params: UpdateMemoryParams): Promise<AgentToolResult> {
+    parameters: UpdateSchema,
+    async execute(_toolCallId, params) {
       try {
         const body: Record<string, unknown> = {};
         if (params.title != null) body.title = params.title;
@@ -198,29 +199,14 @@ function createUpdateMemoryTool(cfg: MemoryConfig): AgentTool<TObject> {
   };
 }
 
-interface LoadMemoriesParams {
-  ids: string[];
-  project?: string;
-}
-
-interface LoadedMemory {
-  id: string;
-  title: string;
-  text: string;
-  [key: string]: unknown;
-}
-
-function createLoadMemoriesTool(cfg: MemoryConfig): AgentTool<TObject> {
+function createLoadMemoriesTool(cfg: MemoryConfig): AgentTool<typeof LoadSchema> {
   return {
     name: 'load_memories',
     label: 'Load Memories',
     description:
       'Load full memory text by IDs. Use after search_memory to retrieve complete content.',
-    parameters: Type.Object({
-      ids: Type.Array(Type.String(), { description: 'Memory IDs to load' }),
-      project: Type.Optional(Type.String({ description: 'Project context for loading' })),
-    }),
-    async execute(_toolCallId, params: LoadMemoriesParams): Promise<AgentToolResult> {
+    parameters: LoadSchema,
+    async execute(_toolCallId, params) {
       try {
         const p: Record<string, string> = {
           ids: params.ids.join(','),
@@ -251,10 +237,12 @@ function createLoadMemoriesTool(cfg: MemoryConfig): AgentTool<TObject> {
 // ─── public API ──────────────────────────────────────────────────────────────
 
 export function createMemoryTools(cfg: MemoryConfig = DEFAULT_MEMORY_CONFIG): AgentTool[] {
+  // AgentTool generic is invariant on TParameters, so specific TObject schemas
+  // don't narrow to AgentTool<TSchema>. Cast through unknown is safe.
   return [
     createSearchMemoryTool(cfg),
     createStoreMemoryTool(cfg),
     createUpdateMemoryTool(cfg),
     createLoadMemoriesTool(cfg),
-  ];
+  ] as unknown as AgentTool[];
 }

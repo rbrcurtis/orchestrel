@@ -148,7 +148,7 @@ export function wsServerPlugin(): Plugin {
 
             let client = initState.getOrcdClient();
             if (!client) {
-              client = new OrcdClient();
+              client = new OrcdClient(process.env.ORCD_SOCKET);
               await client.connect();
               initState.setOrcdClient(client);
             }

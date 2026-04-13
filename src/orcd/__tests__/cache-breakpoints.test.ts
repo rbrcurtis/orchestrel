@@ -169,7 +169,7 @@ describe('createCacheBreakpointExtension', () => {
     const factory = createCacheBreakpointExtension();
     factory(mockRuntime);
     expect((mockRuntime.on as ReturnType<typeof vi.fn>).mock.calls.some(
-      ([event]: [string]) => event === 'before_provider_request',
+      (args: unknown[]) => args[0] === 'before_provider_request',
     )).toBe(true);
   });
 

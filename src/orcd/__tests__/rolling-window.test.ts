@@ -67,7 +67,7 @@ describe('createRollingWindowExtension', () => {
     const factory = createRollingWindowExtension({ messageBudgetTokens: 10_000 });
     factory(mockRuntime);
     expect((mockRuntime.on as ReturnType<typeof vi.fn>).mock.calls.some(
-      ([event]: [string]) => event === 'context',
+      (args: unknown[]) => args[0] === 'context',
     )).toBe(true);
   });
 

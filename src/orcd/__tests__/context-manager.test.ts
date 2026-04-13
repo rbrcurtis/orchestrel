@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ContextManager } from '../context/manager';
 import type {
+  Message,
   UserMessage,
   AssistantMessage,
   ToolResultMessage,
@@ -179,7 +180,7 @@ describe('ContextManager.evict', () => {
     // Turn 2: user + assistant(reply)
     // We want turn 1 evicted but turn 2 kept — they should be cleanly separated
     const bigText = 'a'.repeat(700); // 200 tokens
-    const turn1 = [
+    const turn1: Message[] = [
       userMsg(bigText),
       assistantToolCall('tc1'),
       toolResultMsg('tc1'),

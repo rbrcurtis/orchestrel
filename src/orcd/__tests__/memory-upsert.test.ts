@@ -165,7 +165,7 @@ describe('createMemoryUpsertExtension', () => {
     factory(mockRuntime);
 
     expect((mockRuntime.on as ReturnType<typeof vi.fn>).mock.calls.some(
-      ([event]: [string]) => event === 'turn_end',
+      (args: unknown[]) => args[0] === 'turn_end',
     )).toBe(true);
   });
 

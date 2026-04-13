@@ -57,12 +57,13 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
 }
 
 /**
- * Load config from ~/.orc/config.yaml.
+ * Load config from ~/.orc/config.yaml (or ORC_CONFIG env var).
  */
 export async function loadConfig(): Promise<OrcdConfig> {
   const { readFile } = await import('fs/promises');
   const { homedir } = await import('os');
-  const path = `${homedir()}/.orc/config.yaml`;
-  const content = await readFile(path, 'utf-8');
+  const path = process.env.ORC_CONFIG ?? `${homedir()}/.orc/config.yaml`;
+  const resolved = path.replace(/^~/, homedir());
+  const content = await readFile(resolved, 'utf-8');
   return parseConfig(content, process.env as Record<string, string | undefined>);
 }
