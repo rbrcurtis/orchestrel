@@ -113,6 +113,11 @@ export class OrcdSession {
     log(`started (resume=${!!opts.resume}, model=${this.model})`);
 
     try {
+      // Track the last message_start usage per API call — used to compute
+      // context fill on result (getContextUsage() fails because the subprocess
+      // exits before the response arrives).
+      let lastInputTokens = 0;
+
       for await (const event of q) {
         if (this.state === 'stopped') break;
 
@@ -120,6 +125,22 @@ export class OrcdSession {
         const eventIndex = this.buffer.push(sdkEvent);
 
         log(JSON.stringify(sdkEvent));
+
+        // Track per-API-call input tokens from message_start events.
+        // SDK yields { type: 'stream_event', event: { type: 'message_start', message: { usage } } }
+        if (sdkEvent.type === 'stream_event') {
+          const inner = sdkEvent.event as Record<string, unknown> | undefined;
+          if (inner?.type === 'message_start') {
+            const msg = inner.message as Record<string, unknown> | undefined;
+            const u = msg?.usage as Record<string, number> | undefined;
+            if (u) {
+              lastInputTokens =
+                (u.input_tokens ?? 0) +
+                (u.cache_creation_input_tokens ?? 0) +
+                (u.cache_read_input_tokens ?? 0);
+            }
+          }
+        }
 
         if (sdkEvent.type === 'result') {
           const msg: SessionResultMessage = {
@@ -130,20 +151,22 @@ export class OrcdSession {
           };
           for (const cb of this.subscribers) cb(msg);
 
-          // Fetch accurate context usage from SDK after each turn
-          if (this.activeQuery) {
-            try {
-              const usage = await this.activeQuery.getContextUsage();
-              const cuMsg: ContextUsageMessage = {
-                type: 'context_usage',
-                sessionId: this.id,
-                contextTokens: usage.totalTokens,
-                contextWindow: usage.rawMaxTokens,
-              };
-              for (const cb of this.subscribers) cb(cuMsg);
-            } catch {
-              // Query may have closed between result and this call — safe to ignore
+          // Emit context usage from the last message_start's per-call tokens
+          if (lastInputTokens > 0) {
+            // Get contextWindow from result's modelUsage if available
+            const mu = sdkEvent.modelUsage as Record<string, Record<string, number>> | undefined;
+            let ctxWindow = this.contextWindow || 200_000;
+            if (mu) {
+              const first = Object.values(mu)[0];
+              if (first?.contextWindow) ctxWindow = first.contextWindow;
             }
+            const cuMsg: ContextUsageMessage = {
+              type: 'context_usage',
+              sessionId: this.id,
+              contextTokens: lastInputTokens,
+              contextWindow: ctxWindow,
+            };
+            for (const cb of this.subscribers) cb(cuMsg);
           }
         } else {
           const msg: StreamEventMessage = {
