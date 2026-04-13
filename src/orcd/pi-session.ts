@@ -127,6 +127,12 @@ export class PiSession {
       // Resolve the pi-ai Model object
       const piModel = resolveModel(this.model, this.provider, this.opts.providerConfig);
 
+      // Set provider auth env vars — pi-ai's AuthStorage falls back to these
+      const cfg = this.opts.providerConfig;
+      if (cfg.apiKey) process.env.ANTHROPIC_API_KEY = cfg.apiKey;
+      if (cfg.baseUrl) process.env.ANTHROPIC_BASE_URL = cfg.baseUrl;
+      if (cfg.authToken) process.env.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
+
       // Create pi session
       const result = await createAgentSession({
         cwd: this.cwd,
