@@ -128,6 +128,8 @@ export class OrcdSession {
 
         // Track per-API-call input tokens from message_start events.
         // SDK yields { type: 'stream_event', event: { type: 'message_start', message: { usage } } }
+        // Fallback: also check message_delta usage (KPP sends context-derived input_tokens there
+        // because CW's contextUsagePercentage arrives after content, too late for message_start).
         if (sdkEvent.type === 'stream_event') {
           const inner = sdkEvent.event as Record<string, unknown> | undefined;
           if (inner?.type === 'message_start') {
@@ -138,6 +140,11 @@ export class OrcdSession {
                 (u.input_tokens ?? 0) +
                 (u.cache_creation_input_tokens ?? 0) +
                 (u.cache_read_input_tokens ?? 0);
+            }
+          } else if (inner?.type === 'message_delta' && lastInputTokens === 0) {
+            const u = inner.usage as Record<string, number> | undefined;
+            if (u?.input_tokens && u.input_tokens > 0) {
+              lastInputTokens = u.input_tokens;
             }
           }
         }
