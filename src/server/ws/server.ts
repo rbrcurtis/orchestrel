@@ -127,6 +127,7 @@ export function wsServerPlugin(): Plugin {
                 httpServer as import('http').Server,
                 {
                   serveClient: false,
+                  destroyUpgrade: false, // let Vite HMR handle non-socket.io upgrades
                   pingInterval: 10_000,
                   pingTimeout: 5_000,
                   cors: { origin: true, credentials: true },

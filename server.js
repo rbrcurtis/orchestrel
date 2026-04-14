@@ -1,3 +1,4 @@
+import { createServer as createHttpServer } from 'http';
 import compression from 'compression';
 import express from 'express';
 import morgan from 'morgan';
@@ -6,6 +7,7 @@ const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const PORT = Number.parseInt(process.env.PORT || (DEVELOPMENT ? '6195' : '6194'));
 
 const app = express();
+const httpServer = createHttpServer(app);
 
 app.use(
   compression({
@@ -22,9 +24,15 @@ let pendingAttachSocketIo = null;
 
 if (DEVELOPMENT) {
   console.log('Starting development server');
+  /** @type {Record<string, unknown>} */
+  const hmrConfig = { server: httpServer };
+  if (process.env.HMR_HOST) {
+    hmrConfig.host = process.env.HMR_HOST;
+    hmrConfig.clientPort = 443;
+  }
   const viteDevServer = await import('vite').then((vite) =>
     vite.createServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: hmrConfig },
     }),
   );
   app.use(viteDevServer.middlewares);
@@ -60,7 +68,7 @@ if (DEVELOPMENT) {
 }
 
 const HOST = process.env.HOST || '0.0.0.0';
-const httpServer = app.listen(PORT, HOST, () => {
+httpServer.listen(PORT, HOST, () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
 });
 
