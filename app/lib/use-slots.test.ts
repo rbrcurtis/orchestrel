@@ -6,6 +6,7 @@ import {
   applyCloseSlot,
   applyPinSlot,
   applyOnCardCreated,
+  applyReleaseHotseat,
   applyEviction,
   applyColumnCountChange,
 } from './use-slots';
@@ -130,6 +131,15 @@ describe('applySelectCard', () => {
     const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
     expect(next[1]).toEqual({ type: 'manual', cardId: 1 });
     expect(flashIndex).toBe(1);
+  });
+
+  it('flashes slot 0 when card is shown via hotseat virtual resolver', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'empty' }];
+    const cards = [makeCard({ id: 1, projectId: 10 })];
+    const resolved = new Map([[0, 1]]); // resolver placed card 1 in slot 0 (hotseat)
+    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    expect(next).toBe(slots); // no mutation
+    expect(flashIndex).toBe(0);
   });
 
   it('places override in second pinned slot when first is occupied by resolver', () => {
@@ -279,11 +289,11 @@ describe('applyPinSlot', () => {
 // ─── applyOnCardCreated ──────────────────────────────────────────────────────
 
 describe('applyOnCardCreated', () => {
-  it('places card in slot 0 when no pinned slot for the project', () => {
-    const slots: SlotState[] = [{ type: 'empty' }, { type: 'empty' }];
+  it('releases slot 0 to empty when no pinned slot for the project (resolver picks up)', () => {
+    const slots: SlotState[] = [{ type: 'manual', cardId: 99 }, { type: 'empty' }];
     const { slots: next, flashIndex } = applyOnCardCreated(slots, 1, 10);
-    expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(0);
+    expect(next[0]).toEqual({ type: 'empty' });
+    expect(flashIndex).toBeNull();
   });
 
   it('does nothing when a pinned slot exists for the project', () => {
@@ -293,11 +303,11 @@ describe('applyOnCardCreated', () => {
     expect(flashIndex).toBeNull();
   });
 
-  it('places card in slot 0 when projectId is null', () => {
-    const slots: SlotState[] = [{ type: 'empty' }];
+  it('releases slot 0 to empty when projectId is null', () => {
+    const slots: SlotState[] = [{ type: 'manual', cardId: 99 }];
     const { slots: next, flashIndex } = applyOnCardCreated(slots, 1, null);
-    expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(0);
+    expect(next[0]).toEqual({ type: 'empty' });
+    expect(flashIndex).toBeNull();
   });
 
   it('does nothing when multiple pinned slots exist for the project', () => {
@@ -311,11 +321,41 @@ describe('applyOnCardCreated', () => {
     expect(flashIndex).toBeNull();
   });
 
-  it('places card in slot 0 when only an "all" pin exists (not project-specific)', () => {
-    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+  it('releases slot 0 to empty when only an "all" pin exists (not project-specific)', () => {
+    const slots: SlotState[] = [{ type: 'manual', cardId: 99 }, { type: 'pinned', projectId: 'all' }];
     const { slots: next, flashIndex } = applyOnCardCreated(slots, 1, 10);
-    expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(0);
+    expect(next[0]).toEqual({ type: 'empty' });
+    expect(flashIndex).toBeNull();
+  });
+
+  it('is a no-op when slot 0 is already empty', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const { slots: next, flashIndex } = applyOnCardCreated(slots, 1, 10);
+    expect(next[0]).toEqual({ type: 'empty' });
+    expect(flashIndex).toBeNull();
+  });
+});
+
+// ─── applyReleaseHotseat ────────────────────────────────────────────────────
+
+describe('applyReleaseHotseat', () => {
+  it('sets a manual slot 0 to empty', () => {
+    const slots: SlotState[] = [{ type: 'manual', cardId: 1 }, { type: 'empty' }];
+    const next = applyReleaseHotseat(slots);
+    expect(next[0]).toEqual({ type: 'empty' });
+    expect(next[1]).toEqual({ type: 'empty' }); // other slots unchanged
+  });
+
+  it('is a no-op when slot 0 is already empty', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    expect(applyReleaseHotseat(slots)).toBe(slots); // same reference
+  });
+
+  it('sets a pinned slot 0 to empty', () => {
+    // Edge case: shouldn't normally happen, but handle gracefully
+    const slots: SlotState[] = [{ type: 'pinned', projectId: 10 }];
+    const next = applyReleaseHotseat(slots);
+    expect(next[0]).toEqual({ type: 'empty' });
   });
 });
 

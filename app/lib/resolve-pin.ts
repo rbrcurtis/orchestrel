@@ -32,6 +32,11 @@ function rankCards(eligible: Card[]): Card[] {
  * eligible (same project, still review/running, not excluded), it stays in
  * that slot. New cards fill remaining slots from the ranked pool.
  *
+ * Slot 0 "hotseat" virtual pin: when slot 0 is empty, it acts as a virtual
+ * "all projects" pin. Real pinned slots (per-project and "all") get priority;
+ * the hotseat gets whatever's left. An optional projectFilter restricts which
+ * projects the hotseat considers (real pins are unaffected by the filter).
+ *
  * Priority per project:
  *   1. Review cards — oldest createdAt first
  *   2. Running cards — newest updatedAt first
@@ -40,6 +45,7 @@ export function resolvePinnedCards(
   slots: SlotState[],
   cards: Card[],
   currentDisplayed: Map<number, number> = new Map(),
+  projectFilter?: Set<number>,
 ): Map<number, number> {
   // Build exclusion set: cards already stored in any slot
   const usedCardIds = new Set<number>();
@@ -148,6 +154,53 @@ export function resolvePinnedCards(
 
     for (let i = 0; i < unfilledSlots.length; i++) {
       if (i < ranked.length) result.set(unfilledSlots[i], ranked[i].id);
+    }
+  }
+
+  // --- Hotseat virtual pin: slot 0 when empty acts like an "all" pin ---
+  if (slots.length > 0 && slots[0].type === 'empty' && !result.has(0)) {
+    const claimedByPins = new Set(result.values());
+    let eligible = cards.filter(
+      (c) =>
+        c.projectId != null &&
+        (c.column === 'review' || c.column === 'running') &&
+        !usedCardIds.has(c.id) &&
+        !claimedByPins.has(c.id),
+    );
+
+    // Apply project filter to hotseat only (real pins are unaffected)
+    if (projectFilter && projectFilter.size > 0) {
+      eligible = eligible.filter((c) => projectFilter.has(c.projectId!));
+    }
+
+    // Sticky behavior for hotseat
+    const prevCardId = currentDisplayed.get(0);
+    if (prevCardId != null) {
+      const card = cardById.get(prevCardId);
+      if (
+        card &&
+        card.projectId != null &&
+        (card.column === 'review' || card.column === 'running') &&
+        !usedCardIds.has(card.id) &&
+        !claimedByPins.has(card.id) &&
+        (!projectFilter || projectFilter.size === 0 || projectFilter.has(card.projectId))
+      ) {
+        const hasReviewCards = eligible.some((c) => c.column === 'review');
+        if (!(card.column === 'running' && hasReviewCards)) {
+          result.set(0, prevCardId);
+        } else {
+          // Running card released for review — fall through to ranked
+          const ranked = rankCards(eligible);
+          if (ranked.length > 0) result.set(0, ranked[0].id);
+        }
+      } else {
+        // Previous card no longer eligible — pick from ranked
+        const ranked = rankCards(eligible);
+        if (ranked.length > 0) result.set(0, ranked[0].id);
+      }
+    } else {
+      const ranked = rankCards(eligible);
+      if (ranked.length > 0) result.set(0, ranked[0].id);
     }
   }
 

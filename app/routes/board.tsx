@@ -123,9 +123,10 @@ const BoardLayout = observer(function BoardLayout() {
     selectCard: hookSelectCard,
     dropCard,
     onCardCreated,
+    releaseHotseat,
     flashSlot,
     clearFlash: clearFlashSlot,
-  } = useSlots(columnCount, allCards);
+  } = useSlots(columnCount, allCards, projectFilter);
 
   // Clamp columnCount if maxColumns shrinks below it
   useEffect(() => {
@@ -147,6 +148,12 @@ const BoardLayout = observer(function BoardLayout() {
     window.addEventListener('orchestrel:focus-card', handler);
     return () => window.removeEventListener('orchestrel:focus-card', handler);
   }); // intentionally no deps — selectCard is a local function that closes over current state
+
+  useEffect(() => {
+    const handler = () => releaseHotseat();
+    window.addEventListener('orchestrel:prompt-sent', handler);
+    return () => window.removeEventListener('orchestrel:prompt-sent', handler);
+  }); // intentionally no deps — releaseHotseat closes over current state
 
   function selectCard(id: number | null) {
     setNewCardColumn(null);
@@ -403,7 +410,7 @@ const BoardLayout = observer(function BoardLayout() {
                 ? slot.cardId
                 : slot.type === 'pinned'
                   ? (resolvedCards.get(idx) ?? slot.cardId ?? null)
-                  : null;
+                  : resolvedCards.get(idx) ?? null;
             const slotCard = displayedCardId != null ? cardStore.getCard(displayedCardId) : undefined;
             const slotProject = slotCard?.projectId ? projectStore.getProject(slotCard.projectId) : null;
             const pinProject = typeof pinProjectId === 'number' ? projectStore.getProject(pinProjectId) : null;

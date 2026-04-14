@@ -213,6 +213,7 @@ export const SessionView = observer(function SessionView({
   async function handleSend(message: string, files?: FileRef[]) {
     try {
       await sessionStore.sendMessage(cardId, message, files);
+      window.dispatchEvent(new CustomEvent('orchestrel:prompt-sent', { detail: { cardId } }));
     } catch (err) {
       setNotification(err instanceof Error ? err.message : String(err));
     }

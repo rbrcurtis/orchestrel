@@ -158,10 +158,12 @@ describe('resolvePinnedCards', () => {
     expect(resolvePinnedCards(slots, cards).size).toBe(0);
   });
 
-  it('ignores cards belonging to non-pinned projects', () => {
+  it('ignores cards belonging to non-pinned projects in per-project resolution', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [makeCard({ id: 1, projectId: 99, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
-    expect(resolvePinnedCards(slots, cards).size).toBe(0);
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.has(1)).toBe(false); // project-10 pin does not pick up project-99 card
+    expect(result.get(0)).toBe(1); // hotseat picks it up instead
   });
 
   it('returns empty map when all eligible cards are manually placed', () => {
@@ -432,5 +434,171 @@ describe('resolvePinnedCards', () => {
     ];
     const result = resolvePinnedCards(slots, cards);
     expect(result.has(1)).toBe(false);
+  });
+
+  // ─── Hotseat virtual pin (slot 0) ──────────────────────────────────────────
+
+  it('resolves a review card into empty slot 0 as virtual hotseat', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(0)).toBe(1);
+  });
+
+  it('resolves a running card into empty slot 0 when no review cards', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(0)).toBe(1);
+  });
+
+  it('hotseat prefers review over running', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(0)).toBe(2);
+  });
+
+  it('hotseat does not fill slot 0 when it is manual', () => {
+    const slots: SlotState[] = [{ type: 'manual', cardId: 99 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.has(0)).toBe(false);
+  });
+
+  it('hotseat does not fill slot 0 when it is pinned', () => {
+    const slots: SlotState[] = [{ type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    // Should be resolved by the per-project pass, not the hotseat pass
+    expect(result.get(0)).toBe(1);
+  });
+
+  it('hotseat excludes cards claimed by per-project pins', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // per-project pin gets it
+    expect(result.has(0)).toBe(false); // hotseat gets nothing
+  });
+
+  it('hotseat excludes cards claimed by "all" pins', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // "all" pin gets it
+    expect(result.has(0)).toBe(false); // hotseat gets nothing
+  });
+
+  it('hotseat gets leftover cards after real pins', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // per-project pin
+    expect(result.get(0)).toBe(2); // hotseat gets the leftover
+  });
+
+  it('hotseat respects projectFilter', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards, new Map(), new Set([20]));
+    expect(result.get(0)).toBe(2); // only project 20 is in the filter
+  });
+
+  it('hotseat shows all projects when projectFilter is empty', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards, new Map(), new Set());
+    expect(result.get(0)).toBe(1); // empty filter = all projects
+  });
+
+  it('projectFilter does not affect real pinned slots', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    // Filter to project 20 only — but real pin to project 10 should still resolve
+    const result = resolvePinnedCards(slots, cards, new Map(), new Set([20]));
+    expect(result.get(1)).toBe(1); // real pin unaffected by filter
+    expect(result.get(0)).toBe(2); // hotseat respects filter
+  });
+
+  it('hotseat has sticky behavior', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[0, 2]]); // slot 0 was showing card 2
+    const result = resolvePinnedCards(slots, cards, prev);
+    expect(result.get(0)).toBe(2); // sticky — stays
+  });
+
+  it('hotseat releases running card when review card arrives', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[0, 2]]); // slot 0 was showing running card 2
+    const result = resolvePinnedCards(slots, cards, prev);
+    expect(result.get(0)).toBe(1); // review takes priority
+  });
+
+  it('hotseat returns empty when no eligible cards exist', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'backlog' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.has(0)).toBe(false);
+  });
+
+  it('hotseat excludes cards in manual slots', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'manual', cardId: 1 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.has(0)).toBe(false); // card 1 is in manual slot, excluded
   });
 });

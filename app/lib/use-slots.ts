@@ -64,7 +64,8 @@ export function applySelectCard(
   cards: Card[],
   resolvedCards: Map<number, number>,
 ): { slots: SlotState[]; flashIndex: number | null } {
-  // Already visible anywhere?
+  // Already visible anywhere? Check manual slots, pinned slots (with resolver/override),
+  // and empty slots that may have a virtual resolver result (hotseat).
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
     const displayed =
@@ -72,7 +73,7 @@ export function applySelectCard(
         ? slot.cardId
         : slot.type === 'pinned'
           ? (resolvedCards.get(i) ?? slot.cardId ?? null)
-          : null;
+          : resolvedCards.get(i) ?? null;
     if (displayed === cardId) return { slots, flashIndex: i };
   }
 
@@ -167,9 +168,19 @@ export function applyOnCardCreated(
   if (projectId != null && slots.some((s) => s.type === 'pinned' && s.projectId === projectId)) {
     return { slots, flashIndex: null };
   }
+  // Release hotseat to empty so the resolver picks the best card to show next.
+  // The newly created card will be eligible if it's in review/running.
   const next = [...slots];
-  next[0] = { type: 'manual', cardId };
-  return { slots: next, flashIndex: 0 };
+  next[0] = { type: 'empty' };
+  return { slots: next, flashIndex: null };
+}
+
+/** Release the hotseat manual override — sets slot 0 to empty so the resolver takes over. */
+export function applyReleaseHotseat(slots: SlotState[]): SlotState[] {
+  if (slots[0]?.type === 'empty') return slots;
+  const next = [...slots];
+  next[0] = { type: 'empty' };
+  return next;
 }
 
 export function applyEviction(slots: SlotState[], existingCardIds: Set<number>): SlotState[] {
@@ -226,11 +237,12 @@ export type UseSlotsResult = {
   selectCard: (cardId: number) => void;
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
   onCardCreated: (cardId: number, projectId: number | null) => void;
+  releaseHotseat: () => void;
   flashSlot: number | null;
   clearFlash: () => void;
 };
 
-export function useSlots(columnCount: number, cards: Card[]): UseSlotsResult {
+export function useSlots(columnCount: number, cards: Card[], projectFilter?: Set<number>): UseSlotsResult {
   const [slots, setSlots] = useState<SlotState[]>(() => {
     const migrated = migrateSlots();
     if (migrated) {
@@ -272,7 +284,7 @@ export function useSlots(columnCount: number, cards: Card[]): UseSlotsResult {
   const prevResolvedRef = useRef<Map<number, number>>(new Map());
 
   // Compute resolver result fresh each render, passing previous for sticky behavior
-  const resolvedCards = resolvePinnedCards(slots, cards, prevResolvedRef.current);
+  const resolvedCards = resolvePinnedCards(slots, cards, prevResolvedRef.current, projectFilter);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, runs every render to detect flash
   useEffect(() => {
     for (const [i, cardId] of resolvedCards) {
@@ -295,6 +307,7 @@ export function useSlots(columnCount: number, cards: Card[]): UseSlotsResult {
     const next = applyCloseSlot(slots, index);
     setSlots(next);
     writeLocalStorage(SLOTS_KEY, next);
+    setFlashSlot(index); // always flash to confirm the action was processed
   }
 
   function unpinSlot(index: number) {
@@ -328,6 +341,13 @@ export function useSlots(columnCount: number, cards: Card[]): UseSlotsResult {
     if (flashIndex != null) setFlashSlot(flashIndex);
   }
 
+  function releaseHotseat() {
+    const next = applyReleaseHotseat(slots);
+    if (next === slots) return;
+    setSlots(next);
+    writeLocalStorage(SLOTS_KEY, next);
+  }
+
   return {
     slots,
     resolvedCards,
@@ -337,6 +357,7 @@ export function useSlots(columnCount: number, cards: Card[]): UseSlotsResult {
     selectCard,
     dropCard,
     onCardCreated,
+    releaseHotseat,
     flashSlot,
     clearFlash: () => setFlashSlot(null),
   };
