@@ -224,11 +224,15 @@ export class OrcdClient {
   }
 
   /**
-   * Mark a session as active in the local tracking set.
-   * Used at startup to seed activeSessions for sessions that survived a web server restart.
+   * Mark a session as active in the local tracking set and subscribe to its
+   * events on the orcd socket. Used at startup to seed activeSessions for
+   * sessions that survived a web server restart — subscribing ensures we
+   * receive session_exit (and other events) even though this client connection
+   * wasn't the one that originally created the session.
    */
   markActive(sessionId: string): void {
     this.activeSessions.add(sessionId);
+    this.subscribe(sessionId);
   }
 
   private dispatch(msg: OrcdMessage): void {

@@ -49,7 +49,7 @@ interface StatusRowProps {
 }
 
 export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps) {
-  const { setNodeRef } = useDroppable({ id });
+  const { setNodeRef, isOver } = useDroppable({ id });
   const collapsible = COLLAPSIBLE_COLUMNS.has(id);
   const [collapsed, setCollapsed] = useState(() => collapsible && readCollapsed(id));
 
@@ -69,7 +69,6 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
 
   const cardList = (
     <div
-      ref={setNodeRef}
       className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2 px-4 pb-3 min-h-[3.5rem]"
     >
       <SortableContext items={cards.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
@@ -88,7 +87,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
   );
 
   const header = (
-    <div className="flex items-center gap-2 px-4 py-2">
+    <div className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${isOver ? 'bg-accent/50' : ''}`}>
       {collapsible && (
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="icon-xs" className="size-5">
@@ -108,7 +107,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
 
   if (!collapsible) {
     return (
-      <div className="shrink-0">
+      <div ref={setNodeRef} className="shrink-0">
         {header}
         {cardList}
       </div>
@@ -116,7 +115,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
   }
 
   return (
-    <Collapsible open={!collapsed} onOpenChange={toggle} className="shrink-0">
+    <Collapsible ref={setNodeRef} open={!collapsed} onOpenChange={toggle} className="shrink-0">
       {header}
       <CollapsibleContent>{cardList}</CollapsibleContent>
     </Collapsible>
