@@ -562,6 +562,7 @@ function PromptInput({
     }
     updateText('');
     setFiles([]);
+    ref.current?.blur();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

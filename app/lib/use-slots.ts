@@ -238,6 +238,7 @@ export type UseSlotsResult = {
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
   onCardCreated: (cardId: number, projectId: number | null) => void;
   releaseHotseat: () => void;
+  releaseCard: (cardId: number) => void;
   flashSlot: number | null;
   clearFlash: () => void;
 };
@@ -369,6 +370,39 @@ export function useSlots(
     writeLocalStorage(SLOTS_KEY, next);
   }
 
+  /** Release whichever slot is showing the given card — clears sticky so resolver picks fresh. */
+  function releaseCard(cardId: number) {
+    const next = [...slots];
+    let released = false;
+
+    for (let i = 0; i < next.length; i++) {
+      const slot = next[i];
+      if (slot.type === 'manual' && slot.cardId === cardId) {
+        next[i] = { type: 'empty' };
+        prevResolvedRef.current.delete(i);
+        released = true;
+        break;
+      }
+      if (slot.type === 'pinned' && slot.cardId === cardId) {
+        next[i] = { type: 'pinned', projectId: slot.projectId };
+        prevResolvedRef.current.delete(i);
+        released = true;
+        break;
+      }
+      if (resolvedCards.get(i) === cardId) {
+        // Card is shown by the resolver, not stored in state — just clear sticky
+        prevResolvedRef.current.delete(i);
+        released = true;
+        break;
+      }
+    }
+
+    if (released) {
+      setSlots(next);
+      writeLocalStorage(SLOTS_KEY, next);
+    }
+  }
+
   return {
     slots,
     resolvedCards,
@@ -379,6 +413,7 @@ export function useSlots(
     dropCard,
     onCardCreated,
     releaseHotseat,
+    releaseCard,
     flashSlot,
     clearFlash: () => setFlashSlot(null),
   };
