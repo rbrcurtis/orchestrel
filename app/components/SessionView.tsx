@@ -661,6 +661,8 @@ function PromptInput({
             onChange={(e) => updateText(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onFocus={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-focus', { detail: { cardId } }))}
+            onBlur={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-blur'))}
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
             maxLength={10000}
             rows={3}

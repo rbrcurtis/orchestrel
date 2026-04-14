@@ -7,15 +7,15 @@ export type SlotState =
   | { type: 'manual'; cardId: number }
   | { type: 'empty' };
 
-/** Rank eligible cards: review (oldest first) → running (newest first). */
+/** Rank eligible cards: review (oldest updatedAt) → running (oldest updatedAt). */
 function rankCards(eligible: Card[]): Card[] {
   const review = eligible
     .filter((c) => c.column === 'review')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
 
   const running = eligible
     .filter((c) => c.column === 'running')
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
 
   return [...review, ...running];
 }
@@ -28,9 +28,13 @@ function rankCards(eligible: Card[]): Card[] {
  *
  * Cards already visible in any slot (manual or pinned override) are excluded.
  *
- * Sticky behavior: if a slot was previously displaying a card that is still
- * eligible (same project, still review/running, not excluded), it stays in
- * that slot. New cards fill remaining slots from the ranked pool.
+ * Strict sticky: if a slot was previously displaying a card that is still
+ * eligible (same project, still review/running, not excluded), it stays —
+ * no exceptions. New cards only fill unfilled slots from the ranked pool.
+ *
+ * Locked slots: slots in the lockedSlots set keep their previous card
+ * unconditionally (as long as the card still exists). Used to protect slots
+ * where the user is actively typing.
  *
  * Slot 0 "hotseat" virtual pin: when slot 0 is empty, it acts as a virtual
  * "all projects" pin. Real pinned slots (per-project and "all") get priority;
@@ -38,14 +42,15 @@ function rankCards(eligible: Card[]): Card[] {
  * projects the hotseat considers (real pins are unaffected by the filter).
  *
  * Priority per project:
- *   1. Review cards — oldest createdAt first
- *   2. Running cards — newest updatedAt first
+ *   1. Review cards — oldest updatedAt first
+ *   2. Running cards — oldest updatedAt first
  */
 export function resolvePinnedCards(
   slots: SlotState[],
   cards: Card[],
   currentDisplayed: Map<number, number> = new Map(),
   projectFilter?: Set<number>,
+  lockedSlots?: Set<number>,
 ): Map<number, number> {
   // Build exclusion set: cards already stored in any slot
   const usedCardIds = new Set<number>();
@@ -58,10 +63,23 @@ export function resolvePinnedCards(
   const cardById = new Map<number, Card>();
   for (const c of cards) cardById.set(c.id, c);
 
+  // --- Lock pass: locked slots keep their previous card unconditionally ---
+  const result = new Map<number, number>();
+  if (lockedSlots) {
+    for (const idx of lockedSlots) {
+      const prevCardId = currentDisplayed.get(idx);
+      if (prevCardId != null && cardById.has(prevCardId)) {
+        result.set(idx, prevCardId);
+        usedCardIds.add(prevCardId);
+      }
+    }
+  }
+
   // Group pinned slot indices by projectId (number keys) and collect "all" slots separately
   const projectSlots = new Map<number, number[]>();
   const allSlotIndices: number[] = [];
   for (let i = 0; i < slots.length; i++) {
+    if (result.has(i)) continue; // skip locked slots
     const slot = slots[i];
     if (slot.type !== 'pinned') continue;
     if (slot.projectId === 'all') {
@@ -73,15 +91,12 @@ export function resolvePinnedCards(
     else projectSlots.set(slot.projectId, [i]);
   }
 
-  const result = new Map<number, number>();
-
-  // --- Per-project resolution (unchanged logic) ---
+  // --- Per-project resolution ---
   for (const [projectId, slotIndices] of projectSlots) {
     const eligible = cards.filter(
       (c) => c.projectId === projectId && (c.column === 'review' || c.column === 'running') && !usedCardIds.has(c.id),
     );
 
-    const hasReviewCards = eligible.some((c) => c.column === 'review');
     const stickyCardIds = new Set<number>();
     const unfilledSlots: number[] = [];
     for (const idx of slotIndices) {
@@ -94,10 +109,6 @@ export function resolvePinnedCards(
           (card.column === 'review' || card.column === 'running') &&
           !usedCardIds.has(card.id)
         ) {
-          if (card.column === 'running' && hasReviewCards) {
-            unfilledSlots.push(idx);
-            continue;
-          }
           result.set(idx, prevCardId);
           stickyCardIds.add(prevCardId);
           continue;
@@ -124,7 +135,6 @@ export function resolvePinnedCards(
         !claimedByProjectPins.has(c.id),
     );
 
-    const hasReviewCards = eligible.some((c) => c.column === 'review');
     const stickyCardIds = new Set<number>();
     const unfilledSlots: number[] = [];
     for (const idx of allSlotIndices) {
@@ -138,10 +148,6 @@ export function resolvePinnedCards(
           !usedCardIds.has(card.id) &&
           !claimedByProjectPins.has(card.id)
         ) {
-          if (card.column === 'running' && hasReviewCards) {
-            unfilledSlots.push(idx);
-            continue;
-          }
           result.set(idx, prevCardId);
           stickyCardIds.add(prevCardId);
           continue;
@@ -185,16 +191,8 @@ export function resolvePinnedCards(
         !claimedByPins.has(card.id) &&
         (!projectFilter || projectFilter.size === 0 || projectFilter.has(card.projectId))
       ) {
-        const hasReviewCards = eligible.some((c) => c.column === 'review');
-        if (!(card.column === 'running' && hasReviewCards)) {
-          result.set(0, prevCardId);
-        } else {
-          // Running card released for review — fall through to ranked
-          const ranked = rankCards(eligible);
-          if (ranked.length > 0) result.set(0, ranked[0].id);
-        }
+        result.set(0, prevCardId);
       } else {
-        // Previous card no longer eligible — pick from ranked
         const ranked = rankCards(eligible);
         if (ranked.length > 0) result.set(0, ranked[0].id);
       }

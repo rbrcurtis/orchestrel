@@ -42,36 +42,36 @@ describe('resolvePinnedCards', () => {
     expect(resolvePinnedCards(slots, cards).size).toBe(0);
   });
 
-  it('resolves oldest review card for a pinned slot', () => {
+  it('resolves oldest-updated review card for a pinned slot', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
-      makeCard({ id: 2, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
     ];
     const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(2);
+    expect(result.get(1)).toBe(2); // oldest updatedAt first
   });
 
-  it('resolves active running card when no review cards', () => {
+  it('resolves oldest-updated running card when no review cards', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(2);
+    expect(result.get(1)).toBe(1); // oldest updatedAt first
   });
 
   it('prefers review over running', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     expect(resolvePinnedCards(slots, cards).get(1)).toBe(1);
   });
 
-  it('uses updatedAt as tiebreak within active running group', () => {
+  it('distributes running cards oldest-first across multiple slots', () => {
     const slots: SlotState[] = [
       { type: 'empty' },
       { type: 'pinned', projectId: 10 },
@@ -82,8 +82,8 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(2);
-    expect(result.get(2)).toBe(1);
+    expect(result.get(1)).toBe(1); // oldest first
+    expect(result.get(2)).toBe(2);
   });
 
   it('distributes ranked cards across multiple slots for same project', () => {
@@ -254,20 +254,19 @@ describe('resolvePinnedCards', () => {
     expect(result.get(3)).toBe(2); // remaining card fills remaining slot
   });
 
-  it('releases a running card when review cards are waiting (prompt sent)', () => {
-    // Card 2 was in review, user sent a prompt → it moved to running.
-    // Card 1 is a new review card. The slot should switch to card 1.
+  it('keeps a running card sticky even when review cards are waiting', () => {
+    // Strict sticky: running card stays in its slot, review card fills empty slots only.
     const slots: SlotState[] = [
       { type: 'empty' },
       { type: 'pinned', projectId: 10 },
     ];
     const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
-    const prev = new Map([[1, 2]]); // slot 1 was showing card 2 (was review, now running)
+    const prev = new Map([[1, 2]]); // slot 1 was showing card 2 (running)
     const result = resolvePinnedCards(slots, cards, prev);
-    expect(result.get(1)).toBe(1); // switches to review card
+    expect(result.get(1)).toBe(2); // strict sticky — stays
   });
 
   it('keeps a running card sticky when no review cards are waiting', () => {
@@ -410,18 +409,18 @@ describe('resolvePinnedCards', () => {
     expect(result.get(2)).toBe(1); // remaining card
   });
 
-  it('releases running cards in "all" slots when review cards are available', () => {
+  it('keeps running card sticky in "all" slot even when review cards are available', () => {
     const slots: SlotState[] = [
       { type: 'empty' },
       { type: 'pinned', projectId: 'all' },
     ];
     const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     const prev = new Map([[1, 2]]); // slot 1 was showing running card 2
     const result = resolvePinnedCards(slots, cards, prev);
-    expect(result.get(1)).toBe(1); // review card takes priority, running released
+    expect(result.get(1)).toBe(2); // strict sticky — stays
   });
 
   it('returns empty for "all" slot when no eligible cards exist', () => {
@@ -570,15 +569,15 @@ describe('resolvePinnedCards', () => {
     expect(result.get(0)).toBe(2); // sticky — stays
   });
 
-  it('hotseat releases running card when review card arrives', () => {
+  it('hotseat keeps running card sticky when review card arrives', () => {
     const slots: SlotState[] = [{ type: 'empty' }];
     const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     const prev = new Map([[0, 2]]); // slot 0 was showing running card 2
     const result = resolvePinnedCards(slots, cards, prev);
-    expect(result.get(0)).toBe(1); // review takes priority
+    expect(result.get(0)).toBe(2); // strict sticky — stays
   });
 
   it('hotseat returns empty when no eligible cards exist', () => {
@@ -600,5 +599,46 @@ describe('resolvePinnedCards', () => {
     ];
     const result = resolvePinnedCards(slots, cards);
     expect(result.has(0)).toBe(false); // card 1 is in manual slot, excluded
+  });
+
+  // ─── Locked slots (focus protection) ──────────────────────────────────────
+
+  it('locked slot keeps its previous card unconditionally', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 2]]); // slot 1 showing card 2
+    // Lock slot 1 — card 2 should stay even though card 1 is older
+    const result = resolvePinnedCards(slots, cards, prev, undefined, new Set([1]));
+    expect(result.get(1)).toBe(2); // locked — stays
+    expect(result.get(0)).toBe(1); // hotseat gets card 1
+  });
+
+  it('locked slot card is excluded from other slots', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const prev = new Map([[0, 1]]); // hotseat showing card 1
+    // Lock hotseat — card 1 stays and is excluded from the pinned slot
+    const result = resolvePinnedCards(slots, cards, prev, undefined, new Set([0]));
+    expect(result.get(0)).toBe(1); // locked
+    expect(result.has(1)).toBe(false); // card 1 excluded, nothing else available
+  });
+
+  it('locked slot with deleted card is ignored', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards: Card[] = []; // card 1 was deleted
+    const prev = new Map([[0, 1]]);
+    const result = resolvePinnedCards(slots, cards, prev, undefined, new Set([0]));
+    expect(result.has(0)).toBe(false); // card gone, lock ignored
   });
 });

@@ -242,7 +242,12 @@ export type UseSlotsResult = {
   clearFlash: () => void;
 };
 
-export function useSlots(columnCount: number, cards: Card[], projectFilter?: Set<number>): UseSlotsResult {
+export function useSlots(
+  columnCount: number,
+  cards: Card[],
+  projectFilter?: Set<number>,
+  focusedCardId?: number | null,
+): UseSlotsResult {
   const [slots, setSlots] = useState<SlotState[]>(() => {
     const migrated = migrateSlots();
     if (migrated) {
@@ -283,8 +288,24 @@ export function useSlots(columnCount: number, cards: Card[], projectFilter?: Set
   // Flash detection + sticky resolver: track previous result
   const prevResolvedRef = useRef<Map<number, number>>(new Map());
 
+  // Compute which slots are locked (user is typing in them — don't swap the card)
+  const lockedSlots = new Set<number>();
+  if (focusedCardId != null) {
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      const displayed =
+        slot.type === 'manual'
+          ? slot.cardId
+          : prevResolvedRef.current.get(i) ?? (slot.type === 'pinned' ? slot.cardId ?? null : null);
+      if (displayed === focusedCardId) {
+        lockedSlots.add(i);
+        break;
+      }
+    }
+  }
+
   // Compute resolver result fresh each render, passing previous for sticky behavior
-  const resolvedCards = resolvePinnedCards(slots, cards, prevResolvedRef.current, projectFilter);
+  const resolvedCards = resolvePinnedCards(slots, cards, prevResolvedRef.current, projectFilter, lockedSlots.size > 0 ? lockedSlots : undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, runs every render to detect flash
   useEffect(() => {
     for (const [i, cardId] of resolvedCards) {

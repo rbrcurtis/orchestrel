@@ -112,6 +112,7 @@ const BoardLayout = observer(function BoardLayout() {
   const [activeModal, setActiveModal] = useState<'settings' | null>(null);
 
   const maxColumns = useMaxColumns(panelRef);
+  const [focusedCardId, setFocusedCardId] = useState<number | null>(null);
 
   const allCards = Array.from(cardStore.cards.values());
   const {
@@ -126,7 +127,7 @@ const BoardLayout = observer(function BoardLayout() {
     releaseHotseat,
     flashSlot,
     clearFlash: clearFlashSlot,
-  } = useSlots(columnCount, allCards, projectFilter);
+  } = useSlots(columnCount, allCards, projectFilter, focusedCardId);
 
   // Clamp columnCount if maxColumns shrinks below it
   useEffect(() => {
@@ -154,6 +155,17 @@ const BoardLayout = observer(function BoardLayout() {
     window.addEventListener('orchestrel:prompt-sent', handler);
     return () => window.removeEventListener('orchestrel:prompt-sent', handler);
   }); // intentionally no deps — releaseHotseat closes over current state
+
+  useEffect(() => {
+    const onFocus = (e: Event) => setFocusedCardId((e as CustomEvent<{ cardId: number }>).detail.cardId);
+    const onBlur = () => setFocusedCardId(null);
+    window.addEventListener('orchestrel:prompt-focus', onFocus);
+    window.addEventListener('orchestrel:prompt-blur', onBlur);
+    return () => {
+      window.removeEventListener('orchestrel:prompt-focus', onFocus);
+      window.removeEventListener('orchestrel:prompt-blur', onBlur);
+    };
+  }, []);
 
   function selectCard(id: number | null) {
     setNewCardColumn(null);
