@@ -213,7 +213,6 @@ export const SessionView = observer(function SessionView({
   async function handleSend(message: string, files?: FileRef[]) {
     try {
       await sessionStore.sendMessage(cardId, message, files);
-      window.dispatchEvent(new CustomEvent('orchestrel:prompt-sent', { detail: { cardId } }));
     } catch (err) {
       setNotification(err instanceof Error ? err.message : String(err));
     }
@@ -469,7 +468,7 @@ function PromptInput({
   isRunning: boolean;
   hasSession: boolean;
   isPending: boolean;
-  onSend: (message: string, files?: FileRef[]) => void;
+  onSend: (message: string, files?: FileRef[]) => void | Promise<void>;
   onStop: () => void;
   onCompact?: () => void;
   sendPending: boolean;
@@ -552,16 +551,19 @@ function PromptInput({
     if (files.length > 0) {
       try {
         const refs = await uploadFiles(files);
-        onSend(trimmed || 'Please review the attached files.', refs);
+        await onSend(trimmed || 'Please review the attached files.', refs);
       } catch {
         setUploadError('Failed to upload files');
         return;
       }
     } else {
-      onSend(trimmed);
+      await onSend(trimmed);
     }
     updateText('');
     setFiles([]);
+    // Blur AFTER send completes — send is near-instant (WebSocket) but
+    // must finish before blur clears focus lock, so the card's column
+    // update from the server triggers event-driven recalc cleanly.
     ref.current?.blur();
   }
 

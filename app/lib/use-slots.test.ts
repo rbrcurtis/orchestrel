@@ -9,6 +9,7 @@ import {
   applyReleaseHotseat,
   applyEviction,
   applyColumnCountChange,
+  findSlotsToRecalc,
 } from './use-slots';
 import type { SlotState } from './resolve-pin';
 import type { Card } from '../../src/shared/ws-protocol';
@@ -497,5 +498,181 @@ describe('applyColumnCountChange', () => {
     const next = applyColumnCountChange(slots, 1);
     expect(next).toHaveLength(1);
     expect(next[0]).toEqual({ type: 'empty' });
+  });
+});
+
+// ─── findSlotsToRecalc ─────────────────────────────────────────────────────
+
+describe('findSlotsToRecalc', () => {
+  // Helper: build prevColumns from cards with overridden columns
+  function prevCols(entries: [number, string][]): Map<number, string> {
+    return new Map(entries);
+  }
+
+  it('recalcs pinned slot when displayed card changes review → running', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]); // slot 1 shows card 1
+    const prev = prevCols([[1, 'review']]); // was review
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([1]);
+  });
+
+  it('recalcs pinned slot when different card changes running → review', () => {
+    // Slot 1 shows card 1 (running). Card 2 changes running → review.
+    // Card 2 is for same project, so slot 1 should recalc to potentially show card 2.
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]); // slot 1 shows card 1 (running)
+    const prev = prevCols([[1, 'running'], [2, 'running']]); // card 2 was running
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([1]);
+  });
+
+  it('recalcs hotseat (empty slot 0) when displayed card changes review → running', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[0, 1]]); // hotseat shows card 1
+    const prev = prevCols([[1, 'review']]);
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([0]);
+  });
+
+  it('recalcs "all" pinned slot when displayed card changes review → running', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]);
+    const prev = prevCols([[1, 'review']]);
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([1]);
+  });
+
+  it('does not recalc when displayed card is review (not running)', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]); // slot 1 shows card 1 (review)
+    const prev = prevCols([[1, 'review'], [2, 'running']]); // card 2 changed running → review
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([]);
+  });
+
+  it('does not recalc manual slot', () => {
+    const slots: SlotState[] = [{ type: 'manual', cardId: 1 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map<number, number>();
+    const prev = prevCols([[1, 'review']]);
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([]);
+  });
+
+  it('does not recalc when input is focused in the slot', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]);
+    const prev = prevCols([[1, 'review']]);
+    // Card 1 is focused — slot 1 should NOT recalc
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, 1)).toEqual([]);
+  });
+
+  it('does not recalc when changed card project does not match pin', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]); // slot 1 shows card 1 (running, project 10)
+    const prev = prevCols([[1, 'running'], [2, 'running']]); // card 2 (project 20) changed
+    // Card 2 is project 20, but pin is project 10 — no recalc
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([]);
+  });
+
+  it('does not recalc when no column changes occurred', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]);
+    const prev = prevCols([[1, 'running']]); // same column — no change
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([]);
+  });
+
+  it('does not recalc on non-review/running transitions (e.g. backlog → review)', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]); // slot 1 shows card 1 (running)
+    const prev = prevCols([[1, 'running'], [2, 'backlog']]); // card 2 was backlog → review
+    // backlog → review is not a review ↔ running transition
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([]);
+  });
+
+  it('recalcs multiple slots when a card affects them', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T03:00:00Z' }),
+      makeCard({ id: 3, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    // Slot 0 (hotseat) shows card 1 (running), slot 1 shows card 2 (running)
+    const resolved = new Map([[0, 1], [1, 2]]);
+    const prev = prevCols([[1, 'running'], [2, 'running'], [3, 'running']]); // card 3 changed running → review
+    // Card 3 (project 10) changed — matches pin in slot 1 and hotseat "all"
+    // Both slot 0 and slot 1 show running cards
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([0, 1]);
+  });
+
+  it('skips focused slot but recalcs unfocused slot', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T03:00:00Z' }),
+      makeCard({ id: 3, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1], [2, 2]]);
+    const prev = prevCols([[1, 'running'], [2, 'running'], [3, 'running']]);
+    // Card 1 is focused (slot 1) — skip slot 1, recalc slot 2
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, 1)).toEqual([2]);
+  });
+
+  it('recalcs slot with pinned override when card changes to running', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10, cardId: 1 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    // Slot 1 has override cardId 1, resolver didn't resolve (override takes precedence)
+    const resolved = new Map<number, number>();
+    const prev = prevCols([[1, 'review']]);
+    // displayedCardId = currentResolved.get(1) ?? slot.cardId ?? null = 1
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([1]);
+  });
+
+  it('returns empty for new cards with no previous column', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const resolved = new Map([[1, 1]]);
+    const prev = new Map<number, string>(); // no previous state for card 1
+    expect(findSlotsToRecalc(prev, cards, slots, resolved, null)).toEqual([]);
   });
 });

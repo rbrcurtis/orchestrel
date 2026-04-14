@@ -226,6 +226,79 @@ export function applyColumnCountChange(slots: SlotState[], newCount: number): Sl
   return slots.filter((_, i) => !dropIndices.has(i));
 }
 
+// ─── Event-driven recalc (exported for testing) ─────────────────────────────
+
+/**
+ * Detect which slots should recalc based on card column transitions.
+ *
+ * Trigger: any card changes between review ↔ running.
+ * Per-slot conditions (all must be true):
+ *   1. Slot is pinned (including hotseat virtual pin at slot 0 when empty)
+ *   2. Currently displayed card in the slot is running
+ *   3. The changed card's project matches the slot's pin
+ *   4. The slot is not focused (user not typing)
+ *
+ * Returns array of slot indices that should have sticky cleared.
+ */
+export function findSlotsToRecalc(
+  prevColumns: Map<number, string>,
+  cards: Card[],
+  slots: SlotState[],
+  currentResolved: Map<number, number>,
+  focusedCardId: number | null,
+): number[] {
+  // Find cards that changed between review ↔ running
+  const changed: Card[] = [];
+  const cardById = new Map<number, Card>();
+  for (const c of cards) {
+    cardById.set(c.id, c);
+    const prev = prevColumns.get(c.id);
+    if (!prev) continue;
+    if (
+      (prev === 'review' && c.column === 'running') ||
+      (prev === 'running' && c.column === 'review')
+    ) {
+      changed.push(c);
+    }
+  }
+
+  if (changed.length === 0) return [];
+
+  const result = new Set<number>();
+
+  for (const changedCard of changed) {
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+
+      // Condition 1: slot is pinned (including hotseat virtual pin)
+      const isPinned = slot.type === 'pinned' || (i === 0 && slot.type === 'empty');
+      if (!isPinned) continue;
+
+      // Get the currently displayed card in this slot
+      const displayedCardId =
+        slot.type === 'pinned'
+          ? (currentResolved.get(i) ?? slot.cardId ?? null)
+          : currentResolved.get(i) ?? null;
+      if (displayedCardId == null) continue;
+
+      // Condition 4: input not focused in this slot
+      if (displayedCardId === focusedCardId) continue;
+
+      // Condition 2: currently displayed card is running
+      const displayedCard = cardById.get(displayedCardId);
+      if (!displayedCard || displayedCard.column !== 'running') continue;
+
+      // Condition 3: changed card matches the pin's project
+      const pinProjectId = slot.type === 'pinned' ? slot.projectId : 'all';
+      if (pinProjectId !== 'all' && changedCard.projectId !== pinProjectId) continue;
+
+      result.add(i);
+    }
+  }
+
+  return [...result];
+}
+
 // ─── useSlots hook ────────────────────────────────────────────────────────────
 
 export type UseSlotsResult = {
@@ -237,8 +310,6 @@ export type UseSlotsResult = {
   selectCard: (cardId: number) => void;
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
   onCardCreated: (cardId: number, projectId: number | null) => void;
-  releaseHotseat: () => void;
-  releaseCard: (cardId: number) => void;
   flashSlot: number | null;
   clearFlash: () => void;
 };
@@ -288,6 +359,7 @@ export function useSlots(
 
   // Flash detection + sticky resolver: track previous result
   const prevResolvedRef = useRef<Map<number, number>>(new Map());
+  const prevCardColumnsRef = useRef<Map<number, string>>(new Map());
 
   // Compute which slots are locked (user is typing in them — don't swap the card)
   const lockedSlots = new Set<number>();
@@ -306,7 +378,10 @@ export function useSlots(
   }
 
   // Compute resolver result fresh each render, passing previous for sticky behavior
-  const resolvedCards = resolvePinnedCards(slots, cards, prevResolvedRef.current, projectFilter, lockedSlots.size > 0 ? lockedSlots : undefined);
+  const resolvedCards = resolvePinnedCards(
+    slots, cards, prevResolvedRef.current, projectFilter,
+    lockedSlots.size > 0 ? lockedSlots : undefined,
+  );
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, runs every render to detect flash
   useEffect(() => {
     for (const [i, cardId] of resolvedCards) {
@@ -315,7 +390,43 @@ export function useSlots(
         break; // one flash at a time
       }
     }
-    prevResolvedRef.current = resolvedCards;
+    prevResolvedRef.current = new Map(resolvedCards);
+  });
+
+  // Event-driven recalc: clear sticky when cards transition between review ↔ running.
+  // Must run AFTER flash effect so prevResolvedRef has the current render's values.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, runs every render
+  useEffect(() => {
+    const slotsToRecalc = findSlotsToRecalc(
+      prevCardColumnsRef.current, cards, slots, resolvedCards, focusedCardId ?? null,
+    );
+
+    // Always update the column ref so next render can detect changes
+    const nextCols = new Map<number, string>();
+    for (const c of cards) nextCols.set(c.id, c.column);
+    prevCardColumnsRef.current = nextCols;
+
+    if (slotsToRecalc.length === 0) return;
+
+    // Clear sticky + pinned overrides for affected slots
+    const next = [...slots];
+    let stateChanged = false;
+    for (const i of slotsToRecalc) {
+      prevResolvedRef.current.delete(i);
+      const slot = next[i];
+      if (slot.type === 'pinned' && slot.cardId != null) {
+        next[i] = { type: 'pinned', projectId: slot.projectId };
+        stateChanged = true;
+      }
+    }
+
+    // Force re-render so resolver runs fresh for cleared slots
+    if (stateChanged) {
+      setSlots(next);
+      writeLocalStorage(SLOTS_KEY, next);
+    } else {
+      setSlots((prev) => [...prev]);
+    }
   });
 
   function pinSlot(index: number, projectId: PinTarget) {
@@ -363,46 +474,6 @@ export function useSlots(
     if (flashIndex != null) setFlashSlot(flashIndex);
   }
 
-  function releaseHotseat() {
-    const next = applyReleaseHotseat(slots);
-    if (next === slots) return;
-    setSlots(next);
-    writeLocalStorage(SLOTS_KEY, next);
-  }
-
-  /** Release whichever slot is showing the given card — clears sticky so resolver picks fresh. */
-  function releaseCard(cardId: number) {
-    const next = [...slots];
-    let released = false;
-
-    for (let i = 0; i < next.length; i++) {
-      const slot = next[i];
-      if (slot.type === 'manual' && slot.cardId === cardId) {
-        next[i] = { type: 'empty' };
-        prevResolvedRef.current.delete(i);
-        released = true;
-        break;
-      }
-      if (slot.type === 'pinned' && slot.cardId === cardId) {
-        next[i] = { type: 'pinned', projectId: slot.projectId };
-        prevResolvedRef.current.delete(i);
-        released = true;
-        break;
-      }
-      if (resolvedCards.get(i) === cardId) {
-        // Card is shown by the resolver, not stored in state — just clear sticky
-        prevResolvedRef.current.delete(i);
-        released = true;
-        break;
-      }
-    }
-
-    if (released) {
-      setSlots(next);
-      writeLocalStorage(SLOTS_KEY, next);
-    }
-  }
-
   return {
     slots,
     resolvedCards,
@@ -412,8 +483,6 @@ export function useSlots(
     selectCard,
     dropCard,
     onCardCreated,
-    releaseHotseat,
-    releaseCard,
     flashSlot,
     clearFlash: () => setFlashSlot(null),
   };

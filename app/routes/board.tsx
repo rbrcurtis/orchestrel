@@ -124,7 +124,6 @@ const BoardLayout = observer(function BoardLayout() {
     selectCard: hookSelectCard,
     dropCard,
     onCardCreated,
-    releaseCard,
     flashSlot,
     clearFlash: clearFlashSlot,
   } = useSlots(columnCount, allCards, projectFilter, focusedCardId);
@@ -149,15 +148,6 @@ const BoardLayout = observer(function BoardLayout() {
     window.addEventListener('orchestrel:focus-card', handler);
     return () => window.removeEventListener('orchestrel:focus-card', handler);
   }); // intentionally no deps — selectCard is a local function that closes over current state
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
-      releaseCard(cardId);
-    };
-    window.addEventListener('orchestrel:prompt-sent', handler);
-    return () => window.removeEventListener('orchestrel:prompt-sent', handler);
-  }); // intentionally no deps — releaseCard closes over current state
 
   useEffect(() => {
     const onFocus = (e: Event) => setFocusedCardId((e as CustomEvent<{ cardId: number }>).detail.cardId);
