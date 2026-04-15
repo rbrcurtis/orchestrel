@@ -19,7 +19,6 @@ export interface CompactResult {
   summaryTokens: number;
   summaryChars: number;
   durationMs: number;
-  usage: { promptTokens: number; completionTokens: number };
 }
 
 interface CompactOpts {
@@ -157,6 +156,49 @@ export function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
   return parts.join('\n\n');
 }
 
+// ─── Agent SDK query (shared by compactor + memory-upsert) ─────────────────
+
+/**
+ * Run a single-turn Agent SDK query and return the assistant's text response.
+ * No tools, no project/user files — just prompt in, text out.
+ */
+export async function queryAgentSdk(
+  prompt: string,
+  model: string,
+): Promise<{ text: string; durationMs: number }> {
+  const { query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk');
+  const t0 = Date.now();
+
+  const q = sdkQuery({
+    prompt,
+    options: {
+      model,
+      maxTurns: 1,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
+    },
+  });
+
+  let result = '';
+  for await (const event of q) {
+    const e = event as Record<string, unknown>;
+    if (e.type === 'assistant') {
+      const msg = e.message as Record<string, unknown> | undefined;
+      if (msg?.content) {
+        const text = extractText(msg.content);
+        if (text) result = text;
+      }
+    }
+  }
+
+  if (!result) {
+    throw new Error('Agent SDK query returned no assistant text');
+  }
+
+  return { text: result, durationMs: Date.now() - t0 };
+}
+
 // ─── Summarize via Agent SDK ────────────────────────────────────────────────
 
 const SUMMARIZE_PROMPT = `You are a conversation summarizer. Do not use any tools. Do not read any files. Respond with ONLY the summary text.
@@ -178,43 +220,9 @@ Here is the conversation to summarize:
 async function summarize(
   excerpt: string,
   model: string,
-): Promise<{ summary: string; usage: { promptTokens: number; completionTokens: number }; durationMs: number }> {
-  const { query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk');
-  const t0 = Date.now();
-
-  const q = sdkQuery({
-    prompt: SUMMARIZE_PROMPT + excerpt,
-    options: {
-      model,
-      maxTurns: 1,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
-    },
-  });
-
-  let summary = '';
-  for await (const event of q) {
-    const e = event as Record<string, unknown>;
-    // Collect text from assistant messages — last one is the summary
-    if (e.type === 'assistant') {
-      const msg = e.message as Record<string, unknown> | undefined;
-      if (msg?.content) {
-        const text = extractText(msg.content);
-        if (text) summary = text;
-      }
-    }
-  }
-
-  if (!summary) {
-    throw new Error('Agent SDK query returned no assistant text');
-  }
-
-  return {
-    summary,
-    usage: { promptTokens: 0, completionTokens: 0 },
-    durationMs: Date.now() - t0,
-  };
+): Promise<{ summary: string; durationMs: number }> {
+  const { text: summary, durationMs } = await queryAgentSdk(SUMMARIZE_PROMPT + excerpt, model);
+  return { summary, durationMs };
 }
 
 // ─── Version detection ─────────────────────────────────────────────────────
@@ -288,12 +296,11 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
       summaryTokens: 0,
       summaryChars: excerpt.length,
       durationMs: 0,
-      usage: { promptTokens: 0, completionTokens: 0 },
     };
   }
 
   // Call Agent SDK for summary
-  const { summary, usage, durationMs } = await summarize(excerpt, model);
+  const { summary, durationMs } = await summarize(excerpt, model);
 
   // Build the new file content
   const boundaryUuid = randomUUID();
@@ -381,6 +388,5 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
     summaryTokens: Math.ceil(summaryChars / CHARS_PER_TOKEN),
     summaryChars,
     durationMs,
-    usage: { promptTokens: usage.promptTokens, completionTokens: usage.completionTokens },
   };
 }

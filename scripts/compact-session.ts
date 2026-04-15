@@ -62,7 +62,6 @@ async function main(): Promise<void> {
   console.error(`  Summary chars: ${result.summaryChars}`);
   console.error(`  Summary tokens (est): ${result.summaryTokens}`);
   console.error(`  Duration: ${result.durationMs}ms`);
-  console.error(`  Usage: prompt=${result.usage.promptTokens} completion=${result.usage.completionTokens}`);
 }
 
 main().catch(err => {

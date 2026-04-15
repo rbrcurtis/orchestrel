@@ -9,7 +9,6 @@ export interface ProviderConfig {
 
 export interface MemoryUpsertConfig {
   enabled: boolean;
-  model: string;
   baseUrl: string;
   apiKey: string;
 }
@@ -59,7 +58,6 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
   const memoryUpsert: MemoryUpsertConfig | undefined = mu
     ? {
         enabled: Boolean(mu.enabled ?? false),
-        model: resolveEnvVars(String(mu.model ?? 'google/gemma-4-31b-it'), env),
         baseUrl: resolveEnvVars(String(mu.baseUrl ?? 'http://localhost:3100'), env),
         apiKey: resolveEnvVars(String(mu.apiKey ?? ''), env),
       }

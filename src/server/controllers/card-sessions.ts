@@ -295,10 +295,9 @@ async function triggerCompaction(cardId: number, card: Card): Promise<void> {
   // Per-project memory config overrides global; skip if neither is configured
   try {
     const config = await loadConfig();
-    const orProvider = config.providers.openrouter;
     const memBaseUrl = proj.memoryBaseUrl ?? config.memoryUpsert?.baseUrl;
     const memApiKey = proj.memoryApiKey ?? config.memoryUpsert?.apiKey;
-    const memEnabled = config.memoryUpsert?.enabled !== false && !!memBaseUrl && !!memApiKey && !!orProvider;
+    const memEnabled = config.memoryUpsert?.enabled !== false && !!memBaseUrl && !!memApiKey;
 
     if (memEnabled) {
       console.log(`[memory-upsert:${cardId}] extracting memories before compaction (server: ${memBaseUrl})`);
@@ -306,11 +305,9 @@ async function triggerCompaction(cardId: number, card: Card): Promise<void> {
         sessionId: card.sessionId,
         projectPath: cwd,
         projectName: proj.name,
-        openRouterBaseUrl: orProvider.baseUrl,
-        openRouterApiKey: orProvider.apiKey,
+        model: card.model,
         memoryBaseUrl: memBaseUrl!,
         memoryApiKey: memApiKey!,
-        model: config.memoryUpsert?.model,
       });
       console.log(
         `[memory-upsert:${cardId}] done: ${upsertResult.factsStored}/${upsertResult.factsExtracted} facts stored, ${upsertResult.durationMs}ms`,

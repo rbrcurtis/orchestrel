@@ -6,7 +6,7 @@
  * compact_boundary are processed before any get summarized away.
  */
 import { readFile } from 'fs/promises';
-import { resolveJsonlPath, parseLines, buildExcerpt } from './session-compactor';
+import { resolveJsonlPath, parseLines, buildExcerpt, queryAgentSdk } from './session-compactor';
 
 const LOG = '[memory-upsert]';
 
@@ -24,11 +24,9 @@ export interface MemoryUpsertOpts {
   sessionId: string;
   projectPath: string;
   projectName: string;
-  openRouterBaseUrl: string;
-  openRouterApiKey: string;
+  model: string;
   memoryBaseUrl: string;
   memoryApiKey: string;
-  model?: string;
   maxExcerptChars?: number;
 }
 
@@ -37,13 +35,11 @@ interface MemoryFact {
   text: string;
 }
 
-interface ChatResponse {
-  choices: Array<{ message: { content: string } }>;
-}
-
 // ─── Extraction prompt ──────────────────────────────────────────────────────
 
-const EXTRACTION_PROMPT = `You are a memory extraction assistant. Given a conversation excerpt between a user and an AI coding assistant, extract key facts, decisions, patterns, and learnings that would be useful to recall in future sessions.
+const EXTRACTION_PROMPT = `You are a memory extraction assistant. Do not use any tools. Do not read any files. Respond with ONLY the JSON lines.
+
+Given a conversation excerpt between a user and an AI coding assistant, extract key facts, decisions, patterns, and learnings that would be useful to recall in future sessions.
 
 Focus on:
 - Technical decisions and their rationale
@@ -57,40 +53,19 @@ For each fact, output a JSON object on its own line with:
 - "title": max 10 words, descriptive for semantic search
 - "text": detailed description with full context
 
-Output ONLY valid JSON lines, no markdown, no commentary, no wrapping.`;
+Output ONLY valid JSON lines, no markdown, no commentary, no wrapping.
 
-// ─── LLM fact extraction ────────────────────────────────────────────────────
+Here is the conversation to extract facts from:
+
+`;
+
+// ─── LLM fact extraction via Agent SDK ──────────────────────────────────────
 
 async function extractFacts(
   excerpt: string,
-  baseUrl: string,
-  apiKey: string,
   model: string,
 ): Promise<MemoryFact[]> {
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: EXTRACTION_PROMPT },
-        { role: 'user', content: excerpt },
-      ],
-      max_tokens: 4096,
-      temperature: 0.3,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '<unreadable>');
-    throw new Error(`OpenRouter ${res.status}: ${body}`);
-  }
-
-  const data = (await res.json()) as ChatResponse;
-  const text = data.choices?.[0]?.message?.content ?? '';
+  const { text } = await queryAgentSdk(EXTRACTION_PROMPT + excerpt, model);
 
   const facts: MemoryFact[] = [];
   for (const line of text.split('\n')) {
@@ -147,11 +122,9 @@ export async function upsertMemories(opts: MemoryUpsertOpts): Promise<MemoryUpse
     sessionId,
     projectPath,
     projectName,
-    openRouterBaseUrl,
-    openRouterApiKey,
+    model,
     memoryBaseUrl,
     memoryApiKey,
-    model = 'google/gemma-4-31b-it',
     maxExcerptChars = 120_000,
   } = opts;
 
@@ -183,7 +156,7 @@ export async function upsertMemories(opts: MemoryUpsertOpts): Promise<MemoryUpse
 
   console.error(`${LOG} extracting facts from ${messages.length} messages (${excerpt.length} chars)`);
 
-  const facts = await extractFacts(excerpt, openRouterBaseUrl, openRouterApiKey, model);
+  const facts = await extractFacts(excerpt, model);
   console.error(`${LOG} extracted ${facts.length} facts`);
 
   const results = await Promise.allSettled(
