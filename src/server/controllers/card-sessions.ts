@@ -13,6 +13,7 @@ import { loadConfig } from '../../orcd/config';
 
 const sessionCardMap = new Map<string, number>();
 const compactingCards = new Set<number>();
+const pendingCompaction = new Set<number>();
 
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
@@ -85,6 +86,17 @@ export function initOrcdRouter(
         card.turnsCompleted = (card.turnsCompleted ?? 0) + 1;
         card.updatedAt = new Date().toISOString();
         await repo().save(card);
+
+        // Trigger compaction at turn end (safe — session is idle, no writes to JSONL)
+        if (pendingCompaction.has(cardId) && !compactingCards.has(cardId)) {
+          pendingCompaction.delete(cardId);
+          compactingCards.add(cardId);
+          triggerCompaction(cardId, card).catch((err) => {
+            console.error(`[compact:${cardId}] failed:`, err);
+          }).finally(() => {
+            compactingCards.delete(cardId);
+          });
+        }
       }
     }
 
@@ -96,19 +108,17 @@ export function initOrcdRouter(
         card.updatedAt = new Date().toISOString();
         await repo().save(card);
 
-        // Check if background compaction should trigger
+        // Mark for compaction — actual compaction deferred to turn end (result event)
+        // to avoid racing with active JSONL writes
         if (
           card.summarizeThreshold > 0 &&
           card.contextWindow > 0 &&
           !compactingCards.has(cardId) &&
+          !pendingCompaction.has(cardId) &&
           card.contextTokens / card.contextWindow >= card.summarizeThreshold
         ) {
-          compactingCards.add(cardId);
-          triggerCompaction(cardId, card).catch((err) => {
-            console.error(`[compact:${cardId}] failed:`, err);
-          }).finally(() => {
-            compactingCards.delete(cardId);
-          });
+          pendingCompaction.add(cardId);
+          console.log(`[compact:${cardId}] marked for compaction at turn end (${((card.contextTokens / card.contextWindow) * 100).toFixed(0)}%)`);
         }
       }
       bus.publish(`card:${cardId}:context`, {
