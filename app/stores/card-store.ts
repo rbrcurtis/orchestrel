@@ -70,6 +70,7 @@ export class CardStore {
     model?: string;
     provider?: string;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+    summarizeThreshold?: number;
     worktreeBranch?: string | null;
     sourceBranch?: 'main' | 'dev' | null;
   }): Promise<Card> {
@@ -81,6 +82,7 @@ export class CardStore {
       model: data.model,
       provider: data.provider,
       thinkingLevel: data.thinkingLevel,
+      summarizeThreshold: data.summarizeThreshold,
       worktreeBranch: data.worktreeBranch,
       sourceBranch: data.sourceBranch,
     })) as Card;
@@ -93,6 +95,7 @@ export class CardStore {
     projectId: number;
     model?: string;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+    summarizeThreshold?: number;
   }): Promise<Card> {
     const card = (await this.ws().emit('card:create', {
       title: 'New chat',
@@ -101,6 +104,7 @@ export class CardStore {
       projectId: data.projectId,
       model: data.model,
       thinkingLevel: data.thinkingLevel,
+      summarizeThreshold: data.summarizeThreshold,
       archiveOthers: true,
     })) as Card;
     runInAction(() => this.cards.set(card.id, card));
@@ -115,6 +119,7 @@ export class CardStore {
     position?: number;
     projectId?: number | null;
     model?: string;
+    summarizeThreshold?: number;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     worktreeBranch?: string | null;
     sourceBranch?: 'main' | 'dev' | null;

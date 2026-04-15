@@ -2,7 +2,7 @@ import type { AckResponse, Card } from '../../../shared/ws-protocol';
 import { cardService } from '../../services/card';
 
 export async function handleCardCreate(
-  data: { title: string; description?: string; column?: string; projectId?: number | null; model?: string; provider?: string; thinkingLevel?: string; useWorktree?: boolean; sourceBranch?: 'main' | 'dev' | null; archiveOthers?: boolean },
+  data: { title: string; description?: string; column?: string; projectId?: number | null; model?: string; provider?: string; thinkingLevel?: string; summarizeThreshold?: number; useWorktree?: boolean; sourceBranch?: 'main' | 'dev' | null; archiveOthers?: boolean },
   callback: (res: AckResponse<Card>) => void,
 ): Promise<void> {
   try {

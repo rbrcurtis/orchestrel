@@ -1,12 +1,17 @@
 import { Card } from '../models/Card';
+import { Project } from '../models/Project';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
 import type { OrcdMessage } from '../../shared/orcd-protocol';
 import type { OrcdClient } from '../orcd-client';
+import { resolveWorkDir } from '../../shared/worktree';
+import { compactSession } from '../../lib/session-compactor';
+import { loadConfig } from '../../orcd/config';
 
 // ── Session → Card routing map ───────────────────────────────────────────────
 
 const sessionCardMap = new Map<string, number>();
+const compactingCards = new Set<number>();
 
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
@@ -89,6 +94,21 @@ export function initOrcdRouter(
         card.contextWindow = msg.contextWindow;
         card.updatedAt = new Date().toISOString();
         await repo().save(card);
+
+        // Check if background compaction should trigger
+        if (
+          card.summarizeThreshold > 0 &&
+          card.contextWindow > 0 &&
+          !compactingCards.has(cardId) &&
+          card.contextTokens / card.contextWindow >= card.summarizeThreshold
+        ) {
+          compactingCards.add(cardId);
+          triggerCompaction(cardId, card).catch((err) => {
+            console.error(`[compact:${cardId}] failed:`, err);
+          }).finally(() => {
+            compactingCards.delete(cardId);
+          });
+        }
       }
       bus.publish(`card:${cardId}:context`, {
         contextTokens: msg.contextTokens,
@@ -260,6 +280,43 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
       console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
     }
   });
+}
+
+async function triggerCompaction(cardId: number, card: Card): Promise<void> {
+  if (!card.sessionId || !card.projectId) return;
+
+  const proj = await Project.findOneBy({ id: card.projectId });
+  if (!proj) return;
+
+  const cwd = resolveWorkDir(card.worktreeBranch ?? null, proj.path);
+
+  let config;
+  try {
+    config = await loadConfig();
+  } catch (err) {
+    console.error(`[compact:${cardId}] failed to load config:`, err);
+    return;
+  }
+
+  const orProvider = config.providers.openrouter;
+  if (!orProvider) {
+    console.error(`[compact:${cardId}] no openrouter provider in config`);
+    return;
+  }
+
+  console.log(`[compact:${cardId}] triggering background compaction (${card.contextTokens}/${card.contextWindow} = ${((card.contextTokens / card.contextWindow) * 100).toFixed(0)}%)`);
+
+  const result = await compactSession({
+    sessionId: card.sessionId,
+    projectPath: cwd,
+    openRouterBaseUrl: orProvider.baseUrl,
+    openRouterApiKey: orProvider.apiKey,
+  });
+
+  console.log(
+    `[compact:${cardId}] done: ${result.messagesCovered}/${result.messagesBefore} messages, ` +
+    `${result.summaryChars} chars summary, ${result.durationMs}ms`
+  );
 }
 
 function repo() {

@@ -52,7 +52,7 @@ type Draft = {
   sourceBranch: string | null;
   provider: string;
   model: string;
-  thinkingLevel: 'off' | 'low' | 'medium' | 'high';
+  summarizeThreshold: number;
 };
 
 export const CardDetail = observer(function CardDetail({ cardId, onClose, clearSlot, slotIndex, pinned }: Props) {
@@ -94,7 +94,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
     sourceBranch: null,
     provider: 'anthropic',
     model: 'sonnet',
-    thinkingLevel: 'high',
+    summarizeThreshold: 0.7,
   });
 
   const [formOpen, setFormOpen] = useState(true);
@@ -119,7 +119,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
       sourceBranch: card.sourceBranch,
       provider: card.provider ?? cardProject?.providerID ?? 'anthropic',
       model: card.model,
-      thinkingLevel: card.thinkingLevel,
+      summarizeThreshold: card.summarizeThreshold ?? 0,
     });
     // Auto-collapse when session exists
     setFormOpen(!card.sessionId && card.column !== 'running');
@@ -150,7 +150,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
       sourceBranch: card.sourceBranch,
       provider: card.provider ?? d.provider,
       model: card.model,
-      thinkingLevel: card.thinkingLevel,
+      summarizeThreshold: card.summarizeThreshold ?? 0,
     }));
   }, [card?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -173,7 +173,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
       draft.worktreeBranch !== card.worktreeBranch ||
       draft.sourceBranch !== card.sourceBranch ||
       draft.model !== card.model ||
-      draft.thinkingLevel !== card.thinkingLevel
+      draft.summarizeThreshold !== (card.summarizeThreshold ?? 0)
     : false;
 
   async function saveAll(overrides?: Partial<Draft>) {
@@ -189,7 +189,8 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
       worktreeBranch: merged.worktreeBranch,
       sourceBranch: merged.sourceBranch as 'main' | 'dev' | null | undefined,
       model: merged.model,
-      thinkingLevel: merged.thinkingLevel,
+      thinkingLevel: 'high',
+      summarizeThreshold: merged.summarizeThreshold,
     });
   }
 
@@ -378,7 +379,6 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                         worktreeBranch: proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || card.title) : null,
                         sourceBranch: null as string | null,
                         model: proj?.defaultModel ?? draft.model,
-                        thinkingLevel: proj?.defaultThinkingLevel ?? draft.thinkingLevel,
                       };
                       setDraft((d) => ({ ...d, ...updates }));
                       void saveAll(updates);
@@ -476,22 +476,25 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                     </Select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">Summarize</label>
                     <Select
-                      value={draft.thinkingLevel}
+                      value={String(draft.summarizeThreshold)}
                       onValueChange={(val) => {
-                        setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }));
-                        void saveAll({ thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' });
+                        const v = parseFloat(val);
+                        setDraft((d) => ({ ...d, summarizeThreshold: v }));
+                        void saveAll({ summarizeThreshold: v });
                       }}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent position="popper" className="max-h-60">
-                        <SelectItem value="off">Off</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="0">Off</SelectItem>
+                        <SelectItem value="0.5">50%</SelectItem>
+                        <SelectItem value="0.6">60%</SelectItem>
+                        <SelectItem value="0.7">70%</SelectItem>
+                        <SelectItem value="0.8">80%</SelectItem>
+                        <SelectItem value="0.9">90%</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -509,7 +512,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
             accentColor={cardProject?.color}
             model={card.model ?? 'sonnet'}
             providerID={card.provider ?? cardProject?.providerID ?? 'anthropic'}
-            thinkingLevel={card.thinkingLevel ?? 'high'}
+            summarizeThreshold={card.summarizeThreshold ?? 0}
           />
         )}
       </div>
@@ -603,7 +606,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           sourceBranch: null,
           provider: prov,
           model: proj.defaultModel ?? config.getDefaultModel(prov),
-          thinkingLevel: proj.defaultThinkingLevel ?? 'high',
+          summarizeThreshold: 0.7,
         };
       }
     }
@@ -616,7 +619,7 @@ export const NewCardDetail = observer(function NewCardDetail({
       sourceBranch: null,
       provider: 'anthropic',
       model: 'sonnet',
-      thinkingLevel: 'high',
+      summarizeThreshold: 0.7,
     };
   });
   const [creating, setCreating] = useState(false);
@@ -647,7 +650,8 @@ export const NewCardDetail = observer(function NewCardDetail({
         sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
         provider: draft.provider,
         model: draft.model,
-        thinkingLevel: draft.thinkingLevel,
+        thinkingLevel: 'high',
+        summarizeThreshold: draft.summarizeThreshold,
       });
       if (selectedColumn === 'running' && draft.projectId && draft.description.trim()) {
         onCreated(card.id, card.projectId ?? null);
@@ -746,7 +750,6 @@ export const NewCardDetail = observer(function NewCardDetail({
                     sourceBranch: null,
                     provider: prov,
                     model: proj?.defaultModel ?? config.getDefaultModel(prov),
-                    thinkingLevel: proj?.defaultThinkingLevel ?? d.thinkingLevel,
                   };
                 });
                 onColorChange?.(proj?.color ?? null);
@@ -813,7 +816,7 @@ export const NewCardDetail = observer(function NewCardDetail({
                   value={draft.provider}
                   onValueChange={(val) => {
                     const firstModel = config.getDefaultModel(val);
-                    setDraft((d) => ({ ...d, provider: val, model: firstModel, thinkingLevel: 'high' }));
+                    setDraft((d) => ({ ...d, provider: val, model: firstModel }));
                   }}
                 >
                   <SelectTrigger className="w-full">
@@ -850,21 +853,23 @@ export const NewCardDetail = observer(function NewCardDetail({
                 </Select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Summarize</label>
                 <Select
-                  value={draft.thinkingLevel}
+                  value={String(draft.summarizeThreshold)}
                   onValueChange={(val) =>
-                    setDraft((d) => ({ ...d, thinkingLevel: val as 'off' | 'low' | 'medium' | 'high' }))
+                    setDraft((d) => ({ ...d, summarizeThreshold: parseFloat(val) }))
                   }
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper" className="max-h-60">
-                    <SelectItem value="off">Off</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="0">Off</SelectItem>
+                    <SelectItem value="0.5">50%</SelectItem>
+                    <SelectItem value="0.6">60%</SelectItem>
+                    <SelectItem value="0.7">70%</SelectItem>
+                    <SelectItem value="0.8">80%</SelectItem>
+                    <SelectItem value="0.9">90%</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

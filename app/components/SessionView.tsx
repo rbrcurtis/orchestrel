@@ -18,7 +18,7 @@ type Props = {
   accentColor?: string | null;
   model: string;
   providerID: string;
-  thinkingLevel: 'off' | 'low' | 'medium' | 'high';
+  summarizeThreshold: number;
 };
 
 export const SessionView = observer(function SessionView({
@@ -27,7 +27,7 @@ export const SessionView = observer(function SessionView({
   accentColor,
   model,
   providerID,
-  thinkingLevel,
+  summarizeThreshold,
 }: Props) {
   const sessionStore = useSessionStore();
   const cardStore = useCardStore();
@@ -223,7 +223,7 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' }) {
+  async function handleUpdateCard(data: { model?: string; provider?: string; summarizeThreshold?: number }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -330,14 +330,16 @@ export const SessionView = observer(function SessionView({
             ))}
           </select>
           <select
-            value={thinkingLevel}
-            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
+            value={String(summarizeThreshold)}
+            onChange={(e) => handleUpdateCard({ summarizeThreshold: parseFloat(e.target.value) })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0"
           >
-            <option value="off">Off</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
+            <option value="0">Off</option>
+            <option value="0.5">50%</option>
+            <option value="0.6">60%</option>
+            <option value="0.7">70%</option>
+            <option value="0.8">80%</option>
+            <option value="0.9">90%</option>
           </select>
           {isStreaming ? (
             <Button
