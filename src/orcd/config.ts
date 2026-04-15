@@ -7,12 +7,20 @@ export interface ProviderConfig {
   models: string[];
 }
 
+export interface MemoryUpsertConfig {
+  enabled: boolean;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
 export interface OrcdConfig {
   socket: string;
   defaultProvider: string;
   defaultModel: string;
   defaultCwd?: string;
   providers: Record<string, ProviderConfig>;
+  memoryUpsert?: MemoryUpsertConfig;
 }
 
 /**
@@ -47,12 +55,23 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
     };
   }
 
+  const mu = raw.memoryUpsert as Record<string, unknown> | undefined;
+  const memoryUpsert: MemoryUpsertConfig | undefined = mu
+    ? {
+        enabled: Boolean(mu.enabled ?? false),
+        model: resolveEnvVars(String(mu.model ?? 'google/gemma-4-31b-it'), env),
+        baseUrl: resolveEnvVars(String(mu.baseUrl ?? 'http://localhost:3100'), env),
+        apiKey: resolveEnvVars(String(mu.apiKey ?? ''), env),
+      }
+    : undefined;
+
   return {
     socket: String(raw.socket ?? '~/.orc/orcd.sock'),
     defaultProvider: String(raw.defaultProvider ?? 'anthropic'),
     defaultModel: String(raw.defaultModel ?? 'claude-sonnet-4-6'),
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
     providers,
+    memoryUpsert,
   };
 }
 

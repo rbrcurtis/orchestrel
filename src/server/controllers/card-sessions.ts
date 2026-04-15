@@ -6,6 +6,7 @@ import type { OrcdMessage } from '../../shared/orcd-protocol';
 import type { OrcdClient } from '../orcd-client';
 import { resolveWorkDir } from '../../shared/worktree';
 import { compactSession } from '../../lib/session-compactor';
+import { upsertMemories } from '../../lib/memory-upsert';
 import { loadConfig } from '../../orcd/config';
 
 // ── Session → Card routing map ───────────────────────────────────────────────
@@ -290,27 +291,42 @@ async function triggerCompaction(cardId: number, card: Card): Promise<void> {
 
   const cwd = resolveWorkDir(card.worktreeBranch ?? null, proj.path);
 
-  let config;
+  // Step 1: Memory upsert — extract facts from ALL messages since last boundary
+  // Per-project memory config overrides global; skip if neither is configured
   try {
-    config = await loadConfig();
+    const config = await loadConfig();
+    const orProvider = config.providers.openrouter;
+    const memBaseUrl = proj.memoryBaseUrl ?? config.memoryUpsert?.baseUrl;
+    const memApiKey = proj.memoryApiKey ?? config.memoryUpsert?.apiKey;
+    const memEnabled = config.memoryUpsert?.enabled !== false && !!memBaseUrl && !!memApiKey && !!orProvider;
+
+    if (memEnabled) {
+      console.log(`[memory-upsert:${cardId}] extracting memories before compaction (server: ${memBaseUrl})`);
+      const upsertResult = await upsertMemories({
+        sessionId: card.sessionId,
+        projectPath: cwd,
+        projectName: proj.name,
+        openRouterBaseUrl: orProvider.baseUrl,
+        openRouterApiKey: orProvider.apiKey,
+        memoryBaseUrl: memBaseUrl!,
+        memoryApiKey: memApiKey!,
+        model: config.memoryUpsert?.model,
+      });
+      console.log(
+        `[memory-upsert:${cardId}] done: ${upsertResult.factsStored}/${upsertResult.factsExtracted} facts stored, ${upsertResult.durationMs}ms`,
+      );
+    }
   } catch (err) {
-    console.error(`[compact:${cardId}] failed to load config:`, err);
-    return;
+    console.error(`[memory-upsert:${cardId}] failed (continuing to compaction):`, err);
   }
 
-  const orProvider = config.providers.openrouter;
-  if (!orProvider) {
-    console.error(`[compact:${cardId}] no openrouter provider in config`);
-    return;
-  }
-
+  // Step 2: Compact — summarize oldest 50% using the card's own model via Agent SDK
   console.log(`[compact:${cardId}] triggering background compaction (${card.contextTokens}/${card.contextWindow} = ${((card.contextTokens / card.contextWindow) * 100).toFixed(0)}%)`);
 
   const result = await compactSession({
     sessionId: card.sessionId,
     projectPath: cwd,
-    openRouterBaseUrl: orProvider.baseUrl,
-    openRouterApiKey: orProvider.apiKey,
+    model: card.model,
   });
 
   console.log(

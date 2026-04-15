@@ -64,6 +64,8 @@ export class ProjectStore {
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     color?: string | null;
     providerID?: string;
+    memoryBaseUrl?: string | null;
+    memoryApiKey?: string | null;
   }): Promise<Project> {
     const project = (await this.ws().emit('project:create', {
       ...data,
@@ -85,6 +87,8 @@ export class ProjectStore {
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     color?: string | null;
     providerID?: string;
+    memoryBaseUrl?: string | null;
+    memoryApiKey?: string | null;
     userIds?: number[];
   }): Promise<Project> {
     const existing = this.projects.get(data.id);

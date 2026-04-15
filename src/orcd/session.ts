@@ -104,6 +104,7 @@ export class OrcdSession {
         includePartialMessages: true,
         pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
         env: opts.env,
+        maxTurns: 50,
         ...thinkingOpts,
         ...(autoCompactWindow ? { settings: { autoCompactWindow } } : {}),
       },

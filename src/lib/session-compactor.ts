@@ -25,16 +25,14 @@ export interface CompactResult {
 interface CompactOpts {
   sessionId: string;
   projectPath: string;
-  openRouterBaseUrl: string;
-  openRouterApiKey: string;
-  model?: string;
+  model: string;
   ratio?: number;
   maxExcerptChars?: number;
   dryRun?: boolean;
 }
 
 /** A parsed message with its original line index */
-interface IndexedMessage {
+export interface IndexedMessage {
   lineIndex: number;
   role: 'user' | 'assistant';
   text: string;
@@ -42,18 +40,14 @@ interface IndexedMessage {
   isToolUse: boolean;
 }
 
-interface ChatResponse {
-  choices: Array<{ message: { content: string } }>;
-  usage?: { prompt_tokens: number; completion_tokens: number };
-}
 
 // ─── JSONL path resolution ──────────────────────────────────────────────────
 
-function computeSlug(realPath: string): string {
+export function computeSlug(realPath: string): string {
   return realPath.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-async function resolveJsonlPath(sessionId: string, projectPath: string): Promise<string> {
+export async function resolveJsonlPath(sessionId: string, projectPath: string): Promise<string> {
   const real = await realpath(projectPath);
   const slug = computeSlug(real);
   return join(homedir(), '.claude', 'projects', slug, `${sessionId}.jsonl`);
@@ -61,7 +55,7 @@ async function resolveJsonlPath(sessionId: string, projectPath: string): Promise
 
 // ─── JSONL parsing ──────────────────────────────────────────────────────────
 
-function parseLines(lines: string[]): { lastBoundaryLine: number; messages: IndexedMessage[] } {
+export function parseLines(lines: string[]): { lastBoundaryLine: number; messages: IndexedMessage[] } {
   let lastBoundaryLine = -1;
   const messages: IndexedMessage[] = [];
 
@@ -106,7 +100,7 @@ function parseLines(lines: string[]): { lastBoundaryLine: number; messages: Inde
   return { lastBoundaryLine, messages };
 }
 
-function extractText(content: unknown): string {
+export function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
 
   if (!Array.isArray(content)) return '';
@@ -140,7 +134,7 @@ function extractText(content: unknown): string {
 
 // ─── Excerpt building ───────────────────────────────────────────────────────
 
-function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
+export function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
   const parts: string[] = [];
   let total = 0;
 
@@ -163,9 +157,11 @@ function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
   return parts.join('\n\n');
 }
 
-// ─── Summarize via OpenRouter ───────────────────────────────────────────────
+// ─── Summarize via Agent SDK ────────────────────────────────────────────────
 
-const SUMMARIZE_SYSTEM = `You are a conversation summarizer. Given a conversation between a user and an AI assistant, produce a concise summary that preserves:
+const SUMMARIZE_PROMPT = `You are a conversation summarizer. Do not use any tools. Do not read any files. Respond with ONLY the summary text.
+
+Given the following conversation between a user and an AI assistant, produce a concise summary that preserves:
 
 1. Key decisions made and their rationale
 2. Important technical details, file paths, and code patterns discovered
@@ -173,47 +169,52 @@ const SUMMARIZE_SYSTEM = `You are a conversation summarizer. Given a conversatio
 4. Any constraints, preferences, or requirements the user stated
 5. Context needed for the conversation to continue productively
 
-Format the summary as a structured document with clear sections. Be thorough but concise — aim for roughly 2000-4000 words. The summary will replace the original messages in the context window, so anything not captured here is lost.`;
+Format the summary as a structured document with clear sections. Be thorough but concise — aim for roughly 2000-4000 words. The summary will replace the original messages in the context window, so anything not captured here is lost.
+
+Here is the conversation to summarize:
+
+`;
 
 async function summarize(
   excerpt: string,
-  baseUrl: string,
-  apiKey: string,
   model: string,
 ): Promise<{ summary: string; usage: { promptTokens: number; completionTokens: number }; durationMs: number }> {
+  const { query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk');
   const t0 = Date.now();
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const q = sdkQuery({
+    prompt: SUMMARIZE_PROMPT + excerpt,
+    options: {
       model,
-      messages: [
-        { role: 'system', content: SUMMARIZE_SYSTEM },
-        { role: 'user', content: `Here is the conversation to summarize:\n\n${excerpt}` },
-      ],
-      max_tokens: 8192,
-      temperature: 0.3,
-    }),
+      maxTurns: 1,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
+    },
   });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '<unreadable>');
-    throw new Error(`OpenRouter ${res.status}: ${body}`);
+  let summary = '';
+  for await (const event of q) {
+    const e = event as Record<string, unknown>;
+    // Collect text from assistant messages — last one is the summary
+    if (e.type === 'assistant') {
+      const msg = e.message as Record<string, unknown> | undefined;
+      if (msg?.content) {
+        const text = extractText(msg.content);
+        if (text) summary = text;
+      }
+    }
   }
 
-  const data = (await res.json()) as ChatResponse;
-  const durationMs = Date.now() - t0;
-  const summary = data.choices?.[0]?.message?.content ?? '';
-  const usage = {
-    promptTokens: data.usage?.prompt_tokens ?? 0,
-    completionTokens: data.usage?.completion_tokens ?? 0,
-  };
+  if (!summary) {
+    throw new Error('Agent SDK query returned no assistant text');
+  }
 
-  return { summary, usage, durationMs };
+  return {
+    summary,
+    usage: { promptTokens: 0, completionTokens: 0 },
+    durationMs: Date.now() - t0,
+  };
 }
 
 // ─── Version detection ─────────────────────────────────────────────────────
@@ -236,9 +237,7 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
   const {
     sessionId,
     projectPath,
-    openRouterBaseUrl,
-    openRouterApiKey,
-    model = 'deepseek/deepseek-chat-v3-0324',
+    model,
     ratio = 0.5,
     maxExcerptChars = 120_000,
     dryRun = false,
@@ -293,13 +292,8 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
     };
   }
 
-  // Call OpenRouter for summary
-  const { summary, usage, durationMs } = await summarize(
-    excerpt,
-    openRouterBaseUrl,
-    openRouterApiKey,
-    model,
-  );
+  // Call Agent SDK for summary
+  const { summary, usage, durationMs } = await summarize(excerpt, model);
 
   // Build the new file content
   const boundaryUuid = randomUUID();

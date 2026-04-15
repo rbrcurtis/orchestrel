@@ -69,6 +69,12 @@ export class Project extends BaseEntity {
   @Column({ type: 'text', default: '#00f0ff' })
   color!: string;
 
+  @Column({ name: 'memory_base_url', type: 'text', nullable: true })
+  memoryBaseUrl!: string | null;
+
+  @Column({ name: 'memory_api_key', type: 'text', nullable: true })
+  memoryApiKey!: string | null;
+
   @Column({ name: 'created_at', type: 'text' })
   createdAt!: string;
 }

@@ -39,6 +39,8 @@ export const projectSchema = z.object({
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
   providerID: z.string(),
   color: z.string(),
+  memoryBaseUrl: z.string().nullable().optional(),
+  memoryApiKey: z.string().nullable().optional(),
   createdAt: z.string(),
   userIds: z.array(z.number()).optional(),
 });
@@ -88,6 +90,8 @@ export const projectCreateSchema = z.object({
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   providerID: z.string().optional(),
   color: z.string().optional(),
+  memoryBaseUrl: z.string().nullable().optional(),
+  memoryApiKey: z.string().nullable().optional(),
 });
 
 export const projectUpdateSchema = z
