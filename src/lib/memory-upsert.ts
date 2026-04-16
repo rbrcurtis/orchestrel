@@ -17,6 +17,7 @@ export interface MemoryUpsertResult {
   messagesProcessed: number;
   factsExtracted: number;
   factsStored: number;
+  factsUpdated: number;
   durationMs: number;
 }
 
@@ -46,9 +47,11 @@ Focus on:
 - Technical decisions and their rationale
 - Architecture patterns discovered or established
 - Bug fixes and their root causes
-- Infrastructure details (URLs, ports, credentials, paths)
+- Infrastructure details (URLs, ports, paths — NOT credentials)
 - User preferences and workflows
 - Project-specific knowledge
+
+NEVER extract secrets, API keys, tokens, passwords, or any credentials. Skip any fact that contains or references sensitive values.
 
 For each fact, output a JSON object on its own line with:
 - "title": max 10 words, descriptive for semantic search
@@ -92,6 +95,34 @@ async function extractFacts(
 
 // ─── Memory API ─────────────────────────────────────────────────────────────
 
+interface SearchHit {
+  id: string;
+  title: string;
+  score: number;
+}
+
+async function searchMemory(
+  baseUrl: string,
+  apiKey: string,
+  query: string,
+  project: string,
+): Promise<SearchHit | null> {
+  const url = new URL(`${baseUrl}/api/v1/memories/search`);
+  url.searchParams.set('query', query);
+  url.searchParams.set('project', project);
+  url.searchParams.set('limit', '1');
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '<unreadable>');
+    throw new Error(`Memory search API ${res.status}: ${body}`);
+  }
+  const json = await res.json() as { data: SearchHit[] };
+  return json.data[0] ?? null;
+}
+
 async function storeMemory(
   baseUrl: string,
   apiKey: string,
@@ -115,6 +146,47 @@ async function storeMemory(
     const body = await res.text().catch(() => '<unreadable>');
     throw new Error(`Memory API ${res.status}: ${body}`);
   }
+}
+
+async function updateMemory(
+  baseUrl: string,
+  apiKey: string,
+  id: string,
+  fact: MemoryFact,
+  project: string,
+): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/memories/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      title: fact.title,
+      text: fact.text,
+      project,
+      tags: ['auto-upsert'],
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '<unreadable>');
+    throw new Error(`Memory update API ${res.status}: ${body}`);
+  }
+}
+
+async function upsertFact(
+  baseUrl: string,
+  apiKey: string,
+  fact: MemoryFact,
+  project: string,
+): Promise<'stored' | 'updated'> {
+  const hit = await searchMemory(baseUrl, apiKey, fact.title, project);
+  if (hit && hit.score >= 0.85) {
+    await updateMemory(baseUrl, apiKey, hit.id, fact, project);
+    return 'updated';
+  }
+  await storeMemory(baseUrl, apiKey, fact, project);
+  return 'stored';
 }
 
 // ─── Main export ────────────────────────────────────────────────────────────
@@ -149,6 +221,7 @@ export async function upsertMemories(opts: MemoryUpsertOpts): Promise<MemoryUpse
       messagesProcessed: messages.length,
       factsExtracted: 0,
       factsStored: 0,
+      factsUpdated: 0,
       durationMs: Date.now() - t0,
     };
   }
@@ -162,26 +235,29 @@ export async function upsertMemories(opts: MemoryUpsertOpts): Promise<MemoryUpse
   console.error(`${LOG} extracted ${facts.length} facts`);
 
   const results = await Promise.allSettled(
-    facts.map(f => storeMemory(memoryBaseUrl, memoryApiKey, f, projectName)),
+    facts.map(f => upsertFact(memoryBaseUrl, memoryApiKey, f, projectName)),
   );
 
   let stored = 0;
+  let updated = 0;
   for (const r of results) {
     if (r.status === 'fulfilled') {
-      stored++;
+      if (r.value === 'updated') updated++;
+      else stored++;
     } else {
-      console.error(`${LOG} failed to store: ${r.reason}`);
+      console.error(`${LOG} failed to upsert: ${r.reason}`);
     }
   }
 
   const durationMs = Date.now() - t0;
-  console.error(`${LOG} stored ${stored}/${facts.length} memories in ${durationMs}ms`);
+  console.error(`${LOG} stored ${stored} new, updated ${updated} existing, skipped ${facts.length - stored - updated} failed — ${durationMs}ms`);
 
   return {
     sessionId,
     messagesProcessed: messages.length,
     factsExtracted: facts.length,
     factsStored: stored,
+    factsUpdated: updated,
     durationMs,
   };
 }

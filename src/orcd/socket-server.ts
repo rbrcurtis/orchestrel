@@ -21,6 +21,7 @@ export class OrcdServer {
   private compacting = new Set<string>();  // session IDs currently compacting
   private pendingSummaries = new Map<string, PreparedCompaction>();
   private turnActive = new Set<string>();  // sessions with a turn in progress
+  private upsertedSessions = new Set<string>();  // sessions that have had memory upsert run
   private memoryConfig?: OrcdConfig['memoryUpsert'];
 
   constructor(
@@ -271,6 +272,10 @@ export class OrcdServer {
 
   private async runMemoryUpsert(session: OrcdSession): Promise<void> {
     if (!this.memoryConfig?.enabled || !this.memoryConfig.baseUrl || !this.memoryConfig.apiKey) return;
+    if (this.upsertedSessions.has(session.id)) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:mem] skipping duplicate upsert`);
+      return;
+    }
 
     const env = this.buildProviderEnv(session.provider);
     const log = (msg: string) => console.log(`[orcd:${session.id.slice(0, 8)}:mem] ${msg}`);
@@ -287,7 +292,8 @@ export class OrcdServer {
       memoryApiKey: this.memoryConfig.apiKey,
     });
 
-    log(`done: ${result.factsStored}/${result.factsExtracted} facts stored, ${result.durationMs}ms`);
+    this.upsertedSessions.add(session.id);
+    log(`done: ${result.factsStored} stored, ${result.factsUpdated} updated / ${result.factsExtracted} extracted, ${result.durationMs}ms`);
   }
 
   // ── Compaction ──────────────────────────────────────────────────────────
