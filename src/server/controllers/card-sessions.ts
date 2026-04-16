@@ -5,7 +5,7 @@ import { AppDataSource } from '../models/index';
 import type { OrcdMessage } from '../../shared/orcd-protocol';
 import type { OrcdClient } from '../orcd-client';
 import { resolveWorkDir } from '../../shared/worktree';
-import { compactSession } from '../../lib/session-compactor';
+import { prepareCompaction, applyCompaction, type PreparedCompaction } from '../../lib/session-compactor';
 import { upsertMemories } from '../../lib/memory-upsert';
 import { loadConfig } from '../../orcd/config';
 
@@ -14,6 +14,7 @@ import { loadConfig } from '../../orcd/config';
 const sessionCardMap = new Map<string, number>();
 const compactingCards = new Set<number>();
 const pendingCompaction = new Set<number>();
+const pendingSummaries = new Map<number, PreparedCompaction>();
 
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
@@ -87,7 +88,22 @@ export function initOrcdRouter(
         card.updatedAt = new Date().toISOString();
         await repo().save(card);
 
-        // Trigger compaction at turn end (safe — session is idle, no writes to JSONL)
+        // Apply pre-computed compaction at turn end (instant — session is idle)
+        const prepared = pendingSummaries.get(cardId);
+        if (prepared) {
+          pendingSummaries.delete(cardId);
+          console.log(`[compact:${cardId}] applying pre-computed summary at turn end`);
+          applyCompaction(prepared).then((result) => {
+            console.log(
+              `[compact:${cardId}] applied: ${result.messagesCovered}/${result.messagesBefore} messages, ` +
+              `${result.summaryChars} chars summary`,
+            );
+          }).catch((err) => {
+            console.error(`[compact:${cardId}] apply failed:`, err);
+          });
+        }
+
+        // Kick off background prepare for next compaction cycle
         if (pendingCompaction.has(cardId) && !compactingCards.has(cardId)) {
           pendingCompaction.delete(cardId);
           compactingCards.add(cardId);
@@ -341,19 +357,21 @@ async function triggerCompaction(cardId: number, card: Card): Promise<void> {
     console.error(`[memory-upsert:${cardId}] failed (continuing to compaction):`, err);
   }
 
-  // Step 2: Compact — summarize oldest 50% using the card's own model via Agent SDK
+  // Step 2: Prepare compaction summary in background (no file writes)
   const cwd = resolveWorkDir(card.worktreeBranch ?? null, proj.path);
-  console.log(`[compact:${cardId}] triggering background compaction (${card.contextTokens}/${card.contextWindow} = ${((card.contextTokens / card.contextWindow) * 100).toFixed(0)}%)`);
+  console.log(`[compact:${cardId}] preparing summary in background (${card.contextTokens}/${card.contextWindow} = ${((card.contextTokens / card.contextWindow) * 100).toFixed(0)}%)`);
 
-  const result = await compactSession({
+  const prepared = await prepareCompaction({
     sessionId: card.sessionId,
     projectPath: cwd,
     model: card.model,
   });
 
+  // Store the prepared summary — it will be applied at the next turn end
+  pendingSummaries.set(cardId, prepared);
   console.log(
-    `[compact:${cardId}] done: ${result.messagesCovered}/${result.messagesBefore} messages, ` +
-    `${result.summaryChars} chars summary, ${result.durationMs}ms`
+    `[compact:${cardId}] summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} messages, ` +
+    `${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for turn end to apply`
   );
 }
 

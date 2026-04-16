@@ -239,9 +239,27 @@ function findVersion(lines: string[]): string {
   return '2.1.108'; // fallback
 }
 
-// ─── Main export ────────────────────────────────────────────────────────────
+// ─── Two-phase compaction ───────────────────────────────────────────────────
 
-export async function compactSession(opts: CompactOpts): Promise<CompactResult> {
+/** Prepared compaction — summary is ready, waiting to be applied at a safe point */
+export interface PreparedCompaction {
+  sessionId: string;
+  jsonlPath: string;
+  summary: string;
+  /** Line index of the last message covered by the summary */
+  lastOldLineIdx: number;
+  messagesBefore: number;
+  messagesCovered: number;
+  summaryChars: number;
+  prepareDurationMs: number;
+}
+
+/**
+ * Phase 1: Prepare — reads JSONL, summarizes oldest half via Agent SDK.
+ * Returns the summary + metadata. Does NOT write to disk.
+ * Safe to run while the session is active (read-only).
+ */
+export async function prepareCompaction(opts: CompactOpts): Promise<PreparedCompaction> {
   const {
     sessionId,
     projectPath,
@@ -255,7 +273,6 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
   const raw = await readFile(jsonlPath, 'utf-8');
   const lines = raw.split('\n');
 
-  // Drop trailing empty line from split
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
     lines.pop();
   }
@@ -267,10 +284,7 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
     throw new Error(`Too few messages to compact: ${messages.length} messages after boundary, cutoff=${cutoff}`);
   }
 
-  // Snap cutoff backward so the kept half doesn't start with an orphaned
-  // tool_result (which would hard-fail the API). Walk backward until the
-  // first kept message isn't a tool_result and the last summarized message
-  // isn't a tool_use missing its result.
+  // Snap cutoff backward to avoid orphaned tool_result / tool_use pairs
   while (cutoff > 2) {
     const firstKept = messages[cutoff];
     const lastSummarized = messages[cutoff - 1];
@@ -283,31 +297,59 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
 
   const oldestHalf = messages.slice(0, cutoff);
   const excerpt = buildExcerpt(oldestHalf, maxExcerptChars);
-
-  // The line index of the last message in the oldest half
   const lastOldLineIdx = oldestHalf[oldestHalf.length - 1].lineIndex;
 
   if (dryRun) {
     return {
       sessionId,
       jsonlPath,
+      summary: '',
+      lastOldLineIdx,
       messagesBefore: messages.length,
       messagesCovered: cutoff,
-      summaryTokens: 0,
       summaryChars: excerpt.length,
-      durationMs: 0,
+      prepareDurationMs: 0,
     };
   }
 
-  // Call Agent SDK for summary
   const { summary, durationMs } = await summarize(excerpt, model);
 
-  // Build the new file content
+  return {
+    sessionId,
+    jsonlPath,
+    summary,
+    lastOldLineIdx,
+    messagesBefore: messages.length,
+    messagesCovered: cutoff,
+    summaryChars: summary.length,
+    prepareDurationMs: durationMs,
+  };
+}
+
+/**
+ * Phase 2: Apply — re-reads the JSONL and splices in the boundary + summary.
+ * Any new messages appended since prepare are preserved.
+ * Instant (no LLM call). Call only when the session is idle.
+ */
+export async function applyCompaction(prepared: PreparedCompaction): Promise<CompactResult> {
+  const { sessionId, jsonlPath, summary, lastOldLineIdx } = prepared;
+
+  // Re-read the file — it may have grown since prepare
+  const raw = await readFile(jsonlPath, 'utf-8');
+  const lines = raw.split('\n');
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+    lines.pop();
+  }
+
+  // Sanity check: the cutoff line should still exist and match
+  if (lastOldLineIdx >= lines.length) {
+    throw new Error(`JSONL shrank since prepare: expected line ${lastOldLineIdx} but file has ${lines.length} lines`);
+  }
+
   const boundaryUuid = randomUUID();
   const summaryUuid = randomUUID();
   const now = new Date().toISOString();
 
-  // Get the uuid of the last message in the oldest half for the boundary's logicalParentUuid
   const lastOldLine = lines[lastOldLineIdx];
   const lastOldObj = JSON.parse(lastOldLine) as Record<string, unknown>;
   const lastOldUuid = lastOldObj.uuid as string;
@@ -338,7 +380,6 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
     version: findVersion(lines),
   });
 
-  // Assemble output lines:
   // 1. All original lines up to and including lastOldLineIdx
   const outLines: string[] = lines.slice(0, lastOldLineIdx + 1);
 
@@ -346,7 +387,7 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
   outLines.push(boundaryEntry);
   outLines.push(summaryEntry);
 
-  // 3. Remaining lines, with the first one reparented
+  // 3. Remaining lines (including any new ones added since prepare), first one reparented
   const remaining = lines.slice(lastOldLineIdx + 1);
   let reparented = false;
 
@@ -356,7 +397,6 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
       continue;
     }
 
-    // Reparent the first remaining line
     const trimmed = remaining[i].trim();
     if (!trimmed) {
       outLines.push(remaining[i]);
@@ -373,20 +413,37 @@ export async function compactSession(opts: CompactOpts): Promise<CompactResult> 
     }
   }
 
-  // Write temp file in same directory, then atomic rename
   const tmpPath = jsonlPath + '.compact-tmp';
   await writeFile(tmpPath, outLines.join('\n') + '\n');
   await rename(tmpPath, jsonlPath);
 
-  const summaryChars = summary.length;
-
   return {
     sessionId,
     jsonlPath,
-    messagesBefore: messages.length,
-    messagesCovered: cutoff,
-    summaryTokens: Math.ceil(summaryChars / CHARS_PER_TOKEN),
-    summaryChars,
-    durationMs,
+    messagesBefore: prepared.messagesBefore,
+    messagesCovered: prepared.messagesCovered,
+    summaryTokens: Math.ceil(prepared.summaryChars / CHARS_PER_TOKEN),
+    summaryChars: prepared.summaryChars,
+    durationMs: prepared.prepareDurationMs,
   };
+}
+
+/**
+ * One-shot compaction (prepare + apply in one call).
+ * Only safe for offline use (CLI script) — not for live sessions.
+ */
+export async function compactSession(opts: CompactOpts): Promise<CompactResult> {
+  const prepared = await prepareCompaction(opts);
+  if (opts.dryRun) {
+    return {
+      sessionId: prepared.sessionId,
+      jsonlPath: prepared.jsonlPath,
+      messagesBefore: prepared.messagesBefore,
+      messagesCovered: prepared.messagesCovered,
+      summaryTokens: 0,
+      summaryChars: prepared.summaryChars,
+      durationMs: 0,
+    };
+  }
+  return applyCompaction(prepared);
 }
