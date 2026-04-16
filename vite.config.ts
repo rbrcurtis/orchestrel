@@ -56,7 +56,10 @@ export default defineConfig(({ isSsrBuild }) => ({
     host: process.env.HOST || '0.0.0.0',
     allowedHosts: true,
     watch: {
-      ignored: ['**/.worktrees/**', '**/data/**', '**/.react-router/**'],
+      // src/orcd is a standalone daemon (layer 3) with its own systemd lifecycle —
+      // Vite watching it triggers full browser reloads via the shared src/shared/*
+      // module graph, which is pure noise for frontend HMR.
+      ignored: ['**/.worktrees/**', '**/data/**', '**/.react-router/**', '**/src/orcd/**'],
     },
   },
   plugins: [wsServerPlugin(), pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],

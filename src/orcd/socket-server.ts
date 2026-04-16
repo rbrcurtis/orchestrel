@@ -160,6 +160,7 @@ export class OrcdServer {
     const effort = action.effort ?? 'high';
 
     const env = Object.assign({}, process.env,
+      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
       providerCfg.baseUrl ? { ANTHROPIC_BASE_URL: providerCfg.baseUrl } : {},
       providerCfg.apiKey ? { ANTHROPIC_API_KEY: providerCfg.apiKey } : {},
       providerCfg.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {},
@@ -195,6 +196,7 @@ export class OrcdServer {
 
     const providerCfg = this.providers[session.provider];
     const env = Object.assign({}, process.env,
+      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
       providerCfg?.baseUrl ? { ANTHROPIC_BASE_URL: providerCfg.baseUrl } : {},
       providerCfg?.apiKey ? { ANTHROPIC_API_KEY: providerCfg.apiKey } : {},
       providerCfg?.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {},
@@ -276,6 +278,7 @@ export class OrcdServer {
       return { ...process.env } as Record<string, string>;
     }
     return Object.assign({}, process.env,
+      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
       cfg.baseUrl ? { ANTHROPIC_BASE_URL: cfg.baseUrl } : {},
       cfg.apiKey ? { ANTHROPIC_API_KEY: cfg.apiKey } : {},
       cfg.authToken ? { ANTHROPIC_AUTH_TOKEN: cfg.authToken } : {},
