@@ -66,8 +66,8 @@ export class OrcdClient {
           try {
             const msg = JSON.parse(line) as OrcdMessage;
             this.dispatch(msg);
-          } catch {
-            // skip malformed messages
+          } catch (err) {
+            console.warn(`[orcd-client] skipping malformed message:`, err instanceof Error ? err.message : err, 'line:', line.slice(0, 120));
           }
         }
       });

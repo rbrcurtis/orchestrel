@@ -158,7 +158,7 @@ export function InlineEdit({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={saving}
-          // eslint-disable-next-line local/no-overflow-auto -- native textarea handles own scroll
+          // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
           className={[sharedInputClass, 'min-h-[100px] max-h-40 resize-y overflow-y-auto'].join(' ')}
           placeholder={placeholder}
         />

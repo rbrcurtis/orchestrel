@@ -7,10 +7,11 @@
     "dev": "pnpm tsoa:generate && cross-env NODE_ENV=development node server.js",
     "start": "cross-env TSX_TSCONFIG_PATH=./tsconfig.node.json tsx server.js",
     "typecheck": "react-router typegen && tsc -b",
-    "lint": "eslint . --fix --max-warnings 0",
+    "lint": "oxlint -c .oxlintrc.json app src",
     "format": "prettier --write .",
     "tsoa:generate": "tsoa spec-and-routes",
-    "orcd": "tsx src/orcd/index.ts"
+    "orcd": "tsx src/orcd/index.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.110",
@@ -54,7 +55,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@react-router/dev": "7.12.0",
     "@tailwindcss/vite": "^4.1.13",
     "@testing-library/react": "^16.3.2",
@@ -68,12 +68,10 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@types/swagger-ui-express": "^4.1.8",
-    "@typescript-eslint/eslint-plugin": "^8.57.0",
-    "@typescript-eslint/parser": "^8.57.0",
     "cross-env": "^10.0.0",
-    "eslint": "^10.0.3",
-    "eslint-plugin-react-hooks": "^7.0.1",
+    "husky": "^9.1.7",
     "jsdom": "^29.0.1",
+    "oxlint": "^1.60.0",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",

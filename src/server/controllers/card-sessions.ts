@@ -27,14 +27,23 @@ export function initOrcdRouter(
   client: OrcdClient,
   bus: MessageBus = messageBus,
 ): void {
-  if (routerInitialized) return;
+  if (routerInitialized) {
+    console.log(`[orcd-router] initOrcdRouter: already initialized, skipping`);
+    return;
+  }
   routerInitialized = true;
   const repo = () => AppDataSource.getRepository(Card);
 
   client.onMessage(async (msg: OrcdMessage) => {
-    if (!('sessionId' in msg)) return;
+    if (!('sessionId' in msg)) {
+      console.log(`[orcd-router] dropping message with no sessionId: type=${msg.type}`);
+      return;
+    }
     const cardId = sessionCardMap.get(msg.sessionId);
-    if (cardId == null) return;
+    if (cardId == null) {
+      console.log(`[orcd-router] no card for session ${msg.sessionId.slice(0, 8)}, dropping type=${msg.type}`);
+      return;
+    }
 
     if (msg.type === 'stream_event') {
       const sdkEvent = msg.event as Record<string, unknown>;
@@ -137,7 +146,10 @@ export async function reconcileRunningCards(
 ): Promise<void> {
   const r = AppDataSource.getRepository(Card);
   const runningCards = await r.find({ where: { column: 'running' } });
-  if (runningCards.length === 0) return;
+  if (runningCards.length === 0) {
+    console.log(`[reconcile] no running cards to reconcile`);
+    return;
+  }
 
   const activeList = await client.list();
   const activeIds = new Set(activeList.sessions.map((s) => s.id));
@@ -172,19 +184,31 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
       oldColumn: string | null;
       newColumn: string | null;
     };
-    if (!card) return;
+    if (!card) {
+      console.log(`[oc:auto-start] board:changed with null card, skipping`);
+      return;
+    }
 
     // Card entered running
     if (newColumn === 'running' && oldColumn !== 'running') {
       const initState = await import('../init-state');
       const client = initState.getOrcdClient();
-      if (!client) return;
+      if (!client) {
+        console.log(`[oc:auto-start] card #${card.id} entered running but no orcd client, skipping`);
+        return;
+      }
 
       const fullCard = await repo().findOneBy({ id: card.id });
-      if (!fullCard) return;
+      if (!fullCard) {
+        console.log(`[oc:auto-start] card #${card.id} vanished before auto-start`);
+        return;
+      }
 
       // Check if already active in orcd
-      if (fullCard.sessionId && client.isActive(fullCard.sessionId)) return;
+      if (fullCard.sessionId && client.isActive(fullCard.sessionId)) {
+        console.log(`[oc:auto-start] card #${card.id} session ${fullCard.sessionId.slice(0, 8)} already active`);
+        return;
+      }
 
       console.log(
         `[oc:auto-start] card #${card.id} entered running ` +
@@ -229,16 +253,28 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
       oldColumn: string | null;
       newColumn: string | null;
     };
-    if (!card) return;
-    if (newColumn !== 'archive' || oldColumn === 'archive') return;
+    if (!card) {
+      console.log(`[oc:worktree] board:changed with null card, skipping cleanup`);
+      return;
+    }
+    if (newColumn !== 'archive' || oldColumn === 'archive') {
+      console.log(`[oc:worktree] card ${card.id} column ${oldColumn} → ${newColumn}: not a fresh archive transition, skipping cleanup`);
+      return;
+    }
 
     const c = card as Card;
-    if (!c.worktreeBranch || !c.projectId) return;
+    if (!c.worktreeBranch || !c.projectId) {
+      console.log(`[oc:worktree] card ${c.id} has no worktree/project, skipping cleanup`);
+      return;
+    }
 
     try {
       const { Project } = await import('../models/Project');
       const proj = await Project.findOneBy({ id: c.projectId });
-      if (!proj) return;
+      if (!proj) {
+        console.log(`[oc:worktree] card ${c.id} project ${c.projectId} not found, skipping cleanup`);
+        return;
+      }
 
       const { resolveWorkDir } = await import('../../shared/worktree');
       const wtPath = resolveWorkDir(c.worktreeBranch, proj.path);
@@ -249,6 +285,7 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
       }
     } catch (err) {
       console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
+      // handled: cleanup failure is non-fatal
     }
   });
 }
@@ -260,17 +297,29 @@ export function registerMemoryUpsertOnArchive(bus: MessageBus = messageBus): voi
       oldColumn: string | null;
       newColumn: string | null;
     };
-    if (!card) return;
+    if (!card) {
+      console.log(`[oc:memory] board:changed with null card, skipping upsert`);
+      return;
+    }
 
     // Only on first transition to done/archive — skip done→archive (already upserted by orcd on exit)
     const isTerminal = newColumn === 'done' || newColumn === 'archive';
     const wasTerminal = oldColumn === 'done' || oldColumn === 'archive';
-    if (!isTerminal || wasTerminal) return;
-    if (!card.sessionId) return;
+    if (!isTerminal || wasTerminal) {
+      console.log(`[oc:memory] card ${card.id} column ${oldColumn} → ${newColumn}: not a fresh terminal transition, skipping upsert`);
+      return;
+    }
+    if (!card.sessionId) {
+      console.log(`[oc:memory] card ${card.id} entering ${newColumn} with no sessionId, skipping upsert`);
+      return;
+    }
 
     const initState = await import('../init-state');
     const client = initState.getOrcdClient();
-    if (!client) return;
+    if (!client) {
+      console.log(`[oc:memory] card ${card.id} (session ${card.sessionId.slice(0, 8)}): no orcd client, skipping upsert`);
+      return;
+    }
 
     console.log(`[oc:memory] requesting upsert for card ${card.id} (${oldColumn} → ${newColumn})`);
     client.memoryUpsert(card.sessionId);

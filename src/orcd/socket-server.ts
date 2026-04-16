@@ -76,6 +76,7 @@ export class OrcdServer {
           const action = JSON.parse(line) as OrcdAction;
           this.handleAction(client, action);
         } catch (err) {
+          console.error(`[orcd] parse error on action line:`, err);
           this.send(client, { type: 'error', sessionId: '', error: `parse error: ${err}` });
         }
       }
@@ -132,6 +133,7 @@ export class OrcdServer {
   private handleCreate(client: ClientState, action: OrcdAction & { action: 'create' }): void {
     const providerCfg = this.providers[action.provider];
     if (!providerCfg) {
+      console.error(`[orcd] handleCreate: unknown provider ${action.provider}`);
       this.send(client, { type: 'error', sessionId: '', error: `unknown provider: ${action.provider}` });
       return;
     }
@@ -179,6 +181,7 @@ export class OrcdServer {
   private handleMessage(client: ClientState, action: OrcdAction & { action: 'message' }): void {
     const session = this.store.get(action.sessionId);
     if (!session) {
+      console.error(`[orcd:${action.sessionId.slice(0, 8)}] handleMessage: session not found`);
       this.send(client, { type: 'error', sessionId: action.sessionId, error: 'session not found' });
       return;
     }
@@ -200,6 +203,7 @@ export class OrcdServer {
     const prompt = expandSlashCommand(action.prompt, session.cwd);
 
     if (!prompt.trim()) {
+      console.warn(`[orcd:${action.sessionId.slice(0, 8)}] handleMessage: empty prompt, dropping`);
       this.send(client, { type: 'error', sessionId: action.sessionId, error: 'empty prompt' });
       return;
     }
@@ -218,9 +222,13 @@ export class OrcdServer {
 
   private handleSubscribe(client: ClientState, action: OrcdAction & { action: 'subscribe' }): void {
     const session = this.store.get(action.sessionId);
-    if (!session) return;
+    if (!session) {
+      console.log(`[orcd:${action.sessionId.slice(0, 8)}] handleSubscribe: session not found, ignoring`);
+      return;
+    }
 
     if (client.subscriptions.has(session.id)) {
+      console.log(`[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`);
       // Already subscribed — just replay from requested index
       session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
       return;
@@ -250,7 +258,10 @@ export class OrcdServer {
 
   private handleMemoryUpsert(action: OrcdAction & { action: 'memory_upsert' }): void {
     const session = this.store.get(action.sessionId);
-    if (!session) return;
+    if (!session) {
+      console.log(`[orcd:${action.sessionId.slice(0, 8)}] handleMemoryUpsert: session not found, ignoring`);
+      return;
+    }
     this.runMemoryUpsert(session).catch((err) => {
       console.error(`[orcd:${session.id.slice(0, 8)}] memory_upsert action failed:`, err);
     });
@@ -260,7 +271,10 @@ export class OrcdServer {
 
   private buildProviderEnv(provider: string): Record<string, string> {
     const cfg = this.providers[provider];
-    if (!cfg) return { ...process.env } as Record<string, string>;
+    if (!cfg) {
+      console.warn(`[orcd] buildProviderEnv: unknown provider ${provider}, using process.env only`);
+      return { ...process.env } as Record<string, string>;
+    }
     return Object.assign({}, process.env,
       cfg.baseUrl ? { ANTHROPIC_BASE_URL: cfg.baseUrl } : {},
       cfg.apiKey ? { ANTHROPIC_API_KEY: cfg.apiKey } : {},
@@ -271,7 +285,10 @@ export class OrcdServer {
   // ── Memory upsert ───────────────────────────────────────────────────────
 
   private async runMemoryUpsert(session: OrcdSession): Promise<void> {
-    if (!this.memoryConfig?.enabled || !this.memoryConfig.baseUrl || !this.memoryConfig.apiKey) return;
+    if (!this.memoryConfig?.enabled || !this.memoryConfig.baseUrl || !this.memoryConfig.apiKey) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:mem] memory upsert disabled or missing config, skipping`);
+      return;
+    }
     if (this.upsertedSessions.has(session.id)) {
       console.log(`[orcd:${session.id.slice(0, 8)}:mem] skipping duplicate upsert`);
       return;

@@ -1,3 +1,4 @@
+/* oxlint-disable orchestrel/log-before-early-return -- pure data structure, no session context */
 export interface IndexedItem<T> {
   index: number;
   item: T;

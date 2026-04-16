@@ -71,8 +71,8 @@ export async function initDatabase(): Promise<void> {
     try {
       await runner.query(`ALTER TABLE projects ADD COLUMN memory_base_url TEXT`);
       await runner.query(`ALTER TABLE projects ADD COLUMN memory_api_key TEXT`);
-    } catch {
-      // Columns already exist
+    } catch (err) {
+      console.log(`[db:migrate] memory_* column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
     await runner.release();
   }

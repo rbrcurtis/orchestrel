@@ -7,7 +7,10 @@ export async function ensureWorktree(card: Card): Promise<string> {
   if (!card.projectId) throw new Error(`Card ${card.id} has no project`);
   const proj = await Project.findOneByOrFail({ id: card.projectId });
 
-  if (!card.worktreeBranch) return proj.path;
+  if (!card.worktreeBranch) {
+    console.log(`[session:${card.id}] ensureWorktree: no worktreeBranch, using project path ${proj.path}`);
+    return proj.path;
+  }
 
   const wtPath = resolveWorkDir(card.worktreeBranch, proj.path);
   console.log(`[session:${card.id}] ensureWorktree: branch=${card.worktreeBranch}, path=${wtPath}`);

@@ -166,7 +166,10 @@ class CardService {
     });
 
     const filtered = excludeId ? toArchive.filter((c) => c.id !== excludeId) : toArchive;
-    if (filtered.length === 0) return;
+    if (filtered.length === 0) {
+      console.log(`[card:archiveAll] nothing to archive (excludeId=${excludeId ?? 'none'})`);
+      return;
+    }
 
     const now = new Date().toISOString();
     for (const c of filtered) {

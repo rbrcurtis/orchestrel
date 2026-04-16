@@ -11,6 +11,7 @@ export async function handleProjectCreate(
     const project = await projectService.createProject(data);
     callback({ data: project as unknown as Project });
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
@@ -59,6 +60,7 @@ export async function handleProjectUpdate(
       }
     }
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
@@ -71,6 +73,7 @@ export async function handleProjectDelete(
     await projectService.deleteProject(data.id);
     callback({});
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
@@ -83,6 +86,7 @@ export async function handleProjectBrowse(
     const dirs = await projectService.browse(data.path);
     callback({ data: dirs });
   } catch {
+    console.warn(`[ws] listProjectDirs: returning empty on error`);
     callback({ data: [] });
   }
 }
@@ -95,6 +99,7 @@ export async function handleProjectMkdir(
     await projectService.mkdir(data.path);
     callback({ data: { success: true } });
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }

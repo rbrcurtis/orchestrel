@@ -38,6 +38,7 @@ export const busRoomBridge = {
         id?: number;
       };
       if (!card) {
+        console.log(`[bus-bridge] board:changed card=null id=${id ?? 'none'} → emitting card:deleted`);
         if (id) io.emit('card:deleted', { id });
         return;
       }
@@ -65,7 +66,10 @@ export const busRoomBridge = {
 
   /** Ensure bus→room listeners exist for a card. Called when a socket joins card:N. */
   ensureCardListeners(cardId: number) {
-    if (cardListeners.has(cardId)) return;
+    if (cardListeners.has(cardId)) {
+      console.log(`[bus-bridge] card:${cardId} listeners already registered, skipping`);
+      return;
+    }
     if (!_io) throw new Error('BusRoomBridge not initialized');
     const io = _io;
     const room = `card:${cardId}`;
@@ -131,13 +135,22 @@ export const busRoomBridge = {
 
   /** Clean up bus listeners for a card room if no sockets remain in it. */
   cleanupCardIfEmpty(cardId: number) {
-    if (!_io) return;
+    if (!_io) {
+      console.log(`[bus-bridge] cleanupCardIfEmpty card:${cardId} skipped — io not initialized`);
+      return;
+    }
     const room = `card:${cardId}`;
     const roomSockets = _io.sockets.adapter.rooms.get(room);
-    if (roomSockets && roomSockets.size > 0) return;
+    if (roomSockets && roomSockets.size > 0) {
+      console.log(`[bus-bridge] cleanupCardIfEmpty card:${cardId} skipped — ${roomSockets.size} socket(s) still in room`);
+      return;
+    }
 
     const listeners = cardListeners.get(cardId);
-    if (!listeners) return;
+    if (!listeners) {
+      console.log(`[bus-bridge] cleanupCardIfEmpty card:${cardId} skipped — no listeners registered`);
+      return;
+    }
 
     for (const [suffix, handler] of listeners) {
       messageBus.removeListener(`card:${cardId}:${suffix}`, handler);

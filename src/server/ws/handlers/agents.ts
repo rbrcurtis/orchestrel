@@ -52,8 +52,7 @@ export async function handleAgentSend(
       await card.save();
     }
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    console.error(`[session:${cardId}] agent:send error:`, error);
+    console.error(`[session:${cardId}] agent:send error:`, err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -122,6 +121,7 @@ export async function handleAgentStatus(
     });
     callback({});
   } catch (err) {
+    console.error(`[session:${cardId}] agent:status error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }

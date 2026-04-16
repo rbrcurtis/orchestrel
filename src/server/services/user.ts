@@ -38,7 +38,10 @@ class UserService {
   }
 
   async visibleProjectIds(identity: UserIdentity): Promise<number[] | 'all'> {
-    if (identity.role === 'admin') return 'all';
+    if (identity.role === 'admin') {
+      console.log(`[user:${identity.id}] visibleProjectIds: admin, returning all`);
+      return 'all';
+    }
     const rows = await ProjectUser.findBy({ userId: identity.id });
     return rows.map((r) => r.projectId);
   }

@@ -23,7 +23,8 @@ export function createWorktree(
       cwd: repoPath,
       stdio: 'pipe',
     });
-  } catch {
+  } catch (err) {
+    console.log(`[worktree:${branch}] existing branch attach failed, creating new branch:`, err instanceof Error ? err.message : err);
     // Branch doesn't exist — create new branch from source
     const args = ['worktree', 'add', worktreePath, '-b', branch];
     if (resolvedSource) args.push(resolvedSource);
@@ -42,7 +43,10 @@ export function removeWorktree(repoPath: string, worktreePath: string): void {
 }
 
 export function runSetupCommands(worktreePath: string, commands: string): void {
-  if (!commands.trim()) return;
+  if (!commands.trim()) {
+    console.log(`[worktree:${worktreePath}] runSetupCommands: no commands, skipping`);
+    return;
+  }
   execFileSync('/bin/bash', ['-c', commands], {
     cwd: worktreePath,
     stdio: 'pipe',
@@ -58,6 +62,9 @@ export function worktreeExists(worktreePath: string): boolean {
 
 export function copyOpencodeConfig(srcDir: string, destDir: string): void {
   const src = `${srcDir}/opencode.json`
-  if (!existsSync(src)) return
+  if (!existsSync(src)) {
+    console.log(`[worktree:${destDir}] copyOpencodeConfig: no opencode.json at ${src}, skipping`);
+    return;
+  }
   copyFileSync(src, `${destDir}/opencode.json`)
 }

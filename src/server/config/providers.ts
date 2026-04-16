@@ -1,3 +1,4 @@
+/* oxlint-disable orchestrel/log-before-early-return -- pure config loader, cache short-circuits are hot path */
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { z } from 'zod';

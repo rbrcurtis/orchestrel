@@ -10,6 +10,7 @@ export async function handleCardCreate(
     const card = await cardService.createCard(data);
     callback({ data: card as unknown as Card });
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
@@ -23,6 +24,7 @@ export async function handleCardUpdate(
     const card = await cardService.updateCard(id, rest);
     callback({ data: card as unknown as Card });
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
@@ -35,6 +37,7 @@ export async function handleCardDelete(
     await cardService.deleteCard(data.id);
     callback({});
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
@@ -47,6 +50,7 @@ export async function handleCardGenerateTitle(
     const card = await cardService.generateTitle(data.id);
     callback({ data: card as unknown as Card });
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
@@ -59,6 +63,7 @@ export async function handleCardSuggestTitle(
     const title = await cardService.suggestTitle(data.description);
     callback({ data: title });
   } catch (err) {
+    console.error(`[ws] error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }

@@ -138,6 +138,7 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
       }
       callback({});
     } catch (err) {
+      console.error(`[ws:session:set-model] card ${cardId} error:`, err);
       callback({ error: String(err instanceof Error ? err.message : err) });
     }
   });

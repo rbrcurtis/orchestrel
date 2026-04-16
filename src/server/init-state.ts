@@ -1,3 +1,4 @@
+/* oxlint-disable orchestrel/log-before-early-return -- init state plumbing, no session context */
 import type { Server as HttpServer } from 'http'
 import type { Http2SecureServer } from 'http2'
 import type { AppServer } from './ws/types'

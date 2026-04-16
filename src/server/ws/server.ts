@@ -70,6 +70,7 @@ export function wsServerPlugin(): Plugin {
 
                 const files = req.files as Express.Multer.File[] | undefined;
                 if (!files?.length) {
+                  console.warn(`[rest:upload] session=${sessionId}: no files in request, rejecting`);
                   res.status(400).json({ error: 'No files uploaded' });
                   return;
                 }
@@ -109,6 +110,7 @@ export function wsServerPlugin(): Plugin {
               ) => {
                 if (err && typeof err === 'object' && 'status' in err) {
                   const e = err as { status: number; message?: string; fields?: Record<string, unknown> };
+                  console.warn(`[rest:error] status=${e.status} msg=${e.message ?? 'Validation error'}`);
                   res.status(e.status).json({ error: e.message ?? 'Validation error', fields: e.fields });
                   return;
                 }

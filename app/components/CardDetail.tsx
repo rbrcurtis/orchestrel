@@ -359,7 +359,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                     onBlur={() => saveAll()}
                     rows={4}
                     placeholder="Add a description..."
-                    // eslint-disable-next-line local/no-overflow-auto -- native textarea handles own scroll
+                    // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
                     className="resize-y max-h-40 overflow-y-auto"
                   />
                 )}
@@ -729,7 +729,7 @@ export const NewCardDetail = observer(function NewCardDetail({
               }}
               rows={4}
               placeholder="Add a description..."
-              // eslint-disable-next-line local/no-overflow-auto -- native textarea handles own scroll
+              // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
               className="resize-y max-h-40 overflow-y-auto"
             />
           </div>

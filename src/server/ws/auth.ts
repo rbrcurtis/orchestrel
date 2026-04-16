@@ -17,13 +17,17 @@ export interface AuthResult {
 function isLocalRequest(req: IncomingMessage): boolean {
   const host = req.headers.host ?? '';
   if (host.startsWith('localhost') || host.startsWith('127.') || host.startsWith('192.168.')) {
+    console.log(`[ws:auth] isLocalRequest: host=${host} matched local range`);
     return true;
   }
   return false;
 }
 
 export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult> {
-  if (isLocalRequest(req)) return { valid: true, isLocal: true };
+  if (isLocalRequest(req)) {
+    console.log(`[ws:auth] validateCfAccess: local request, bypassing CF Access`);
+    return { valid: true, isLocal: true };
+  }
 
   if (!jwks) {
     console.log('[ws:auth] no jwks configured, rejecting');
@@ -46,6 +50,7 @@ export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult
       issuer: `https://${CF_TEAM_DOMAIN}.cloudflareaccess.com`,
     });
     const email = typeof payload.email === 'string' ? payload.email : undefined;
+    console.log(`[ws:auth] validateCfAccess: JWT valid for ${email ?? '(no email)'}`);
     return { valid: true, email, isLocal: false };
   } catch (err) {
     console.log('[ws:auth] JWT verify failed:', err instanceof Error ? err.message : err);
@@ -64,6 +69,7 @@ export async function socketAuthMiddleware(
     const req = socket.request;
     const auth = await validateCfAccess(req);
     if (!auth.valid) {
+      console.warn(`[ws:auth] socket connect rejected: Unauthorized (host=${socket.request.headers.host})`);
       next(new Error('Unauthorized'));
       return;
     }
@@ -73,6 +79,7 @@ export async function socketAuthMiddleware(
     console.log(`[ws] auth: ${identity.email} (${identity.role})`);
     next();
   } catch (err) {
+    console.error(`[ws:auth] socketAuthMiddleware error:`, err);
     next(new Error(err instanceof Error ? err.message : 'Auth failed'));
   }
 }

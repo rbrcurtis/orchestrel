@@ -1,3 +1,4 @@
+/* oxlint-disable orchestrel/log-before-early-return orchestrel/log-in-catch -- pure filesystem lookups, no session context; catches are expected (missing files / dirs) */
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { execSync } from 'child_process';

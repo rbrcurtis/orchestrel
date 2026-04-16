@@ -13,13 +13,15 @@ export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessa
  */
 function effortToOptions(effort: string | undefined): Pick<Options, 'effort' | 'thinking'> {
   if (effort === 'disabled') {
+    console.log(`[orcd:effort] disabled → thinking.type=disabled`);
     return { thinking: { type: 'disabled' } };
   }
   const level = effort ?? 'high';
-  if (level === 'low' || level === 'medium' || level === 'high' || level === 'max') {
-    return { effort: level };
+  if (level !== 'low' && level !== 'medium' && level !== 'high' && level !== 'max') {
+    console.warn(`[orcd:effort] unknown level "${level}", defaulting to high`);
+    return { effort: 'high' };
   }
-  return { effort: 'high' };
+  return { effort: level };
 }
 
 export class OrcdSession {
@@ -201,6 +203,7 @@ export class OrcdSession {
       }
       log(`exited (state=${this.state})`);
     } catch (err) {
+      log(`caught error in run loop: ${err instanceof Error ? err.message : err}`);
       const errStr = String(err);
       if (errStr.includes('abort') || errStr.includes('AbortError')) {
         this.state = 'stopped';
@@ -238,7 +241,10 @@ export class OrcdSession {
    * Change thinking budget mid-session.
    */
   async setEffort(effort: string): Promise<void> {
-    if (!this.activeQuery) return;
+    if (!this.activeQuery) {
+      console.log(`[orcd:${this.id.slice(0, 8)}] setEffort(${effort}): no active query, skipping`);
+      return;
+    }
     // setMaxThinkingTokens is deprecated but still the only mid-session API
     const budget = effort === 'disabled' ? 0 : null;
     await this.activeQuery.setMaxThinkingTokens(budget);
