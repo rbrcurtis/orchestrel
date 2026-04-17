@@ -58,6 +58,42 @@ export async function initBackend(): Promise<{
     res.json({ files: refs });
   });
 
+  // PR status check
+  const { execFile } = await import('child_process');
+  const { promisify } = await import('util');
+  const execFileAsync = promisify(execFile);
+
+  router.post('/api/pr-check', async (req: Request, res: Response) => {
+    const prUrl = req.body?.prUrl as string | undefined;
+    if (!prUrl) {
+      console.warn('[rest:pr-check] missing prUrl in request body');
+      res.status(400).json({ error: 'prUrl required' });
+      return;
+    }
+
+    try {
+      const { stdout } = await execFileAsync('gh', [
+        'pr', 'view', prUrl,
+        '--json', 'state,comments,reviews',
+      ], { timeout: 15_000 });
+
+      const pr = JSON.parse(stdout) as {
+        state: string;
+        comments: unknown[];
+        reviews: { body: string; state: string }[];
+      };
+
+      const merged = pr.state === 'MERGED';
+      const reviewComments = pr.reviews?.filter((r) => r.body || r.state === 'CHANGES_REQUESTED') ?? [];
+      const hasComments = (pr.comments?.length ?? 0) > 0 || reviewComments.length > 0;
+
+      res.json({ state: pr.state, merged, hasComments });
+    } catch (err) {
+      console.error('[rest:pr-check]', err);
+      res.status(502).json({ error: 'Failed to check PR status' });
+    }
+  });
+
   // OpenAPI spec + Swagger UI
   const { readFileSync } = await import('fs');
   const { resolve } = await import('path');

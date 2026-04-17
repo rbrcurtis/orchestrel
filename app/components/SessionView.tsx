@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, Play, AlertCircle, ChevronDown, Paperclip, X, WifiOff, MessageSquareWarning } from 'lucide-react';
+import { Send, Square, Play, AlertCircle, ChevronDown, Paperclip, X, WifiOff, GitPullRequestArrow, LoaderCircle } from 'lucide-react';
 import { MessageBlock } from './MessageBlock';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
@@ -355,15 +355,11 @@ export const SessionView = observer(function SessionView({
           ) : sessionId ? (
             <div className="ml-auto flex items-center gap-1">
               {card?.column === 'review' && card?.prUrl && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs text-muted-foreground"
-                  onClick={() => handleSend(buildPrCommentsPrompt(card.prUrl!))}
-                >
-                  <MessageSquareWarning className="size-3" />
-                  Address PR Comments
-                </Button>
+                <CheckPrButton
+                  prUrl={card.prUrl}
+                  cardId={cardId}
+                  onAddressComments={(prompt) => handleSend(prompt)}
+                />
               )}
               <Button
                 variant="ghost"
@@ -417,6 +413,54 @@ Steps:
 5. Push the changes
 
 Be thorough — address every comment, don't skip any.`;
+}
+
+// --- Check PR button ---
+
+function CheckPrButton({ prUrl, cardId, onAddressComments }: {
+  prUrl: string;
+  cardId: number;
+  onAddressComments: (prompt: string) => void;
+}) {
+  const [checking, setChecking] = useState(false);
+  const cardStore = useCardStore();
+
+  async function handleCheck() {
+    setChecking(true);
+    try {
+      const res = await fetch('/api/pr-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prUrl }),
+      });
+      if (!res.ok) return;
+
+      const data = await res.json() as { merged: boolean; hasComments: boolean };
+
+      if (data.merged) {
+        await cardStore.updateCard({ id: cardId, column: 'done' });
+      } else if (data.hasComments) {
+        onAddressComments(buildPrCommentsPrompt(prUrl));
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-6 px-2 text-xs text-muted-foreground"
+      onClick={handleCheck}
+      disabled={checking}
+    >
+      {checking
+        ? <LoaderCircle className="size-3 animate-spin" />
+        : <GitPullRequestArrow className="size-3" />}
+      Check on PR
+    </Button>
+  );
 }
 
 // --- Status badge ---
