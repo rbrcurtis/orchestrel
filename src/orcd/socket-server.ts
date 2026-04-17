@@ -159,13 +159,7 @@ export class OrcdServer {
 
     const effort = action.effort ?? 'high';
 
-    const env = Object.assign({}, process.env,
-      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      providerCfg.baseUrl ? { ANTHROPIC_BASE_URL: providerCfg.baseUrl } : {},
-      providerCfg.apiKey ? { ANTHROPIC_API_KEY: providerCfg.apiKey } : {},
-      providerCfg.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {},
-      action.env,
-    ) as Record<string, string>;
+    const env = { ...this.buildProviderEnv(action.provider), ...action.env };
 
     const prompt = expandSlashCommand(action.prompt, action.cwd);
 
@@ -194,13 +188,7 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    const providerCfg = this.providers[session.provider];
-    const env = Object.assign({}, process.env,
-      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      providerCfg?.baseUrl ? { ANTHROPIC_BASE_URL: providerCfg.baseUrl } : {},
-      providerCfg?.apiKey ? { ANTHROPIC_API_KEY: providerCfg.apiKey } : {},
-      providerCfg?.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {},
-    ) as Record<string, string>;
+    const env = this.buildProviderEnv(session.provider);
 
     const prompt = expandSlashCommand(action.prompt, session.cwd);
 
@@ -277,12 +265,23 @@ export class OrcdServer {
       console.warn(`[orcd] buildProviderEnv: unknown provider ${provider}, using process.env only`);
       return { ...process.env } as Record<string, string>;
     }
-    return Object.assign({}, process.env,
-      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      cfg.baseUrl ? { ANTHROPIC_BASE_URL: cfg.baseUrl } : {},
-      cfg.apiKey ? { ANTHROPIC_API_KEY: cfg.apiKey } : {},
-      cfg.authToken ? { ANTHROPIC_AUTH_TOKEN: cfg.authToken } : {},
-    ) as Record<string, string>;
+
+    const base: Record<string, string> = {
+      ...process.env as Record<string, string>,
+      CC_BACKGROUND_COMPACTOR_DISABLE: '1',
+    };
+
+    if (cfg.type === 'bedrock') {
+      base.CLAUDE_CODE_USE_BEDROCK = '1';
+      if (cfg.region) base.AWS_REGION = cfg.region;
+      if (cfg.profile) base.AWS_PROFILE = cfg.profile;
+    } else {
+      if (cfg.baseUrl) base.ANTHROPIC_BASE_URL = cfg.baseUrl;
+      if (cfg.apiKey) base.ANTHROPIC_API_KEY = cfg.apiKey;
+      if (cfg.authToken) base.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
+    }
+
+    return base;
   }
 
   // ── Memory upsert ───────────────────────────────────────────────────────
