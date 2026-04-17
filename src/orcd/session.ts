@@ -31,6 +31,7 @@ export class OrcdSession {
   readonly model: string;
   readonly provider: string;
   readonly contextWindow: number | undefined;
+  readonly claudeCodePath: string | undefined;
   readonly summarizeThreshold: number;
   readonly buffer: RingBuffer<unknown>;
 
@@ -48,6 +49,7 @@ export class OrcdSession {
     bufferSize?: number;
     sessionId?: string;  // For resume — use existing CC session UUID
     contextWindow?: number;
+    claudeCodePath?: string;
     summarizeThreshold?: number;
   }) {
     this.id = opts.sessionId ?? randomUUID();
@@ -55,6 +57,7 @@ export class OrcdSession {
     this.model = opts.model;
     this.provider = opts.provider;
     this.contextWindow = opts.contextWindow;
+    this.claudeCodePath = opts.claudeCodePath;
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
   }
@@ -111,7 +114,7 @@ export class OrcdSession {
         allowDangerouslySkipPermissions: true,
         settingSources: ['user', 'project'],
         includePartialMessages: true,
-        pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
+        ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
         env: opts.env,
         ...thinkingOpts,
         ...(autoCompactWindow ? { settings: { autoCompactWindow } } : {}),

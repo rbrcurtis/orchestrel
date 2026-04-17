@@ -26,6 +26,7 @@ export interface CompactOpts {
   projectPath: string;
   model: string;
   env?: Record<string, string>;
+  claudeCodePath?: string;
   ratio?: number;
   maxExcerptChars?: number;
   dryRun?: boolean;
@@ -173,6 +174,7 @@ export async function queryAgentSdk(
   prompt: string,
   model: string,
   env?: Record<string, string>,
+  claudeCodePath?: string,
 ): Promise<{ text: string; durationMs: number }> {
   const { query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk');
   const t0 = Date.now();
@@ -184,7 +186,7 @@ export async function queryAgentSdk(
       maxTurns: 1,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
+      ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
       ...(env ? { env } : {}),
     },
   });
@@ -230,8 +232,9 @@ async function summarize(
   excerpt: string,
   model: string,
   env?: Record<string, string>,
+  claudeCodePath?: string,
 ): Promise<{ summary: string; durationMs: number }> {
-  const { text: summary, durationMs } = await queryAgentSdk(SUMMARIZE_PROMPT + excerpt, model, env);
+  const { text: summary, durationMs } = await queryAgentSdk(SUMMARIZE_PROMPT + excerpt, model, env, claudeCodePath);
   return { summary, durationMs };
 }
 
@@ -322,7 +325,7 @@ export async function prepareCompaction(opts: CompactOpts): Promise<PreparedComp
     };
   }
 
-  const { summary, durationMs } = await summarize(excerpt, model, opts.env);
+  const { summary, durationMs } = await summarize(excerpt, model, opts.env, opts.claudeCodePath);
 
   return {
     sessionId,

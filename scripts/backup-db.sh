@@ -1,8 +1,9 @@
 #!/bin/bash
 set -ex
 
-DB="/home/ryan/Code/orchestrel/data/orchestrel.db"
-BACKUP_DIR="/mnt/D/Sync/orchestra-backups"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DB="${ORC_DB_PATH:-$SCRIPT_DIR/../data/orchestrel.db}"
+BACKUP_DIR="${ORC_BACKUP_DIR:-/mnt/D/Sync/orchestra-backups}"
 MAX_AGE_DAYS=3
 
 # SQLite-safe backup using .backup command

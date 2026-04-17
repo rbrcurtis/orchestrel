@@ -29,6 +29,7 @@ export class OrcdServer {
     private providers: Record<string, ProviderConfig>,
     private defaults: { provider: string; model: string },
     memoryConfig?: OrcdConfig['memoryUpsert'],
+    private claudeCodePath?: string,
   ) {
     this.memoryConfig = memoryConfig;
   }
@@ -145,6 +146,7 @@ export class OrcdServer {
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
+      claudeCodePath: this.claudeCodePath,
     });
 
     this.store.add(session);
@@ -307,6 +309,7 @@ export class OrcdServer {
       projectName: session.cwd.split('/').pop() ?? 'unknown',
       model: session.model,
       env,
+      claudeCodePath: this.claudeCodePath,
       memoryBaseUrl: this.memoryConfig.baseUrl,
       memoryApiKey: this.memoryConfig.apiKey,
     });
@@ -340,6 +343,7 @@ export class OrcdServer {
       projectPath: session.cwd,
       model: session.model,
       env,
+      claudeCodePath: this.claudeCodePath,
     });
 
     if (this.turnActive.has(sid)) {

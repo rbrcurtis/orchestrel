@@ -13,7 +13,7 @@ async function main() {
   const server = new OrcdServer(socketPath, config.providers, {
     provider: config.defaultProvider,
     model: config.defaultModel,
-  }, config.memoryUpsert);
+  }, config.memoryUpsert, config.claudeCodePath);
 
   await server.start();
 

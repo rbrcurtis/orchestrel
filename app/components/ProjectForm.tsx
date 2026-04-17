@@ -121,7 +121,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                   type="text"
                   value={path}
                   onChange={(e) => setPath(e.target.value)}
-                  placeholder="/home/ryan/Code/my-project"
+                  placeholder="~/Code/my-project"
                   className="font-mono"
                 />
               </div>
