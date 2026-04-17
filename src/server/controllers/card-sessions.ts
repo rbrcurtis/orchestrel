@@ -72,6 +72,25 @@ export function initOrcdRouter(
           }
         }
       }
+
+      if (sdkEvent.type === 'tool_use_summary') {
+        const summary = sdkEvent as { tool_result?: string };
+        if (summary.tool_result) {
+          const prMatch = summary.tool_result.match(
+            /https:\/\/(?:github\.com|gitlab\.com)\/[^\s]+\/pull\/\d+/,
+          );
+          if (prMatch) {
+            const card = await repo().findOneBy({ id: cardId });
+            if (card && !card.prUrl) {
+              card.prUrl = prMatch[0];
+              card.updatedAt = new Date().toISOString();
+              await repo().save(card);
+              console.log(`[oc:${cardId}] auto-detected prUrl: ${prMatch[0]}`);
+              bus.publish('board:changed', { card, oldColumn: card.column, newColumn: card.column });
+            }
+          }
+        }
+      }
     }
 
     if (msg.type === 'result') {

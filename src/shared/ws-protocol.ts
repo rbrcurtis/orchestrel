@@ -73,6 +73,7 @@ export const cardCreateSchema = z.object({
   summarizeThreshold: z.number().min(0).max(1).optional(),
   worktreeBranch: z.string().nullable().optional(),
   sourceBranch: z.enum(['main', 'dev']).nullable().optional(),
+  prUrl: z.string().nullable().optional(),
   archiveOthers: z.boolean().optional(),
 });
 

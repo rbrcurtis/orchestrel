@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, Play, AlertCircle, ChevronDown, Paperclip, X, WifiOff } from 'lucide-react';
+import { Send, Square, Play, AlertCircle, ChevronDown, Paperclip, X, WifiOff, MessageSquareWarning } from 'lucide-react';
 import { MessageBlock } from './MessageBlock';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
@@ -353,15 +353,28 @@ export const SessionView = observer(function SessionView({
               {isStopping ? 'Stopping...' : 'Stop'}
             </Button>
           ) : sessionId ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 px-2 text-xs text-muted-foreground"
-              onClick={() => handleSend('Continue')}
-            >
-              <Play className="size-3 fill-current" />
-              Continue
-            </Button>
+            <div className="ml-auto flex items-center gap-1">
+              {card?.column === 'review' && card?.prUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-muted-foreground"
+                  onClick={() => handleSend(buildPrCommentsPrompt(card.prUrl!))}
+                >
+                  <MessageSquareWarning className="size-3" />
+                  Address PR Comments
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground"
+                onClick={() => handleSend('Continue')}
+              >
+                <Play className="size-3 fill-current" />
+                Continue
+              </Button>
+            </div>
           ) : null}
         </div>
       )}
@@ -389,6 +402,22 @@ export const SessionView = observer(function SessionView({
     </div>
   );
 });
+
+function buildPrCommentsPrompt(prUrl: string): string {
+  return `Review and address all comments on this pull request: ${prUrl}
+
+Steps:
+1. Run \`gh pr view ${prUrl} --json comments,reviews\` to get all PR comments and review comments
+2. Also run \`gh api repos/{owner}/{repo}/pulls/{number}/comments\` for inline code comments
+3. For each comment:
+   - Evaluate whether the feedback is actionable
+   - If it requires a code change, make the fix
+   - If it's a question, add a reply via \`gh pr comment\`
+4. After making all changes, commit with a message referencing the PR review
+5. Push the changes
+
+Be thorough — address every comment, don't skip any.`;
+}
 
 // --- Status badge ---
 

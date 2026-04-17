@@ -448,6 +448,22 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                 </div>
               )}
 
+              {/* PR URL */}
+              {hasSession && (
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">PR URL</label>
+                  <Input
+                    key={card.prUrl ?? ''}
+                    defaultValue={card.prUrl ?? ''}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim() || null;
+                      if (val !== card.prUrl) cardStore.updateCard({ id: card.id, prUrl: val });
+                    }}
+                    placeholder="https://github.com/org/repo/pull/123"
+                  />
+                </div>
+              )}
+
               {/* Model & Thinking */}
               {!hasSession && (
                 <div className="grid grid-cols-2 gap-3">
