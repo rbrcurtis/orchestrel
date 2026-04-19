@@ -100,6 +100,12 @@ export interface ContextUsageMessage {
   contextWindow: number;
 }
 
+export interface SessionIdUpdateMessage {
+  type: 'session_id_update';
+  sessionId: string;       // orcd-level session id (unchanged, for routing)
+  newSessionId: string;    // CC's new session_id after a fork
+}
+
 export interface SessionListMessage {
   type: 'session_list';
   sessions: Array<{
@@ -116,4 +122,5 @@ export type OrcdMessage =
   | SessionErrorMessage
   | SessionExitMessage
   | ContextUsageMessage
+  | SessionIdUpdateMessage
   | SessionListMessage;

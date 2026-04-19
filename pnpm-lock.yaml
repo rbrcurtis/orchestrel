@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: ^0.2.110
+        specifier: 0.2.110
         version: 0.2.110(zod@4.3.6)
       '@dnd-kit/core':
         specifier: ^6.3.1
@@ -29,6 +29,9 @@ importers:
       '@tsoa/runtime':
         specifier: 7.0.0-alpha.0
         version: 7.0.0-alpha.0
+      arg:
+        specifier: ^5.0.2
+        version: 5.0.2
       better-sqlite3:
         specifier: ^12.6.2
         version: 12.6.2

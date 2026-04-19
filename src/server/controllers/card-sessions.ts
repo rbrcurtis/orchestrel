@@ -112,6 +112,17 @@ export function initOrcdRouter(
       await handleSessionExit(cardId, bus);
       untrackSession(msg.sessionId);
     }
+
+    if (msg.type === 'session_id_update') {
+      const card = await repo().findOneBy({ id: cardId });
+      if (card) {
+        card.sessionId = msg.newSessionId;
+        card.updatedAt = new Date().toISOString();
+        await repo().save(card);
+      }
+      trackSession(cardId, msg.newSessionId);
+      console.log(`[oc:${cardId}] session forked: ${msg.sessionId.slice(0,8)} → ${msg.newSessionId.slice(0,8)}`);
+    }
   });
 
   console.log('[orcd-router] global handler registered');
@@ -145,33 +156,56 @@ export async function reconcileRunningCards(
   bus: MessageBus = messageBus,
 ): Promise<void> {
   const r = AppDataSource.getRepository(Card);
-  const runningCards = await r.find({ where: { column: 'running' } });
+
+  // Query orcd's live session list first. This is the source of truth —
+  // client.isActive() reads from in-memory cache which gets cleared on
+  // orchestrel restart / orcd disconnect.
+  const activeList = await client.list();
+  const activeIds = new Set(activeList.sessions.map((s) => s.id));
+
+  // Re-seed in-memory isActive tracking + router mapping for every orcd
+  // session that maps to a known card. This ensures client.isActive() tells
+  // the truth after an orchestrel restart, so auto-start + agent:send
+  // correctly detect whether a session exists and route through create
+  // (which passes summarizeThreshold + attaches lifecycle hooks).
+  const allCards = await r.find();
+  const cardBySession = new Map<string, Card>();
+  for (const c of allCards) {
+    if (c.sessionId) cardBySession.set(c.sessionId, c);
+  }
+
+  for (const sess of activeList.sessions) {
+    const card = cardBySession.get(sess.id);
+    if (!card) continue;
+    client.markActive(sess.id);
+    trackSession(card.id, sess.id);
+    console.log(`[reconcile] re-seeded tracking for card ${card.id} session ${sess.id.slice(0, 8)}`);
+  }
+
+  // Move running-column cards whose session is no longer alive in orcd back
+  // to review.
+  const runningCards = allCards.filter((c) => c.column === 'running');
   if (runningCards.length === 0) {
     console.log(`[reconcile] no running cards to reconcile`);
     return;
   }
 
-  const activeList = await client.list();
-  const activeIds = new Set(activeList.sessions.map((s) => s.id));
-
   for (const card of runningCards) {
     if (card.sessionId && activeIds.has(card.sessionId)) {
-      trackSession(card.id, card.sessionId);
-      client.markActive(card.sessionId);
-      console.log(`[reconcile] card ${card.id} still active in orcd, tracking`);
-    } else {
-      card.column = 'review';
-      card.updatedAt = new Date().toISOString();
-      await r.save(card);
-      if (card.sessionId) untrackSession(card.sessionId);
-      bus.publish(`card:${card.id}:exit`, {
-        sessionId: card.sessionId,
-        status: 'stopped',
-      });
-      console.log(
-        `[reconcile] card ${card.id} moved to review (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
-      );
+      console.log(`[reconcile] card ${card.id} still active in orcd`);
+      continue;
     }
+    card.column = 'review';
+    card.updatedAt = new Date().toISOString();
+    await r.save(card);
+    if (card.sessionId) untrackSession(card.sessionId);
+    bus.publish(`card:${card.id}:exit`, {
+      sessionId: card.sessionId,
+      status: 'stopped',
+    });
+    console.log(
+      `[reconcile] card ${card.id} moved to review (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
+    );
   }
 }
 

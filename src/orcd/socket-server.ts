@@ -145,6 +145,7 @@ export class OrcdServer {
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
+      onFork: (oldId, newId) => this.store.alias(oldId, newId),
     });
 
     this.store.add(session);

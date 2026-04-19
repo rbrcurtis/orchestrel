@@ -4,9 +4,9 @@ import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
-import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage, SessionExitMessage, ContextUsageMessage } from '../shared/orcd-protocol';
+import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage, SessionExitMessage, ContextUsageMessage, SessionIdUpdateMessage } from '../shared/orcd-protocol';
 
-export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage) => void;
+export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage) => void;
 
 /**
  * Map effort string to SDK options for thinking/effort.
@@ -40,6 +40,8 @@ export class OrcdSession {
 
   private activeQuery: Query | null = null;
   private subscribers = new Set<SessionEventCallback>();
+  private onFork: ((oldId: string, newId: string) => void) | undefined;
+  private forkedTo: string | undefined;
 
   constructor(opts: {
     cwd: string;
@@ -49,6 +51,7 @@ export class OrcdSession {
     sessionId?: string;  // For resume — use existing CC session UUID
     contextWindow?: number;
     summarizeThreshold?: number;
+    onFork?: (oldId: string, newId: string) => void;
   }) {
     this.id = opts.sessionId ?? randomUUID();
     this.cwd = opts.cwd;
@@ -57,6 +60,7 @@ export class OrcdSession {
     this.contextWindow = opts.contextWindow;
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
+    this.onFork = opts.onFork;
   }
 
   subscribe(cb: SessionEventCallback): void {
@@ -134,6 +138,25 @@ export class OrcdSession {
         const eventIndex = this.buffer.push(sdkEvent);
 
         log(JSON.stringify(sdkEvent));
+
+        // Detect CC session fork: on resume, CC may allocate a new session_id
+        // and write to a new JSONL. The init event carries the new id. We
+        // still route everything under this.id, but announce the new id so
+        // the backend can persist it for the next resume.
+        if (sdkEvent.type === 'system' && sdkEvent.subtype === 'init') {
+          const ccSessionId = sdkEvent.session_id;
+          if (typeof ccSessionId === 'string' && ccSessionId !== this.id && ccSessionId !== this.forkedTo) {
+            this.forkedTo = ccSessionId;
+            this.onFork?.(this.id, ccSessionId);
+            const upd: SessionIdUpdateMessage = {
+              type: 'session_id_update',
+              sessionId: this.id,
+              newSessionId: ccSessionId,
+            };
+            for (const cb of this.subscribers) cb(upd);
+            log(`session forked: ${this.id.slice(0,8)} → ${ccSessionId.slice(0,8)}`);
+          }
+        }
 
         // Track per-API-call input tokens from message_start events.
         // SDK yields { type: 'stream_event', event: { type: 'message_start', message: { usage } } }
