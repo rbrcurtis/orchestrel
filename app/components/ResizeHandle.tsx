@@ -78,10 +78,14 @@ export function ResizeHandle({ onMouseDown, color }: ResizeHandleProps) {
   return (
     <div
       onMouseDown={onMouseDown}
-      className={`w-1 cursor-col-resize transition-colors shrink-0 hidden lg:block ${
-        color ? '' : 'bg-border hover:bg-neon-cyan'
+      className={`w-3 -mx-1 cursor-col-resize shrink-0 hidden lg:flex items-stretch justify-center touch-none z-10 ${
+        color ? '' : '[&>div]:hover:bg-neon-cyan'
       }`}
-      style={color ? { backgroundColor: color } : undefined}
-    />
+    >
+      <div
+        className={`w-1 transition-colors ${color ? '' : 'bg-border'}`}
+        style={color ? { backgroundColor: color } : undefined}
+      />
+    </div>
   );
 }

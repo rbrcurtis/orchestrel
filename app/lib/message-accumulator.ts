@@ -60,13 +60,20 @@ export interface SubagentState {
 }
 
 export type ConversationEntry =
-  | { kind: 'blocks'; blocks: ContentBlock[]; model?: string }
-  | { kind: 'result'; data: TurnResult }
-  | { kind: 'tool_activity'; data: ToolActivity }
-  | { kind: 'user'; content: string; optimistic?: boolean }
-  | { kind: 'system'; subtype: string; model?: string }
-  | { kind: 'error'; message: string }
-  | { kind: 'compact' };
+  | { kind: 'blocks'; blocks: ContentBlock[]; model?: string; timestamp?: number }
+  | { kind: 'result'; data: TurnResult; timestamp?: number }
+  | { kind: 'tool_activity'; data: ToolActivity; timestamp?: number }
+  | { kind: 'user'; content: string; optimistic?: boolean; timestamp?: number }
+  | { kind: 'system'; subtype: string; model?: string; timestamp?: number }
+  | { kind: 'error'; message: string; timestamp?: number }
+  | { kind: 'compact'; timestamp?: number };
+
+function normalizeTimestamp(timestamp: number | string | undefined): number | undefined {
+  if (timestamp == null) return undefined;
+  if (typeof timestamp === 'number') return timestamp < 1e12 ? timestamp * 1000 : timestamp;
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
 
 export class MessageAccumulator {
   conversation: ConversationEntry[] = [];
@@ -110,15 +117,15 @@ export class MessageAccumulator {
       case 'system':
         if (msg.subtype === 'init') {
           this.finalizeBlocks();
-          this.conversation.push({ kind: 'system', subtype: 'init', model: msg.model });
+          this.conversation.push({ kind: 'system', subtype: 'init', model: msg.model, timestamp: msg.timestamp ?? Date.now() });
         } else if (msg.subtype === 'compact_boundary') {
           this.finalizeBlocks();
-          this.conversation.push({ kind: 'compact' });
+          this.conversation.push({ kind: 'compact', timestamp: msg.timestamp });
         }
         break;
       case 'error':
         this.finalizeBlocks();
-        this.conversation.push({ kind: 'error', message: msg.message });
+        this.conversation.push({ kind: 'error', message: msg.message, timestamp: msg.timestamp });
         break;
       case 'status':
         if (this.retryAfterMs !== null) this.retryAfterMs = null;
@@ -128,7 +135,7 @@ export class MessageAccumulator {
 
   addUserMessage(content: string, optimistic = false): void {
     this.finalizeBlocks();
-    this.conversation.push({ kind: 'user', content, optimistic });
+    this.conversation.push({ kind: 'user', content, optimistic, timestamp: optimistic ? Date.now() : undefined });
   }
 
   handleHistoryMessage(msg: HistoryMessage): void {
@@ -136,14 +143,14 @@ export class MessageAccumulator {
       case 'user': {
         const { content } = msg.message;
         if (typeof content === 'string') {
-          this.conversation.push({ kind: 'user', content });
+          this.conversation.push({ kind: 'user', content, timestamp: normalizeTimestamp(msg.timestamp) });
         } else if (Array.isArray(content)) {
           // Array content: extract text blocks (user prompts), skip tool_result blocks
           const text = content
             .filter((b) => b.type === 'text')
             .map((b) => (b as { text?: string }).text ?? '')
             .join('\n');
-          if (text) this.conversation.push({ kind: 'user', content: text });
+          if (text) this.conversation.push({ kind: 'user', content: text, timestamp: normalizeTimestamp(msg.timestamp) });
         }
         break;
       }
@@ -177,12 +184,16 @@ export class MessageAccumulator {
             return new ContentBlock({ type: 'text', content: b.text ?? '', complete: true });
           });
         if (blocks.length > 0) {
-          this.conversation.push({ kind: 'blocks', blocks, model: msg.message.model });
+          this.conversation.push({ kind: 'blocks', blocks, model: msg.message.model, timestamp: normalizeTimestamp(msg.timestamp) });
         }
         break;
       }
       case 'system':
-        // Skip system messages for now
+        if (msg.subtype === 'init') {
+          this.conversation.push({ kind: 'system', subtype: 'init', model: msg.model, timestamp: normalizeTimestamp(msg.timestamp) });
+        } else if (msg.subtype === 'compact_boundary') {
+          this.conversation.push({ kind: 'compact', timestamp: normalizeTimestamp(msg.timestamp) });
+        }
         break;
     }
   }
@@ -254,6 +265,7 @@ export class MessageAccumulator {
     this.retryAfterMs = null;
     this.conversation.push({
       kind: 'result',
+      timestamp: msg.timestamp ?? Date.now(),
       data: {
         subtype: msg.subtype,
         costUsd: msg.total_cost_usd,
@@ -280,6 +292,7 @@ export class MessageAccumulator {
   private handleToolUseSummary(msg: SdkToolUseSummary): void {
     this.conversation.push({
       kind: 'tool_activity',
+      timestamp: msg.timestamp,
       data: {
         name: msg.tool_name,
         input: msg.tool_input,

@@ -190,12 +190,20 @@ type Props = {
   accentColor?: string | null;
 };
 
+function formatEntryTime(timestamp?: number): string | null {
+  if (!timestamp) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(timestamp));
+}
+
 export const MessageBlock = observer(function MessageBlock({ entry, index: _index, accentColor }: Props) {
   switch (entry.kind) {
     case 'blocks':
       return <BlocksEntry blocks={entry.blocks} accentColor={accentColor} />;
     case 'result':
-      return <TurnEndBlock data={entry.data} />;
+      return <TurnEndBlock data={entry.data} timestamp={entry.timestamp} />;
     case 'tool_activity':
       return (
         <div className="py-1 min-w-0 overflow-hidden">
@@ -214,20 +222,25 @@ export const MessageBlock = observer(function MessageBlock({ entry, index: _inde
           Error: {entry.message}
         </div>
       );
-    case 'compact':
+    case 'compact': {
+      const time = formatEntryTime(entry.timestamp);
       return (
         <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
           <div className="flex-1 border-t border-neon-amber/30 shrink min-w-2" />
-          <span className="text-neon-amber shrink-0">Context compacted</span>
+          <span className="text-neon-amber shrink-0">Context compacted{time ? ` · ${time}` : ''}</span>
           <div className="flex-1 border-t border-neon-amber/30 shrink min-w-2" />
         </div>
       );
+    }
     case 'system':
       return entry.subtype === 'init' ? (
         <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
           <div className="flex items-center gap-2 w-full min-w-0">
             <div className="flex-1 border-t border-border shrink min-w-2" />
-            <span className="shrink-0">Session started · {entry.model ?? 'unknown'}</span>
+            <span className="shrink-0">
+              Session started · {entry.model ?? 'unknown'}
+              {formatEntryTime(entry.timestamp) ? ` · ${formatEntryTime(entry.timestamp)}` : ''}
+            </span>
             <div className="flex-1 border-t border-border shrink min-w-2" />
           </div>
         </div>
@@ -304,7 +317,7 @@ function TextBlock({ content, accentColor }: { content: string; accentColor?: st
 
 // --- Turn end block ---
 
-function TurnEndBlock({ data }: { data: TurnResult }) {
+function TurnEndBlock({ data, timestamp }: { data: TurnResult; timestamp?: number }) {
   const isSuccess = data.subtype === 'success' || data.subtype === 'error_max_turns';
   const cost = data.modelUsage
     ? calcCostFromModelUsage(data.modelUsage, data.costUsd)
@@ -317,6 +330,7 @@ function TurnEndBlock({ data }: { data: TurnResult }) {
         <div className="flex-1 border-t border-border shrink min-w-2" />
         <span className={`shrink-0 ${isSuccess ? '' : 'text-destructive'}`}>
           {isSuccess ? 'Turn complete' : `Error: ${data.subtype ?? 'unknown'}`}
+          {formatEntryTime(timestamp) ? ` · ${formatEntryTime(timestamp)}` : ''}
           {cost != null && ` · $${cost.toFixed(4)}`}
           {durationSec != null && ` · ${durationSec}s`}
         </span>

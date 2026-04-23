@@ -282,4 +282,29 @@ export class OrcdSession {
       await this.activeQuery.interrupt();
     }
   }
+
+  /**
+   * Broadcast a synthetic compact_boundary stream_event so downstream
+   * listeners (orchestrel card-sessions.ts compact_boundary handler) can
+   * reset contextTokens immediately, without waiting for the SDK to replay
+   * the JSONL on next resume. Used by orchestrel's background compactor
+   * after applyCompaction() rewrites the JSONL.
+   */
+  emitCompactBoundary(): void {
+    const event = {
+      type: 'system',
+      subtype: 'compact_boundary',
+      session_id: this.id,
+      source: 'orchestrel-bgc',
+      timestamp: Date.now(),
+    };
+    const eventIndex = this.buffer.push(event);
+    const msg: StreamEventMessage = {
+      type: 'stream_event',
+      sessionId: this.id,
+      eventIndex,
+      event,
+    };
+    for (const cb of this.subscribers) cb(msg);
+  }
 }

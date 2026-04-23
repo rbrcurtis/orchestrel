@@ -36,6 +36,7 @@ export interface SdkSystemMessage {
   subtype: 'init' | 'compact_boundary';
   session_id?: string;
   model?: string;
+  timestamp?: number;
 }
 
 export interface SdkStreamEvent {
@@ -59,6 +60,7 @@ export interface SdkResultMessage {
   num_turns: number;
   duration_ms: number;
   duration_api_ms?: number;
+  timestamp?: number;
   modelUsage?: Record<string, { input_tokens: number; output_tokens: number; cost_usd: number }>;
   // Keep model_usage as alias for backwards compat with existing history
   model_usage?: Record<string, { input_tokens: number; output_tokens: number; cost_usd: number }>;
@@ -76,6 +78,7 @@ export interface SdkToolUseSummary {
   tool_input: unknown;
   tool_result: string;
   is_error?: boolean;
+  timestamp?: number;
 }
 
 export interface SdkTaskStarted {
@@ -129,11 +132,14 @@ export type SdkMessage =
 
 // SessionMessage format returned by getSessionMessages()
 
+type HistoryTimestamp = number | string;
+
 export interface HistoryUserMessage {
   type: 'user';
   uuid: string;
   session_id: string;
   parent_tool_use_id: null;
+  timestamp?: HistoryTimestamp;
   message: { role: 'user'; content: string | Array<{ type: string; [key: string]: unknown }> };
 }
 
@@ -152,6 +158,7 @@ export interface HistoryAssistantMessage {
   uuid: string;
   session_id: string;
   parent_tool_use_id: null;
+  timestamp?: HistoryTimestamp;
   message: {
     role: 'assistant';
     model: string;
@@ -166,7 +173,10 @@ export interface HistorySystemMessage {
   uuid: string;
   session_id: string;
   parent_tool_use_id: null;
-  message: unknown;
+  subtype?: 'init' | 'compact_boundary' | string;
+  model?: string;
+  timestamp?: HistoryTimestamp;
+  message?: unknown;
 }
 
 export type HistoryMessage = HistoryUserMessage | HistoryAssistantMessage | HistorySystemMessage;

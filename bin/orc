@@ -1,0 +1,287 @@
+#!/usr/bin/env -S node --import tsx
+
+import arg from 'arg';
+import Database from 'better-sqlite3';
+import { existsSync, readFileSync } from 'fs';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
+import { parseConfig } from '../src/shared/config.ts';
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(SCRIPT_DIR, '..');
+const DEFAULT_CONFIG_PATH = resolve(REPO_ROOT, 'config.yaml');
+const DEFAULT_CCH_PATH = '/home/ryan/.local/bin/cch';
+const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
+const CLAUDE_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
+
+const args = arg(
+  {
+    '--help': Boolean,
+    '-h': '--help',
+    '--config': String,
+    '--print-env': Boolean,
+  },
+  {
+    permissive: true,
+  },
+);
+
+function usage() {
+  return [
+    'Usage: orc [options] [claude args...] [provider model]',
+    '',
+    'Examples:',
+    '  orc trackable auto',
+    '  orc --resume abc123 trackable auto',
+    '  orc trackable auto "what time is it?"',
+    '  orc --print-env trackable auto',
+    '',
+    'Options:',
+    '  --config <path>   Override config.yaml path',
+    '  --print-env       Print resolved env/model and exit',
+    '  -h, --help        Show help',
+  ].join('\n');
+}
+
+function main() {
+  if (args['--help']) {
+    process.stdout.write(`${usage()}\n`);
+    return;
+  }
+
+  const configPath = resolveConfigPath(args['--config']);
+  const config = loadWrapperConfig(configPath);
+  const passthroughArgs = [...args._];
+  const resumeTarget = extractResumeTarget(passthroughArgs);
+
+  const resolved = extractProviderAndModel(config, passthroughArgs, resumeTarget);
+  const provider = config.providers[resolved.providerId];
+  if (!provider) {
+    throw new Error(`Unknown provider "${resolved.providerId}" in ${configPath}`);
+  }
+
+  const model = provider.models[resolved.modelAlias];
+  if (!model) {
+    throw new Error(`Unknown model alias "${resolved.modelAlias}" for provider "${resolved.providerId}"`);
+  }
+
+  rejectConflictingArgs(passthroughArgs);
+  const cchArgs = buildCchArgs(model.modelID, passthroughArgs);
+
+  const env = buildClaudeEnv(provider);
+  if (args['--print-env']) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          provider: resolved.providerId,
+          modelAlias: resolved.modelAlias,
+          modelID: model.modelID,
+          ...(resolved.card ? { card: resolved.card } : {}),
+          env,
+          claudeArgs: passthroughArgs,
+          cchArgs,
+          configPath,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    return;
+  }
+
+  const cchPath = resolveCchPath();
+  const child = spawn(
+    cchPath,
+    cchArgs,
+    {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        ...env,
+      },
+    },
+  );
+
+  child.on('exit', (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 0);
+  });
+
+  child.on('error', (err) => {
+    console.error(`orc: failed to launch cch: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+function resolveConfigPath(override) {
+  if (override) return resolve(override);
+  if (process.env.ORC_CONFIG) return resolve(process.env.ORC_CONFIG);
+  return DEFAULT_CONFIG_PATH;
+}
+
+function loadWrapperConfig(configPath) {
+  if (!existsSync(configPath)) {
+    throw new Error(`Config not found at ${configPath}`);
+  }
+  return parseConfig(readFileSync(configPath, 'utf8'), process.env);
+}
+
+function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
+  let providerId = config.defaultProvider;
+  let modelAlias = resolveModelAlias(config.providers[providerId], config.defaultModel);
+
+  for (let i = 0; i < passthroughArgs.length; i += 1) {
+    const maybeProvider = passthroughArgs[i];
+    if (!maybeProvider) continue;
+
+    const provider = config.providers[maybeProvider];
+    if (!provider) continue;
+
+    const maybeModel = passthroughArgs[i + 1];
+    if (maybeModel && provider.models[maybeModel]) {
+      passthroughArgs.splice(i, 2);
+      return {
+        providerId: maybeProvider,
+        modelAlias: maybeModel,
+      };
+    }
+
+    passthroughArgs.splice(i, 1);
+    return {
+      providerId: maybeProvider,
+      modelAlias: firstModelAlias(provider),
+    };
+  }
+
+  if (resumeTarget) {
+    const card = findCardBySessionId(resumeTarget);
+    if (card) {
+      const resumedProvider = config.providers[card.provider];
+      if (!resumedProvider) {
+        throw new Error(`Card ${card.id} uses unknown provider "${card.provider}"`);
+      }
+      return {
+        providerId: card.provider,
+        modelAlias: resolveModelAlias(resumedProvider, card.model),
+        card,
+      };
+    }
+  }
+
+  return { providerId, modelAlias };
+}
+
+function extractResumeTarget(passthroughArgs) {
+  for (let i = 0; i < passthroughArgs.length; i += 1) {
+    const token = passthroughArgs[i];
+    if (token === '--resume') {
+      return passthroughArgs[i + 1] ?? null;
+    }
+    if (token?.startsWith('--resume=')) {
+      return token.slice('--resume='.length);
+    }
+  }
+  return null;
+}
+
+function findCardBySessionId(sessionId) {
+  const dbPath = resolveDbPath();
+  if (!existsSync(dbPath)) return null;
+
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    const row = db
+      .prepare(
+        'select id, title, provider, model from cards where session_id = ? order by updated_at desc limit 1',
+      )
+      .get(sessionId);
+    if (!row) return null;
+    return {
+      id: row.id,
+      title: row.title,
+      provider: row.provider,
+      model: row.model,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+function resolveModelAlias(provider, modelRef) {
+  if (!provider) {
+    throw new Error(`Unknown provider "${String(modelRef)}"`);
+  }
+
+  if (provider.models[modelRef]) {
+    return modelRef;
+  }
+
+  for (const [alias, model] of Object.entries(provider.models)) {
+    if (model.modelID === modelRef) {
+      return alias;
+    }
+  }
+
+  throw new Error(`Unknown model "${modelRef}" for provider`);
+}
+
+function firstModelAlias(provider) {
+  const alias = Object.keys(provider.models)[0];
+  if (!alias) {
+    throw new Error('Provider has no configured models');
+  }
+  return alias;
+}
+
+function resolveDbPath() {
+  if (process.env.ORC_DB_PATH) return resolve(process.env.ORC_DB_PATH);
+  return DEFAULT_DB_PATH;
+}
+
+function rejectConflictingArgs(passthroughArgs) {
+  for (const token of passthroughArgs) {
+    if (token === '--model' || token === '-m' || token.startsWith('--model=')) {
+      throw new Error('Do not pass --model to orc; use positional provider and model instead.');
+    }
+  }
+}
+
+function buildClaudeEnv(provider) {
+  const env = {
+    ANTHROPIC_BASE_URL: '',
+    ANTHROPIC_API_KEY: '',
+    ANTHROPIC_AUTH_TOKEN: '',
+  };
+
+  if (provider.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;
+  if (provider.apiKey) env.ANTHROPIC_API_KEY = provider.apiKey;
+  if (provider.authToken) env.ANTHROPIC_AUTH_TOKEN = provider.authToken;
+
+  return env;
+}
+
+function buildCchArgs(modelId, passthroughArgs) {
+  const args = ['--model', modelId, ...passthroughArgs];
+  if (!args.includes(CLAUDE_SKIP_PERMISSIONS_FLAG)) {
+    args.unshift(CLAUDE_SKIP_PERMISSIONS_FLAG);
+  }
+  return args;
+}
+
+function resolveCchPath() {
+  const override = process.env.ORC_CCH_PATH;
+  if (override && existsSync(override)) return override;
+  if (existsSync(DEFAULT_CCH_PATH)) return DEFAULT_CCH_PATH;
+  throw new Error(`cch not found at ${DEFAULT_CCH_PATH}`);
+}
+
+try {
+  main();
+} catch (err) {
+  console.error(`orc: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}

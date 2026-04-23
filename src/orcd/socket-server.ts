@@ -301,7 +301,7 @@ export class OrcdServer {
     const env = this.buildProviderEnv(session.provider);
     const log = (msg: string) => console.log(`[orcd:${session.id.slice(0, 8)}:mem] ${msg}`);
 
-    log(`extracting memories (server: ${this.memoryConfig.baseUrl})`);
+    log(`running agent (server: ${this.memoryConfig.baseUrl})`);
 
     const result = await upsertMemories({
       sessionId: session.id,
@@ -314,7 +314,8 @@ export class OrcdServer {
     });
 
     this.upsertedSessions.add(session.id);
-    log(`done: ${result.factsStored} stored, ${result.factsUpdated} updated / ${result.factsExtracted} extracted, ${result.durationMs}ms`);
+    const { search, store, update, delete: del } = result.toolCalls;
+    log(`done: search=${search} store=${store} update=${update} delete=${del} (${result.durationMs}ms)`);
   }
 
   // ── Compaction ──────────────────────────────────────────────────────────
@@ -324,14 +325,12 @@ export class OrcdServer {
     const log = (msg: string) => console.log(`[orcd:${sid.slice(0, 8)}:compact] ${msg}`);
     const env = this.buildProviderEnv(session.provider);
 
-    // Step 1: Memory upsert before compaction (capture all messages)
-    try {
-      await this.runMemoryUpsert(session);
-    } catch (err) {
-      console.error(`[orcd:${sid.slice(0, 8)}:mem] failed (continuing to compaction):`, err);
-    }
+    // Memory upsert is NOT run here — it only runs on card finish
+    // (session_exit = move to review, or explicit archive action). Running
+    // it every compaction cycle produced redundant work against unchanged
+    // context and wasted tokens. See memory 'Auto-memory upsert architecture'.
 
-    // Step 2: Prepare summary (read-only, safe while session runs)
+    // Prepare summary (read-only, safe while session runs)
     const pct = session.lastContextWindow > 0
       ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0)
       : '?';
@@ -351,6 +350,7 @@ export class OrcdServer {
       log(`summary ready — session idle, applying now`);
       const result = await applyCompaction(prepared);
       log(`applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`);
+      session.emitCompactBoundary();
     }
   }
 
@@ -374,6 +374,7 @@ export class OrcdServer {
           console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at turn end`);
           applyCompaction(prepared).then((r) => {
             console.log(`[orcd:${sid.slice(0, 8)}:compact] applied: ${r.messagesCovered}/${r.messagesBefore} msgs, ${r.summaryChars} chars`);
+            session.emitCompactBoundary();
           }).catch((err) => {
             console.error(`[orcd:${sid.slice(0, 8)}:compact] apply failed:`, err);
           });
