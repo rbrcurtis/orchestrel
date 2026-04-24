@@ -45,7 +45,10 @@ export function LazyTranscript({
   const nearBottomRef = useRef(true);
   const frameRef = useRef<number | null>(null);
   const prevItemsLenRef = useRef(0);
+  const scrollMetricsRef = useRef<{ scrollHeight: number; scrollTop: number; clientHeight: number } | null>(null);
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const hasOlderRef = useRef(false);
+  const itemsLenRef = useRef(0);
   const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS);
 
   const items = useMemo<ConversationEntry[]>(() => {
@@ -59,6 +62,8 @@ export function LazyTranscript({
   const startIndex = Math.max(0, items.length - visibleCount);
   const visibleItems = items.slice(startIndex);
   const hasOlder = startIndex > 0;
+  hasOlderRef.current = hasOlder;
+  itemsLenRef.current = items.length;
 
   const cancelScheduledScroll = useCallback(() => {
     if (frameRef.current == null) return;
@@ -79,19 +84,26 @@ export function LazyTranscript({
   const loadOlder = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (!hasOlder || prependAnchorRef.current) return;
+    if (!hasOlderRef.current || prependAnchorRef.current) return;
     prependAnchorRef.current = {
       scrollHeight: el.scrollHeight,
       scrollTop: el.scrollTop,
     };
-    setVisibleCount((count) => Math.min(items.length, count + ROW_BATCH));
-  }, [hasOlder, items.length]);
+    setVisibleCount((count) => Math.min(itemsLenRef.current, count + ROW_BATCH));
+  }, []);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const metrics = {
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+      clientHeight: el.clientHeight,
+    };
+    scrollMetricsRef.current = metrics;
+
+    const gap = metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight;
     const nearBottom = gap < BOTTOM_GAP_PX;
     nearBottomRef.current = nearBottom;
     onNearBottomChange?.(nearBottom);
@@ -111,23 +123,21 @@ export function LazyTranscript({
   useEffect(() => {
     setVisibleCount(INITIAL_ROWS);
     nearBottomRef.current = true;
-    prevItemsLenRef.current = items.length;
+    prevItemsLenRef.current = itemsLenRef.current;
+    scrollMetricsRef.current = null;
     prependAnchorRef.current = null;
     scheduleScrollToBottom();
-    // Card switches should reset the incremental window and land on the latest transcript tail.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId]);
+  }, [cardId, scheduleScrollToBottom]);
 
   useEffect(() => {
     if (!historyLoaded || conversation.length === 0) return;
     setVisibleCount(INITIAL_ROWS);
     nearBottomRef.current = true;
     prevItemsLenRef.current = items.length;
+    scrollMetricsRef.current = null;
     prependAnchorRef.current = null;
     scheduleScrollToBottom();
-    // History reloads should behave like a fresh card load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyLoaded]);
+  }, [historyLoaded, conversation.length, items.length, scheduleScrollToBottom]);
 
   useEffect(() => {
     const anchor = prependAnchorRef.current;
@@ -147,8 +157,13 @@ export function LazyTranscript({
     prevItemsLenRef.current = nextLen;
     if (nextLen <= previousLen) return;
 
+    const metrics = scrollMetricsRef.current;
+    const wasNearBottom = metrics
+      ? metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight < BOTTOM_GAP_PX
+      : nearBottomRef.current;
+
     setVisibleCount((count) => Math.min(nextLen, count + nextLen - previousLen));
-    if (isStreaming && nearBottomRef.current) scheduleScrollToBottom();
+    if (isStreaming && wasNearBottom) scheduleScrollToBottom();
   }, [items.length, isStreaming, scheduleScrollToBottom]);
 
   useEffect(() => {
