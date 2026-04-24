@@ -193,7 +193,11 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
 
   return (
     <div className="relative flex-1 min-h-0 min-w-0">
-      <ScrollArea viewportRef={scrollRef} className="h-full">
+      <ScrollArea
+        viewportRef={scrollRef}
+        viewportClassName="overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="h-full"
+      >
         <div
           ref={contentRef}
           className="relative py-2 min-w-0 max-w-full overflow-x-hidden"
