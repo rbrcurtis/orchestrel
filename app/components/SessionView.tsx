@@ -6,7 +6,7 @@ import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { ContextGauge } from './ContextGauge';
 import { SubagentFeed } from './SubagentFeed';
-import { VirtualTranscript } from './VirtualTranscript';
+import { LazyTranscript } from './LazyTranscript';
 import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
 import { AUTO_COMPACT_RATIO } from '../../src/shared/constants';
@@ -174,7 +174,7 @@ export const SessionView = observer(function SessionView({
       onMouseDown={handlePanelMouseDown}
       onClick={handlePanelClick}
     >
-      <VirtualTranscript
+      <LazyTranscript
         cardId={cardId}
         conversation={conversation}
         currentBlocks={currentBlocks}

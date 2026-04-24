@@ -1,21 +1,8 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-} from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { MessageBlock } from './MessageBlock';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import type { ContentBlock, ConversationEntry } from '~/lib/message-accumulator';
-
-export type VirtualTranscriptHandle = {
-  scrollToBottom: (behavior?: ScrollBehavior) => void;
-  isNearBottom: () => boolean;
-};
 
 type Props = {
   cardId: number;
@@ -29,13 +16,11 @@ type Props = {
   onShowScrollButtonChange: (show: boolean) => void;
 };
 
+const INITIAL_ROWS = 120;
+const ROW_BATCH = 80;
+const TOP_LOAD_PX = 240;
 const BOTTOM_GAP_PX = 120;
 const SCROLL_BUTTON_GAP_PX = 60;
-const EMPTY_HEIGHT_PX = 1;
-
-function isNearBottom(el: HTMLDivElement): boolean {
-  return el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_GAP_PX;
-}
 
 function scrollToBottom(el: HTMLDivElement, behavior: ScrollBehavior = 'auto') {
   el.scrollTo({
@@ -44,25 +29,24 @@ function scrollToBottom(el: HTMLDivElement, behavior: ScrollBehavior = 'auto') {
   });
 }
 
-export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(function VirtualTranscript(
-  {
-    cardId,
-    conversation,
-    currentBlocks,
-    accentColor,
-    historyLoaded,
-    isStreaming,
-    showScrollButton,
-    onNearBottomChange,
-    onShowScrollButtonChange,
-  },
-  ref,
-) {
+export function LazyTranscript({
+  cardId,
+  conversation,
+  currentBlocks,
+  accentColor,
+  historyLoaded,
+  isStreaming,
+  showScrollButton,
+  onNearBottomChange,
+  onShowScrollButtonChange,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
-  const prevItemsLenRef = useRef(0);
   const frameRef = useRef<number | null>(null);
+  const prevItemsLenRef = useRef(0);
+  const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS);
 
   const items = useMemo<ConversationEntry[]>(() => {
     if (currentBlocks.length === 0) return conversation;
@@ -72,20 +56,9 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
     ];
   }, [conversation, currentBlocks]);
 
-  const rowVirtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: (idx) => {
-      const item = items[idx];
-      if (!item) return 72;
-      if (item.kind === 'blocks') return 180;
-      if (item.kind === 'tool_activity') return 220;
-      if (item.kind === 'user') return 90;
-      if (item.kind === 'result' || item.kind === 'compact' || item.kind === 'system') return 36;
-      return 120;
-    },
-    overscan: 10,
-  });
+  const startIndex = Math.max(0, items.length - visibleCount);
+  const visibleItems = items.slice(startIndex);
+  const hasOlder = startIndex > 0;
 
   const cancelScheduledScroll = useCallback(() => {
     if (frameRef.current == null) return;
@@ -103,28 +76,29 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
     });
   }, [cancelScheduledScroll]);
 
+  const loadOlder = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (!hasOlder || prependAnchorRef.current) return;
+    prependAnchorRef.current = {
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+    };
+    setVisibleCount((count) => Math.min(items.length, count + ROW_BATCH));
+  }, [hasOlder, items.length]);
+
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
     const nearBottom = gap < BOTTOM_GAP_PX;
     nearBottomRef.current = nearBottom;
     onNearBottomChange?.(nearBottom);
     onShowScrollButtonChange(gap >= SCROLL_BUTTON_GAP_PX);
-  }, [onNearBottomChange, onShowScrollButtonChange]);
 
-  useImperativeHandle(ref, () => ({
-    scrollToBottom(behavior: ScrollBehavior = 'auto') {
-      if (items.length === 0) return;
-      rowVirtualizer.scrollToIndex(items.length - 1, { align: 'end', behavior });
-      scheduleScrollToBottom(behavior);
-    },
-    isNearBottom() {
-      const el = scrollRef.current;
-      if (!el) return true;
-      return isNearBottom(el);
-    },
-  }), [items.length, rowVirtualizer, scheduleScrollToBottom]);
+    if (el.scrollTop <= TOP_LOAD_PX) loadOlder();
+  }, [loadOlder, onNearBottomChange, onShowScrollButtonChange]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -135,33 +109,47 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
   }, [cardId, updateScrollState]);
 
   useEffect(() => {
+    setVisibleCount(INITIAL_ROWS);
     nearBottomRef.current = true;
-    if (items.length === 0) return;
-    rowVirtualizer.scrollToIndex(items.length - 1, { align: 'end' });
+    prevItemsLenRef.current = items.length;
+    prependAnchorRef.current = null;
     scheduleScrollToBottom();
-    // Card switches need one bottom jump; later row growth is gated by the streaming effect.
+    // Card switches should reset the incremental window and land on the latest transcript tail.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId]);
 
   useEffect(() => {
-    if (!historyLoaded || conversation.length === 0 || items.length === 0) return;
+    if (!historyLoaded || conversation.length === 0) return;
+    setVisibleCount(INITIAL_ROWS);
     nearBottomRef.current = true;
-    rowVirtualizer.scrollToIndex(items.length - 1, { align: 'end' });
+    prevItemsLenRef.current = items.length;
+    prependAnchorRef.current = null;
     scheduleScrollToBottom();
-    // History reloads need one bottom jump when loaded flips true.
+    // History reloads should behave like a fresh card load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyLoaded]);
 
   useEffect(() => {
-    if (items.length <= prevItemsLenRef.current) {
-      prevItemsLenRef.current = items.length;
-      return;
-    }
-    prevItemsLenRef.current = items.length;
-    if (!isStreaming || !nearBottomRef.current || items.length === 0) return;
-    rowVirtualizer.scrollToIndex(items.length - 1, { align: 'end' });
-    scheduleScrollToBottom();
-  }, [items.length, isStreaming, rowVirtualizer, scheduleScrollToBottom]);
+    const anchor = prependAnchorRef.current;
+    if (!anchor) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    prependAnchorRef.current = null;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
+      updateScrollState();
+    });
+  }, [visibleCount, updateScrollState]);
+
+  useEffect(() => {
+    const previousLen = prevItemsLenRef.current;
+    const nextLen = items.length;
+    prevItemsLenRef.current = nextLen;
+    if (nextLen <= previousLen) return;
+
+    setVisibleCount((count) => Math.min(nextLen, count + nextLen - previousLen));
+    if (isStreaming && nearBottomRef.current) scheduleScrollToBottom();
+  }, [items.length, isStreaming, scheduleScrollToBottom]);
 
   useEffect(() => {
     if (!isStreaming || !nearBottomRef.current || items.length === 0) return;
@@ -181,16 +169,6 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
 
   useEffect(() => () => cancelScheduledScroll(), [cancelScheduledScroll]);
 
-  const measureRow = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    const wasNearBottom = nearBottomRef.current;
-    rowVirtualizer.measureElement(el);
-    if (!isStreaming || !wasNearBottom) return;
-    scheduleScrollToBottom();
-  }, [isStreaming, rowVirtualizer, scheduleScrollToBottom]);
-
-  const totalSize = Math.max(rowVirtualizer.getTotalSize(), EMPTY_HEIGHT_PX);
-
   return (
     <div className="relative flex-1 min-h-0 min-w-0">
       <ScrollArea
@@ -198,25 +176,25 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
         viewportClassName="overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         className="h-full"
       >
-        <div
-          ref={contentRef}
-          className="relative py-2 min-w-0 max-w-full overflow-x-hidden"
-          style={{ height: totalSize }}
-        >
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const item = items[virtualRow.index];
-            if (!item) return null;
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={measureRow}
-                className="absolute left-3 right-3 min-w-0"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
+        <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0 max-w-full">
+          {hasOlder && (
+            <div className="flex justify-center py-2">
+              <button
+                type="button"
+                onClick={loadOlder}
+                className="rounded border border-border bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-hover"
               >
+                Load older
+              </button>
+            </div>
+          )}
+          {visibleItems.map((row, i) => {
+            const index = startIndex + i;
+            return (
+              <div key={index} data-message-row>
                 <MessageBlock
-                  entry={item}
-                  index={virtualRow.index}
+                  entry={row}
+                  index={index}
                   accentColor={accentColor}
                 />
               </div>
@@ -237,11 +215,7 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
       {showScrollButton && (
         <button
           type="button"
-          onClick={() => {
-            if (items.length === 0) return;
-            rowVirtualizer.scrollToIndex(items.length - 1, { align: 'end', behavior: 'smooth' });
-            scheduleScrollToBottom('smooth');
-          }}
+          onClick={() => scheduleScrollToBottom('smooth')}
           className="absolute bottom-3 right-3 size-8 flex items-center justify-center rounded-full bg-muted/80 border border-border text-muted-foreground shadow-md backdrop-blur-sm hover:bg-muted hover:text-foreground transition-colors"
         >
           <ChevronDown className="size-4" />
@@ -249,4 +223,4 @@ export const VirtualTranscript = forwardRef<VirtualTranscriptHandle, Props>(func
       )}
     </div>
   );
-});
+}

@@ -20,7 +20,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@react-router/express": "7.12.0",
     "@react-router/node": "7.12.0",
-    "@tanstack/react-virtual": "^3.13.24",
     "@tsoa/runtime": "7.0.0-alpha.0",
     "arg": "^5.0.2",
     "better-sqlite3": "^12.6.2",
