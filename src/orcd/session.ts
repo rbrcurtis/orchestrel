@@ -25,6 +25,7 @@ function effortToOptions(effort: string | undefined): Pick<Options, 'effort' | '
 }
 
 const SESSION_DISABLED_TOOLS = [
+  'AskUserQuestion',
   'CronCreate',
   'CronDelete',
   'CronList',

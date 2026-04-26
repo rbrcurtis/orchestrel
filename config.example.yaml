@@ -4,7 +4,7 @@
 
 socket: ~/.orc/orcd.sock       # orcd UNIX socket path
 defaultProvider: anthropic
-defaultModel: claude-sonnet-4-6
+defaultModel: sonnet
 defaultCwd: ~/Code             # where new cards default their working directory
 
 providers:
@@ -13,8 +13,9 @@ providers:
   anthropic:
     label: Anthropic
     models:
-      opus:   { label: "Opus 4.6",   modelID: claude-opus-4-6,   contextWindow: 200000 }
-      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 200000 }
+      opus:   { label: Opus,   modelID: opus,   contextWindow: 200000 }
+      sonnet: { label: Sonnet, modelID: sonnet, contextWindow: 200000 }
+      haiku:  { label: Haiku,  modelID: haiku,  contextWindow: 200000 }
 
   # Example: a local proxy (like a Claude-compatible pool proxy).
   # proxy:
@@ -22,7 +23,9 @@ providers:
   #   baseUrl: http://127.0.0.1:3457
   #   apiKey: ${MY_PROXY_API_KEY}   # ${VAR} is resolved against process.env
   #   models:
+  #     opus:   { label: "Opus 4.6",   modelID: claude-opus-4-6,   contextWindow: 200000 }
   #     sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 200000 }
+  #     auto:   { label: Auto,         modelID: auto,              contextWindow: 200000 }
 
   # Example: a non-Anthropic provider using authToken instead of apiKey.
   # deepseek:
@@ -30,6 +33,7 @@ providers:
   #   baseUrl: http://127.0.0.1:3458
   #   authToken: ${DEEPSEEK_TOKEN}
   #   models:
+  #     reasoner: { label: "V3.2 Reasoner", modelID: deepseek-reasoner, contextWindow: 128000 }
   #     chat: { label: "V3.2 Chat", modelID: deepseek-chat, contextWindow: 128000 }
 
 # Optional: memory upsert service used by orcd at session end.

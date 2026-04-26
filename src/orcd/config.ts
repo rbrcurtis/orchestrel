@@ -19,6 +19,22 @@ export interface OrcdConfig {
 
 export { resolveEnvVars };
 
+export function buildModelAliasEnv(models: string[]): Record<string, string> {
+  const opus = models[0];
+  const env: Record<string, string> = {};
+
+  if (opus) {
+    const sonnet = models[1] ?? opus;
+    const haiku = models[2] ?? sonnet;
+
+    env.ANTHROPIC_DEFAULT_OPUS_MODEL = opus;
+    env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnet;
+    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = haiku;
+  }
+
+  return env;
+}
+
 /** Flatten the shared config into orcd's historical shape (models as modelID list). */
 function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
   const providers: Record<string, ProviderConfig> = {};

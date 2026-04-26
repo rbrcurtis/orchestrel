@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseConfig, resolveEnvVars } from '../config';
+import { buildModelAliasEnv, parseConfig, resolveEnvVars } from '../config';
 
 describe('resolveEnvVars', () => {
   it('replaces ${VAR} with env value', () => {
@@ -82,5 +82,35 @@ defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 `;
     expect(() => parseConfig(yaml, {})).toThrow();
+  });
+});
+
+describe('buildModelAliasEnv', () => {
+  it('returns no aliases when the provider has no models', () => {
+    expect(buildModelAliasEnv([])).toEqual({});
+  });
+
+  it('maps one model to opus, sonnet, and haiku', () => {
+    expect(buildModelAliasEnv(['m1'])).toEqual({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'm1',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'm1',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'm1',
+    });
+  });
+
+  it('maps two models with the second model also used for haiku', () => {
+    expect(buildModelAliasEnv(['m1', 'm2'])).toEqual({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'm1',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'm2',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'm2',
+    });
+  });
+
+  it('maps only the first three models when more are configured', () => {
+    expect(buildModelAliasEnv(['m1', 'm2', 'm3', 'm4'])).toEqual({
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'm1',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'm2',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'm3',
+    });
   });
 });

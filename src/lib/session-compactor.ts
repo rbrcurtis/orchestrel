@@ -167,6 +167,8 @@ export function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
 
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 
+const DEFAULT_DISABLED_TOOLS = ['AskUserQuestion'] as const;
+
 /**
  * Options for `queryAgentSdk`. All tool-related fields default to fully
  * locked down — callers must explicitly opt in to any tool surface.
@@ -219,7 +221,7 @@ export async function queryAgentSdk(
       allowDangerouslySkipPermissions: true,
       pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
       tools: opts.tools ?? [],
-      disallowedTools: opts.disallowedTools,
+      disallowedTools: [...DEFAULT_DISABLED_TOOLS, ...(opts.disallowedTools ?? [])],
       mcpServers: opts.mcpServers ?? {},
       settingSources: opts.settingSources ?? [],
       thinking: opts.thinking ?? { type: 'disabled' },

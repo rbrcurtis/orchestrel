@@ -5,7 +5,7 @@ import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
 import { expandSlashCommand } from './skill-resolver';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
-import type { ProviderConfig, OrcdConfig } from './config';
+import { buildModelAliasEnv, type ProviderConfig, type OrcdConfig } from './config';
 import { prepareCompaction, applyCompaction, type PreparedCompaction } from '../lib/session-compactor';
 import { upsertMemories } from '../lib/memory-upsert';
 
@@ -160,13 +160,7 @@ export class OrcdServer {
 
     const effort = action.effort ?? 'high';
 
-    const env = Object.assign({}, process.env,
-      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      providerCfg.baseUrl ? { ANTHROPIC_BASE_URL: providerCfg.baseUrl } : {},
-      providerCfg.apiKey ? { ANTHROPIC_API_KEY: providerCfg.apiKey } : {},
-      providerCfg.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {},
-      action.env,
-    ) as Record<string, string>;
+    const env = Object.assign(this.buildProviderEnv(action.provider), action.env) as Record<string, string>;
 
     const prompt = expandSlashCommand(action.prompt, action.cwd);
 
@@ -195,13 +189,7 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    const providerCfg = this.providers[session.provider];
-    const env = Object.assign({}, process.env,
-      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      providerCfg?.baseUrl ? { ANTHROPIC_BASE_URL: providerCfg.baseUrl } : {},
-      providerCfg?.apiKey ? { ANTHROPIC_API_KEY: providerCfg.apiKey } : {},
-      providerCfg?.authToken ? { ANTHROPIC_AUTH_TOKEN: providerCfg.authToken } : {},
-    ) as Record<string, string>;
+    const env = this.buildProviderEnv(session.provider);
 
     const prompt = expandSlashCommand(action.prompt, session.cwd);
 
@@ -283,6 +271,7 @@ export class OrcdServer {
       cfg.baseUrl ? { ANTHROPIC_BASE_URL: cfg.baseUrl } : {},
       cfg.apiKey ? { ANTHROPIC_API_KEY: cfg.apiKey } : {},
       cfg.authToken ? { ANTHROPIC_AUTH_TOKEN: cfg.authToken } : {},
+      buildModelAliasEnv(cfg.models),
     ) as Record<string, string>;
   }
 
