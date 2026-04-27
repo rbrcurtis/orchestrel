@@ -46,6 +46,9 @@ export class OrcdSession {
   lastContextTokens = 0;
   lastContextWindow = 0;
 
+  private readonly jsonlPathForTesting: string | undefined;
+  private readonly asyncTaskPollMs: number;
+
   private activeQuery: Query | null = null;
   private subscribers = new Set<SessionEventCallback>();
   private onFork: ((oldId: string, newId: string) => void) | undefined;
@@ -60,6 +63,8 @@ export class OrcdSession {
     contextWindow?: number;
     summarizeThreshold?: number;
     onFork?: (oldId: string, newId: string) => void;
+    jsonlPathForTesting?: string;
+    asyncTaskPollMsForTesting?: number;
   }) {
     this.id = opts.sessionId ?? randomUUID();
     this.cwd = opts.cwd;
@@ -69,6 +74,8 @@ export class OrcdSession {
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
+    this.jsonlPathForTesting = opts.jsonlPathForTesting;
+    this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
   }
 
   subscribe(cb: SessionEventCallback): void {
