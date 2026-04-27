@@ -206,6 +206,13 @@ export class OrcdClient {
   }
 
   /**
+   * Start Orchestrel background compaction for a session.
+   */
+  compact(sessionId: string): void {
+    this.send({ action: 'compact', sessionId });
+  }
+
+  /**
    * List all active sessions. Returns the session list from orcd.
    */
   list(): Promise<import('../shared/orcd-protocol').SessionListMessage> {

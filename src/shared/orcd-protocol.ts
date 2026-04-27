@@ -50,6 +50,11 @@ export interface MemoryUpsertAction {
   sessionId: string;
 }
 
+export interface CompactAction {
+  action: 'compact';
+  sessionId: string;
+}
+
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -58,7 +63,8 @@ export type OrcdAction =
   | UnsubscribeAction
   | ListAction
   | CancelAction
-  | MemoryUpsertAction;
+  | MemoryUpsertAction
+  | CompactAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 

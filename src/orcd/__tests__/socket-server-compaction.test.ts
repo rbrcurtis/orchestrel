@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { OrcdServer } from '../socket-server';
 import type { SessionEventCallback } from '../session';
 import type { PreparedCompaction } from '../../lib/session-compactor';
-import type { ContextUsageMessage, SessionResultMessage, SessionExitMessage } from '../../shared/orcd-protocol';
+import type { ContextUsageMessage, SessionResultMessage, SessionExitMessage, CompactAction } from '../../shared/orcd-protocol';
 
 const prepared: PreparedCompaction = {
   sessionId: 'session-1',
@@ -98,5 +98,24 @@ describe('OrcdServer background compaction', () => {
     hook({ type: 'session_exit', sessionId: 'session-1', state: 'completed' } satisfies SessionExitMessage);
 
     expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts BGC from explicit compact action and emits bgc_started', async () => {
+    compactorMocks.prepareCompaction.mockReset().mockResolvedValue(prepared);
+    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
+    const server = createServer();
+    const { session, emitCompactBoundary, emitBgcStarted } = createSession();
+    server.store.add(session as never);
+    server['attachLifecycleHooks'](session as never);
+
+    server['handleAction']({ socket: null as never, subscriptions: new Map() }, {
+      action: 'compact',
+      sessionId: 'session-1',
+    } satisfies CompactAction);
+
+    await vi.waitFor(() => expect(compactorMocks.prepareCompaction).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
+    expect(emitBgcStarted).toHaveBeenCalledTimes(1);
+    expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,13 +1,8 @@
 import type { AckResponse } from '../../../shared/ws-protocol';
-import { applyCompaction, prepareCompaction } from '../../../lib/session-compactor';
-import { loadConfig } from '../../../shared/config';
-import { messageBus } from '../../bus';
 import { Card } from '../../models/Card';
-import { Project } from '../../models/Project';
 import { buildPromptWithFiles } from '../../sessions/manager';
 import { trackSession } from '../../controllers/card-sessions';
 import { ensureWorktree } from '../../sessions/worktree';
-import { resolveWorkDir } from '../../../shared/worktree';
 
 export async function handleAgentSend(
   data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
@@ -70,6 +65,10 @@ export async function handleAgentCompact(
   console.log(`[session:${cardId}] agent:compact received`);
 
   try {
+    const initState = await import('../../init-state');
+    const client = initState.getOrcdClient();
+    if (!client) throw new Error('OrcdClient not initialized');
+
     const card = await Card.findOneBy({ id: cardId });
     if (!card?.sessionId) {
       callback({ error: 'No session to compact' });
@@ -77,61 +76,11 @@ export async function handleAgentCompact(
     }
 
     callback({});
-    void compactSessionInBackground(card.id);
+    client.compact(card.sessionId);
   } catch (err) {
     console.error(`[session:${cardId}] agent:compact error:`, err);
     callback({ error: String(err instanceof Error ? err.message : err) });
   }
-}
-
-async function compactSessionInBackground(cardId: number): Promise<void> {
-  try {
-    const card = await Card.findOneBy({ id: cardId });
-    if (!card?.sessionId) {
-      console.log(`[session:${cardId}] manual compact skipped: no session`);
-      return;
-    }
-
-    const cwd = await resolveCardCwd(card);
-    const prepared = await prepareCompaction({
-      sessionId: card.sessionId,
-      projectPath: cwd,
-      model: card.model,
-    });
-
-    await applyCompaction(prepared);
-
-    card.contextTokens = 0;
-    card.updatedAt = new Date().toISOString();
-    await card.save();
-
-    messageBus.publish(`card:${cardId}:sdk`, {
-      type: 'system',
-      subtype: 'compact_boundary',
-      session_id: card.sessionId,
-      source: 'orchestrel-manual-compact',
-      timestamp: Date.now(),
-    });
-    console.log(`[session:${cardId}] manual compact applied`);
-  } catch (err) {
-    console.error(`[session:${cardId}] manual compact error:`, err instanceof Error ? err.message : err);
-  }
-}
-
-async function resolveCardCwd(card: Card): Promise<string> {
-  let cwd: string;
-
-  if (card.projectId) {
-    const project = await Project.findOneBy({ id: card.projectId });
-    if (!project) throw new Error(`Project ${card.projectId} not found for card ${card.id}`);
-    cwd = resolveWorkDir(card.worktreeBranch ?? null, project.path);
-  } else {
-    const cfg = loadConfig();
-    if (!cfg.defaultCwd) throw new Error(`Card ${card.id} has no project and config.defaultCwd is unset`);
-    cwd = cfg.defaultCwd;
-  }
-
-  return cwd;
 }
 
 export async function handleAgentStop(

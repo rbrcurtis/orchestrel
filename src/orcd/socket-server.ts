@@ -127,6 +127,9 @@ export class OrcdServer {
       case 'memory_upsert':
         this.handleMemoryUpsert(action);
         break;
+      case 'compact':
+        this.handleCompact(action);
+        break;
     }
   }
 
@@ -255,6 +258,26 @@ export class OrcdServer {
     }
     this.runMemoryUpsert(session).catch((err) => {
       console.error(`[orcd:${session.id.slice(0, 8)}] memory_upsert action failed:`, err);
+    });
+  }
+
+  private handleCompact(action: OrcdAction & { action: 'compact' }): void {
+    const session = this.store.get(action.sessionId);
+    if (!session) {
+      console.log(`[orcd:${action.sessionId.slice(0, 8)}:compact] handleCompact: session not found, ignoring`);
+      return;
+    }
+    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id)) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: already compacting or pending, ignoring`);
+      return;
+    }
+
+    this.compacting.add(session.id);
+    session.emitBgcStarted();
+    this.triggerCompaction(session).catch((err) => {
+      console.error(`[orcd:${session.id.slice(0, 8)}:compact] manual start failed:`, err);
+    }).finally(() => {
+      this.compacting.delete(session.id);
     });
   }
 
