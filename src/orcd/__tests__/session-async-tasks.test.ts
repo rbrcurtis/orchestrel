@@ -135,6 +135,78 @@ describe('OrcdSession async Agent lifecycle', () => {
     }
   });
 
+  it('emits failed task_notification and still exits the session', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
+    const jsonlPath = join(dir, 'session.jsonl');
+    await writeFile(jsonlPath, '');
+
+    events.length = 0;
+    events.push(
+      toolUseEvent('call_failed', 'Run async work that fails'),
+      asyncLaunchResult('call_failed', 'agent-failed-123'),
+      {
+        type: 'result',
+        subtype: 'success',
+        stop_reason: 'end_turn',
+        modelUsage: { test: { contextWindow: 200000 } },
+      },
+    );
+
+    const session = new OrcdSession({
+      cwd: dir,
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-failed',
+      jsonlPathForTesting: jsonlPath,
+      asyncTaskPollMsForTesting: 10,
+    });
+
+    const received: string[] = [];
+    const payloads: unknown[] = [];
+    const cb: SessionEventCallback = (msg) => {
+      received.push(msg.type);
+      payloads.push(msg);
+    };
+    session.subscribe(cb);
+
+    const run = session.run({ prompt: 'go' });
+
+    try {
+      await vi.waitFor(() => expect(received).toContain('result'));
+      expect(received).not.toContain('session_exit');
+
+      await appendFile(jsonlPath, JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: [
+          '<task-notification>',
+          '<task-id>agent-failed-123</task-id>',
+          '<tool-use-id>call_failed</tool-use-id>',
+          '<status>failed</status>',
+          '<summary>Task failed</summary>',
+          '</task-notification>',
+        ].join('\n'),
+      }) + '\n');
+
+      await run;
+
+      expect(payloads).toContainEqual(expect.objectContaining({
+        type: 'stream_event',
+        event: expect.objectContaining({
+          type: 'task_notification',
+          task_id: 'agent-failed-123',
+          status: 'failed',
+        }),
+      }));
+      expect(payloads.at(-1)).toEqual(expect.objectContaining({
+        type: 'session_exit',
+        state: 'completed',
+      }));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
     const jsonlPath = join(dir, 'session.jsonl');
