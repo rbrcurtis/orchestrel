@@ -80,6 +80,13 @@ export function parseTaskNotification(content: string): TaskNotification | null 
   };
 }
 
+export function extractAsyncAgentLaunches(
+  _event: unknown,
+  _toolDescriptions: Map<string, string>,
+): AsyncAgentLaunch[] {
+  return [];
+}
+
 export class AsyncTaskTracker {
   private tasks = new Map<string, TaskState>();
 

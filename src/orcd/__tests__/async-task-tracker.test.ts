@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AsyncTaskTracker,
+  extractAsyncAgentLaunches,
   parseAsyncAgentLaunch,
   parseTaskNotification,
 } from '../async-task-tracker';
@@ -108,5 +109,41 @@ describe('AsyncTaskTracker', () => {
       status: 'completed',
       summary: 'Agent completed',
     })).toBeNull();
+  });
+});
+
+describe('extractAsyncAgentLaunches', () => {
+  it('extracts async launch from SDK user tool_result event', () => {
+    const event = {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'call_abc',
+            content: [
+              {
+                type: 'text',
+                text: [
+                  'Async agent launched successfully.',
+                  'agentId: agent-123 (internal ID - do not mention to user.)',
+                  'output_file: /tmp/claude/tasks/agent-123.output',
+                ].join('\n'),
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    expect(extractAsyncAgentLaunches(event, new Map([['call_abc', 'Implement remaining tasks']]))).toEqual([
+      {
+        taskId: 'agent-123',
+        toolUseId: 'call_abc',
+        description: 'Implement remaining tasks',
+        outputFile: '/tmp/claude/tasks/agent-123.output',
+      },
+    ]);
   });
 });
