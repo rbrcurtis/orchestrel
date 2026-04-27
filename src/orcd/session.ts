@@ -2,11 +2,22 @@ import { randomUUID } from 'crypto';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
+import { AsyncTaskTracker, extractAsyncAgentLaunches } from './async-task-tracker';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
-import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage, SessionExitMessage, ContextUsageMessage, SessionIdUpdateMessage } from '../shared/orcd-protocol';
+import type {
+  ContextUsageMessage,
+  SessionErrorMessage,
+  SessionExitMessage,
+  SessionIdUpdateMessage,
+  SessionResultMessage,
+  StreamEventMessage,
+} from '../shared/orcd-protocol';
+import type { TaskNotificationEvent, TaskStartedEvent } from './async-task-tracker';
 
-export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage) => void;
+export type SessionEventCallback = (
+  msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
+) => void;
 
 /**
  * Map effort string to SDK options for thinking/effort.
@@ -48,18 +59,71 @@ export class OrcdSession {
 
   private readonly jsonlPathForTesting: string | undefined;
   private readonly asyncTaskPollMs: number;
+  private readonly asyncTasks = new AsyncTaskTracker();
+  private readonly agentToolDescriptions = new Map<string, string>();
+  private jsonlLinesRead = 0;
 
   private activeQuery: Query | null = null;
   private subscribers = new Set<SessionEventCallback>();
   private onFork: ((oldId: string, newId: string) => void) | undefined;
   private forkedTo: string | undefined;
 
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private rememberAgentToolDescriptions(event: unknown): void {
+    if (!this.isRecord(event) || event.type !== 'assistant') {
+      console.log(`[orcd:${this.id.slice(0, 8)}] skipping non-assistant event for tool description tracking`);
+      return;
+    }
+
+    const message = event.message;
+    if (!this.isRecord(message) || !Array.isArray(message.content)) {
+      console.log(`[orcd:${this.id.slice(0, 8)}] assistant event missing tool content`);
+      return;
+    }
+
+    for (const block of message.content) {
+      if (!this.isRecord(block) || block.type !== 'tool_use') continue;
+
+      const toolUseId = block.id;
+      if (typeof toolUseId !== 'string') continue;
+
+      const name = block.name;
+      const input = block.input;
+      if (!this.isRecord(input)) continue;
+      const description = input.description;
+      if (name !== 'Agent' && name !== 'Task') continue;
+      if (typeof description !== 'string' || !description.trim()) continue;
+
+      this.agentToolDescriptions.set(toolUseId, description);
+    }
+  }
+
+  private emitSyntheticTaskEvent(event: TaskStartedEvent | TaskNotificationEvent): void {
+    const msg: StreamEventMessage = {
+      type: 'stream_event',
+      sessionId: this.id,
+      eventIndex: this.buffer.push(event),
+      event,
+    };
+    for (const cb of this.subscribers) cb(msg);
+  }
+
+  private recordAsyncAgentLaunches(event: unknown): void {
+    for (const launch of extractAsyncAgentLaunches(event, this.agentToolDescriptions)) {
+      const started = this.asyncTasks.recordLaunch(launch);
+      if (started) this.emitSyntheticTaskEvent(started);
+    }
+  }
+
   constructor(opts: {
     cwd: string;
     model: string;
     provider: string;
     bufferSize?: number;
-    sessionId?: string;  // For resume — use existing CC session UUID
+    sessionId?: string; // For resume — use existing CC session UUID
     contextWindow?: number;
     summarizeThreshold?: number;
     onFork?: (oldId: string, newId: string) => void;
@@ -150,17 +214,16 @@ export class OrcdSession {
       for await (const event of q) {
         if (this.state === 'stopped') break;
 
-        const sdkEvent = event as Record<string, unknown>;
+        const sdkEvent = event as unknown;
         const eventIndex = this.buffer.push(sdkEvent);
+        const sdkRecord = this.isRecord(sdkEvent) ? sdkEvent : null;
 
         log(JSON.stringify(sdkEvent));
+        this.rememberAgentToolDescriptions(sdkEvent);
+        this.recordAsyncAgentLaunches(sdkEvent);
 
-        // Detect CC session fork: on resume, CC may allocate a new session_id
-        // and write to a new JSONL. The init event carries the new id. We
-        // still route everything under this.id, but announce the new id so
-        // the backend can persist it for the next resume.
-        if (sdkEvent.type === 'system' && sdkEvent.subtype === 'init') {
-          const ccSessionId = sdkEvent.session_id;
+        if (sdkRecord?.type === 'system' && sdkRecord.subtype === 'init') {
+          const ccSessionId = sdkRecord.session_id;
           if (typeof ccSessionId === 'string' && ccSessionId !== this.id && ccSessionId !== this.forkedTo) {
             this.forkedTo = ccSessionId;
             this.onFork?.(this.id, ccSessionId);
@@ -170,34 +233,30 @@ export class OrcdSession {
               newSessionId: ccSessionId,
             };
             for (const cb of this.subscribers) cb(upd);
-            log(`session forked: ${this.id.slice(0,8)} → ${ccSessionId.slice(0,8)}`);
+            log(`session forked: ${this.id.slice(0, 8)} → ${ccSessionId.slice(0, 8)}`);
           }
         }
 
-        // Track per-API-call input tokens from message_start events.
-        // SDK yields { type: 'stream_event', event: { type: 'message_start', message: { usage } } }
-        // Fallback: also check message_delta usage (KPP sends context-derived input_tokens there
-        // because CW's contextUsagePercentage arrives after content, too late for message_start).
-        if (sdkEvent.type === 'stream_event') {
-          const inner = sdkEvent.event as Record<string, unknown> | undefined;
-          if (inner?.type === 'message_start') {
-            const msg = inner.message as Record<string, unknown> | undefined;
-            const u = msg?.usage as Record<string, number> | undefined;
+        if (sdkRecord?.type === 'stream_event') {
+          const inner = sdkRecord.event;
+          if (this.isRecord(inner) && inner.type === 'message_start') {
+            const msg = inner.message;
+            const u = this.isRecord(msg) ? (msg.usage as Record<string, number> | undefined) : undefined;
             if (u) {
               lastInputTokens =
                 (u.input_tokens ?? 0) +
                 (u.cache_creation_input_tokens ?? 0) +
                 (u.cache_read_input_tokens ?? 0);
             }
-          } else if (inner?.type === 'message_delta' && lastInputTokens === 0) {
-            const u = inner.usage as Record<string, number> | undefined;
+          } else if (this.isRecord(inner) && inner.type === 'message_delta' && lastInputTokens === 0) {
+            const u = this.isRecord(inner.usage) ? (inner.usage as Record<string, number>) : undefined;
             if (u?.input_tokens && u.input_tokens > 0) {
               lastInputTokens = u.input_tokens;
             }
           }
         }
 
-        if (sdkEvent.type === 'result') {
+        if (sdkRecord?.type === 'result') {
           const msg: SessionResultMessage = {
             type: 'result',
             sessionId: this.id,
@@ -206,10 +265,10 @@ export class OrcdSession {
           };
           for (const cb of this.subscribers) cb(msg);
 
-          // Emit context usage from the last message_start's per-call tokens
           if (lastInputTokens > 0) {
-            // Get contextWindow from result's modelUsage if available
-            const mu = sdkEvent.modelUsage as Record<string, Record<string, number>> | undefined;
+            const mu = this.isRecord(sdkRecord.modelUsage)
+              ? (sdkRecord.modelUsage as Record<string, Record<string, number>>)
+              : undefined;
             let ctxWindow = this.contextWindow || 200_000;
             if (mu) {
               const first = Object.values(mu)[0];
@@ -245,7 +304,7 @@ export class OrcdSession {
       const errStr = String(err);
       if (errStr.includes('abort') || errStr.includes('AbortError')) {
         this.state = 'stopped';
-        log(`stopped`);
+        log('stopped');
       } else {
         this.state = 'errored';
         log(`error: ${errStr}`);
