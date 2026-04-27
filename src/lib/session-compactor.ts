@@ -6,6 +6,7 @@ import { readFile, writeFile, rename, realpath } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
+import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 
 const CHARS_PER_TOKEN = 3.5;
 
@@ -195,6 +196,8 @@ export interface QueryAgentSdkOpts {
   maxTurns?: number;
   /** Tools that should be removed from the model's context entirely. */
   disallowedTools?: Options['disallowedTools'];
+  /** Skills that should be removed from the model's context entirely. */
+  disallowedSkills?: string[];
   /** Default: disabled. */
   thinking?: Options['thinking'];
 }
@@ -211,6 +214,7 @@ export async function queryAgentSdk(
 ): Promise<{ text: string; durationMs: number }> {
   const { query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk');
   const t0 = Date.now();
+  const disabledSkills = [...DEFAULT_DISABLED_SKILLS, ...(opts.disallowedSkills ?? [])];
 
   const q = sdkQuery({
     prompt,
@@ -222,6 +226,7 @@ export async function queryAgentSdk(
       pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
       tools: opts.tools ?? [],
       disallowedTools: [...DEFAULT_DISABLED_TOOLS, ...(opts.disallowedTools ?? [])],
+      settings: { skillOverrides: disabledSkillOverrides(disabledSkills) },
       mcpServers: opts.mcpServers ?? {},
       settingSources: opts.settingSources ?? [],
       thinking: opts.thinking ?? { type: 'disabled' },

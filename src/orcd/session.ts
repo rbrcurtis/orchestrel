@@ -3,6 +3,7 @@ import { readFile } from 'fs/promises';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveJsonlPath } from '../lib/session-compactor';
+import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
 import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
 import { RingBuffer } from './ring-buffer';
@@ -254,7 +255,10 @@ export class OrcdSession {
         pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
         env: opts.env,
         ...thinkingOpts,
-        ...(autoCompactWindow ? { settings: { autoCompactWindow } } : {}),
+        settings: {
+          skillOverrides: disabledSkillOverrides(DEFAULT_DISABLED_SKILLS),
+          ...(autoCompactWindow ? { autoCompactWindow } : {}),
+        },
       },
     });
 

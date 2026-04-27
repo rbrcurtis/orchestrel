@@ -1,20 +1,21 @@
 import { appendFile, mkdtemp, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrcdSession } from '../session';
 import type { SessionEventCallback } from '../session';
 
 const events: unknown[] = [];
+const sdkQuery = vi.hoisted(() => vi.fn(() => ({
+  async *[Symbol.asyncIterator]() {
+    for (const event of events) yield event;
+  },
+  interrupt: vi.fn(),
+  setMaxThinkingTokens: vi.fn(),
+})));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: () => ({
-    async *[Symbol.asyncIterator]() {
-      for (const event of events) yield event;
-    },
-    interrupt: vi.fn(),
-    setMaxThinkingTokens: vi.fn(),
-  }),
+  query: sdkQuery,
 }));
 
 function toolUseEvent(id: string, description: string): unknown {
@@ -58,12 +59,39 @@ function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
 }
 
 describe('OrcdSession async Agent lifecycle', () => {
+  beforeEach(() => {
+    events.length = 0;
+    sdkQuery.mockClear();
+  });
+
+  it('disables broken skills in Agent SDK options', async () => {
+    events.push({ type: 'result', subtype: 'success', stop_reason: 'end_turn' });
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-skills',
+    });
+
+    await session.run({ prompt: 'go' });
+
+    expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
+      options: expect.objectContaining({
+        settings: expect.objectContaining({
+          skillOverrides: expect.objectContaining({
+            'claude-api': 'off',
+          }),
+        }),
+      }),
+    }));
+  });
+
   it('delays session_exit until async task notification appears in JSONL', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
     const jsonlPath = join(dir, 'session.jsonl');
     await writeFile(jsonlPath, '');
 
-    events.length = 0;
     events.push(
       toolUseEvent('call_abc', 'Implement remaining tasks'),
       asyncLaunchResult('call_abc', 'agent-123'),
@@ -140,7 +168,6 @@ describe('OrcdSession async Agent lifecycle', () => {
     const jsonlPath = join(dir, 'session.jsonl');
     await writeFile(jsonlPath, '');
 
-    events.length = 0;
     events.push(
       toolUseEvent('call_failed', 'Run async work that fails'),
       asyncLaunchResult('call_failed', 'agent-failed-123'),
@@ -213,7 +240,6 @@ describe('OrcdSession async Agent lifecycle', () => {
     const jsonlPath = join(dir, 'session.jsonl');
     await writeFile(jsonlPath, '');
 
-    events.length = 0;
     events.push(
       toolUseEvent('call_cancel', 'Run follow-up async work'),
       asyncLaunchResult('call_cancel', 'agent-cancel-123'),

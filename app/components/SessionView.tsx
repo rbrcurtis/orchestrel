@@ -9,7 +9,6 @@ import { SubagentFeed } from './SubagentFeed';
 import { LazyTranscript } from './LazyTranscript';
 import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
-import { AUTO_COMPACT_RATIO } from '../../src/shared/constants';
 
 type Props = {
   cardId: number;
@@ -123,8 +122,7 @@ export const SessionView = observer(function SessionView({
   const historyLoaded = session?.historyLoaded ?? false;
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
-  const effectiveWindow = contextWindow * AUTO_COMPACT_RATIO;
-  const contextPercent = effectiveWindow > 0 ? Math.min(100, (contextTokens / effectiveWindow) * 100) : 0;
+  const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
   const retryAfterMs = session?.accumulator.retryAfterMs ?? null;
   const retryInfo = sessionStatus === 'retry' && retryAfterMs != null
     ? { retryAfterMs }
