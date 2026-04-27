@@ -13,9 +13,9 @@ providers:
   anthropic:
     label: Anthropic
     models:
-      opus:   { label: Opus,   modelID: opus,   contextWindow: 200000 }
-      sonnet: { label: Sonnet, modelID: sonnet, contextWindow: 200000 }
-      haiku:  { label: Haiku,  modelID: haiku,  contextWindow: 200000 }
+      opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,              contextWindow: 1000000 }
+      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6,            contextWindow: 1000000 }
+      haiku:  { label: "Haiku 4.5",  modelID: claude-haiku-4-5-20251001,    contextWindow: 200000 }
 
   # Example: a local proxy (like a Claude-compatible pool proxy).
   # proxy:
