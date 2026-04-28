@@ -94,7 +94,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
     sourceBranch: null,
     provider: 'anthropic',
     model: 'sonnet',
-    summarizeThreshold: 0.7,
+    summarizeThreshold: 0.6,
   });
 
   const [formOpen, setFormOpen] = useState(true);
@@ -625,7 +625,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           sourceBranch: null,
           provider: prov,
           model: proj.defaultModel ?? config.getDefaultModel(prov),
-          summarizeThreshold: 0.7,
+          summarizeThreshold: 0.6,
         };
       }
     }
@@ -638,7 +638,7 @@ export const NewCardDetail = observer(function NewCardDetail({
       sourceBranch: null,
       provider: 'anthropic',
       model: 'sonnet',
-      summarizeThreshold: 0.7,
+      summarizeThreshold: 0.6,
     };
   });
   const [creating, setCreating] = useState(false);

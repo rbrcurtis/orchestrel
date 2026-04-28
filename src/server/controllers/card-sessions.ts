@@ -72,10 +72,10 @@ export function initOrcdRouter(
         if (sys.subtype === 'compact_boundary') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
-            card.contextTokens = 0;
+            card.contextTokens = 1;
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
-            console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 0`);
+            console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 1`);
           }
         }
       }

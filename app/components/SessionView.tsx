@@ -40,8 +40,8 @@ export const SessionView = observer(function SessionView({
   const promptsSent = session?.promptsSent ?? 0;
   const turnsCompleted = session?.turnsCompleted ?? 0;
   const sessionStoreId = session?.sessionId ?? null;
-  const contextTokens = session?.contextTokens || card?.contextTokens || 0;
-  const contextWindow = session?.contextWindow || card?.contextWindow || 200_000;
+  const contextTokens = session?.contextTokens ?? card?.contextTokens ?? 0;
+  const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
   const subagents = session?.accumulator.subagents ?? new Map();
   const bgcInProgress = session?.bgcInProgress ?? false;
 

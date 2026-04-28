@@ -84,6 +84,7 @@ export class SessionStore {
         }
         if (sdkMsg.subtype === 'compact_boundary') {
           s.bgcInProgress = false;
+          s.contextTokens = 1;
         }
       }
 
@@ -124,7 +125,7 @@ export class SessionStore {
       s.sessionId = data.sessionId;
       s.promptsSent = data.promptsSent;
       s.turnsCompleted = data.turnsCompleted;
-      if (data.contextTokens > 0) s.contextTokens = data.contextTokens;
+      s.contextTokens = data.contextTokens;
       if (data.contextWindow > 0) s.contextWindow = data.contextWindow;
 
       if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {

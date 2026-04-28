@@ -33,7 +33,7 @@ function makeCard(contextTokens: number, contextWindow: number): Card {
     model: 'gpt-5.5',
     provider: 'chatgpt',
     thinkingLevel: 'high',
-    summarizeThreshold: 0.7,
+    summarizeThreshold: 0.6,
     promptsSent: 1,
     turnsCompleted: 1,
     contextTokens,
@@ -65,6 +65,35 @@ describe('SessionView context percent', () => {
     renderSessionView(139030, 200000);
 
     expect(Number(screen.getByTestId('context-percent').textContent)).toBeCloseTo(69.515);
+  });
+
+  it('uses session context tokens even when they are zero', () => {
+    const store = new RootStore();
+    store.cards.hydrate([makeCard(50000, 200000)], true);
+    store.sessions.handleAgentStatus({
+      cardId: 1011,
+      active: false,
+      status: 'completed',
+      sessionId: '8622c811-8f13-4b6e-9046-552a33ce879b',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
+    });
+
+    render(
+      <StoreProvider store={store}>
+        <SessionView
+          cardId={1011}
+          sessionId="8622c811-8f13-4b6e-9046-552a33ce879b"
+          model="gpt-5.5"
+          providerID="chatgpt"
+          summarizeThreshold={0.7}
+        />
+      </StoreProvider>,
+    );
+
+    expect(Number(screen.getByTestId('context-percent').textContent)).toBe(0);
   });
 
   it('clamps context percent at 100', () => {

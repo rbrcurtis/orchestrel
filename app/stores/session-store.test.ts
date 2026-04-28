@@ -90,6 +90,56 @@ describe('SessionStore subagent lifecycle', () => {
     expect(emit).toHaveBeenCalledWith('agent:compact', { cardId: 1011 });
   });
 
+  it('sets context tokens to sentinel 1 when background compaction is applied', () => {
+    const store = new SessionStore();
+
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: true,
+      status: 'running',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 50000,
+      contextWindow: 200000,
+    });
+    store.ingestSdkMessage(1011, {
+      type: 'system',
+      subtype: 'compact_boundary',
+      source: 'orchestrel-bgc',
+      timestamp: Date.now(),
+    } as SdkMessage);
+
+    expect(store.getSession(1011)?.contextTokens).toBe(1);
+  });
+
+  it('accepts zero context token updates from agent status', () => {
+    const store = new SessionStore();
+
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: true,
+      status: 'running',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 50000,
+      contextWindow: 200000,
+    });
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: false,
+      status: 'completed',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
+    });
+
+    expect(store.getSession(1011)?.contextTokens).toBe(0);
+  });
+
   it('clears subagents when agent status is terminal', () => {
     const store = new SessionStore();
     startBlockingSubagent(store, 1011);

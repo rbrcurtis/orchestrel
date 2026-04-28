@@ -132,7 +132,7 @@ describe('orcd message router', () => {
     expect(mockRepo.save).not.toHaveBeenCalled();
   });
 
-  it('resets context tokens when compaction is applied', async () => {
+  it('sets context tokens to sentinel 1 when compaction is applied', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
@@ -146,7 +146,7 @@ describe('orcd message router', () => {
     });
 
     await new Promise((r) => setTimeout(r, 10));
-    expect(mockCards[0].contextTokens).toBe(0);
+    expect(mockCards[0].contextTokens).toBe(1);
     expect(mockRepo.save).toHaveBeenCalled();
   });
 
