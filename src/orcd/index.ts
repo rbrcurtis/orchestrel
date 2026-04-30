@@ -10,10 +10,14 @@ async function main() {
   // Resolve ~ in socket path
   const socketPath = config.socket.replace(/^~/, homedir());
 
+  const extraSettings = (config.extraSettings ?? []).map(
+    (p) => p.replace(/^~/, homedir()),
+  );
+
   const server = new OrcdServer(socketPath, config.providers, {
     provider: config.defaultProvider,
     model: config.defaultModel,
-  }, config.memoryUpsert, config.claudeCodePath);
+  }, config.memoryUpsert, config.claudeCodePath, extraSettings);
 
   await server.start();
 

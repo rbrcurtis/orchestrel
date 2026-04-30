@@ -30,6 +30,7 @@ export class OrcdServer {
     private defaults: { provider: string; model: string },
     memoryConfig?: OrcdConfig['memoryUpsert'],
     private claudeCodePath?: string,
+    private extraSettings?: string[],
   ) {
     this.memoryConfig = memoryConfig;
   }
@@ -147,6 +148,7 @@ export class OrcdServer {
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
       claudeCodePath: this.claudeCodePath,
+      extraSettings: this.extraSettings,
     });
 
     this.store.add(session);

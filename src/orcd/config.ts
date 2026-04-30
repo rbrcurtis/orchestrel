@@ -17,6 +17,7 @@ export interface OrcdConfig {
   defaultModel: string;
   defaultCwd?: string;
   claudeCodePath?: string;
+  extraSettings?: string[];
   providers: Record<string, ProviderConfig>;
   memoryUpsert?: MemoryUpsertConfig;
 }
@@ -43,6 +44,7 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
     defaultModel: cfg.defaultModel,
     defaultCwd: cfg.defaultCwd,
     claudeCodePath: cfg.claudeCodePath,
+    extraSettings: cfg.extraSettings,
     providers,
     memoryUpsert: cfg.memoryUpsert,
   };

@@ -8,6 +8,11 @@ defaultModel: claude-sonnet-4-6
 defaultCwd: ~/Code             # where new cards default their working directory
 # claudeCodePath: /usr/local/bin/claude   # path to claude CLI binary (omit to use PATH default)
 
+# Extra Claude settings files loaded into every session (highest priority).
+# Permissions arrays merge; other fields use last-wins.
+# extraSettings:
+#   - ~/rula-projects/.claude/settings.local.json
+
 providers:
   # Claude via Anthropic API.
   # Omit baseUrl + apiKey to fall through to Claude Max OAuth (claude-agent-sdk default).
