@@ -321,6 +321,26 @@ Steps:
 Be thorough — address every comment, don't skip any.`;
 }
 
+function buildFailedChecksPrompt(
+  prUrl: string,
+  failedChecks: { name: string; conclusion: string; detailsUrl: string }[],
+): string {
+  const checkList = failedChecks.map((c) => `- **${c.name}** (${c.conclusion})${c.detailsUrl ? `: ${c.detailsUrl}` : ''}`).join('\n');
+  return `CI checks failed on this pull request: ${prUrl}
+
+Failed checks:
+${checkList}
+
+Steps:
+1. For each failed check, run \`gh run view <run-id> --log-failed\` to get failure logs (extract run ID from the details URL)
+2. Analyze the failure — is it a test failure, lint error, build error, or flaky test?
+3. Fix the root cause in code
+4. After making all fixes, commit with a message referencing the CI failures
+5. Push the changes
+
+If a check failed due to a flaky test (not related to this PR's changes), note it but focus on genuine failures.`;
+}
+
 // --- Check PR button ---
 
 function CheckPrButton({
@@ -345,10 +365,18 @@ function CheckPrButton({
       });
       if (!res.ok) return;
 
-      const data = (await res.json()) as { merged: boolean; hasComments: boolean };
+      const data = (await res.json()) as {
+        merged: boolean;
+        hasComments: boolean;
+        failedChecks: { name: string; conclusion: string; detailsUrl: string }[];
+      };
 
       if (data.merged) {
         await cardStore.updateCard({ id: cardId, column: 'done' });
+      } else if (data.failedChecks?.length > 0 && data.hasComments) {
+        onAddressComments(buildFailedChecksPrompt(prUrl, data.failedChecks) + '\n\n---\n\nAlso, ' + buildPrCommentsPrompt(prUrl));
+      } else if (data.failedChecks?.length > 0) {
+        onAddressComments(buildFailedChecksPrompt(prUrl, data.failedChecks));
       } else if (data.hasComments) {
         onAddressComments(buildPrCommentsPrompt(prUrl));
       }

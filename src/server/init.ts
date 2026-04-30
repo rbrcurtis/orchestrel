@@ -74,20 +74,24 @@ export async function initBackend(): Promise<{
     try {
       const { stdout } = await execFileAsync('gh', [
         'pr', 'view', prUrl,
-        '--json', 'state,comments,reviews',
+        '--json', 'state,comments,reviews,statusCheckRollup',
       ], { timeout: 15_000 });
 
       const pr = JSON.parse(stdout) as {
         state: string;
         comments: unknown[];
         reviews: { body: string; state: string }[];
+        statusCheckRollup: { name: string; status: string; conclusion: string; detailsUrl: string }[];
       };
 
       const merged = pr.state === 'MERGED';
       const reviewComments = pr.reviews?.filter((r) => r.body || r.state === 'CHANGES_REQUESTED') ?? [];
       const hasComments = (pr.comments?.length ?? 0) > 0 || reviewComments.length > 0;
+      const failedChecks = (pr.statusCheckRollup ?? []).filter(
+        (c) => c.conclusion === 'FAILURE' || c.conclusion === 'TIMED_OUT' || c.conclusion === 'CANCELLED',
+      );
 
-      res.json({ state: pr.state, merged, hasComments });
+      res.json({ state: pr.state, merged, hasComments, failedChecks });
     } catch (err) {
       console.error('[rest:pr-check]', err);
       res.status(502).json({ error: 'Failed to check PR status' });
