@@ -4,7 +4,7 @@
 
 socket: ~/.orc/orcd.sock       # orcd UNIX socket path
 defaultProvider: anthropic
-defaultModel: claude-sonnet-4-6
+defaultModel: sonnet
 defaultCwd: ~/Code             # where new cards default their working directory
 # claudeCodePath: /usr/local/bin/claude   # path to claude CLI binary (omit to use PATH default)
 
@@ -19,8 +19,9 @@ providers:
   anthropic:
     label: Anthropic
     models:
-      opus:   { label: "Opus 4.6",   modelID: claude-opus-4-6,   contextWindow: 200000 }
-      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 200000 }
+      opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,              contextWindow: 1000000 }
+      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6,            contextWindow: 1000000 }
+      haiku:  { label: "Haiku 4.5",  modelID: claude-haiku-4-5-20251001,    contextWindow: 200000 }
 
   # Example: a local proxy (like a Claude-compatible pool proxy).
   # proxy:
@@ -28,7 +29,9 @@ providers:
   #   baseUrl: http://127.0.0.1:3457
   #   apiKey: ${MY_PROXY_API_KEY}   # ${VAR} is resolved against process.env
   #   models:
+  #     opus:   { label: "Opus 4.6",   modelID: claude-opus-4-6,   contextWindow: 200000 }
   #     sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 200000 }
+  #     auto:   { label: Auto,         modelID: auto,              contextWindow: 200000 }
 
   # AWS Bedrock — uses AWS credential chain (env vars, ~/.aws/credentials, IAM role).
   # Set up: ensure aws-cli configured or env vars AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY set.
@@ -47,6 +50,7 @@ providers:
   #   baseUrl: http://127.0.0.1:3458
   #   authToken: ${DEEPSEEK_TOKEN}
   #   models:
+  #     reasoner: { label: "V3.2 Reasoner", modelID: deepseek-reasoner, contextWindow: 128000 }
   #     chat: { label: "V3.2 Chat", modelID: deepseek-chat, contextWindow: 128000 }
 
 # Optional: memory upsert service used by orcd at session end.

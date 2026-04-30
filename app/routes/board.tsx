@@ -84,6 +84,7 @@ const BoardLayout = observer(function BoardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const section = location.pathname === '/archive' ? 'archive' : 'board';
   const [projectFilter, _setProjectFilter] = useState<Set<number>>(
     () => new Set(readLocalStorage<number[]>(PROJECT_FILTER_KEY, [])),
   );
@@ -105,6 +106,10 @@ const BoardLayout = observer(function BoardLayout() {
   useEffect(() => {
     store.subscribe(['backlog', 'ready', 'running', 'review', 'done', 'archive']);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setSearch('');
+  }, [section]);
 
   // Multi-column state (persisted to localStorage)
   const [columnCount, setColumnCount] = useState(() => readLocalStorage(COLUMN_COUNT_KEY, 1));

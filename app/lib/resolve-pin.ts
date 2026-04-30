@@ -39,7 +39,8 @@ function rankCards(eligible: Card[]): Card[] {
  * Slot 0 "hotseat" virtual pin: when slot 0 is empty, it acts as a virtual
  * "all projects" pin. Real pinned slots (per-project and "all") get priority;
  * the hotseat gets whatever's left. An optional projectFilter restricts which
- * projects the hotseat considers (real pins are unaffected by the filter).
+ * projects both the hotseat and "all" pins consider (per-project pins are
+ * unaffected by the filter — pinning a specific project is itself a filter).
  *
  * Priority per project:
  *   1. Review cards — oldest updatedAt first
@@ -127,9 +128,12 @@ export function resolvePinnedCards(
   // --- "All" slots: collect cards not already claimed ---
   if (allSlotIndices.length > 0) {
     const claimedByProjectPins = new Set(result.values());
+    const hasFilter = !!projectFilter && projectFilter.size > 0;
+    const passesFilter = (projectId: number) => !hasFilter || projectFilter!.has(projectId);
     const eligible = cards.filter(
       (c) =>
         c.projectId != null &&
+        passesFilter(c.projectId) &&
         (c.column === 'review' || c.column === 'running') &&
         !usedCardIds.has(c.id) &&
         !claimedByProjectPins.has(c.id),
@@ -144,6 +148,7 @@ export function resolvePinnedCards(
         if (
           card &&
           card.projectId != null &&
+          passesFilter(card.projectId) &&
           (card.column === 'review' || card.column === 'running') &&
           !usedCardIds.has(card.id) &&
           !claimedByProjectPins.has(card.id)

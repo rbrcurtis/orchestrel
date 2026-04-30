@@ -8,6 +8,7 @@ import { cn } from '~/lib/utils';
 
 type Props = {
   activeCardId: number | null;
+  projectFilter: Set<number>;
   onNewChat: () => void;
 };
 
@@ -23,10 +24,13 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export const ChatSidebar = observer(function ChatSidebar({ activeCardId, onNewChat }: Props) {
+export const ChatSidebar = observer(function ChatSidebar({ activeCardId, projectFilter, onNewChat }: Props) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
-  const cards = cardStore.cardsByCreatedDesc;
+  const cards = cardStore.cardsByCreatedDesc.filter((card) => {
+    if (projectFilter.size === 0) return true;
+    return card.projectId != null && projectFilter.has(card.projectId);
+  });
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
@@ -75,7 +79,9 @@ export const ChatSidebar = observer(function ChatSidebar({ activeCardId, onNewCh
             );
           })}
           {cards.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No conversations yet</div>
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              {projectFilter.size > 0 ? 'No conversations match this filter' : 'No conversations yet'}
+            </div>
           )}
         </div>
       </ScrollArea>

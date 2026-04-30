@@ -23,7 +23,7 @@ export async function ensureWorktree(card: Card): Promise<string> {
 
   if (proj.setupCommands) {
     console.log(`[session:${card.id}] running setup commands...`);
-    runSetupCommands(wtPath, proj.setupCommands);
+    await runSetupCommands(wtPath, proj.setupCommands);
     console.log(`[session:${card.id}] setup commands done`);
   }
   copyOpencodeConfig(proj.path, wtPath);

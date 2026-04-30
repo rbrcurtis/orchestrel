@@ -2,14 +2,20 @@ import type { Options, Query } from '@anthropic-ai/claude-agent-sdk';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
+import { resolveJsonlPath } from '../lib/session-compactor';
+import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
 import type {
   ContextUsageMessage,
   SessionErrorMessage,
   SessionExitMessage,
+  SessionIdUpdateMessage,
   SessionResultMessage,
   StreamEventMessage,
 } from '../shared/orcd-protocol';
+import type { TaskNotificationEvent, TaskStartedEvent } from './async-task-tracker';
+import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
 
@@ -48,7 +54,13 @@ function loadAndMergeSettings(paths: string[]): SettingsObj | undefined {
 }
 
 export type SessionEventCallback = (
-  msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage,
+  msg:
+    | StreamEventMessage
+    | SessionResultMessage
+    | SessionErrorMessage
+    | SessionExitMessage
+    | ContextUsageMessage
+    | SessionIdUpdateMessage,
 ) => void;
 
 /**
@@ -67,6 +79,8 @@ function effortToOptions(effort: string | undefined): Pick<Options, 'effort' | '
   return { effort: level };
 }
 
+const SESSION_DISABLED_TOOLS = ['AskUserQuestion', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup'] as const;
+
 export class OrcdSession {
   readonly id: string;
   state: SessionState = 'running';
@@ -83,8 +97,118 @@ export class OrcdSession {
   lastContextTokens = 0;
   lastContextWindow = 0;
 
+  private readonly jsonlPathForTesting: string | undefined;
+  private readonly asyncTaskPollMs: number;
+  private readonly asyncTasks = new AsyncTaskTracker();
+  private readonly agentToolDescriptions = new Map<string, string>();
+  private readonly beforeExitHooks: Array<() => Promise<void>> = [];
+  private jsonlLinesRead = 0;
+
   private activeQuery: Query | null = null;
   private subscribers = new Set<SessionEventCallback>();
+  private onFork: ((oldId: string, newId: string) => void) | undefined;
+  private forkedTo: string | undefined;
+
+  onBeforeExit(cb: () => Promise<void>): void {
+    this.beforeExitHooks.push(cb);
+  }
+
+  private async runBeforeExitHooks(): Promise<void> {
+    for (const cb of this.beforeExitHooks) await cb();
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private rememberAgentToolDescriptions(event: unknown): void {
+    if (this.isRecord(event) && event.type === 'assistant') {
+      const message = event.message;
+      if (this.isRecord(message) && Array.isArray(message.content)) {
+        for (const block of message.content) {
+          if (!this.isRecord(block) || block.type !== 'tool_use') continue;
+
+          const toolUseId = block.id;
+          if (typeof toolUseId !== 'string') continue;
+
+          const name = block.name;
+          const input = block.input;
+          if (!this.isRecord(input)) continue;
+          const description = input.description;
+          if (name !== 'Agent' && name !== 'Task') continue;
+          if (typeof description !== 'string' || !description.trim()) continue;
+
+          this.agentToolDescriptions.set(toolUseId, description.trim());
+        }
+      }
+    }
+  }
+
+  private emitSyntheticTaskEvent(event: TaskStartedEvent | TaskNotificationEvent): void {
+    const msg: StreamEventMessage = {
+      type: 'stream_event',
+      sessionId: this.id,
+      eventIndex: this.buffer.push(event),
+      event,
+    };
+    for (const cb of this.subscribers) cb(msg);
+  }
+
+  private recordAsyncAgentLaunches(event: unknown): void {
+    for (const launch of extractAsyncAgentLaunches(event, this.agentToolDescriptions)) {
+      const started = this.asyncTasks.recordLaunch(launch);
+      if (started) this.emitSyntheticTaskEvent(started);
+    }
+  }
+
+  private async getJsonlPath(): Promise<string> {
+    return this.jsonlPathForTesting ?? resolveJsonlPath(this.id, this.cwd);
+  }
+
+  private async scanJsonlTaskNotifications(): Promise<void> {
+    const path = await this.getJsonlPath();
+    const text = await readFile(path, 'utf8').catch((err: unknown) => {
+      const isMissingJsonl =
+        err instanceof Error && this.isRecord(err) && typeof err.code === 'string' && err.code === 'ENOENT';
+      if (!isMissingJsonl) throw err;
+      return '';
+    });
+
+    const lines = text.split('\n');
+    const readableLines = lines.at(-1) === '' ? lines.length - 1 : lines.length;
+    for (let i = this.jsonlLinesRead; i < readableLines; i += 1) {
+      const line = lines[i];
+      if (!line?.trim()) continue;
+
+      let obj: unknown;
+      try {
+        obj = JSON.parse(line) as unknown;
+      } catch (err: unknown) {
+        console.error(`[orcd:${this.id.slice(0, 8)}] invalid JSONL line while scanning task notifications:`, err);
+        continue;
+      }
+
+      if (!this.isRecord(obj)) continue;
+      if (obj.type !== 'queue-operation' || typeof obj.content !== 'string') continue;
+      const notification = parseTaskNotification(obj.content);
+      if (!notification) continue;
+
+      const event = this.asyncTasks.recordNotification(notification);
+      if (event) this.emitSyntheticTaskEvent(event);
+    }
+    this.jsonlLinesRead = readableLines;
+  }
+
+  private async waitForAsyncTasks(): Promise<void> {
+    while (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
+      await this.scanJsonlTaskNotifications();
+      if (!this.asyncTasks.hasPending()) {
+        console.log(`[orcd:${this.id.slice(0, 8)}] all async tasks resolved from JSONL notifications`);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, this.asyncTaskPollMs));
+    }
+  }
 
   constructor(opts: {
     cwd: string;
@@ -96,6 +220,9 @@ export class OrcdSession {
     claudeCodePath?: string;
     extraSettings?: string[];
     summarizeThreshold?: number;
+    onFork?: (oldId: string, newId: string) => void;
+    jsonlPathForTesting?: string;
+    asyncTaskPollMsForTesting?: number;
   }) {
     this.id = opts.sessionId ?? randomUUID();
     this.cwd = opts.cwd;
@@ -106,6 +233,9 @@ export class OrcdSession {
     this.extraSettings = opts.extraSettings ?? [];
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
+    this.onFork = opts.onFork;
+    this.jsonlPathForTesting = opts.jsonlPathForTesting;
+    this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
   }
 
   subscribe(cb: SessionEventCallback): void {
@@ -159,12 +289,17 @@ export class OrcdSession {
         model: this.model,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
+        disallowedTools: [...SESSION_DISABLED_TOOLS],
         settingSources: ['user', 'project'],
         includePartialMessages: true,
         ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
         env: opts.env,
         ...thinkingOpts,
-        ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        settings: {
+          skillOverrides: disabledSkillOverrides(DEFAULT_DISABLED_SKILLS),
+          ...(autoCompactWindow ? { autoCompactWindow } : {}),
+          ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        },
       },
     });
 
@@ -180,33 +315,47 @@ export class OrcdSession {
       for await (const event of q) {
         if (this.state === 'stopped') break;
 
-        const sdkEvent = event as Record<string, unknown>;
+        const sdkEvent = event as unknown;
         const eventIndex = this.buffer.push(sdkEvent);
+        const sdkRecord = this.isRecord(sdkEvent) ? sdkEvent : null;
 
         log(JSON.stringify(sdkEvent));
+        this.rememberAgentToolDescriptions(sdkEvent);
+        this.recordAsyncAgentLaunches(sdkEvent);
 
-        // Track per-API-call input tokens from message_start events.
-        // SDK yields { type: 'stream_event', event: { type: 'message_start', message: { usage } } }
-        // Fallback: also check message_delta usage (KPP sends context-derived input_tokens there
-        // because CW's contextUsagePercentage arrives after content, too late for message_start).
-        if (sdkEvent.type === 'stream_event') {
-          const inner = sdkEvent.event as Record<string, unknown> | undefined;
-          if (inner?.type === 'message_start') {
-            const msg = inner.message as Record<string, unknown> | undefined;
-            const u = msg?.usage as Record<string, number> | undefined;
+        if (sdkRecord?.type === 'system' && sdkRecord.subtype === 'init') {
+          const ccSessionId = sdkRecord.session_id;
+          if (typeof ccSessionId === 'string' && ccSessionId !== this.id && ccSessionId !== this.forkedTo) {
+            this.forkedTo = ccSessionId;
+            this.onFork?.(this.id, ccSessionId);
+            const upd: SessionIdUpdateMessage = {
+              type: 'session_id_update',
+              sessionId: this.id,
+              newSessionId: ccSessionId,
+            };
+            for (const cb of this.subscribers) cb(upd);
+            log(`session forked: ${this.id.slice(0, 8)} → ${ccSessionId.slice(0, 8)}`);
+          }
+        }
+
+        if (sdkRecord?.type === 'stream_event') {
+          const inner = sdkRecord.event;
+          if (this.isRecord(inner) && inner.type === 'message_start') {
+            const msg = inner.message;
+            const u = this.isRecord(msg) ? (msg.usage as Record<string, number> | undefined) : undefined;
             if (u) {
               lastInputTokens =
                 (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
             }
-          } else if (inner?.type === 'message_delta' && lastInputTokens === 0) {
-            const u = inner.usage as Record<string, number> | undefined;
+          } else if (this.isRecord(inner) && inner.type === 'message_delta' && lastInputTokens === 0) {
+            const u = this.isRecord(inner.usage) ? (inner.usage as Record<string, number>) : undefined;
             if (u?.input_tokens && u.input_tokens > 0) {
               lastInputTokens = u.input_tokens;
             }
           }
         }
 
-        if (sdkEvent.type === 'result') {
+        if (sdkRecord?.type === 'result') {
           const msg: SessionResultMessage = {
             type: 'result',
             sessionId: this.id,
@@ -215,10 +364,10 @@ export class OrcdSession {
           };
           for (const cb of this.subscribers) cb(msg);
 
-          // Emit context usage from the last message_start's per-call tokens
           if (lastInputTokens > 0) {
-            // Get contextWindow from result's modelUsage if available
-            const mu = sdkEvent.modelUsage as Record<string, Record<string, number>> | undefined;
+            const mu = this.isRecord(sdkRecord.modelUsage)
+              ? (sdkRecord.modelUsage as Record<string, Record<string, number>>)
+              : undefined;
             let ctxWindow = this.contextWindow || 200_000;
             if (mu) {
               const first = Object.values(mu)[0];
@@ -245,6 +394,11 @@ export class OrcdSession {
         }
       }
 
+      if (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
+        log('waiting for async task notifications before session_exit');
+        await this.waitForAsyncTasks();
+      }
+
       if (this.state !== 'stopped') {
         this.state = 'completed';
       }
@@ -254,7 +408,7 @@ export class OrcdSession {
       const errStr = String(err);
       if (errStr.includes('abort') || errStr.includes('AbortError')) {
         this.state = 'stopped';
-        log(`stopped`);
+        log('stopped');
       } else {
         this.state = 'errored';
         log(`error: ${errStr}`);
@@ -266,6 +420,7 @@ export class OrcdSession {
         for (const cb of this.subscribers) cb(msg);
       }
     } finally {
+      await this.runBeforeExitHooks();
       this.activeQuery = null;
       const exitMsg: SessionExitMessage = {
         type: 'session_exit',
@@ -306,5 +461,38 @@ export class OrcdSession {
     if (this.activeQuery) {
       await this.activeQuery.interrupt();
     }
+  }
+
+  /**
+   * Broadcast a synthetic compact_boundary stream_event so downstream
+   * listeners (orchestrel card-sessions.ts compact_boundary handler) can
+   * reset contextTokens immediately, without waiting for the SDK to replay
+   * the JSONL on next resume. Used by orchestrel's background compactor
+   * after applyCompaction() rewrites the JSONL.
+   */
+  emitCompactBoundary(): void {
+    this.emitSyntheticSystemEvent('compact_boundary');
+  }
+
+  emitBgcStarted(): void {
+    this.emitSyntheticSystemEvent('bgc_started');
+  }
+
+  private emitSyntheticSystemEvent(subtype: 'compact_boundary' | 'bgc_started'): void {
+    const event = {
+      type: 'system',
+      subtype,
+      session_id: this.id,
+      source: 'orchestrel-bgc',
+      timestamp: Date.now(),
+    };
+    const eventIndex = this.buffer.push(event);
+    const msg: StreamEventMessage = {
+      type: 'stream_event',
+      sessionId: this.id,
+      eventIndex,
+      event,
+    };
+    for (const cb of this.subscribers) cb(msg);
   }
 }

@@ -2,10 +2,11 @@
  * Session compactor — compacts old messages in a Claude Code session JSONL file
  * by summarizing the oldest portion and rewriting the file atomically.
  */
-import { readFile, writeFile, rename, realpath } from 'fs/promises';
-import { join } from 'path';
-import { homedir } from 'os';
 import { randomUUID } from 'crypto';
+import { readFile, realpath, rename, writeFile } from 'fs/promises';
+import { homedir } from 'os';
+import { join } from 'path';
+import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 
 const CHARS_PER_TOKEN = 3.5;
 
@@ -40,7 +41,6 @@ export interface IndexedMessage {
   isToolResult: boolean;
   isToolUse: boolean;
 }
-
 
 // ─── JSONL path resolution ──────────────────────────────────────────────────
 
@@ -97,9 +97,9 @@ export function parseLines(lines: string[]): { lastBoundaryLine: number; message
     if (!text.trim()) continue;
 
     // Detect tool_result / tool_use content blocks for boundary snapping
-    const blocks = Array.isArray(content) ? content as Array<Record<string, unknown>> : [];
-    const isToolResult = blocks.some(b => b.type === 'tool_result');
-    const isToolUse = blocks.some(b => b.type === 'tool_use');
+    const blocks = Array.isArray(content) ? (content as Array<Record<string, unknown>>) : [];
+    const isToolResult = blocks.some((b) => b.type === 'tool_result');
+    const isToolUse = blocks.some((b) => b.type === 'tool_use');
 
     messages.push({ lineIndex: i, role: role as 'user' | 'assistant', text, isToolResult, isToolUse });
   }
@@ -166,28 +166,72 @@ export function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
 
 // ─── Agent SDK query (shared by compactor + memory-upsert) ─────────────────
 
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
+
+const DEFAULT_DISABLED_TOOLS = ['AskUserQuestion'] as const;
+
 /**
- * Run a single-turn Agent SDK query and return the assistant's text response.
- * No tools, no project/user files — just prompt in, text out.
+ * Options for `queryAgentSdk`. All tool-related fields default to fully
+ * locked down — callers must explicitly opt in to any tool surface.
+ *
+ * Locked-down defaults exist because maxTurns:1 + tool access is a known
+ * failure mode: a hallucinated tool call aborts the response and returns
+ * whatever pre-tool text existed (see card 902 session 5ea9184c — produced
+ * 90-char garbage summary). Callers who legitimately need tools MUST also
+ * raise `maxTurns` accordingly.
+ */
+export interface QueryAgentSdkOpts {
+  env?: Record<string, string>;
+  /** Built-in tool allowlist. Default: `[]` (no built-ins). */
+  tools?: Options['tools'];
+  /** MCP servers available to the model. Default: `{}` (none). */
+  mcpServers?: Options['mcpServers'];
+  /**
+   * Settings source inheritance. Default: `[]` — ignore user / project
+   * settings so behaviour is reproducible and tool surfaces don't leak in
+   * via `~/.claude/settings.json`.
+   */
+  settingSources?: Options['settingSources'];
+  /** Default: 1. Raise only when the caller needs multi-turn tool use. */
+  maxTurns?: number;
+  /** Tools that should be removed from the model's context entirely. */
+  disallowedTools?: Options['disallowedTools'];
+  /** Skills that should be removed from the model's context entirely. */
+  disallowedSkills?: string[];
+  /** Default: disabled. */
+  thinking?: Options['thinking'];
+  claudeCodePath?: string;
+}
+
+/**
+ * Run an Agent SDK query and return the assistant's text response.
+ * Locked-down by default (no tools, no MCP, no settings, no thinking,
+ * maxTurns 1). Callers may override any of these via opts.
  */
 export async function queryAgentSdk(
   prompt: string,
   model: string,
-  env?: Record<string, string>,
-  claudeCodePath?: string,
+  opts: QueryAgentSdkOpts = {},
 ): Promise<{ text: string; durationMs: number }> {
   const { query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk');
   const t0 = Date.now();
+  const disabledSkills = [...DEFAULT_DISABLED_SKILLS, ...(opts.disallowedSkills ?? [])];
 
   const q = sdkQuery({
     prompt,
     options: {
       model,
-      maxTurns: 1,
+      maxTurns: opts.maxTurns ?? 1,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      ...(claudeCodePath ? { pathToClaudeCodeExecutable: claudeCodePath } : {}),
-      ...(env ? { env } : {}),
+      ...(opts?.claudeCodePath ? { pathToClaudeCodeExecutable: opts?.claudeCodePath } : {}),
+      tools: opts.tools ?? [],
+      disallowedTools: [...DEFAULT_DISABLED_TOOLS, ...(opts.disallowedTools ?? [])],
+      settings: { skillOverrides: disabledSkillOverrides(disabledSkills) },
+      mcpServers: opts.mcpServers ?? {},
+      settingSources: opts.settingSources ?? [],
+      thinking: opts.thinking ?? { type: 'disabled' },
+      ...(opts.env ? { env: opts.env } : {}),
     },
   });
 
@@ -210,34 +254,6 @@ export async function queryAgentSdk(
   return { text: result, durationMs: Date.now() - t0 };
 }
 
-// ─── Summarize via Agent SDK ────────────────────────────────────────────────
-
-const SUMMARIZE_PROMPT = `You are a conversation summarizer. Do not use any tools. Do not read any files. Respond with ONLY the summary text.
-
-Given the following conversation between a user and an AI assistant, produce a concise summary that preserves:
-
-1. Key decisions made and their rationale
-2. Important technical details, file paths, and code patterns discovered
-3. Current state of the work — what's done, what's pending
-4. Any constraints, preferences, or requirements the user stated
-5. Context needed for the conversation to continue productively
-
-Format the summary as a structured document with clear sections. Be thorough but concise — aim for roughly 2000-4000 words. The summary will replace the original messages in the context window, so anything not captured here is lost.
-
-Here is the conversation to summarize:
-
-`;
-
-async function summarize(
-  excerpt: string,
-  model: string,
-  env?: Record<string, string>,
-  claudeCodePath?: string,
-): Promise<{ summary: string; durationMs: number }> {
-  const { text: summary, durationMs } = await queryAgentSdk(SUMMARIZE_PROMPT + excerpt, model, env, claudeCodePath);
-  return { summary, durationMs };
-}
-
 // ─── Version detection ─────────────────────────────────────────────────────
 
 function findVersion(lines: string[]): string {
@@ -247,7 +263,9 @@ function findVersion(lines: string[]): string {
     try {
       const obj = JSON.parse(trimmed) as Record<string, unknown>;
       if (typeof obj.version === 'string') return obj.version;
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
   return '2.1.108'; // fallback
 }
@@ -271,71 +289,30 @@ export interface PreparedCompaction {
  * Phase 1: Prepare — reads JSONL, summarizes oldest half via Agent SDK.
  * Returns the summary + metadata. Does NOT write to disk.
  * Safe to run while the session is active (read-only).
+ *
+ * Thin wrapper over `summarizeSession` (src/lib/summarize-session.ts) that
+ * adapts the result shape for applyCompaction.
  */
 export async function prepareCompaction(opts: CompactOpts): Promise<PreparedCompaction> {
-  const {
-    sessionId,
-    projectPath,
-    model,
-    ratio = 0.5,
-    maxExcerptChars = 120_000,
-    dryRun = false,
-  } = opts;
-
-  const jsonlPath = await resolveJsonlPath(sessionId, projectPath);
-  const raw = await readFile(jsonlPath, 'utf-8');
-  const lines = raw.split('\n');
-
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-    lines.pop();
-  }
-
-  const { messages } = parseLines(lines);
-  let cutoff = Math.floor(messages.length * ratio);
-
-  if (cutoff < 2) {
-    throw new Error(`Too few messages to compact: ${messages.length} messages after boundary, cutoff=${cutoff}`);
-  }
-
-  // Snap cutoff backward to avoid orphaned tool_result / tool_use pairs
-  while (cutoff > 2) {
-    const firstKept = messages[cutoff];
-    const lastSummarized = messages[cutoff - 1];
-    if (firstKept.isToolResult || lastSummarized.isToolUse) {
-      cutoff--;
-    } else {
-      break;
-    }
-  }
-
-  const oldestHalf = messages.slice(0, cutoff);
-  const excerpt = buildExcerpt(oldestHalf, maxExcerptChars);
-  const lastOldLineIdx = oldestHalf[oldestHalf.length - 1].lineIndex;
-
-  if (dryRun) {
-    return {
-      sessionId,
-      jsonlPath,
-      summary: '',
-      lastOldLineIdx,
-      messagesBefore: messages.length,
-      messagesCovered: cutoff,
-      summaryChars: excerpt.length,
-      prepareDurationMs: 0,
-    };
-  }
-
-  const { summary, durationMs } = await summarize(excerpt, model, opts.env, opts.claudeCodePath);
+  const { summarizeSession } = await import('./summarize-session');
+  const jsonlPath = await resolveJsonlPath(opts.sessionId, opts.projectPath);
+  const r = await summarizeSession(opts.sessionId, opts.model, {
+    env: opts.env,
+    ratio: opts.ratio,
+    maxExcerptChars: opts.maxExcerptChars,
+    dryRun: opts.dryRun,
+    jsonlPath,
+  });
 
   return {
-    sessionId,
-    jsonlPath,
-    summary,
-    lastOldLineIdx,
-    messagesBefore: messages.length,
-    messagesCovered: cutoff,
-    summaryChars: summary.length,
-    prepareDurationMs: durationMs,
+    sessionId: r.sessionId,
+    jsonlPath: r.jsonlPath,
+    summary: r.summary,
+    lastOldLineIdx: r.lastOldLineIdx,
+    messagesBefore: r.messagesBefore,
+    messagesCovered: r.messagesCovered,
+    summaryChars: opts.dryRun ? r.excerptChars : r.summaryChars,
+    prepareDurationMs: r.durationMs,
   };
 }
 

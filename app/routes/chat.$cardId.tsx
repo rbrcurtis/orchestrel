@@ -23,7 +23,7 @@ const ChatCardView = observer(function ChatCardView() {
   if (!card) return null;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-border">
         <InlineEdit
           value={card.title}

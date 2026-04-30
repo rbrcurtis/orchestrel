@@ -6,6 +6,21 @@ import { ProjectStore } from './project-store';
 import { SessionStore } from './session-store';
 import type { Column, User } from '../../src/shared/ws-protocol';
 
+const PROJECT_FILTER_KEY = 'dispatcher-project-filter';
+
+/** Read the persisted project filter. Empty set = no filter (show everything). */
+function readProjectFilter(): Set<number> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(PROJECT_FILTER_KEY);
+    if (!raw) return new Set();
+    const ids = JSON.parse(raw) as number[];
+    return new Set(ids);
+  } catch {
+    return new Set();
+  }
+}
+
 export class RootStore {
   currentUser: User | null = null;
   readonly cards: CardStore;
@@ -36,11 +51,15 @@ export class RootStore {
           !document.hasFocus() &&
           Notification.permission === 'granted'
         ) {
-          const n = new Notification(data.title, { body: 'moved to review' });
-          n.onclick = () => {
-            window.focus();
-            window.dispatchEvent(new CustomEvent('orchestrel:focus-card', { detail: { cardId: data.id } }));
-          };
+          const filter = readProjectFilter();
+          const filtered = filter.size > 0 && (data.projectId == null || !filter.has(data.projectId));
+          if (!filtered) {
+            const n = new Notification(data.title, { body: 'moved to review' });
+            n.onclick = () => {
+              window.focus();
+              window.dispatchEvent(new CustomEvent('orchestrel:focus-card', { detail: { cardId: data.id } }));
+            };
+          }
         }
         this.cards.handleUpdated(data);
       },

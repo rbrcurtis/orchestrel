@@ -40,6 +40,7 @@ export async function handleAgentSend(
         model: card.model,
         sessionId: card.sessionId ?? undefined,
         contextWindow: card.contextWindow,
+        summarizeThreshold: card.summarizeThreshold,
       });
 
       card.sessionId = sessionId;
@@ -62,16 +63,33 @@ export async function handleAgentCompact(
 ): Promise<void> {
   const { cardId } = data;
   console.log(`[session:${cardId}] agent:compact received`);
+
   try {
-    callback({});
     const initState = await import('../../init-state');
     const client = initState.getOrcdClient();
+    if (!client) throw new Error('OrcdClient not initialized');
+
     const card = await Card.findOneBy({ id: cardId });
-    if (client && card?.sessionId && client.isActive(card.sessionId)) {
-      client.message(card.sessionId, 'Please compact your context window. Summarize the conversation so far and continue.');
+    if (!card?.sessionId) {
+      callback({ error: 'No session to compact' });
+      return;
     }
+
+    const cwd = await ensureWorktree(card);
+    trackSession(cardId, card.sessionId);
+
+    callback({});
+    client.compact({
+      sessionId: card.sessionId,
+      cwd,
+      provider: card.provider,
+      model: card.model,
+      contextWindow: card.contextWindow,
+      summarizeThreshold: card.summarizeThreshold,
+    });
   } catch (err) {
     console.error(`[session:${cardId}] agent:compact error:`, err);
+    callback({ error: String(err instanceof Error ? err.message : err) });
   }
 }
 

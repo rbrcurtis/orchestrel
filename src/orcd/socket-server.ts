@@ -1,13 +1,13 @@
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { createServer, type Server, type Socket } from 'net';
-import { mkdirSync, existsSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
+import { upsertMemories } from '../lib/memory-upsert';
+import { applyCompaction, prepareCompaction, type PreparedCompaction } from '../lib/session-compactor';
+import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import type { OrcdConfig, ProviderConfig } from './config';
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
 import { expandSlashCommand } from './skill-resolver';
-import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
-import type { ProviderConfig, OrcdConfig } from './config';
-import { prepareCompaction, applyCompaction, type PreparedCompaction } from '../lib/session-compactor';
-import { upsertMemories } from '../lib/memory-upsert';
 
 interface ClientState {
   socket: Socket;
@@ -18,10 +18,10 @@ export class OrcdServer {
   private server: Server | null = null;
   private clients = new Set<ClientState>();
   readonly store = new SessionStore();
-  private compacting = new Set<string>();  // session IDs currently compacting
+  private compacting = new Set<string>(); // session IDs currently compacting
   private pendingSummaries = new Map<string, PreparedCompaction>();
-  private turnActive = new Set<string>();  // sessions with a turn in progress
-  private upsertedSessions = new Set<string>();  // sessions that have had memory upsert run
+  private turnActive = new Set<string>(); // sessions with a turn in progress
+  private upsertedSessions = new Set<string>(); // sessions that have had memory upsert run
   private memoryConfig?: OrcdConfig['memoryUpsert'];
 
   constructor(
@@ -129,6 +129,9 @@ export class OrcdServer {
       case 'memory_upsert':
         this.handleMemoryUpsert(action);
         break;
+      case 'compact':
+        this.handleCompact(client, action);
+        break;
     }
   }
 
@@ -149,6 +152,7 @@ export class OrcdServer {
       summarizeThreshold: action.summarizeThreshold,
       claudeCodePath: this.claudeCodePath,
       extraSettings: this.extraSettings,
+      onFork: (oldId, newId) => this.store.alias(oldId, newId),
     });
 
     this.store.add(session);
@@ -163,18 +167,20 @@ export class OrcdServer {
 
     const effort = action.effort ?? 'high';
 
-    const env = { ...this.buildProviderEnv(action.provider), ...action.env };
+    const env = Object.assign(this.buildProviderEnv(action.provider), action.env) as Record<string, string>;
 
     const prompt = expandSlashCommand(action.prompt, action.cwd);
 
-    session.run({
-      prompt,
-      resume: !!action.sessionId,
-      env,
-      effort,
-    }).finally(() => {
-      console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
-    });
+    session
+      .run({
+        prompt,
+        resume: !!action.sessionId,
+        env,
+        effort,
+      })
+      .finally(() => {
+        console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
+      });
   }
 
   private handleMessage(client: ClientState, action: OrcdAction & { action: 'message' }): void {
@@ -222,7 +228,9 @@ export class OrcdServer {
     }
 
     if (client.subscriptions.has(session.id)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`);
+      console.log(
+        `[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`,
+      );
       // Already subscribed — just replay from requested index
       session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
       return;
@@ -261,6 +269,52 @@ export class OrcdServer {
     });
   }
 
+  private handleCompact(client: ClientState, action: OrcdAction & { action: 'compact' }): void {
+    let session = this.store.get(action.sessionId);
+    const hydrated = !session;
+
+    if (!session) {
+      session = new OrcdSession({
+        cwd: action.cwd,
+        model: action.model,
+        provider: action.provider,
+        sessionId: action.sessionId,
+        contextWindow: action.contextWindow,
+        summarizeThreshold: action.summarizeThreshold,
+      });
+      session.state = 'completed';
+      this.store.add(session);
+      this.attachLifecycleHooks(session);
+      console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: rehydrated inactive session`);
+    }
+
+    if (!client.subscriptions.has(session.id)) {
+      const cb: SessionEventCallback = (msg) => this.send(client, msg);
+      client.subscriptions.set(session.id, cb);
+      session.subscribe(cb);
+    }
+
+    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id)) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: already compacting or pending, ignoring`);
+      return;
+    }
+
+    this.compacting.add(session.id);
+    session.emitBgcStarted();
+    this.triggerCompaction(session)
+      .catch((err) => {
+        console.error(`[orcd:${session.id.slice(0, 8)}:compact] manual start failed:`, err);
+      })
+      .finally(() => {
+        this.compacting.delete(session.id);
+        if (hydrated) {
+          this.pendingSummaries.delete(session.id);
+          this.turnActive.delete(session.id);
+          this.store.remove(session.id);
+        }
+      });
+  }
+
   // ── Provider env helper ──────────────────────────────────────────────────
 
   private buildProviderEnv(provider: string): Record<string, string> {
@@ -271,7 +325,8 @@ export class OrcdServer {
     }
 
     const base: Record<string, string> = {
-      ...process.env as Record<string, string>,
+      ...(process.env as Record<string, string>),
+      ...cfg.modelAliasEnv,
       CC_BACKGROUND_COMPACTOR_DISABLE: '1',
     };
 
@@ -303,7 +358,7 @@ export class OrcdServer {
     const env = this.buildProviderEnv(session.provider);
     const log = (msg: string) => console.log(`[orcd:${session.id.slice(0, 8)}:mem] ${msg}`);
 
-    log(`extracting memories (server: ${this.memoryConfig.baseUrl})`);
+    log(`running agent (server: ${this.memoryConfig.baseUrl})`);
 
     const result = await upsertMemories({
       sessionId: session.id,
@@ -317,7 +372,8 @@ export class OrcdServer {
     });
 
     this.upsertedSessions.add(session.id);
-    log(`done: ${result.factsStored} stored, ${result.factsUpdated} updated / ${result.factsExtracted} extracted, ${result.durationMs}ms`);
+    const { search, store, update, delete: del } = result.toolCalls;
+    log(`done: search=${search} store=${store} update=${update} delete=${del} (${result.durationMs}ms)`);
   }
 
   // ── Compaction ──────────────────────────────────────────────────────────
@@ -327,17 +383,14 @@ export class OrcdServer {
     const log = (msg: string) => console.log(`[orcd:${sid.slice(0, 8)}:compact] ${msg}`);
     const env = this.buildProviderEnv(session.provider);
 
-    // Step 1: Memory upsert before compaction (capture all messages)
-    try {
-      await this.runMemoryUpsert(session);
-    } catch (err) {
-      console.error(`[orcd:${sid.slice(0, 8)}:mem] failed (continuing to compaction):`, err);
-    }
+    // Memory upsert is NOT run here — it only runs on card finish
+    // (session_exit = move to review, or explicit archive action). Running
+    // it every compaction cycle produced redundant work against unchanged
+    // context and wasted tokens. See memory 'Auto-memory upsert architecture'.
 
-    // Step 2: Prepare summary (read-only, safe while session runs)
-    const pct = session.lastContextWindow > 0
-      ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0)
-      : '?';
+    // Prepare summary (read-only, safe while session runs)
+    const pct =
+      session.lastContextWindow > 0 ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0) : '?';
     log(`preparing summary (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
 
     const prepared = await prepareCompaction({
@@ -348,14 +401,34 @@ export class OrcdServer {
       claudeCodePath: this.claudeCodePath,
     });
 
-    if (this.turnActive.has(sid)) {
-      this.pendingSummaries.set(sid, prepared);
-      log(`summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — turn active, waiting`);
-    } else {
-      log(`summary ready — session idle, applying now`);
-      const result = await applyCompaction(prepared);
-      log(`applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`);
+    this.pendingSummaries.set(sid, prepared);
+    if (!this.turnActive.has(sid)) {
+      log(
+        `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — session inactive, applying now`,
+      );
+      await this.applyPendingCompaction(session);
+      return;
     }
+    log(
+      `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for session_exit`,
+    );
+  }
+
+  private async applyPendingCompaction(session: OrcdSession): Promise<void> {
+    const sid = session.id;
+    const prepared = this.pendingSummaries.get(sid);
+    if (!prepared) {
+      console.log(`[orcd:${sid.slice(0, 8)}:compact] no pending summary at session_exit`);
+      return;
+    }
+
+    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at session_exit`);
+    const result = await applyCompaction(prepared);
+    this.pendingSummaries.delete(sid);
+    console.log(
+      `[orcd:${sid.slice(0, 8)}:compact] applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`,
+    );
+    session.emitCompactBoundary();
   }
 
   // ── Session lifecycle hooks (called from handleCreate) ──────────────────
@@ -363,25 +436,20 @@ export class OrcdServer {
   private attachLifecycleHooks(session: OrcdSession): void {
     const sid = session.id;
 
+    session.onBeforeExit(async () => {
+      await this.applyPendingCompaction(session);
+    });
+
     const hook: SessionEventCallback = (msg) => {
       if (msg.type === 'stream_event') {
-        this.turnActive.add(sid);
+        const event = msg.event as Record<string, unknown>;
+        if (event.type === 'message_start') {
+          this.turnActive.add(sid);
+        }
       }
 
       if (msg.type === 'result') {
         this.turnActive.delete(sid);
-
-        // Apply pending compaction at turn end (instant, session idle)
-        const prepared = this.pendingSummaries.get(sid);
-        if (prepared) {
-          this.pendingSummaries.delete(sid);
-          console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at turn end`);
-          applyCompaction(prepared).then((r) => {
-            console.log(`[orcd:${sid.slice(0, 8)}:compact] applied: ${r.messagesCovered}/${r.messagesBefore} msgs, ${r.summaryChars} chars`);
-          }).catch((err) => {
-            console.error(`[orcd:${sid.slice(0, 8)}:compact] apply failed:`, err);
-          });
-        }
       }
 
       if (msg.type === 'context_usage') {
@@ -396,16 +464,18 @@ export class OrcdServer {
           this.compacting.add(sid);
           const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
           console.log(`[orcd:${sid.slice(0, 8)}:compact] threshold hit (${pct}%), starting`);
-          this.triggerCompaction(session).catch((err) => {
-            console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err);
-          }).finally(() => {
-            this.compacting.delete(sid);
-          });
+          session.emitBgcStarted();
+          this.triggerCompaction(session)
+            .catch((err) => {
+              console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err);
+            })
+            .finally(() => {
+              this.compacting.delete(sid);
+            });
         }
       }
 
       if (msg.type === 'session_exit') {
-        // Cleanup
         this.compacting.delete(sid);
         this.pendingSummaries.delete(sid);
         this.turnActive.delete(sid);

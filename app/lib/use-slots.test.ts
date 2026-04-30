@@ -28,7 +28,7 @@ function makeCard(overrides: Partial<Card> & { id: number }): Card {
     model: 'sonnet',
     provider: 'anthropic',
     thinkingLevel: 'high',
-    summarizeThreshold: 0.7,
+    summarizeThreshold: 0.6,
     promptsSent: 0,
     turnsCompleted: 0,
     contextTokens: 0,

@@ -74,6 +74,9 @@ export class OrcdClient {
 
       sock.on('close', () => {
         this.connected = false;
+        // activeSessions is stale after disconnect — orcd may have restarted.
+        // Reconcile will re-seed from orcd.list() on reconnect.
+        this.activeSessions.clear();
         console.log('[orcd-client] disconnected, reconnecting in 2s...');
         this.reconnectTimer = setTimeout(() => {
           this.connect().catch((err) => {
@@ -203,6 +206,20 @@ export class OrcdClient {
   }
 
   /**
+   * Start Orchestrel background compaction for a session.
+   */
+  compact(opts: {
+    sessionId: string;
+    cwd: string;
+    provider: string;
+    model: string;
+    contextWindow?: number;
+    summarizeThreshold?: number;
+  }): void {
+    this.send({ action: 'compact', ...opts });
+  }
+
+  /**
    * List all active sessions. Returns the session list from orcd.
    */
   list(): Promise<import('../shared/orcd-protocol').SessionListMessage> {
@@ -258,6 +275,11 @@ export class OrcdClient {
     // Track session lifecycle — only on actual exit, not on result
     if (msg.type === 'session_exit') {
       this.activeSessions.delete(msg.sessionId);
+    }
+
+    // On CC session fork, also track the new id so isActive()/subscribe() work
+    if (msg.type === 'session_id_update' && this.activeSessions.has(msg.sessionId)) {
+      this.activeSessions.add(msg.newSessionId);
     }
 
     // Forward to all registered handlers

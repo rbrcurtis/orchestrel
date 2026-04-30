@@ -17,7 +17,7 @@ function makeCard(overrides: Partial<Card> & { id: number }): Card {
     model: 'sonnet',
     provider: 'anthropic',
     thinkingLevel: 'high',
-    summarizeThreshold: 0.7,
+    summarizeThreshold: 0.6,
     promptsSent: 0,
     turnsCompleted: 0,
     contextTokens: 0,
@@ -434,6 +434,62 @@ describe('resolvePinnedCards', () => {
     ];
     const result = resolvePinnedCards(slots, cards);
     expect(result.has(1)).toBe(false);
+  });
+
+  it('"all" pin respects projectFilter', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    // Filter to project 20 only — the "all" slot should skip project 10 card
+    const result = resolvePinnedCards(slots, cards, new Map(), new Set([20]));
+    expect(result.get(1)).toBe(2);
+  });
+
+  it('"all" pin shows all projects when projectFilter is empty', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards, new Map(), new Set());
+    expect(result.get(1)).toBe(1); // empty filter = all projects, oldest first
+  });
+
+  it('"all" pin releases sticky card when its project leaves the filter', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 1]]); // slot 1 was showing card 1 (project 10)
+    // Filter to project 20 — card 1 is no longer eligible, card 2 should take over
+    const result = resolvePinnedCards(slots, cards, prev, new Set([20]));
+    expect(result.get(1)).toBe(2);
+  });
+
+  it('"all" pin keeps sticky card when its project remains in the filter', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 2]]); // slot 1 was showing card 2 (project 20)
+    const result = resolvePinnedCards(slots, cards, prev, new Set([20]));
+    expect(result.get(1)).toBe(2); // sticky — stays because still in filter
   });
 
   // ─── Hotseat virtual pin (slot 0) ──────────────────────────────────────────

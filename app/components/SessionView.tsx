@@ -1,16 +1,24 @@
-import { useState, useRef, useEffect } from 'react';
+import {
+  AlertCircle,
+  GitPullRequestArrow,
+  LoaderCircle,
+  Paperclip,
+  Play,
+  Send,
+  Square,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, Play, AlertCircle, ChevronDown, Paperclip, X, WifiOff, GitPullRequestArrow, LoaderCircle } from 'lucide-react';
-import { MessageBlock } from './MessageBlock';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
-import { Badge } from '~/components/ui/badge';
-import { ContextGauge } from './ContextGauge';
-import { SubagentFeed } from './SubagentFeed';
-import { ScrollArea } from '~/components/ui/scroll-area';
-import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
+import { useCardStore, useConfigStore, useSessionStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
-import { AUTO_COMPACT_RATIO } from '../../src/shared/constants';
+import { ContextGauge } from './ContextGauge';
+import { LazyTranscript } from './LazyTranscript';
+import { SubagentFeed } from './SubagentFeed';
 
 type Props = {
   cardId: number;
@@ -42,27 +50,22 @@ export const SessionView = observer(function SessionView({
   const promptsSent = session?.promptsSent ?? 0;
   const turnsCompleted = session?.turnsCompleted ?? 0;
   const sessionStoreId = session?.sessionId ?? null;
-  const contextTokens = session?.contextTokens || card?.contextTokens || 0;
-  const contextWindow = session?.contextWindow || card?.contextWindow || 200_000;
+  const contextTokens = session?.contextTokens ?? card?.contextTokens ?? 0;
+  const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
   const subagents = session?.accumulator.subagents ?? new Map();
+  const bgcInProgress = session?.bgcInProgress ?? false;
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
 
   const [notification, setNotification] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const prevConvLen = useRef(0);
-  const nearBottomRef = useRef(true); // tracks if user is near bottom (for auto-scroll gating)
-  const isStreamingRef = useRef(false); // mirrors isStreaming for ResizeObserver access
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
   const isStreaming = sessionActive || isStarting;
-  isStreamingRef.current = isStreaming;
 
   // Load history / set up bus subscriptions on mount and when sessionId becomes available.
   // Called without sessionId on first render to register card-level bus subscriptions
@@ -110,62 +113,6 @@ export const SessionView = observer(function SessionView({
     }
   }, [sessionStatus, conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ResizeObserver-based auto-scroll: fires after DOM layout changes.
-  // Computes near-bottom inline (scroll events are async and may be stale).
-  useEffect(() => {
-    const content = contentRef.current;
-    const scroll = scrollRef.current;
-    if (!content || !scroll) return;
-
-    let prevHeight = content.scrollHeight;
-    let initialScroll = true;
-    let rafId = 0;
-
-    const ro = new ResizeObserver(() => {
-      const newHeight = content.scrollHeight;
-      if (newHeight <= prevHeight) {
-        prevHeight = newHeight;
-        return;
-      }
-
-      prevHeight = newHeight;
-
-      if (rafId) cancelAnimationFrame(rafId);
-
-      // Only auto-scroll when the session is actively streaming
-      // (new messages or streaming text/tool output), not when the user
-      // toggles a collapsible tool block which resizes content in-place.
-      if (initialScroll || (isStreamingRef.current && nearBottomRef.current)) {
-        initialScroll = false;
-        rafId = requestAnimationFrame(() => {
-          bottomRef.current?.scrollIntoView({ behavior: 'instant' });
-          rafId = 0;
-        });
-      }
-    });
-
-    ro.observe(content);
-    return () => {
-      ro.disconnect();
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [cardId]);
-
-  // Track scroll position for near-bottom gating + scroll-to-bottom button
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    function onScroll() {
-      if (!el) return;
-      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-      nearBottomRef.current = gap < 120;
-      setShowScrollBtn(gap >= 60);
-    }
-    onScroll();
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [cardId]);
-
   // Compaction detection
   useEffect(() => {
     const len = conversation.length;
@@ -181,34 +128,14 @@ export const SessionView = observer(function SessionView({
     prevConvLen.current = len;
   }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Card switch: reset near-bottom so next content triggers instant scroll,
-  // and scroll to bottom immediately if conversation is already loaded
-  useEffect(() => {
-    nearBottomRef.current = true;
-    requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
-    });
-  }, [cardId]);
-
   // After reconnect history reload: scroll to bottom once history re-ingests.
   // historyLoaded transitions false→true when resubscribeAll clears + reloads.
   const historyLoaded = session?.historyLoaded ?? false;
-  useEffect(() => {
-    if (historyLoaded && conversation.length > 0) {
-      nearBottomRef.current = true;
-      requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' });
-      });
-    }
-  }, [historyLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
-  const effectiveWindow = contextWindow * AUTO_COMPACT_RATIO;
-  const contextPercent = effectiveWindow > 0 ? Math.min(100, (contextTokens / effectiveWindow) * 100) : 0;
+  const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
   const retryAfterMs = session?.accumulator.retryAfterMs ?? null;
-  const retryInfo = sessionStatus === 'retry' && retryAfterMs != null
-    ? { retryAfterMs }
-    : null;
+  const retryInfo = sessionStatus === 'retry' && retryAfterMs != null ? { retryAfterMs } : null;
 
   async function handleSend(message: string, files?: FileRef[]) {
     try {
@@ -244,54 +171,31 @@ export const SessionView = observer(function SessionView({
     textareaRef.current?.focus();
   }
 
+  const handleShowScrollButtonChange = useCallback((show: boolean) => {
+    setShowScrollBtn(show);
+  }, []);
+
   return (
     <div
-      className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border"
+      className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full overflow-hidden border-t border-border"
       onMouseDown={handlePanelMouseDown}
       onClick={handlePanelClick}
     >
-      {/* Messages — scrollable middle area */}
-      <div className="relative flex-1 min-h-0 min-w-0">
-        <ScrollArea viewportRef={scrollRef} className="h-full">
-          <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0 max-w-full overflow-x-hidden">
-            {conversation.map((row, i) => (
-              <MessageBlock key={i} entry={row} index={i} accentColor={accentColor} />
-            ))}
-            {currentBlocks.length > 0 && (
-              <MessageBlock
-                entry={{ kind: 'blocks', blocks: currentBlocks }}
-                index={conversation.length}
-                accentColor={accentColor}
-              />
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </ScrollArea>
-        {!session?.historyLoaded && conversation.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <svg className="size-6 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </div>
-        )}
-        {showScrollBtn && (
-          <button
-            type="button"
-            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
-            className="absolute bottom-3 right-3 size-8 flex items-center justify-center rounded-full bg-muted/80 border border-border text-muted-foreground shadow-md backdrop-blur-sm hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <ChevronDown className="size-4" />
-          </button>
-        )}
-      </div>
+      <LazyTranscript
+        cardId={cardId}
+        conversation={conversation}
+        currentBlocks={currentBlocks}
+        accentColor={accentColor}
+        historyLoaded={historyLoaded}
+        isStreaming={isStreaming}
+        showScrollButton={showScrollBtn}
+        onShowScrollButtonChange={handleShowScrollButtonChange}
+      />
 
       {/* Status bar — above prompt input */}
       {(isStreaming || conversation.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0 min-w-0 overflow-hidden">
-          <StatusBadge
-            status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
-          />
+          <StatusBadge status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus} />
           {retryInfo && (
             <span className="text-[11px] text-neon-amber truncate min-w-0">
               Rate limited — retrying in {Math.ceil(retryInfo.retryAfterMs / 1000)}s
@@ -355,11 +259,7 @@ export const SessionView = observer(function SessionView({
           ) : sessionId ? (
             <div className="ml-auto flex items-center gap-1">
               {card?.column === 'review' && card?.prUrl && (
-                <CheckPrButton
-                  prUrl={card.prUrl}
-                  cardId={cardId}
-                  onAddressComments={(prompt) => handleSend(prompt)}
-                />
+                <CheckPrButton prUrl={card.prUrl} cardId={cardId} onAddressComments={(prompt) => handleSend(prompt)} />
               )}
               <Button
                 variant="ghost"
@@ -389,7 +289,13 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting}
         onSend={handleSend}
         onStop={handleStop}
-        onCompact={!!sessionId || sessionActive ? () => sessionStore.compactSession(cardId) : undefined}
+        onCompact={
+          !!sessionId || sessionActive
+            ? bgcInProgress
+              ? undefined
+              : () => sessionStore.compactSession(cardId)
+            : undefined
+        }
         sendPending={false}
         contextPercent={contextPercent}
         compacted={compacted}
@@ -417,7 +323,11 @@ Be thorough — address every comment, don't skip any.`;
 
 // --- Check PR button ---
 
-function CheckPrButton({ prUrl, cardId, onAddressComments }: {
+function CheckPrButton({
+  prUrl,
+  cardId,
+  onAddressComments,
+}: {
   prUrl: string;
   cardId: number;
   onAddressComments: (prompt: string) => void;
@@ -435,7 +345,7 @@ function CheckPrButton({ prUrl, cardId, onAddressComments }: {
       });
       if (!res.ok) return;
 
-      const data = await res.json() as { merged: boolean; hasComments: boolean };
+      const data = (await res.json()) as { merged: boolean; hasComments: boolean };
 
       if (data.merged) {
         await cardStore.updateCard({ id: cardId, column: 'done' });
@@ -455,9 +365,7 @@ function CheckPrButton({ prUrl, cardId, onAddressComments }: {
       onClick={handleCheck}
       disabled={checking}
     >
-      {checking
-        ? <LoaderCircle className="size-3 animate-spin" />
-        : <GitPullRequestArrow className="size-3" />}
+      {checking ? <LoaderCircle className="size-3 animate-spin" /> : <GitPullRequestArrow className="size-3" />}
       Check on PR
     </Button>
   );
@@ -744,7 +652,8 @@ function PromptInput({
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
             maxLength={10000}
             rows={3}
-            className="resize-none min-h-full pr-10 focus-ring"
+            // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
+            className="resize-none min-h-full max-h-40 overflow-y-auto pr-10 focus-ring"
           />
           {/* Reconnect button - top right inside textarea, only when disconnected */}
           {!wsConnected && (

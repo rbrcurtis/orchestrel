@@ -92,7 +92,7 @@ export function ContextGauge({ percent, compacted, onCompact }: Props) {
               fontWeight="bold"
               style={{ transform: 'rotate(90deg)', transformOrigin: '18px 18px' }}
             >
-              {Math.round(clamped)}
+              {Math.floor(clamped)}
             </text>
           )}
         </svg>

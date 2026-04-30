@@ -47,6 +47,31 @@ describe('CardService', () => {
     expect(page.nextCursor).toBeDefined()
   })
 
+  it('archiveOthers only archives active cards in the same project', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const projectA = await projectService.createProject({ name: 'Archive project A', path: '/tmp/archive-project-a' })
+    const projectB = await projectService.createProject({ name: 'Archive project B', path: '/tmp/archive-project-b' })
+    const sameProject = await cardService.createCard({ title: 'Same project', description: 'd', column: 'ready', projectId: projectA.id })
+    const otherProject = await cardService.createCard({ title: 'Other project', description: 'd', column: 'ready', projectId: projectB.id })
+    const noProject = await cardService.createCard({ title: 'No project', description: 'd', column: 'ready' })
+    const alreadyDone = await cardService.createCard({ title: 'Already done', description: 'd', column: 'done', projectId: projectA.id })
+
+    const created = await cardService.createCard({
+      title: 'New same project',
+      description: 'd',
+      column: 'backlog',
+      projectId: projectA.id,
+      archiveOthers: true,
+    })
+
+    expect((await Card.findOneByOrFail({ id: created.id })).column).toBe('backlog')
+    expect((await Card.findOneByOrFail({ id: sameProject.id })).column).toBe('archive')
+    expect((await Card.findOneByOrFail({ id: otherProject.id })).column).toBe('ready')
+    expect((await Card.findOneByOrFail({ id: noProject.id })).column).toBe('ready')
+    expect((await Card.findOneByOrFail({ id: alreadyDone.id })).column).toBe('done')
+  })
+
   it('deleteCard removes the card', async () => {
     const { cardService } = await import('./card')
     const c = await cardService.createCard({ title: 'Delete', description: 'd', column: 'backlog' })

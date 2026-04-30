@@ -1,4 +1,4 @@
-import { ILike } from 'typeorm';
+import { ILike, IsNull } from 'typeorm';
 import { Card } from '../models/Card';
 import type { Column } from '../../shared/ws-protocol';
 import { Project } from '../models/Project';
@@ -62,6 +62,7 @@ class CardService {
       }
     }
     data.provider = data.provider ?? providerID;
+    data.summarizeThreshold = data.summarizeThreshold ?? 0.6;
 
     // Set contextWindow from provider config
     const modelCfg = getModelConfig(providerID, data.model ?? 'sonnet');
@@ -78,7 +79,7 @@ class CardService {
     await card.save();
 
     if (data.archiveOthers) {
-      await this.archiveAllNonArchived(card.id);
+      await this.archiveOtherActiveCardsForProject(card.id, card.projectId);
     }
 
     return card;
@@ -155,19 +156,18 @@ class CardService {
     return card;
   }
 
-  async archiveAllNonArchived(excludeId?: number): Promise<void> {
+  async archiveOtherActiveCardsForProject(excludeId?: number, projectId?: number | null): Promise<void> {
+    const activeColumns: Column[] = ['backlog', 'ready', 'running', 'review'];
+    const projectFilter = projectId ?? IsNull();
     const toArchive = await Card.find({
-      where: [
-        { column: 'backlog' as Column },
-        { column: 'ready' as Column },
-        { column: 'running' as Column },
-        { column: 'review' as Column },
-      ],
+      where: activeColumns.map((column) => ({ column, projectId: projectFilter })),
     });
 
     const filtered = excludeId ? toArchive.filter((c) => c.id !== excludeId) : toArchive;
     if (filtered.length === 0) {
-      console.log(`[card:archiveAll] nothing to archive (excludeId=${excludeId ?? 'none'})`);
+      console.log(
+        `[card:archiveProject] nothing to archive (projectId=${projectId ?? 'none'}, excludeId=${excludeId ?? 'none'})`,
+      );
       return;
     }
 
