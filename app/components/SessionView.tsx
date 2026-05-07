@@ -1,14 +1,24 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  AlertCircle,
+  GitPullRequestArrow,
+  LoaderCircle,
+  Paperclip,
+  Play,
+  Send,
+  Square,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, Play, AlertCircle, Paperclip, X, WifiOff } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
-import { Badge } from '~/components/ui/badge';
-import { ContextGauge } from './ContextGauge';
-import { SubagentFeed } from './SubagentFeed';
-import { LazyTranscript } from './LazyTranscript';
-import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
+import { useCardStore, useConfigStore, useSessionStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
+import { ContextGauge } from './ContextGauge';
+import { LazyTranscript } from './LazyTranscript';
+import { SubagentFeed } from './SubagentFeed';
 
 type Props = {
   cardId: number;
@@ -134,9 +144,7 @@ export const SessionView = observer(function SessionView({
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
   const retryAfterMs = session?.accumulator.retryAfterMs ?? null;
-  const retryInfo = sessionStatus === 'retry' && retryAfterMs != null
-    ? { retryAfterMs }
-    : null;
+  const retryInfo = sessionStatus === 'retry' && retryAfterMs != null ? { retryAfterMs } : null;
 
   async function handleSend(message: string, files?: FileRef[]) {
     try {
@@ -198,9 +206,7 @@ export const SessionView = observer(function SessionView({
       {/* Status bar — above prompt input */}
       {(isStreaming || conversation.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0 min-w-0 overflow-hidden">
-          <StatusBadge
-            status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
-          />
+          <StatusBadge status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus} />
           {retryInfo && (
             <span className="text-[11px] text-neon-amber truncate min-w-0">
               Rate limited — retrying in {Math.ceil(retryInfo.retryAfterMs / 1000)}s
@@ -262,15 +268,20 @@ export const SessionView = observer(function SessionView({
               {isStopping ? 'Stopping...' : 'Stop'}
             </Button>
           ) : sessionId ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 px-2 text-xs text-muted-foreground"
-              onClick={() => handleSend('Continue')}
-            >
-              <Play className="size-3 fill-current" />
-              Continue
-            </Button>
+            <div className="ml-auto flex items-center gap-1">
+              {card?.column === 'review' && card?.prUrl && (
+                <CheckPrButton prUrl={card.prUrl} cardId={cardId} onAddressComments={(prompt) => handleSend(prompt)} />
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground"
+                onClick={() => handleSend('Continue')}
+              >
+                <Play className="size-3 fill-current" />
+                Continue
+              </Button>
+            </div>
           ) : null}
         </div>
       )}
@@ -289,7 +300,13 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting}
         onSend={handleSend}
         onStop={handleStop}
-        onCompact={!!sessionId || sessionActive ? (bgcInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
+        onCompact={
+          !!sessionId || sessionActive
+            ? bgcInProgress
+              ? undefined
+              : () => sessionStore.compactSession(cardId)
+            : undefined
+        }
         onPromptSent={onPromptSent}
         sendPending={false}
         contextPercent={contextPercent}
@@ -299,6 +316,104 @@ export const SessionView = observer(function SessionView({
     </div>
   );
 });
+
+function buildPrCommentsPrompt(prUrl: string): string {
+  return `Review and address all comments on this pull request: ${prUrl}
+
+Steps:
+1. Run \`gh pr view ${prUrl} --json comments,reviews\` to get all PR comments and review comments
+2. Also run \`gh api repos/{owner}/{repo}/pulls/{number}/comments\` for inline code comments
+3. For each comment:
+   - Evaluate whether the feedback is actionable
+   - If it requires a code change, make the fix
+   - If it's a question, add a reply via \`gh pr comment\`
+4. After making all changes, commit with a message referencing the PR review
+5. Push the changes
+
+Be thorough — address every comment, don't skip any.`;
+}
+
+function buildFailedChecksPrompt(
+  prUrl: string,
+  failedChecks: { name: string; conclusion: string; detailsUrl: string }[],
+): string {
+  const checkList = failedChecks
+    .map((c) => `- **${c.name}** (${c.conclusion})${c.detailsUrl ? `: ${c.detailsUrl}` : ''}`)
+    .join('\n');
+  return `CI checks failed on this pull request: ${prUrl}
+
+Failed checks:
+${checkList}
+
+Steps:
+1. For each failed check, run \`gh run view <run-id> --log-failed\` to get failure logs (extract run ID from the details URL)
+2. Analyze the failure — is it a test failure, lint error, build error, or flaky test?
+3. Fix the root cause in code
+4. After making all fixes, commit with a message referencing the CI failures
+5. Push the changes
+
+If a check failed due to a flaky test (not related to this PR's changes), note it but focus on genuine failures.`;
+}
+
+// --- Check PR button ---
+
+function CheckPrButton({
+  prUrl,
+  cardId,
+  onAddressComments,
+}: {
+  prUrl: string;
+  cardId: number;
+  onAddressComments: (prompt: string) => void;
+}) {
+  const [checking, setChecking] = useState(false);
+  const cardStore = useCardStore();
+
+  async function handleCheck() {
+    setChecking(true);
+    try {
+      const res = await fetch('/api/pr-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prUrl }),
+      });
+      if (!res.ok) return;
+
+      const data = (await res.json()) as {
+        merged: boolean;
+        hasComments: boolean;
+        failedChecks: { name: string; conclusion: string; detailsUrl: string }[];
+      };
+
+      if (data.merged) {
+        await cardStore.updateCard({ id: cardId, column: 'done' });
+      } else if (data.failedChecks?.length > 0 && data.hasComments) {
+        onAddressComments(
+          buildFailedChecksPrompt(prUrl, data.failedChecks) + '\n\n---\n\nAlso, ' + buildPrCommentsPrompt(prUrl),
+        );
+      } else if (data.failedChecks?.length > 0) {
+        onAddressComments(buildFailedChecksPrompt(prUrl, data.failedChecks));
+      } else if (data.hasComments) {
+        onAddressComments(buildPrCommentsPrompt(prUrl));
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-6 px-2 text-xs text-muted-foreground"
+      onClick={handleCheck}
+      disabled={checking}
+    >
+      {checking ? <LoaderCircle className="size-3 animate-spin" /> : <GitPullRequestArrow className="size-3" />}
+      Check on PR
+    </Button>
+  );
+}
 
 // --- Status badge ---
 

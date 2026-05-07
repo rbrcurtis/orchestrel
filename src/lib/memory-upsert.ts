@@ -17,7 +17,7 @@
  */
 import { readFile } from 'fs/promises';
 import { z } from 'zod';
-import { resolveJsonlPath, parseLines, buildExcerpt, queryAgentSdk } from './session-compactor';
+import { buildExcerpt, parseLines, queryAgentSdk, resolveJsonlPath } from './session-compactor';
 
 const LOG = '[memory-upsert]';
 
@@ -42,6 +42,7 @@ export interface MemoryUpsertOpts {
   projectName: string;
   model: string;
   env?: Record<string, string>;
+  claudeCodePath?: string;
   memoryBaseUrl: string;
   memoryApiKey: string;
   maxExcerptChars?: number;
@@ -78,7 +79,7 @@ async function httpSearch(
     const body = await res.text().catch(() => '<unreadable>');
     throw new Error(`memory search ${res.status}: ${body}`);
   }
-  const json = await res.json() as { data: SearchHit[] };
+  const json = (await res.json()) as { data: SearchHit[] };
   return json.data;
 }
 
@@ -102,7 +103,7 @@ async function httpStore(
     const body = await res.text().catch(() => '<unreadable>');
     throw new Error(`memory store ${res.status}: ${body}`);
   }
-  const json = await res.json() as { id: string };
+  const json = (await res.json()) as { id: string };
   return { id: json.id };
 }
 
@@ -129,11 +130,7 @@ async function httpUpdate(
   }
 }
 
-async function httpDelete(
-  baseUrl: string,
-  apiKey: string,
-  id: string,
-): Promise<void> {
+async function httpDelete(baseUrl: string, apiKey: string, id: string): Promise<void> {
   const res = await fetch(`${baseUrl}/api/v1/memories/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${apiKey}` },
@@ -175,13 +172,15 @@ async function buildMemoryTools(
     async (args) => {
       counters.search++;
       const hits = await httpSearch(baseUrl, apiKey, args.query, project, args.limit ?? 10);
-      return asText(hits.map(h => ({
-        id: h.id,
-        title: h.title,
-        score: Number(h.score.toFixed(3)),
-        tags: h.tags,
-        preview: (h.text ?? '').slice(0, 400),
-      })));
+      return asText(
+        hits.map((h) => ({
+          id: h.id,
+          title: h.title,
+          score: Number(h.score.toFixed(3)),
+          tags: h.tags,
+          preview: (h.text ?? '').slice(0, 400),
+        })),
+      );
     },
   );
 
@@ -190,7 +189,10 @@ async function buildMemoryTools(
     'Create a NEW memory. Only call this after search_memory confirms no existing memory covers this topic. Title should be a short descriptive label (max ~10 words) optimised for semantic search. Text is the full content.',
     {
       title: z.string().min(1).max(200).describe('Short descriptive title, <= 10 words.'),
-      text: z.string().min(1).describe('Full memory content. Be thorough — include context, file paths, commands, rationale.'),
+      text: z
+        .string()
+        .min(1)
+        .describe('Full memory content. Be thorough — include context, file paths, commands, rationale.'),
       tags: z.array(z.string()).optional().describe('Optional tags for categorization.'),
     },
     async (args) => {
@@ -206,7 +208,10 @@ async function buildMemoryTools(
     {
       id: z.string().describe('Memory id returned by search_memory.'),
       title: z.string().min(1).max(200).describe('New title (may be same as old).'),
-      text: z.string().min(1).describe('New full text. Replaces the old text entirely — include everything that should remain.'),
+      text: z
+        .string()
+        .min(1)
+        .describe('New full text. Replaces the old text entirely — include everything that should remain.'),
       tags: z.array(z.string()).optional().describe('New tags (replaces old tag list).'),
     },
     async (args) => {
@@ -315,7 +320,9 @@ export async function upsertMemories(opts: MemoryUpsertOpts): Promise<MemoryUpse
   }
 
   const excerpt = buildExcerpt(messages, maxExcerptChars);
-  console.error(`${LOG} running agent over ${messages.length} messages (${excerpt.length} chars, project=${projectName})`);
+  console.error(
+    `${LOG} running agent over ${messages.length} messages (${excerpt.length} chars, project=${projectName})`,
+  );
 
   const counters: ToolCallCounters = { search: 0, store: 0, update: 0, delete: 0 };
   const { mcpServer } = await buildMemoryTools(memoryBaseUrl, memoryApiKey, projectName, counters);
@@ -327,6 +334,7 @@ export async function upsertMemories(opts: MemoryUpsertOpts): Promise<MemoryUpse
   // text turn. Thinking stays off — this is a mechanical review task.
   const { text: agentReport, durationMs: agentMs } = await queryAgentSdk(prompt, model, {
     env: opts.env,
+    claudeCodePath: opts.claudeCodePath,
     tools: [],
     mcpServers: { memory: mcpServer },
     settingSources: [],
@@ -337,7 +345,7 @@ export async function upsertMemories(opts: MemoryUpsertOpts): Promise<MemoryUpse
   const durationMs = Date.now() - t0;
   console.error(
     `${LOG} done — search=${counters.search} store=${counters.store} ` +
-    `update=${counters.update} delete=${counters.delete} (agent ${agentMs}ms, total ${durationMs}ms)`,
+      `update=${counters.update} delete=${counters.delete} (agent ${agentMs}ms, total ${durationMs}ms)`,
   );
   // Log the agent's closing summary at debug level — useful for auditing
   if (agentReport) {

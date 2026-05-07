@@ -33,6 +33,8 @@ export interface OrchestrelConfig {
   defaultProvider: string;
   defaultModel: string;
   defaultCwd?: string;
+  claudeCodePath?: string;
+  extraSettings?: string[];
   providers: Record<string, ProviderDef>;
   memoryUpsert?: MemoryUpsertConfig;
 }
@@ -105,11 +107,17 @@ export function parseConfig(
       }
     : undefined;
 
+  const extraSettings = Array.isArray(raw.extraSettings)
+    ? (raw.extraSettings as unknown[]).map((s) => resolveEnvVars(String(s), env))
+    : undefined;
+
   return {
     socket: String(raw.socket ?? '~/.orc/orcd.sock'),
     defaultProvider: String(raw.defaultProvider ?? 'anthropic'),
     defaultModel: String(raw.defaultModel ?? 'claude-sonnet-4-6'),
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
+    claudeCodePath: raw.claudeCodePath != null ? resolveEnvVars(String(raw.claudeCodePath), env) : undefined,
+    extraSettings,
     providers,
     memoryUpsert,
   };

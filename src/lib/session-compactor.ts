@@ -2,10 +2,10 @@
  * Session compactor — compacts old messages in a Claude Code session JSONL file
  * by summarizing the oldest portion and rewriting the file atomically.
  */
-import { readFile, writeFile, rename, realpath } from 'fs/promises';
-import { join } from 'path';
-import { homedir } from 'os';
 import { randomUUID } from 'crypto';
+import { readFile, realpath, rename, writeFile } from 'fs/promises';
+import { homedir } from 'os';
+import { join } from 'path';
 import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 
 const CHARS_PER_TOKEN = 3.5;
@@ -27,6 +27,7 @@ export interface CompactOpts {
   projectPath: string;
   model: string;
   env?: Record<string, string>;
+  claudeCodePath?: string;
   ratio?: number;
   maxExcerptChars?: number;
   dryRun?: boolean;
@@ -40,7 +41,6 @@ export interface IndexedMessage {
   isToolResult: boolean;
   isToolUse: boolean;
 }
-
 
 // ─── JSONL path resolution ──────────────────────────────────────────────────
 
@@ -97,9 +97,9 @@ export function parseLines(lines: string[]): { lastBoundaryLine: number; message
     if (!text.trim()) continue;
 
     // Detect tool_result / tool_use content blocks for boundary snapping
-    const blocks = Array.isArray(content) ? content as Array<Record<string, unknown>> : [];
-    const isToolResult = blocks.some(b => b.type === 'tool_result');
-    const isToolUse = blocks.some(b => b.type === 'tool_use');
+    const blocks = Array.isArray(content) ? (content as Array<Record<string, unknown>>) : [];
+    const isToolResult = blocks.some((b) => b.type === 'tool_result');
+    const isToolUse = blocks.some((b) => b.type === 'tool_use');
 
     messages.push({ lineIndex: i, role: role as 'user' | 'assistant', text, isToolResult, isToolUse });
   }
@@ -200,6 +200,7 @@ export interface QueryAgentSdkOpts {
   disallowedSkills?: string[];
   /** Default: disabled. */
   thinking?: Options['thinking'];
+  claudeCodePath?: string;
 }
 
 /**
@@ -223,7 +224,7 @@ export async function queryAgentSdk(
       maxTurns: opts.maxTurns ?? 1,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
+      ...(opts?.claudeCodePath ? { pathToClaudeCodeExecutable: opts?.claudeCodePath } : {}),
       tools: opts.tools ?? [],
       disallowedTools: [...DEFAULT_DISABLED_TOOLS, ...(opts.disallowedTools ?? [])],
       settings: { skillOverrides: disabledSkillOverrides(disabledSkills) },
@@ -262,7 +263,9 @@ function findVersion(lines: string[]): string {
     try {
       const obj = JSON.parse(trimmed) as Record<string, unknown>;
       if (typeof obj.version === 'string') return obj.version;
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
   return '2.1.108'; // fallback
 }

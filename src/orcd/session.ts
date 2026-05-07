@@ -1,13 +1,11 @@
-import { randomUUID } from 'crypto';
-import { readFile } from 'fs/promises';
+import type { Options, Query } from '@anthropic-ai/claude-agent-sdk';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
+import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { resolveJsonlPath } from '../lib/session-compactor';
 import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
-import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
-import { RingBuffer } from './ring-buffer';
-import type { SessionState } from './types';
 import type {
   ContextUsageMessage,
   SessionErrorMessage,
@@ -17,9 +15,52 @@ import type {
   StreamEventMessage,
 } from '../shared/orcd-protocol';
 import type { TaskNotificationEvent, TaskStartedEvent } from './async-task-tracker';
+import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
+import { RingBuffer } from './ring-buffer';
+import type { SessionState } from './types';
+
+type SettingsObj = Record<string, unknown>;
+
+function loadAndMergeSettings(paths: string[]): SettingsObj | undefined {
+  if (paths.length === 0) {
+    console.log(`[orcd:effort] settings → no paths`);
+    return undefined;
+  }
+  const merged: SettingsObj = {};
+  for (const p of paths) {
+    try {
+      const raw = JSON.parse(readFileSync(p, 'utf-8')) as SettingsObj;
+      for (const [k, v] of Object.entries(raw)) {
+        if (k === 'permissions' && typeof v === 'object' && v !== null) {
+          const existing = (merged.permissions ?? {}) as Record<string, unknown>;
+          const incoming = v as Record<string, unknown>;
+          for (const [pk, pv] of Object.entries(incoming)) {
+            if (Array.isArray(pv) && Array.isArray(existing[pk])) {
+              existing[pk] = [...(existing[pk] as unknown[]), ...pv];
+            } else {
+              existing[pk] = pv;
+            }
+          }
+          merged.permissions = existing;
+        } else {
+          merged[k] = v;
+        }
+      }
+    } catch (err) {
+      console.warn(`[orcd] failed to load extra settings ${p}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
 
 export type SessionEventCallback = (
-  msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
+  msg:
+    | StreamEventMessage
+    | SessionResultMessage
+    | SessionErrorMessage
+    | SessionExitMessage
+    | ContextUsageMessage
+    | SessionIdUpdateMessage,
 ) => void;
 
 /**
@@ -38,13 +79,7 @@ function effortToOptions(effort: string | undefined): Pick<Options, 'effort' | '
   return { effort: level };
 }
 
-const SESSION_DISABLED_TOOLS = [
-  'AskUserQuestion',
-  'CronCreate',
-  'CronDelete',
-  'CronList',
-  'ScheduleWakeup',
-] as const;
+const SESSION_DISABLED_TOOLS = ['AskUserQuestion', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup'] as const;
 
 export class OrcdSession {
   readonly id: string;
@@ -53,6 +88,8 @@ export class OrcdSession {
   readonly model: string;
   readonly provider: string;
   readonly contextWindow: number | undefined;
+  readonly claudeCodePath: string | undefined;
+  readonly extraSettings: string[];
   readonly summarizeThreshold: number;
   readonly buffer: RingBuffer<unknown>;
 
@@ -131,10 +168,8 @@ export class OrcdSession {
   private async scanJsonlTaskNotifications(): Promise<void> {
     const path = await this.getJsonlPath();
     const text = await readFile(path, 'utf8').catch((err: unknown) => {
-      const isMissingJsonl = err instanceof Error
-        && this.isRecord(err)
-        && typeof err.code === 'string'
-        && err.code === 'ENOENT';
+      const isMissingJsonl =
+        err instanceof Error && this.isRecord(err) && typeof err.code === 'string' && err.code === 'ENOENT';
       if (!isMissingJsonl) throw err;
       return '';
     });
@@ -182,6 +217,8 @@ export class OrcdSession {
     bufferSize?: number;
     sessionId?: string; // For resume — use existing CC session UUID
     contextWindow?: number;
+    claudeCodePath?: string;
+    extraSettings?: string[];
     summarizeThreshold?: number;
     onFork?: (oldId: string, newId: string) => void;
     jsonlPathForTesting?: string;
@@ -192,6 +229,8 @@ export class OrcdSession {
     this.model = opts.model;
     this.provider = opts.provider;
     this.contextWindow = opts.contextWindow;
+    this.claudeCodePath = opts.claudeCodePath;
+    this.extraSettings = opts.extraSettings ?? [];
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
@@ -226,12 +265,7 @@ export class OrcdSession {
    * Start or resume a session.
    * Consumes the Agent SDK async iterator and broadcasts events.
    */
-  async run(opts: {
-    prompt: string;
-    resume?: boolean;
-    env?: Record<string, string>;
-    effort?: string;
-  }): Promise<void> {
+  async run(opts: { prompt: string; resume?: boolean; env?: Record<string, string>; effort?: string }): Promise<void> {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
 
     const thinkingOpts = effortToOptions(opts.effort);
@@ -240,6 +274,12 @@ export class OrcdSession {
     const autoCompactWindow = this.contextWindow
       ? Math.max(Math.floor(this.contextWindow * AUTO_COMPACT_RATIO), 100_000)
       : undefined;
+
+    const extraMerged = loadAndMergeSettings(this.extraSettings);
+    const settings: SettingsObj = {
+      ...(extraMerged ?? {}),
+      ...(autoCompactWindow ? { autoCompactWindow } : {}),
+    };
 
     const q = sdkQuery({
       prompt: opts.prompt,
@@ -252,12 +292,13 @@ export class OrcdSession {
         disallowedTools: [...SESSION_DISABLED_TOOLS],
         settingSources: ['user', 'project'],
         includePartialMessages: true,
-        pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
+        ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
         env: opts.env,
         ...thinkingOpts,
         settings: {
           skillOverrides: disabledSkillOverrides(DEFAULT_DISABLED_SKILLS),
           ...(autoCompactWindow ? { autoCompactWindow } : {}),
+          ...(Object.keys(settings).length > 0 ? { settings } : {}),
         },
       },
     });
@@ -304,9 +345,7 @@ export class OrcdSession {
             const u = this.isRecord(msg) ? (msg.usage as Record<string, number> | undefined) : undefined;
             if (u) {
               lastInputTokens =
-                (u.input_tokens ?? 0) +
-                (u.cache_creation_input_tokens ?? 0) +
-                (u.cache_read_input_tokens ?? 0);
+                (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
             }
           } else if (this.isRecord(inner) && inner.type === 'message_delta' && lastInputTokens === 0) {
             const u = this.isRecord(inner.usage) ? (inner.usage as Record<string, number>) : undefined;
