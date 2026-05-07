@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Outlet, useNavigate, useParams, Link, useLocation } from 'react-router';
-import { Settings, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Outlet, useNavigate, useParams } from 'react-router';
+import { Filter, PanelLeftClose, PanelLeft, Plus } from 'lucide-react';
 import { ChatSidebar } from '~/components/ChatSidebar';
 import { Button } from '~/components/ui/button';
-import { useStore } from '~/stores/context';
-import SettingsProjectsModal from '~/routes/settings.projects';
+import { Checkbox } from '~/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
+import { useStore, useProjectStore } from '~/stores/context';
 
 const SIDEBAR_KEY = 'chat-sidebar-open';
 
@@ -23,11 +24,12 @@ function useIsDesktop() {
 
 const ChatLayout = observer(function ChatLayout() {
   const store = useStore();
+  const projectStore = useProjectStore();
   const navigate = useNavigate();
-  const location = useLocation();
   const params = useParams();
   const activeCardId = params.cardId ? Number(params.cardId) : null;
   const isDesktop = useIsDesktop();
+  const [projectFilter, setProjectFilter] = useState<Set<number>>(() => new Set());
 
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches) return false;
@@ -37,8 +39,6 @@ const ChatLayout = observer(function ChatLayout() {
       return true;
     }
   });
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
   useEffect(() => {
     store.subscribe(['backlog', 'ready', 'running', 'review', 'done', 'archive']);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -71,7 +71,7 @@ const ChatLayout = observer(function ChatLayout() {
   }, [navigate]);
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-dvh max-h-dvh flex flex-col overflow-hidden bg-background">
       <header className="shrink-0 px-4 py-2 border-b border-border flex items-center gap-3">
         <Button
           variant="ghost"
@@ -82,21 +82,76 @@ const ChatLayout = observer(function ChatLayout() {
         >
           {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeft className="size-4" />}
         </Button>
-        <h1 className="text-lg font-bold text-foreground">Orchestrel</h1>
-        <nav className="flex items-center gap-1 ml-2">
-          <Button variant={location.pathname.startsWith('/chat') ? 'default' : 'ghost'} size="sm" asChild>
-            <Link to="/chat">Chat</Link>
-          </Button>
-        </nav>
+        <h1 className="text-lg font-bold text-foreground">Orchestrel Chat</h1>
         <span className="flex-1" />
+        {projectStore.all.length > 0 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant={projectFilter.size > 0 ? 'default' : 'ghost'}
+                size="icon"
+                className={`shrink-0 relative ${projectFilter.size > 0 ? 'shadow-[0_0_18px_hsl(var(--primary)/0.35)]' : 'text-muted-foreground'}`}
+                title="Filter by project"
+                aria-label="Filter by project"
+              >
+                <Filter className="size-4" />
+                {projectFilter.size > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 size-4 rounded-full bg-primary text-primary-foreground text-[10px] font-medium flex items-center justify-center">
+                    {projectFilter.size}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-52 p-2">
+              <div className="flex items-center justify-between px-2 pb-2">
+                <span className="text-xs font-medium text-muted-foreground">Projects</span>
+                {projectFilter.size > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto py-0.5 px-1.5 text-xs text-muted-foreground"
+                    onClick={() => setProjectFilter(new Set())}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {projectStore.all.map((project) => (
+                  <label
+                    key={project.id}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={projectFilter.has(project.id)}
+                      onCheckedChange={(checked) => {
+                        setProjectFilter((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(project.id);
+                          else next.delete(project.id);
+                          return next;
+                        });
+                      }}
+                    />
+                    {project.color && (
+                      <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
+                    )}
+                    <span className="text-sm truncate">{project.name}</span>
+                  </label>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
         <Button
-          variant="ghost"
+          variant="outline"
           size="icon"
-          className="shrink-0 text-muted-foreground"
-          onClick={() => setSettingsOpen(true)}
-          title="Settings"
+          className="shrink-0"
+          onClick={handleNewChat}
+          title="New Session"
+          aria-label="New Session"
         >
-          <Settings className="size-5" />
+          <Plus className="size-4" />
         </Button>
       </header>
       <div className="flex-1 flex overflow-hidden">
@@ -107,6 +162,7 @@ const ChatLayout = observer(function ChatLayout() {
             <div className="fixed top-0 left-0 bottom-0 z-40 w-64 border-r border-border bg-card">
               <ChatSidebar
                 activeCardId={activeCardId}
+                projectFilter={projectFilter}
                 onNewChat={() => {
                   handleNewChat();
                   setSidebarOpen(false);
@@ -118,14 +174,13 @@ const ChatLayout = observer(function ChatLayout() {
         {/* Desktop: inline sidebar */}
         {isDesktop && sidebarOpen && (
           <div className="w-64 shrink-0 border-r border-border">
-            <ChatSidebar activeCardId={activeCardId} onNewChat={handleNewChat} />
+            <ChatSidebar activeCardId={activeCardId} projectFilter={projectFilter} onNewChat={handleNewChat} />
           </div>
         )}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-hidden">
           <Outlet />
         </div>
       </div>
-      {settingsOpen && <SettingsProjectsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 });

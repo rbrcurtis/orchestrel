@@ -27,6 +27,10 @@ export class ProjectStore {
     return Array.from(this.projects.values()).sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  get active(): Project[] {
+    return this.all.filter((p) => !p.archived);
+  }
+
   // ── Hydration ───────────────────────────────────────────────────────────────
 
   hydrate(items: unknown[], replace = false, users?: User[]) {
@@ -66,6 +70,7 @@ export class ProjectStore {
     providerID?: string;
     memoryBaseUrl?: string | null;
     memoryApiKey?: string | null;
+    archived?: boolean;
   }): Promise<Project> {
     const project = (await this.ws().emit('project:create', {
       ...data,
@@ -89,6 +94,7 @@ export class ProjectStore {
     providerID?: string;
     memoryBaseUrl?: string | null;
     memoryApiKey?: string | null;
+    archived?: boolean;
     userIds?: number[];
   }): Promise<Project> {
     const existing = this.projects.get(data.id);

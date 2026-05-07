@@ -1,16 +1,14 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, Play, AlertCircle, ChevronDown, Paperclip, X, WifiOff } from 'lucide-react';
-import { MessageBlock } from './MessageBlock';
+import { Send, Square, Play, AlertCircle, Paperclip, X, WifiOff } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
 import { ContextGauge } from './ContextGauge';
 import { SubagentFeed } from './SubagentFeed';
-import { ScrollArea } from '~/components/ui/scroll-area';
+import { LazyTranscript } from './LazyTranscript';
 import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
-import { AUTO_COMPACT_RATIO } from '../../src/shared/constants';
 
 type Props = {
   cardId: number;
@@ -19,6 +17,8 @@ type Props = {
   model: string;
   providerID: string;
   summarizeThreshold: number;
+  onPromptSent?: () => void;
+  promptFocusSeq?: number | null;
 };
 
 export const SessionView = observer(function SessionView({
@@ -28,6 +28,8 @@ export const SessionView = observer(function SessionView({
   model,
   providerID,
   summarizeThreshold,
+  onPromptSent,
+  promptFocusSeq,
 }: Props) {
   const sessionStore = useSessionStore();
   const cardStore = useCardStore();
@@ -42,27 +44,22 @@ export const SessionView = observer(function SessionView({
   const promptsSent = session?.promptsSent ?? 0;
   const turnsCompleted = session?.turnsCompleted ?? 0;
   const sessionStoreId = session?.sessionId ?? null;
-  const contextTokens = session?.contextTokens || card?.contextTokens || 0;
-  const contextWindow = session?.contextWindow || card?.contextWindow || 200_000;
+  const contextTokens = session?.contextTokens ?? card?.contextTokens ?? 0;
+  const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
   const subagents = session?.accumulator.subagents ?? new Map();
+  const bgcInProgress = session?.bgcInProgress ?? false;
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
 
   const [notification, setNotification] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const prevConvLen = useRef(0);
-  const nearBottomRef = useRef(true); // tracks if user is near bottom (for auto-scroll gating)
-  const isStreamingRef = useRef(false); // mirrors isStreaming for ResizeObserver access
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
   const isStreaming = sessionActive || isStarting;
-  isStreamingRef.current = isStreaming;
 
   // Load history / set up bus subscriptions on mount and when sessionId becomes available.
   // Called without sessionId on first render to register card-level bus subscriptions
@@ -87,6 +84,11 @@ export const SessionView = observer(function SessionView({
     prevConvLen.current = 0; // ensure scroll-to-bottom fires for the new card
   }, [cardId]);
 
+  useEffect(() => {
+    if (promptFocusSeq == null) return;
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [promptFocusSeq]);
+
   // Clear isStarting on status transition
   useEffect(() => {
     if (
@@ -110,62 +112,6 @@ export const SessionView = observer(function SessionView({
     }
   }, [sessionStatus, conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ResizeObserver-based auto-scroll: fires after DOM layout changes.
-  // Computes near-bottom inline (scroll events are async and may be stale).
-  useEffect(() => {
-    const content = contentRef.current;
-    const scroll = scrollRef.current;
-    if (!content || !scroll) return;
-
-    let prevHeight = content.scrollHeight;
-    let initialScroll = true;
-    let rafId = 0;
-
-    const ro = new ResizeObserver(() => {
-      const newHeight = content.scrollHeight;
-      if (newHeight <= prevHeight) {
-        prevHeight = newHeight;
-        return;
-      }
-
-      prevHeight = newHeight;
-
-      if (rafId) cancelAnimationFrame(rafId);
-
-      // Only auto-scroll when the session is actively streaming
-      // (new messages or streaming text/tool output), not when the user
-      // toggles a collapsible tool block which resizes content in-place.
-      if (initialScroll || (isStreamingRef.current && nearBottomRef.current)) {
-        initialScroll = false;
-        rafId = requestAnimationFrame(() => {
-          bottomRef.current?.scrollIntoView({ behavior: 'instant' });
-          rafId = 0;
-        });
-      }
-    });
-
-    ro.observe(content);
-    return () => {
-      ro.disconnect();
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [cardId]);
-
-  // Track scroll position for near-bottom gating + scroll-to-bottom button
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    function onScroll() {
-      if (!el) return;
-      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-      nearBottomRef.current = gap < 120;
-      setShowScrollBtn(gap >= 60);
-    }
-    onScroll();
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [cardId]);
-
   // Compaction detection
   useEffect(() => {
     const len = conversation.length;
@@ -181,30 +127,12 @@ export const SessionView = observer(function SessionView({
     prevConvLen.current = len;
   }, [conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Card switch: reset near-bottom so next content triggers instant scroll,
-  // and scroll to bottom immediately if conversation is already loaded
-  useEffect(() => {
-    nearBottomRef.current = true;
-    requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
-    });
-  }, [cardId]);
-
   // After reconnect history reload: scroll to bottom once history re-ingests.
   // historyLoaded transitions false→true when resubscribeAll clears + reloads.
   const historyLoaded = session?.historyLoaded ?? false;
-  useEffect(() => {
-    if (historyLoaded && conversation.length > 0) {
-      nearBottomRef.current = true;
-      requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' });
-      });
-    }
-  }, [historyLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
-  const effectiveWindow = contextWindow * AUTO_COMPACT_RATIO;
-  const contextPercent = effectiveWindow > 0 ? Math.min(100, (contextTokens / effectiveWindow) * 100) : 0;
+  const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
   const retryAfterMs = session?.accumulator.retryAfterMs ?? null;
   const retryInfo = sessionStatus === 'retry' && retryAfterMs != null
     ? { retryAfterMs }
@@ -213,8 +141,10 @@ export const SessionView = observer(function SessionView({
   async function handleSend(message: string, files?: FileRef[]) {
     try {
       await sessionStore.sendMessage(cardId, message, files);
+      return true;
     } catch (err) {
       setNotification(err instanceof Error ? err.message : String(err));
+      return false;
     }
   }
 
@@ -244,47 +174,26 @@ export const SessionView = observer(function SessionView({
     textareaRef.current?.focus();
   }
 
+  const handleShowScrollButtonChange = useCallback((show: boolean) => {
+    setShowScrollBtn(show);
+  }, []);
+
   return (
     <div
-      className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full border-t border-border"
+      className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full overflow-hidden border-t border-border"
       onMouseDown={handlePanelMouseDown}
       onClick={handlePanelClick}
     >
-      {/* Messages — scrollable middle area */}
-      <div className="relative flex-1 min-h-0 min-w-0">
-        <ScrollArea viewportRef={scrollRef} className="h-full">
-          <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0 max-w-full overflow-x-hidden">
-            {conversation.map((row, i) => (
-              <MessageBlock key={i} entry={row} index={i} accentColor={accentColor} />
-            ))}
-            {currentBlocks.length > 0 && (
-              <MessageBlock
-                entry={{ kind: 'blocks', blocks: currentBlocks }}
-                index={conversation.length}
-                accentColor={accentColor}
-              />
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </ScrollArea>
-        {!session?.historyLoaded && conversation.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <svg className="size-6 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </div>
-        )}
-        {showScrollBtn && (
-          <button
-            type="button"
-            onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
-            className="absolute bottom-3 right-3 size-8 flex items-center justify-center rounded-full bg-muted/80 border border-border text-muted-foreground shadow-md backdrop-blur-sm hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <ChevronDown className="size-4" />
-          </button>
-        )}
-      </div>
+      <LazyTranscript
+        cardId={cardId}
+        conversation={conversation}
+        currentBlocks={currentBlocks}
+        accentColor={accentColor}
+        historyLoaded={historyLoaded}
+        isStreaming={isStreaming}
+        showScrollButton={showScrollBtn}
+        onShowScrollButtonChange={handleShowScrollButtonChange}
+      />
 
       {/* Status bar — above prompt input */}
       {(isStreaming || conversation.length > 0) && (
@@ -380,7 +289,8 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting}
         onSend={handleSend}
         onStop={handleStop}
-        onCompact={!!sessionId || sessionActive ? () => sessionStore.compactSession(cardId) : undefined}
+        onCompact={!!sessionId || sessionActive ? (bgcInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
+        onPromptSent={onPromptSent}
         sendPending={false}
         contextPercent={contextPercent}
         compacted={compacted}
@@ -461,6 +371,7 @@ function PromptInput({
   onSend,
   onStop,
   onCompact,
+  onPromptSent,
   sendPending,
   contextPercent,
   compacted,
@@ -470,9 +381,10 @@ function PromptInput({
   isRunning: boolean;
   hasSession: boolean;
   isPending: boolean;
-  onSend: (message: string, files?: FileRef[]) => void | Promise<void>;
+  onSend: (message: string, files?: FileRef[]) => boolean | Promise<boolean>;
   onStop: () => void;
   onCompact?: () => void;
+  onPromptSent?: () => void;
   sendPending: boolean;
   contextPercent: number;
   compacted: boolean;
@@ -550,19 +462,22 @@ function PromptInput({
     if (!trimmed && files.length === 0) return;
 
     setUploadError(null);
+    let sent = false;
     if (files.length > 0) {
       try {
         const refs = await uploadFiles(files);
-        await onSend(trimmed || 'Please review the attached files.', refs);
+        sent = await onSend(trimmed || 'Please review the attached files.', refs);
       } catch {
         setUploadError('Failed to upload files');
         return;
       }
     } else {
-      await onSend(trimmed);
+      sent = await onSend(trimmed);
     }
+    if (!sent) return;
     updateText('');
     setFiles([]);
+    onPromptSent?.();
     // Blur AFTER send completes — send is near-instant (WebSocket) but
     // must finish before blur clears focus lock, so the card's column
     // update from the server triggers event-driven recalc cleanly.
@@ -671,7 +586,8 @@ function PromptInput({
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
             maxLength={10000}
             rows={3}
-            className="resize-none min-h-full pr-10 focus-ring"
+            // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
+            className="resize-none min-h-full max-h-40 overflow-y-auto pr-10 focus-ring"
           />
           {/* Reconnect button - top right inside textarea, only when disconnected */}
           {!wsConnected && (

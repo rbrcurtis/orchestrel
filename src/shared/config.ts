@@ -37,6 +37,20 @@ export interface OrchestrelConfig {
   memoryUpsert?: MemoryUpsertConfig;
 }
 
+export function buildModelAliasEnv(models: Record<string, ModelDef>): Record<string, string> {
+  const modelIds = Object.values(models).map((m) => m.modelID);
+  const [first, second = first, third = second] = modelIds;
+  const env: Record<string, string> = {};
+
+  if (first) {
+    env.ANTHROPIC_DEFAULT_OPUS_MODEL = first;
+    env.ANTHROPIC_DEFAULT_SONNET_MODEL = second;
+    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = third;
+  }
+
+  return env;
+}
+
 /** Replace `${VAR}` with values from env. Unset vars become empty string. */
 export function resolveEnvVars(str: string, env: Record<string, string | undefined>): string {
   return str.replace(/\$\{(\w+)\}/g, (_, name: string) => env[name] ?? '');

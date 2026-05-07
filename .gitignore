@@ -20,7 +20,7 @@ src/server/api/generated/routes.ts
 src/server/api/generated/swagger.json
 .superpowers/*
 *.tsbuildinfo
-.worktrees/*
+.worktrees/
 data
 mobile-both-panels.png
 overflow-check.png

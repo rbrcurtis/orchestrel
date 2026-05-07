@@ -84,6 +84,7 @@ const BoardLayout = observer(function BoardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const section = location.pathname === '/archive' ? 'archive' : 'board';
   const [projectFilter, _setProjectFilter] = useState<Set<number>>(
     () => new Set(readLocalStorage<number[]>(PROJECT_FILTER_KEY, [])),
   );
@@ -106,6 +107,10 @@ const BoardLayout = observer(function BoardLayout() {
     store.subscribe(['backlog', 'ready', 'running', 'review', 'done', 'archive']);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    setSearch('');
+  }, [section]);
+
   // Multi-column state (persisted to localStorage)
   const [columnCount, setColumnCount] = useState(() => readLocalStorage(COLUMN_COUNT_KEY, 1));
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
@@ -113,6 +118,8 @@ const BoardLayout = observer(function BoardLayout() {
 
   const maxColumns = useMaxColumns(panelRef);
   const [focusedCardId, setFocusedCardId] = useState<number | null>(null);
+  const [promptFocusRequest, setPromptFocusRequest] = useState<{ cardId: number; seq: number } | null>(null);
+  const promptFocusSeq = useRef(0);
 
   const allCards = Array.from(cardStore.cards.values());
   const {
@@ -120,6 +127,7 @@ const BoardLayout = observer(function BoardLayout() {
     resolvedCards,
     pinSlot,
     closeSlot,
+    releaseHotseat,
     unpinSlot,
     selectCard: hookSelectCard,
     dropCard,
@@ -160,7 +168,7 @@ const BoardLayout = observer(function BoardLayout() {
     };
   }, []);
 
-  function selectCard(id: number | null) {
+  function selectCard(id: number | null, opts?: { focusPrompt?: boolean }) {
     setNewCardColumn(null);
     if (!isDesktop) {
       if (id != null && mobileCardId === id) {
@@ -171,6 +179,10 @@ const BoardLayout = observer(function BoardLayout() {
       return;
     }
     if (id === null) return;
+    if (opts?.focusPrompt) {
+      promptFocusSeq.current += 1;
+      setPromptFocusRequest({ cardId: id, seq: promptFocusSeq.current });
+    }
     hookSelectCard(id);
   }
 
@@ -210,12 +222,14 @@ const BoardLayout = observer(function BoardLayout() {
           setActiveModal(null);
         } else if (!isDesktop) {
           setMobileCardId(null);
+        } else if (columnSlots[0]?.type === 'manual' || resolvedCards.has(0)) {
+          releaseHotseat();
         }
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, isDesktop]);
+  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat]);
 
   // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;
@@ -248,7 +262,7 @@ const BoardLayout = observer(function BoardLayout() {
           </nav>
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
           {/* Project filter */}
-          {projectStore.all.length > 0 && (
+          {(section === 'archive' ? projectStore.all : projectStore.active).length > 0 && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -280,7 +294,7 @@ const BoardLayout = observer(function BoardLayout() {
                   )}
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  {projectStore.all.map((p) => (
+                  {(section === 'archive' ? projectStore.all : projectStore.active).map((p) => (
                     <label
                       key={p.id}
                       className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent cursor-pointer"
@@ -354,7 +368,7 @@ const BoardLayout = observer(function BoardLayout() {
               search,
               projectFilter,
               selectedCardId,
-              selectCard,
+              selectCard: (id: number | null) => selectCard(id, { focusPrompt: true }),
               startNewCard,
               dropCard,
               onCardCreated,
@@ -400,7 +414,11 @@ const BoardLayout = observer(function BoardLayout() {
                   onClose={() => setNewCardColumn(null)}
                 />
               ) : mobileCardId != null ? (
-                <CardDetail cardId={mobileCardId} onClose={() => setMobileCardId(null)} />
+                <CardDetail
+                  cardId={mobileCardId}
+                  onClose={() => setMobileCardId(null)}
+                  onPromptSent={() => releaseHotseat()}
+                />
               ) : null}
             </div>
           </>
@@ -437,6 +455,7 @@ const BoardLayout = observer(function BoardLayout() {
                 closeSlot={closeSlot}
                 unpinSlot={unpinSlot}
                 onCardCreated={onCardCreated}
+                promptFocusSeq={displayedCardId != null && promptFocusRequest?.cardId === displayedCardId ? promptFocusRequest.seq : null}
               />
             );
           })}
@@ -463,6 +482,7 @@ type ColumnSlotProps = {
   closeSlot: (index: number) => void;
   unpinSlot: (index: number) => void;
   onCardCreated: (cardId: number, projectId: number | null) => void;
+  promptFocusSeq: number | null;
 };
 
 const ColumnSlot = observer(function ColumnSlot({
@@ -480,6 +500,7 @@ const ColumnSlot = observer(function ColumnSlot({
   closeSlot,
   unpinSlot,
   onCardCreated,
+  promptFocusSeq,
 }: ColumnSlotProps) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
@@ -585,6 +606,7 @@ const ColumnSlot = observer(function ColumnSlot({
             clearSlot={() => closeSlot(index)}
             slotIndex={index}
             pinned={pinProjectId != null}
+            promptFocusSeq={promptFocusSeq}
           />
         ) : pinProjectId != null ? (
           <div className="flex flex-col flex-1">

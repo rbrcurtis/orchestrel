@@ -50,6 +50,16 @@ export interface MemoryUpsertAction {
   sessionId: string;
 }
 
+export interface CompactAction {
+  action: 'compact';
+  sessionId: string;
+  cwd: string;
+  provider: string;
+  model: string;
+  contextWindow?: number;
+  summarizeThreshold?: number;
+}
+
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -58,7 +68,8 @@ export type OrcdAction =
   | UnsubscribeAction
   | ListAction
   | CancelAction
-  | MemoryUpsertAction;
+  | MemoryUpsertAction
+  | CompactAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -100,6 +111,12 @@ export interface ContextUsageMessage {
   contextWindow: number;
 }
 
+export interface SessionIdUpdateMessage {
+  type: 'session_id_update';
+  sessionId: string;       // orcd-level session id (unchanged, for routing)
+  newSessionId: string;    // CC's new session_id after a fork
+}
+
 export interface SessionListMessage {
   type: 'session_list';
   sessions: Array<{
@@ -116,4 +133,5 @@ export type OrcdMessage =
   | SessionErrorMessage
   | SessionExitMessage
   | ContextUsageMessage
+  | SessionIdUpdateMessage
   | SessionListMessage;

@@ -14,6 +14,7 @@ export interface SessionState {
   historyLoaded: boolean;
   contextTokens: number;
   contextWindow: number;
+  bgcInProgress: boolean;
 }
 
 function defaultSession(): SessionState {
@@ -27,6 +28,7 @@ function defaultSession(): SessionState {
     historyLoaded: false,
     contextTokens: 0,
     contextWindow: 200_000,
+    bgcInProgress: false,
   };
 }
 
@@ -76,6 +78,20 @@ export class SessionStore {
         s.status = 'running';
       }
 
+      if (sdkMsg.type === 'system') {
+        if (sdkMsg.subtype === 'bgc_started') {
+          s.bgcInProgress = true;
+        }
+        if (sdkMsg.subtype === 'compact_boundary') {
+          s.bgcInProgress = false;
+          s.contextTokens = 1;
+        }
+      }
+
+      if (sdkMsg.type === 'error' || sdkMsg.type === 'result') {
+        s.bgcInProgress = false;
+      }
+
       s.accumulator.handleMessage(sdkMsg);
     });
   }
@@ -87,6 +103,7 @@ export class SessionStore {
       for (const msg of messages) {
         s.accumulator.handleHistoryMessage(msg as HistoryMessage);
       }
+      s.accumulator.flushHistory();
       s.historyLoaded = true;
     });
   }
@@ -108,10 +125,12 @@ export class SessionStore {
       s.sessionId = data.sessionId;
       s.promptsSent = data.promptsSent;
       s.turnsCompleted = data.turnsCompleted;
-      if (data.contextTokens > 0) s.contextTokens = data.contextTokens;
+      s.contextTokens = data.contextTokens;
       if (data.contextWindow > 0) s.contextWindow = data.contextWindow;
 
       if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {
+        s.bgcInProgress = false;
+        s.accumulator.clearSubagents();
         const stopInterval = this.stopIntervals.get(data.cardId);
         if (stopInterval !== undefined) {
           clearInterval(stopInterval);
@@ -126,9 +145,11 @@ export class SessionStore {
     runInAction(() => {
       const s = this.getOrCreate(cardId);
       s.active = false;
+      s.bgcInProgress = false;
       if (s.status === 'running' || s.status === 'starting') {
         s.status = 'completed';
       }
+      s.accumulator.clearSubagents();
       const stopInterval = this.stopIntervals.get(cardId);
       if (stopInterval !== undefined) {
         clearInterval(stopInterval);
@@ -163,6 +184,11 @@ export class SessionStore {
   }
 
   async compactSession(cardId: number): Promise<void> {
+    const s = this.getOrCreate(cardId);
+    if (s.bgcInProgress) {
+      s.accumulator.addCompactMarker('Background compaction already in progress');
+      return;
+    }
     await this.ws().emit('agent:compact', { cardId });
   }
 

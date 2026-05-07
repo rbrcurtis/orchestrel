@@ -31,6 +31,8 @@ type Props = {
   clearSlot?: () => void;
   slotIndex?: number;
   pinned?: boolean;
+  onPromptSent?: () => void;
+  promptFocusSeq?: number | null;
 };
 
 const STATUSES = ['backlog', 'ready', 'running', 'review', 'done', 'archive'] as const;
@@ -55,7 +57,15 @@ type Draft = {
   summarizeThreshold: number;
 };
 
-export const CardDetail = observer(function CardDetail({ cardId, onClose, clearSlot, slotIndex, pinned }: Props) {
+export const CardDetail = observer(function CardDetail({
+  cardId,
+  onClose,
+  clearSlot,
+  slotIndex,
+  pinned,
+  onPromptSent,
+  promptFocusSeq,
+}: Props) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const sessionStore = useSessionStore();
@@ -94,7 +104,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
     sourceBranch: null,
     provider: 'anthropic',
     model: 'sonnet',
-    summarizeThreshold: 0.7,
+    summarizeThreshold: 0.6,
   });
 
   const [formOpen, setFormOpen] = useState(true);
@@ -389,7 +399,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">None</SelectItem>
-                      {projectStore.all.map((p) => (
+                      {projectStore.active.map((p) => (
                         <SelectItem key={p.id} value={String(p.id)}>
                           <span className="flex items-center gap-2">
                             {p.color && (
@@ -513,6 +523,8 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
             model={card.model ?? 'sonnet'}
             providerID={card.provider ?? cardProject?.providerID ?? 'anthropic'}
             summarizeThreshold={card.summarizeThreshold ?? 0}
+            onPromptSent={onPromptSent}
+            promptFocusSeq={promptFocusSeq}
           />
         )}
       </div>
@@ -571,6 +583,23 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
   );
 });
 
+const NEW_CARD_DRAFT_DESCRIPTION_KEY = 'orchestrel:new-card-draft-description';
+
+function readNewCardDraftDescription() {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(NEW_CARD_DRAFT_DESCRIPTION_KEY) ?? '';
+}
+
+function writeNewCardDraftDescription(description: string) {
+  if (typeof window === 'undefined') return;
+
+  if (description) {
+    window.localStorage.setItem(NEW_CARD_DRAFT_DESCRIPTION_KEY, description);
+  } else {
+    window.localStorage.removeItem(NEW_CARD_DRAFT_DESCRIPTION_KEY);
+  }
+}
+
 type NewCardProps = {
   column: string;
   onCreated: (id: number, projectId: number | null) => void;
@@ -593,33 +622,35 @@ export const NewCardDetail = observer(function NewCardDetail({
 
   const [selectedColumn, setSelectedColumn] = useState(column);
   const [draft, setDraft] = useState<Draft>(() => {
+    const description = readNewCardDraftDescription();
+
     if (initialProjectId != null) {
       const proj = projectStore.getProject(initialProjectId);
       if (proj) {
         const prov = proj.providerID ?? 'anthropic';
         return {
           title: '',
-          description: '',
+          description,
           projectId: initialProjectId,
           useWorktree: !!proj.defaultWorktree,
           worktreeBranch: null,
           sourceBranch: null,
           provider: prov,
           model: proj.defaultModel ?? config.getDefaultModel(prov),
-          summarizeThreshold: 0.7,
+          summarizeThreshold: 0.6,
         };
       }
     }
     return {
       title: '',
-      description: '',
+      description,
       projectId: null,
       useWorktree: false,
       worktreeBranch: null,
       sourceBranch: null,
       provider: 'anthropic',
       model: 'sonnet',
-      summarizeThreshold: 0.7,
+      summarizeThreshold: 0.6,
     };
   });
   const [creating, setCreating] = useState(false);
@@ -637,6 +668,10 @@ export const NewCardDetail = observer(function NewCardDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    writeNewCardDraftDescription(draft.description);
+  }, [draft.description]);
+
   async function handleSave() {
     if (!draft.title.trim() || !draft.projectId) return;
     setCreating(true);
@@ -653,6 +688,7 @@ export const NewCardDetail = observer(function NewCardDetail({
         thinkingLevel: 'high',
         summarizeThreshold: draft.summarizeThreshold,
       });
+      writeNewCardDraftDescription('');
       if (selectedColumn === 'running' && draft.projectId && draft.description.trim()) {
         onCreated(card.id, card.projectId ?? null);
       } else {
@@ -682,7 +718,13 @@ export const NewCardDetail = observer(function NewCardDetail({
               ))}
           </SelectContent>
         </Select>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onClose}
+        >
           <X className="size-4" />
         </Button>
       </div>
@@ -701,7 +743,6 @@ export const NewCardDetail = observer(function NewCardDetail({
                 }
               }}
               placeholder={suggestingTitle ? 'Generating title...' : 'Card title'}
-              disabled={suggestingTitle}
             />
           </div>
 
@@ -760,7 +801,7 @@ export const NewCardDetail = observer(function NewCardDetail({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">None</SelectItem>
-                {projectStore.all.map((p) => (
+                {projectStore.active.map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>
                     <span className="flex items-center gap-2">
                       {p.color && (
@@ -879,6 +920,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           <Button
             className="w-full"
             disabled={!draft.title.trim() || !draft.projectId || creating}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleSave}
           >
             {creating ? 'Creating...' : 'Save'}

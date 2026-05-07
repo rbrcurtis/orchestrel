@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // app/lib/use-slots.hook.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useSlots } from './use-slots';
 import type { SlotState } from './resolve-pin';
 import type { Card } from '../../src/shared/ws-protocol';
@@ -20,7 +20,7 @@ function makeCard(overrides: Partial<Card> & { id: number }): Card {
     model: 'sonnet',
     provider: 'anthropic',
     thinkingLevel: 'high',
-    summarizeThreshold: 0.7,
+    summarizeThreshold: 0.6,
     promptsSent: 0,
     turnsCompleted: 0,
     contextTokens: 0,
@@ -241,6 +241,38 @@ describe('flash', () => {
     expect(result.current.flashSlot).toBe(0);
   });
 
+  it('releaseHotseat rotates to the next eligible card when available', async () => {
+    const stored: SlotState[] = [{ type: 'manual', cardId: 1 }];
+    localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const { result } = renderHook(() => useSlots(1, cards));
+
+    act(() => result.current.releaseHotseat());
+
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(2);
+    });
+    expect(result.current.slots[0]).toEqual({ type: 'empty' });
+    expect(result.current.flashSlot).toBe(0);
+  });
+
+  it('releaseHotseat leaves the same card when it is the only eligible choice', async () => {
+    const stored: SlotState[] = [{ type: 'manual', cardId: 1 }];
+    localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' })];
+    const { result } = renderHook(() => useSlots(1, cards));
+
+    act(() => result.current.releaseHotseat());
+
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(1);
+    });
+    expect(result.current.slots[0]).toEqual({ type: 'empty' });
+  });
+
   it('clearFlash resets flashSlot to null', () => {
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const { result } = renderHook(() => useSlots(2, cards));
@@ -264,6 +296,40 @@ describe('flash', () => {
     // Re-render with same cards — resolver produces same result
     rerender({ count: 2, cards: [...cards] });
     expect(result.current.flashSlot).toBeNull(); // no re-flash
+  });
+
+  it('flashes the slot that replaces running with review after a transition', async () => {
+    const stored: SlotState[] = [{ type: 'pinned', projectId: 10 }];
+    localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
+
+    const runningCard = makeCard({
+      id: 1,
+      projectId: 10,
+      column: 'running',
+      updatedAt: '2026-03-20T01:00:00Z',
+    });
+    const reviewCard = makeCard({
+      id: 2,
+      projectId: 10,
+      column: 'running',
+      updatedAt: '2026-03-20T02:00:00Z',
+    });
+    const { result, rerender } = renderHook(({ count, cards }) => useSlots(count, cards), {
+      initialProps: { count: 1, cards: [runningCard, reviewCard] },
+    });
+
+    expect(result.current.resolvedCards.get(0)).toBe(1);
+    act(() => result.current.clearFlash());
+
+    rerender({
+      count: 1,
+      cards: [runningCard, { ...reviewCard, column: 'review' }],
+    });
+
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(2);
+    });
+    expect(result.current.flashSlot).toBe(0);
   });
 });
 

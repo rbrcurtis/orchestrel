@@ -39,6 +39,7 @@ export const projectSchema = z.object({
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
   providerID: z.string(),
   color: z.string(),
+  archived: sqliteBool,
   memoryBaseUrl: z.string().nullable().optional(),
   memoryApiKey: z.string().nullable().optional(),
   createdAt: z.string(),
@@ -90,6 +91,7 @@ export const projectCreateSchema = z.object({
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   providerID: z.string().optional(),
   color: z.string().optional(),
+  archived: z.boolean().optional(),
   memoryBaseUrl: z.string().nullable().optional(),
   memoryApiKey: z.string().nullable().optional(),
 });

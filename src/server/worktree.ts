@@ -1,5 +1,8 @@
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import { existsSync, copyFileSync } from 'fs';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 export function createWorktree(
   repoPath: string,
@@ -42,14 +45,13 @@ export function removeWorktree(repoPath: string, worktreePath: string): void {
   });
 }
 
-export function runSetupCommands(worktreePath: string, commands: string): void {
+export async function runSetupCommands(worktreePath: string, commands: string): Promise<void> {
   if (!commands.trim()) {
     console.log(`[worktree:${worktreePath}] runSetupCommands: no commands, skipping`);
     return;
   }
-  execFileSync('/bin/bash', ['-c', commands], {
+  await execFileAsync('/bin/bash', ['-c', commands], {
     cwd: worktreePath,
-    stdio: 'pipe',
     timeout: 120_000,
   });
 }

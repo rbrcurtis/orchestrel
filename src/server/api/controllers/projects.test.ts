@@ -23,6 +23,7 @@ beforeAll(async () => {
     name: 'Alpha Project',
     path: '/tmp/alpha',
     providerID: 'anthropic',
+    archived: false,
     createdAt: now,
   })
   await proj1.save()
@@ -31,6 +32,7 @@ beforeAll(async () => {
     name: 'Beta Project',
     path: '/tmp/beta',
     providerID: 'anthropic',
+    archived: true,
     createdAt: now,
   })
   await proj2.save()
@@ -54,11 +56,19 @@ describe('ProjectsController', () => {
     const result = await ctrl.listProjects()
     const p = result.projects.find(x => x.id === proj1.id)
     expect(p).toBeDefined()
-    expect(p).toEqual({ id: proj1.id, name: 'Alpha Project' })
+    expect(p).toEqual({ id: proj1.id, name: 'Alpha Project', archived: false })
     expect(p).not.toHaveProperty('path')
     expect(p).not.toHaveProperty('setupCommands')
     expect(p).not.toHaveProperty('isGitRepo')
     expect(p).not.toHaveProperty('defaultModel')
+  })
+
+  it('listProjects includes archived state', async () => {
+    const { ProjectsController } = await import('./projects')
+    const ctrl = new ProjectsController()
+    const result = await ctrl.listProjects()
+    const archived = result.projects.find(x => x.id === proj2.id)
+    expect(archived).toEqual({ id: proj2.id, name: 'Beta Project', archived: true })
   })
 
   it('listProjects includes all created projects', async () => {

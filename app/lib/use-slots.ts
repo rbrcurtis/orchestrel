@@ -328,6 +328,7 @@ export type UseSlotsResult = {
   resolvedCards: Map<number, number>;
   pinSlot: (index: number, projectId: PinTarget) => void;
   closeSlot: (index: number) => void;
+  releaseHotseat: () => void;
   unpinSlot: (index: number) => void;
   selectCard: (cardId: number) => void;
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
@@ -352,6 +353,7 @@ export function useSlots(
   });
 
   const [flashSlot, setFlashSlot] = useState<number | null>(null);
+  const [suppressedHotseatCardId, setSuppressedHotseatCardId] = useState<number | null>(null);
   const cardsSeenRef = useRef(cards.length > 0);
   if (cards.length > 0) cardsSeenRef.current = true;
 
@@ -401,8 +403,12 @@ export function useSlots(
 
   // Compute resolver result fresh each render, passing previous for sticky behavior
   const resolvedCards = resolvePinnedCards(
-    slots, cards, prevResolvedRef.current, projectFilter,
+    slots,
+    cards,
+    prevResolvedRef.current,
+    projectFilter,
     lockedSlots.size > 0 ? lockedSlots : undefined,
+    suppressedHotseatCardId,
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, runs every render to detect flash
   useEffect(() => {
@@ -413,6 +419,9 @@ export function useSlots(
       }
     }
     prevResolvedRef.current = new Map(resolvedCards);
+    if (suppressedHotseatCardId != null && resolvedCards.get(0) !== suppressedHotseatCardId) {
+      setSuppressedHotseatCardId(null);
+    }
   });
 
   // Event-driven recalc: clear sticky when cards transition between review ↔ running.
@@ -465,6 +474,19 @@ export function useSlots(
     setFlashSlot(index); // always flash to confirm the action was processed
   }
 
+  function releaseHotseat() {
+    const displayedHotseatCardId =
+      slots[0]?.type === 'manual'
+        ? slots[0].cardId
+        : resolvedCards.get(0) ?? null;
+    const next = applyReleaseHotseat(slots);
+    if (next === slots) return;
+    setSlots(next);
+    writeLocalStorage(SLOTS_KEY, next);
+    setSuppressedHotseatCardId(displayedHotseatCardId);
+    setFlashSlot(0);
+  }
+
   function unpinSlot(index: number) {
     const next = applyUnpinSlot(slots, index);
     setSlots(next);
@@ -501,6 +523,7 @@ export function useSlots(
     resolvedCards,
     pinSlot,
     closeSlot,
+    releaseHotseat,
     unpinSlot,
     selectCard,
     dropCard,

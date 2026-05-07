@@ -21,6 +21,7 @@ interface Project {
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   color: string;
   providerID: string;
+  archived: boolean;
   memoryBaseUrl?: string | null;
   memoryApiKey?: string | null;
   createdAt: string;
@@ -122,7 +123,10 @@ const SettingsProjectsModal = observer(function SettingsProjectsModal({ onClose 
                                   />
                                 )}
                                 <div className="min-w-0">
-                                  <span className="font-medium text-sm">{project.name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-sm">{project.name}</span>
+                                    {project.archived && <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Archived</span>}
+                                  </div>
                                   <p className="text-xs text-muted-foreground truncate mt-0.5">{project.path}</p>
                                 </div>
                               </div>

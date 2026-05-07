@@ -74,6 +74,12 @@ export async function initDatabase(): Promise<void> {
     } catch (err) {
       console.log(`[db:migrate] memory_* column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
+    try {
+      await runner.query(`ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
+    } catch (err) {
+      console.log(`[db:migrate] archived column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
+    await runner.query(`UPDATE projects SET archived = 0 WHERE archived IS NULL`);
     await runner.release();
   }
 }
