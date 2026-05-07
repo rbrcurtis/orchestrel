@@ -1,4 +1,4 @@
-import { makeAutoObservable } from 'mobx';
+import { makeAutoObservable, runInAction } from 'mobx';
 import type { Project, User } from '../../src/shared/ws-protocol';
 import type { WsClient } from '../lib/ws-client';
 
@@ -77,7 +77,7 @@ export class ProjectStore {
       setupCommands: data.setupCommands ?? undefined,
       color: data.color ?? undefined,
     })) as Project;
-    this.projects.set(project.id, project);
+    runInAction(() => this.projects.set(project.id, project));
     return project;
   }
 
@@ -98,7 +98,7 @@ export class ProjectStore {
     userIds?: number[];
   }): Promise<Project> {
     const existing = this.projects.get(data.id);
-    if (existing) this.projects.set(data.id, { ...existing, ...data } as Project);
+    if (existing) runInAction(() => this.projects.set(data.id, { ...existing, ...data } as Project));
 
     try {
       const project = (await this.ws().emit('project:update', {
@@ -106,22 +106,26 @@ export class ProjectStore {
         setupCommands: data.setupCommands ?? undefined,
         color: data.color ?? undefined,
       })) as Project;
-      this.projects.set(project.id, project);
+      runInAction(() => this.projects.set(project.id, project));
       return project;
     } catch (err) {
-      if (existing) this.projects.set(data.id, existing);
+      runInAction(() => {
+        if (existing) this.projects.set(data.id, existing);
+      });
       throw err;
     }
   }
 
   async deleteProject(id: number): Promise<void> {
     const existing = this.projects.get(id);
-    this.projects.delete(id);
+    runInAction(() => this.projects.delete(id));
 
     try {
       await this.ws().emit('project:delete', { id });
     } catch (err) {
-      if (existing) this.projects.set(id, existing);
+      runInAction(() => {
+        if (existing) this.projects.set(id, existing);
+      });
       throw err;
     }
   }

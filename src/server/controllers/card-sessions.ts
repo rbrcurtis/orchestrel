@@ -144,7 +144,7 @@ async function handleSessionExit(
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
 
-  if (card && card.column === 'running') {
+  if (card && card.column === 'running' && (card.promptsSent ?? 0) > 0) {
     card.column = 'review';
     card.updatedAt = new Date().toISOString();
     await repo.save(card);
@@ -190,8 +190,8 @@ export async function reconcileRunningCards(
     console.log(`[reconcile] re-seeded tracking for card ${card.id} session ${sess.id.slice(0, 8)}`);
   }
 
-  // Move running-column cards whose session is no longer alive in orcd back
-  // to review.
+  // Reconcile running-column cards whose session is no longer alive in orcd.
+  // Cards with prompted work move to review; save-autostart cards stay running.
   const runningCards = allCards.filter((c) => c.column === 'running');
   if (runningCards.length === 0) {
     console.log(`[reconcile] no running cards to reconcile`);
@@ -203,17 +203,23 @@ export async function reconcileRunningCards(
       console.log(`[reconcile] card ${card.id} still active in orcd`);
       continue;
     }
-    card.column = 'review';
-    card.updatedAt = new Date().toISOString();
-    await r.save(card);
     if (card.sessionId) untrackSession(card.sessionId);
+    if ((card.promptsSent ?? 0) > 0) {
+      card.column = 'review';
+      card.updatedAt = new Date().toISOString();
+      await r.save(card);
+      console.log(
+        `[reconcile] card ${card.id} moved to review (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
+      );
+    } else {
+      console.log(
+        `[reconcile] card ${card.id} session inactive (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
+      );
+    }
     bus.publish(`card:${card.id}:exit`, {
       sessionId: card.sessionId,
       status: 'stopped',
     });
-    console.log(
-      `[reconcile] card ${card.id} moved to review (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
-    );
   }
 }
 

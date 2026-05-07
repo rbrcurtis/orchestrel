@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageBus } from '../bus';
 
 const mockCards = [
-  { id: 42, sessionId: 'sess-abc', column: 'running', contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, updatedAt: '', save: vi.fn() },
+  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, updatedAt: '', save: vi.fn() },
 ];
 const mockRepo = {
   findOneBy: vi.fn(async (where: { id?: number; sessionId?: string }) => {
@@ -42,6 +42,7 @@ describe('orcd message router', () => {
       id: 42,
       sessionId: 'sess-abc',
       column: 'running',
+      promptsSent: 1,
       contextTokens: 0,
       contextWindow: 200000,
       turnsCompleted: 0,
@@ -94,25 +95,27 @@ describe('orcd message router', () => {
     expect(sdkSpy).not.toHaveBeenCalled();
   });
 
-  it('routes session_exit by DB session_id when in-memory mapping is missing', async () => {
+  it('routes session_exit by DB session_id when in-memory mapping is missing and moves prompted running cards to review', async () => {
     const { initOrcdRouter } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
 
     const exitSpy = vi.fn();
     bus.on('card:42:exit', exitSpy);
 
-    handler!({
+    await handler!({
       type: 'session_exit',
       sessionId: 'sess-abc',
       state: 'completed',
     });
 
-    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith({
       sessionId: 'sess-abc',
       status: 'completed',
     });
   });
+
 
   it('does not reset context tokens when background compaction starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
@@ -221,7 +224,7 @@ describe('orcd message router', () => {
 });
 
 describe('reconcileRunningCards', () => {
-  it('moves running cards to review when orcd only lists stopped session', async () => {
+  it('moves prompted running cards to review when orcd only lists stopped session', async () => {
     const { reconcileRunningCards } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
@@ -238,6 +241,33 @@ describe('reconcileRunningCards', () => {
 
     expect(client.markActive).not.toHaveBeenCalled();
     expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith({
+      sessionId: 'sess-abc',
+      status: 'stopped',
+    });
+  });
+
+  it('keeps save-autostart running cards in running when orcd only lists stopped session', async () => {
+    const { reconcileRunningCards } = await import('./card-sessions');
+    const bus = new MessageBus();
+    const exitSpy = vi.fn();
+    bus.on('card:42:exit', exitSpy);
+    mockCards[0].column = 'running';
+    mockCards[0].promptsSent = 0;
+    mockRepo.save.mockClear();
+    const client = {
+      list: vi.fn(async () => ({
+        type: 'session_list',
+        sessions: [{ id: 'sess-abc', state: 'stopped', cwd: '/tmp' }],
+      })),
+      markActive: vi.fn(),
+    };
+
+    await reconcileRunningCards(client as never, bus);
+
+    expect(mockCards[0].column).toBe('running');
+    expect(mockRepo.save).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith({
       sessionId: 'sess-abc',
       status: 'stopped',

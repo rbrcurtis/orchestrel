@@ -5,7 +5,7 @@ import type {
   OrcdMessage,
 } from '../shared/orcd-protocol';
 
-type MessageHandler = (msg: OrcdMessage) => void;
+type MessageHandler = (msg: OrcdMessage) => void | Promise<void>;
 
 /**
  * Client for the orcd Unix socket.
@@ -18,6 +18,8 @@ export class OrcdClient {
   private hasConnectedBefore = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private handlers = new Set<MessageHandler>();
+  private dispatchChain = Promise.resolve();
+  private destroyed = false;
 
   /** Per-session callbacks for create flow */
   private createCallbacks = new Map<string, (sessionId: string) => void>();
@@ -44,6 +46,7 @@ export class OrcdClient {
   connect(): Promise<void> {
     const path = this.socketPath ?? `${homedir()}/.orc/orcd.sock`;
     return new Promise((resolve, reject) => {
+      this.destroyed = false;
       const sock = createConnection({ path }, () => {
         this.connected = true;
         this.buf = '';
@@ -77,6 +80,10 @@ export class OrcdClient {
         // activeSessions is stale after disconnect — orcd may have restarted.
         // Reconcile will re-seed from orcd.list() on reconnect.
         this.activeSessions.clear();
+        if (this.destroyed) {
+          console.log('[orcd-client] disconnected after explicit shutdown');
+          return;
+        }
         console.log('[orcd-client] disconnected, reconnecting in 2s...');
         this.reconnectTimer = setTimeout(() => {
           this.connect().catch((err) => {
@@ -98,6 +105,7 @@ export class OrcdClient {
   }
 
   disconnect(): void {
+    this.destroyed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.socket?.destroy();
     this.socket = null;
@@ -282,13 +290,16 @@ export class OrcdClient {
       this.activeSessions.add(msg.newSessionId);
     }
 
-    // Forward to all registered handlers
-    for (const handler of this.handlers) {
-      try {
-        handler(msg);
-      } catch (err) {
-        console.error('[orcd-client] handler error:', err);
-      }
-    }
+    this.dispatchChain = this.dispatchChain
+      .catch(() => {})
+      .then(async () => {
+        for (const handler of this.handlers) {
+          try {
+            await handler(msg);
+          } catch (err) {
+            console.error('[orcd-client] handler error:', err);
+          }
+        }
+      });
   }
 }

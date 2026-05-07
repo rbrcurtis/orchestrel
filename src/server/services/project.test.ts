@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { Project, ProjectSubscriber, DEFAULT_COLORS } from '../models/Project'
 import { tmpdir } from 'os'
 import { join } from 'path'
+
+vi.mock('../models/index', () => ({
+  AppDataSource: {
+    getRepository: (entity: typeof Project) => ds.getRepository(entity),
+  },
+}))
 
 let ds: DataSource
 
@@ -42,6 +48,16 @@ describe('ProjectService', () => {
     const p = await projectService.createProject({ name: 'ReGit', path: '/tmp' })
     const updated = await projectService.updateProject(p.id, { path: tmpdir() })
     expect(typeof updated.isGitRepo).toBe('boolean')
+  })
+
+  it('updateProject persists archived changes', async () => {
+    const { projectService } = await import('./project')
+    const p = await projectService.createProject({ name: 'Archive Me', path: '/tmp', archived: false })
+    const updated = await projectService.updateProject(p.id, { archived: true })
+    expect(updated.archived).toBe(true)
+
+    const found = await Project.findOneByOrFail({ id: p.id })
+    expect(found.archived).toBe(true)
   })
 
   it('browse returns non-hidden directories sorted', async () => {

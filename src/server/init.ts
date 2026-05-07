@@ -101,7 +101,7 @@ export async function initBackend(): Promise<{
   }
 
   // --- OC controllers + OrcdClient ---
-  const { initOrcdRouter, trackSession, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive } =
+  const { initOrcdRouter, reconcileRunningCards, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive } =
     await import('./controllers/card-sessions');
   const initState = await import('./init-state');
 
@@ -120,37 +120,24 @@ export async function initBackend(): Promise<{
   // Register the single global orcd message router
   initOrcdRouter(client);
 
-  // Populate session map from running cards so messages route after restart
+  // Reconcile running cards at startup and on every orcd reconnect
   try {
-    const { Card: CardModel } = await import('./models/Card');
-    const runningCards = await CardModel.find({ where: { column: 'running' } });
-    for (const card of runningCards) {
-      if (card.sessionId) {
-        trackSession(card.id, card.sessionId);
-      }
-    }
+    await reconcileRunningCards(client);
   } catch (err) {
-    console.error('[startup] session map population failed:', err);
+    console.error('[startup] session reconciliation failed:', err);
   }
+
+  client.onReconnect(() => {
+    console.log('[orcd] orcd reconnected, reconciling running cards...');
+    reconcileRunningCards(client!).catch((err) =>
+      console.error('[orcd] reconnect reconciliation failed:', err),
+    );
+  });
 
   registerAutoStart();
   registerMemoryUpsertOnArchive();
   registerWorktreeCleanup();
   console.log('[orcd] OrcdClient connected, router + listeners registered');
-
-  // Move stale running cards to review
-  try {
-    const { Card } = await import('./models/Card');
-    const cards = await Card.find({ where: { column: 'running' } });
-    for (const card of cards) {
-      card.column = 'review';
-      card.updatedAt = new Date().toISOString();
-      await card.save();
-      console.log(`[startup] card ${card.id} moved to review (no active session)`);
-    }
-  } catch (err) {
-    console.error('[startup] stale card scan failed:', err);
-  }
 
   return { restRouter: router, attachSocketIo };
 }

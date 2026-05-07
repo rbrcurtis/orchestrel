@@ -120,8 +120,9 @@ export async function handleAgentStatus(
     const card = await Card.findOneBy({ id: cardId });
 
     const active = !!(card?.sessionId && client?.isActive(card.sessionId));
+    const starting = !!card && card.column === 'running' && !card.sessionId;
 
-    if (!active && card && card.column === 'running') {
+    if (!active && !starting && card && card.column === 'running' && (card.promptsSent ?? 0) > 0) {
       card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await card.save();
@@ -130,7 +131,7 @@ export async function handleAgentStatus(
     socket.emit('agent:status', {
       cardId,
       active,
-      status: active ? 'running' : 'completed',
+      status: active ? 'running' : starting ? 'starting' : 'completed',
       sessionId: card?.sessionId ?? null,
       promptsSent: card?.promptsSent ?? 0,
       turnsCompleted: card?.turnsCompleted ?? 0,

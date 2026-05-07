@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { autorun, configure } from 'mobx';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectStore } from './project-store';
 import type { Project } from '../../src/shared/ws-protocol';
+
+afterEach(() => {
+  configure({ enforceActions: 'never' });
+  vi.restoreAllMocks();
+});
 
 function makeProject(id: number, name: string, archived = false): Project {
   return {
@@ -35,5 +41,24 @@ describe('ProjectStore project views', () => {
     store.hydrate([makeProject(2, 'Beta'), makeProject(1, 'Alpha'), makeProject(3, 'Archive', true)]);
 
     expect(store.all.map((p) => p.name)).toEqual(['Alpha', 'Archive', 'Beta']);
+  });
+
+  it('does not warn in strict mode when updateProject runs with observed data', async () => {
+    configure({ enforceActions: 'always' });
+
+    const store = new ProjectStore();
+    store.hydrate([makeProject(1, 'Dispatcher')]);
+    const dispose = autorun(() => store.active.map((p) => p.archived));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    store.setWs({ emit: vi.fn().mockResolvedValue(makeProject(1, 'Dispatcher', true)) } as never);
+    await store.updateProject({ id: 1, archived: true });
+    dispose();
+
+    expect(errSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('[MobX]'),
+      expect.stringContaining('strict-mode is enabled'),
+      expect.stringContaining('ProjectStore'),
+    );
   });
 });

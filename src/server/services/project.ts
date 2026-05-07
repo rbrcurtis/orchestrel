@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { readdir, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { Project, DEFAULT_COLORS } from '../models/Project';
+import { AppDataSource } from '../models/index';
 import { getDefaultProviderID } from '../config/providers';
 
 export interface DirEntry {
@@ -41,15 +42,16 @@ class ProjectService {
   }
 
   async updateProject(id: number, data: Partial<Project>): Promise<Project> {
-    const proj = await Project.findOneByOrFail({ id });
+    const repo = AppDataSource.getRepository(Project);
+    const proj = await repo.findOneByOrFail({ id });
 
     // Re-detect isGitRepo if path changes
     if (data.path) {
       data.isGitRepo = existsSync(join(data.path, '.git'));
     }
 
-    Object.assign(proj, data);
-    await proj.save();
+    repo.merge(proj, data);
+    await repo.save(proj);
     return proj;
   }
 
