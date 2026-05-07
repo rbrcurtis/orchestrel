@@ -20,6 +20,7 @@ describe('queryAgentSdk', () => {
 
     expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
       options: expect.objectContaining({
+        disallowedTools: expect.arrayContaining(['AskUserQuestion']),
         settings: expect.objectContaining({
           skillOverrides: expect.objectContaining({
             'claude-api': 'off',

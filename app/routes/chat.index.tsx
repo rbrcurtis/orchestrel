@@ -14,8 +14,8 @@ const ChatIndex = observer(function ChatIndex() {
 
   const [description, setDescription] = useState('');
   const [projectId, setProjectId] = useState<number | null>(() => {
-    const all = projectStore.all;
-    return all.length > 0 ? all[0].id : null;
+    const active = projectStore.active;
+    return active.length > 0 ? active[0].id : null;
   });
   const [creating, setCreating] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -35,10 +35,10 @@ const ChatIndex = observer(function ChatIndex() {
   }, []);
 
   useEffect(() => {
-    if (projectId == null && projectStore.all.length > 0) {
-      setProjectId(projectStore.all[0].id);
+    if (projectId == null && projectStore.active.length > 0) {
+      setProjectId(projectStore.active[0].id);
     }
-  }, [projectStore.all.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectStore.active.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit() {
     if (!description.trim() || !projectId) return;
@@ -78,7 +78,7 @@ const ChatIndex = observer(function ChatIndex() {
                 <SelectValue placeholder="Select project" />
               </SelectTrigger>
               <SelectContent>
-                {projectStore.all.map((p) => (
+                {projectStore.active.map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>
                     <span className="flex items-center gap-2">
                       {p.color && <span className="size-2 rounded-full" style={{ backgroundColor: p.color }} />}

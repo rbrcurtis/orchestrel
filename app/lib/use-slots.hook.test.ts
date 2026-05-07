@@ -241,6 +241,38 @@ describe('flash', () => {
     expect(result.current.flashSlot).toBe(0);
   });
 
+  it('releaseHotseat rotates to the next eligible card when available', async () => {
+    const stored: SlotState[] = [{ type: 'manual', cardId: 1 }];
+    localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const { result } = renderHook(() => useSlots(1, cards));
+
+    act(() => result.current.releaseHotseat());
+
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(2);
+    });
+    expect(result.current.slots[0]).toEqual({ type: 'empty' });
+    expect(result.current.flashSlot).toBe(0);
+  });
+
+  it('releaseHotseat leaves the same card when it is the only eligible choice', async () => {
+    const stored: SlotState[] = [{ type: 'manual', cardId: 1 }];
+    localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' })];
+    const { result } = renderHook(() => useSlots(1, cards));
+
+    act(() => result.current.releaseHotseat());
+
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(1);
+    });
+    expect(result.current.slots[0]).toEqual({ type: 'empty' });
+  });
+
   it('clearFlash resets flashSlot to null', () => {
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const { result } = renderHook(() => useSlots(2, cards));

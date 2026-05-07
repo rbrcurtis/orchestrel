@@ -93,7 +93,7 @@ Built for managing multiple concurrent AI-assisted development tasks from a sing
 - **Node.js** 20+
 - **pnpm**
 - **OpenCode** — install and configure with your Anthropic API key
-- **Ollama** (optional) — for AI-generated card titles. Runs `gemma3:4b` on `localhost:11434`.
+- **Ollama** (optional) — for AI-generated card titles. Runs on `localhost:11434`.
 
 ## Setup
 

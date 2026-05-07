@@ -4,9 +4,27 @@ import { CardStore } from './card-store';
 import { ConfigStore } from './config-store';
 import { ProjectStore } from './project-store';
 import { SessionStore } from './session-store';
-import type { Column, User } from '../../src/shared/ws-protocol';
+import type { Column, SyncPayload, User } from '../../src/shared/ws-protocol';
 
 const PROJECT_FILTER_KEY = 'dispatcher-project-filter';
+
+function applySync(store: RootStore, data: SyncPayload): void {
+  store.currentUser = data.user ?? null;
+  store.cards.hydrate(data.cards, true);
+  store.projects.hydrate(data.projects, true, data.users);
+  store.config.hydrate(data.providers);
+}
+
+async function resubscribeAll(store: RootStore): Promise<void> {
+  const columns = store.ws.getSubscribedColumns();
+  if (columns.length > 0) {
+    const data = await store.ws.subscribe(columns);
+    if (data) {
+      runInAction(() => applySync(store, data));
+    }
+  }
+  await store.sessions.resubscribeAll();
+}
 
 /** Read the persisted project filter. Empty set = no filter (show everything). */
 function readProjectFilter(): Set<number> {
@@ -36,12 +54,7 @@ export class RootStore {
     this.sessions = new SessionStore();
 
     this.ws = new WsClient({
-      onSync: (data) => {
-        this.currentUser = data.user ?? null;
-        this.cards.hydrate(data.cards, true);
-        this.projects.hydrate(data.projects, true, data.users);
-        this.config.hydrate(data.providers);
-      },
+      onSync: (data) => applySync(this, data),
       onCardUpdated: (data) => {
         const prev = this.cards.getCard(data.id);
         if (
@@ -82,7 +95,7 @@ export class RootStore {
     this.projects.setWs(this.ws);
     this.sessions.setWs(this.ws);
 
-    this.ws.onReconnect(() => this.sessions.resubscribeAll());
+    this.ws.onReconnect(() => resubscribeAll(this));
 
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission();
@@ -92,12 +105,7 @@ export class RootStore {
   subscribe(columns: string[]) {
     this.ws.subscribe(columns as Column[]).then((data) => {
       if (!data) return;
-      runInAction(() => {
-        this.currentUser = data.user ?? null;
-        this.cards.hydrate(data.cards, true);
-        this.projects.hydrate(data.projects, true, data.users);
-        this.config.hydrate(data.providers);
-      });
+      runInAction(() => applySync(this, data));
     });
   }
 

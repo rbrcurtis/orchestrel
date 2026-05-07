@@ -23,6 +23,7 @@ interface Project {
   defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   providerID: string;
+  archived: boolean;
   memoryBaseUrl?: string | null;
   memoryApiKey?: string | null;
   userIds?: number[];
@@ -46,6 +47,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
     project?.defaultThinkingLevel ?? 'high',
   );
   const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
+  const [archived, setArchived] = useState(project?.archived ?? false);
   const [memoryBaseUrl, setMemoryBaseUrl] = useState(project?.memoryBaseUrl ?? '');
   const [memoryApiKey, setMemoryApiKey] = useState(project?.memoryApiKey ?? '');
   const [pending, setPending] = useState(false);
@@ -80,6 +82,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       defaultModel,
       defaultThinkingLevel,
       providerID,
+      archived,
       memoryBaseUrl: memoryBaseUrl || null,
       memoryApiKey: memoryApiKey || null,
       userIds: selectedUserIds,
@@ -124,23 +127,6 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                   placeholder="~/Code/my-project"
                   className="font-mono"
                 />
-              </div>
-
-              {/* Provider */}
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
-                <Select value={providerID} onValueChange={handleProviderChange}>
-                  <SelectTrigger className="w-full">
-                    <span data-slot="select-value">{config.getProvider(providerID)?.label ?? providerID}</span>
-                  </SelectTrigger>
-                  <SelectContent position="popper" sideOffset={4}>
-                    {config.allProviders.map(([id, p]) => (
-                      <SelectItem key={id} value={id}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               {/* Color */}
@@ -189,6 +175,30 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                   </label>
                 </div>
               )}
+
+              <div className="flex items-center gap-2">
+                <Checkbox id="archived" checked={archived} onCheckedChange={(checked) => setArchived(checked === true)} />
+                <label htmlFor="archived" className="text-sm font-medium text-muted-foreground">
+                  Archived
+                </label>
+              </div>
+
+              {/* Provider */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
+                <Select value={providerID} onValueChange={handleProviderChange}>
+                  <SelectTrigger className="w-full">
+                    <span data-slot="select-value">{config.getProvider(providerID)?.label ?? providerID}</span>
+                  </SelectTrigger>
+                  <SelectContent position="popper" sideOffset={4}>
+                    {config.allProviders.map(([id, p]) => (
+                      <SelectItem key={id} value={id}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {/* Default Model */}
               <div>

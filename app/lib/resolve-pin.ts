@@ -52,6 +52,7 @@ export function resolvePinnedCards(
   currentDisplayed: Map<number, number> = new Map(),
   projectFilter?: Set<number>,
   lockedSlots?: Set<number>,
+  suppressedHotseatCardId?: number | null,
 ): Map<number, number> {
   // Build exclusion set: cards already stored in any slot
   const usedCardIds = new Set<number>();
@@ -176,8 +177,39 @@ export function resolvePinnedCards(
         c.projectId != null &&
         (c.column === 'review' || c.column === 'running') &&
         !usedCardIds.has(c.id) &&
-        !claimedByPins.has(c.id),
+        !claimedByPins.has(c.id) &&
+        c.id !== suppressedHotseatCardId,
     );
+    const canUseSuppressedCard =
+      suppressedHotseatCardId == null ||
+      claimedByPins.size > 0 ||
+      eligible.length > 0;
+
+    if (!canUseSuppressedCard) {
+      const suppressedCard = cards.find((c) => c.id === suppressedHotseatCardId);
+      if (
+        suppressedCard &&
+        suppressedCard.projectId != null &&
+        (suppressedCard.column === 'review' || suppressedCard.column === 'running') &&
+        !usedCardIds.has(suppressedCard.id) &&
+        !claimedByPins.has(suppressedCard.id)
+      ) {
+        eligible = [suppressedCard];
+      }
+    }
+
+    const isSuppressed = (cardId: number) =>
+      suppressedHotseatCardId != null &&
+      cardId === suppressedHotseatCardId &&
+      canUseSuppressedCard;
+
+    const hotseatEligible = (card: Card) =>
+      card.projectId != null &&
+      (card.column === 'review' || card.column === 'running') &&
+      !usedCardIds.has(card.id) &&
+      !claimedByPins.has(card.id) &&
+      (!projectFilter || projectFilter.size === 0 || projectFilter.has(card.projectId)) &&
+      !isSuppressed(card.id);
 
     // Apply project filter to hotseat only (real pins are unaffected)
     if (projectFilter && projectFilter.size > 0) {
@@ -188,14 +220,7 @@ export function resolvePinnedCards(
     const prevCardId = currentDisplayed.get(0);
     if (prevCardId != null) {
       const card = cardById.get(prevCardId);
-      if (
-        card &&
-        card.projectId != null &&
-        (card.column === 'review' || card.column === 'running') &&
-        !usedCardIds.has(card.id) &&
-        !claimedByPins.has(card.id) &&
-        (!projectFilter || projectFilter.size === 0 || projectFilter.has(card.projectId))
-      ) {
+      if (card && hotseatEligible(card)) {
         result.set(0, prevCardId);
       } else {
         const ranked = rankCards(eligible);

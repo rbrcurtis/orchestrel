@@ -14,6 +14,7 @@ export interface CardResponse {
 export interface ProjectResponse {
   id: number
   name: string
+  archived: boolean
 }
 
 export interface CardCreateBody {

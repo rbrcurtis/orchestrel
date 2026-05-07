@@ -19,7 +19,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    exclude: ['**/node_modules/**', '**/.worktrees/**'],
+    exclude: ['**/node_modules/**', '**/.worktrees/**', '**/.claude/worktrees/**'],
     server: {
       deps: {
         inline: ['tsoa', '@tsoa/runtime'],

@@ -69,6 +69,10 @@ export class Project extends BaseEntity {
   @Column({ type: 'text', default: '#00f0ff' })
   color!: string;
 
+  @Expose({ groups: ['rest'] })
+  @Column({ type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
+  archived!: boolean;
+
   @Column({ name: 'memory_base_url', type: 'text', nullable: true })
   memoryBaseUrl!: string | null;
 

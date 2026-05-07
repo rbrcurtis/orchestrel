@@ -6,11 +6,11 @@ import { RootStore } from '~/stores/root-store';
 import { NewCardDetail } from './CardDetail';
 import type { Card, Project } from '../../src/shared/ws-protocol';
 
-function makeProject(): Project {
+function makeProject(id: number, name: string, archived = false): Project {
   return {
-    id: 42,
-    name: 'Orchestrel',
-    path: '/tmp/orchestrel',
+    id,
+    name,
+    path: `/tmp/${name.toLowerCase().replace(/\s+/g, '-')}`,
     setupCommands: '',
     isGitRepo: true,
     defaultBranch: 'main',
@@ -22,7 +22,8 @@ function makeProject(): Project {
     memoryBaseUrl: null,
     memoryApiKey: null,
     createdAt: '2026-04-24T00:00:00.000Z',
-  };
+    archived,
+  } as unknown as Project;
 }
 
 function makeCard(description: string): Card {
@@ -52,7 +53,7 @@ function makeCard(description: string): Card {
 
 function renderNewCardDetail() {
   const store = new RootStore();
-  store.projects.hydrate([makeProject()]);
+  store.projects.hydrate([makeProject(42, 'Orchestrel')]);
   store.config.hydrate({ anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } } } });
   store.cards.createCard = vi.fn(async (data) => makeCard(data.description ?? ''));
   store.cards.suggestTitle = vi.fn(async () => 'Suggested card');
@@ -70,6 +71,11 @@ function renderNewCardDetail() {
 describe('NewCardDetail description draft persistence', () => {
   beforeEach(() => {
     localStorage.clear();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
   });
 
   it('loads the unsaved description draft from local storage', () => {
@@ -112,5 +118,25 @@ describe('NewCardDetail description draft persistence', () => {
     await waitFor(() => expect(store.cards.createCard).toHaveBeenCalled());
     expect(store.cards.suggestTitle).not.toHaveBeenCalled();
     expect(localStorage.getItem('orchestrel:new-card-draft-description')).toBeNull();
+  });
+
+  it('hides archived projects from the new card project picker', async () => {
+    const store = new RootStore();
+    store.projects.hydrate([makeProject(42, 'Active Project'), makeProject(99, 'Archived Project', true)]);
+    store.config.hydrate({ anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } } } });
+
+    render(
+      <StoreProvider store={store}>
+        <NewCardDetail column="backlog" onCreated={vi.fn()} onClose={vi.fn()} />
+      </StoreProvider>,
+    );
+
+    const projectSelect = screen.getAllByRole('combobox')[1];
+    projectSelect.focus();
+    fireEvent.keyDown(projectSelect, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(projectSelect.getAttribute('aria-expanded')).toBe('true'));
+    expect(screen.getByRole('option', { name: 'Active Project' })).not.toBeNull();
+    expect(screen.queryByRole('option', { name: 'Archived Project' })).toBeNull();
   });
 });

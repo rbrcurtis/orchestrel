@@ -324,23 +324,24 @@ export class OrcdServer {
       return { ...process.env } as Record<string, string>;
     }
 
-    const base: Record<string, string> = {
-      ...(process.env as Record<string, string>),
-      ...cfg.modelAliasEnv,
-      CC_BACKGROUND_COMPACTOR_DISABLE: '1',
-    };
-
+    const providerConfig: Record<string, string> = {};
     if (cfg.type === 'bedrock') {
-      base.CLAUDE_CODE_USE_BEDROCK = '1';
-      if (cfg.region) base.AWS_REGION = cfg.region;
-      if (cfg.profile) base.AWS_PROFILE = cfg.profile;
+      providerConfig.CLAUDE_CODE_USE_BEDROCK = '1';
+      if (cfg.region) providerConfig.AWS_REGION = cfg.region;
+      if (cfg.profile) providerConfig.AWS_PROFILE = cfg.profile;
     } else {
-      if (cfg.baseUrl) base.ANTHROPIC_BASE_URL = cfg.baseUrl;
-      if (cfg.apiKey) base.ANTHROPIC_API_KEY = cfg.apiKey;
-      if (cfg.authToken) base.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
+      if (cfg.baseUrl) providerConfig.ANTHROPIC_BASE_URL = cfg.baseUrl;
+      if (cfg.apiKey) providerConfig.ANTHROPIC_API_KEY = cfg.apiKey;
+      if (cfg.authToken) providerConfig.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
     }
 
-    return base;
+    return Object.assign(
+      {},
+      process.env,
+      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
+      { ...providerConfig },
+      cfg.modelAliasEnv,
+    ) as Record<string, string>;
   }
 
   // ── Memory upsert ───────────────────────────────────────────────────────

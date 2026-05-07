@@ -13,8 +13,9 @@ type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export class WsClient {
   readonly socket: AppSocket;
   private subscribedColumns: Column[] = [];
-  private reconnectCb: (() => void) | null = null;
+  private reconnectCb: (() => void | Promise<void>) | null = null;
   private disposed = false;
+  private hasConnectedOnce = false;
 
   constructor(handlers: {
     onSync: (data: SyncPayload) => void;
@@ -44,15 +45,18 @@ export class WsClient {
     this.socket.on('agent:status', handlers.onAgentStatus);
 
     this.socket.on('connect', () => {
+      const wasConnectedBefore = this.hasConnectedOnce;
+      this.hasConnectedOnce = true;
       console.log('[ws] connected');
-      if (this.subscribedColumns.length > 0) {
-        this.subscribe(this.subscribedColumns);
-      }
+      if (!wasConnectedBefore) return;
+      console.log('[ws] resumed connection');
+      Promise.resolve(this.reconnectCb?.()).catch((err: unknown) => {
+        console.error('[ws] reconnect handler error:', err);
+      });
     });
 
     this.socket.io.on('reconnect', () => {
       console.log('[ws] reconnected');
-      this.reconnectCb?.();
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -74,8 +78,12 @@ export class WsClient {
     this.socket.disconnect().connect();
   }
 
-  onReconnect(cb: () => void) {
+  onReconnect(cb: () => void | Promise<void>) {
     this.reconnectCb = cb;
+  }
+
+  getSubscribedColumns(): Column[] {
+    return [...this.subscribedColumns];
   }
 
   async subscribe(columns: Column[]): Promise<SyncPayload | undefined> {

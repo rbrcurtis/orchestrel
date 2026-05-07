@@ -31,6 +31,8 @@ type Props = {
   clearSlot?: () => void;
   slotIndex?: number;
   pinned?: boolean;
+  onPromptSent?: () => void;
+  promptFocusSeq?: number | null;
 };
 
 const STATUSES = ['backlog', 'ready', 'running', 'review', 'done', 'archive'] as const;
@@ -55,7 +57,15 @@ type Draft = {
   summarizeThreshold: number;
 };
 
-export const CardDetail = observer(function CardDetail({ cardId, onClose, clearSlot, slotIndex, pinned }: Props) {
+export const CardDetail = observer(function CardDetail({
+  cardId,
+  onClose,
+  clearSlot,
+  slotIndex,
+  pinned,
+  onPromptSent,
+  promptFocusSeq,
+}: Props) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const sessionStore = useSessionStore();
@@ -389,7 +399,7 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">None</SelectItem>
-                      {projectStore.all.map((p) => (
+                      {projectStore.active.map((p) => (
                         <SelectItem key={p.id} value={String(p.id)}>
                           <span className="flex items-center gap-2">
                             {p.color && (
@@ -529,6 +539,8 @@ export const CardDetail = observer(function CardDetail({ cardId, onClose, clearS
             model={card.model ?? 'sonnet'}
             providerID={card.provider ?? cardProject?.providerID ?? 'anthropic'}
             summarizeThreshold={card.summarizeThreshold ?? 0}
+            onPromptSent={onPromptSent}
+            promptFocusSeq={promptFocusSeq}
           />
         )}
       </div>
@@ -805,7 +817,7 @@ export const NewCardDetail = observer(function NewCardDetail({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">None</SelectItem>
-                {projectStore.all.map((p) => (
+                {projectStore.active.map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>
                     <span className="flex items-center gap-2">
                       {p.color && (

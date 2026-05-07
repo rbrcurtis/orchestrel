@@ -8,7 +8,7 @@ type Props = {
 
 export const ProjectPinSelector = observer(function ProjectPinSelector({ onSelect }: Props) {
   const projectStore = useProjectStore();
-  const projects = projectStore.all;
+  const projects = projectStore.active;
 
   if (projects.length === 0) {
     return (

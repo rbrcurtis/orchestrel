@@ -646,6 +646,39 @@ describe('resolvePinnedCards', () => {
     expect(result.has(0)).toBe(false);
   });
 
+  it('hotseat skips a suppressed card when another eligible card exists', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards, new Map(), undefined, undefined, 1);
+    expect(result.get(0)).toBe(2);
+  });
+
+  it('hotseat falls back to the suppressed card when it is the only eligible card', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards, new Map(), undefined, undefined, 1);
+    expect(result.get(0)).toBe(1);
+  });
+
+  it('hotseat keeps the suppressed card hidden when real pins already claimed the other work', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 20 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards, new Map(), undefined, undefined, 1);
+    expect(result.get(1)).toBe(2);
+    expect(result.has(0)).toBe(false);
+  });
+
   it('hotseat excludes cards in manual slots', () => {
     const slots: SlotState[] = [
       { type: 'empty' },

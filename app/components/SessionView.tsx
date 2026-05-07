@@ -27,6 +27,8 @@ type Props = {
   model: string;
   providerID: string;
   summarizeThreshold: number;
+  onPromptSent?: () => void;
+  promptFocusSeq?: number | null;
 };
 
 export const SessionView = observer(function SessionView({
@@ -36,6 +38,8 @@ export const SessionView = observer(function SessionView({
   model,
   providerID,
   summarizeThreshold,
+  onPromptSent,
+  promptFocusSeq,
 }: Props) {
   const sessionStore = useSessionStore();
   const cardStore = useCardStore();
@@ -90,6 +94,11 @@ export const SessionView = observer(function SessionView({
     prevConvLen.current = 0; // ensure scroll-to-bottom fires for the new card
   }, [cardId]);
 
+  useEffect(() => {
+    if (promptFocusSeq == null) return;
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [promptFocusSeq]);
+
   // Clear isStarting on status transition
   useEffect(() => {
     if (
@@ -140,8 +149,10 @@ export const SessionView = observer(function SessionView({
   async function handleSend(message: string, files?: FileRef[]) {
     try {
       await sessionStore.sendMessage(cardId, message, files);
+      return true;
     } catch (err) {
       setNotification(err instanceof Error ? err.message : String(err));
+      return false;
     }
   }
 
@@ -296,6 +307,7 @@ export const SessionView = observer(function SessionView({
               : () => sessionStore.compactSession(cardId)
             : undefined
         }
+        onPromptSent={onPromptSent}
         sendPending={false}
         contextPercent={contextPercent}
         compacted={compacted}
@@ -325,7 +337,9 @@ function buildFailedChecksPrompt(
   prUrl: string,
   failedChecks: { name: string; conclusion: string; detailsUrl: string }[],
 ): string {
-  const checkList = failedChecks.map((c) => `- **${c.name}** (${c.conclusion})${c.detailsUrl ? `: ${c.detailsUrl}` : ''}`).join('\n');
+  const checkList = failedChecks
+    .map((c) => `- **${c.name}** (${c.conclusion})${c.detailsUrl ? `: ${c.detailsUrl}` : ''}`)
+    .join('\n');
   return `CI checks failed on this pull request: ${prUrl}
 
 Failed checks:
@@ -374,7 +388,9 @@ function CheckPrButton({
       if (data.merged) {
         await cardStore.updateCard({ id: cardId, column: 'done' });
       } else if (data.failedChecks?.length > 0 && data.hasComments) {
-        onAddressComments(buildFailedChecksPrompt(prUrl, data.failedChecks) + '\n\n---\n\nAlso, ' + buildPrCommentsPrompt(prUrl));
+        onAddressComments(
+          buildFailedChecksPrompt(prUrl, data.failedChecks) + '\n\n---\n\nAlso, ' + buildPrCommentsPrompt(prUrl),
+        );
       } else if (data.failedChecks?.length > 0) {
         onAddressComments(buildFailedChecksPrompt(prUrl, data.failedChecks));
       } else if (data.hasComments) {
@@ -470,6 +486,7 @@ function PromptInput({
   onSend,
   onStop,
   onCompact,
+  onPromptSent,
   sendPending,
   contextPercent,
   compacted,
@@ -479,9 +496,10 @@ function PromptInput({
   isRunning: boolean;
   hasSession: boolean;
   isPending: boolean;
-  onSend: (message: string, files?: FileRef[]) => void | Promise<void>;
+  onSend: (message: string, files?: FileRef[]) => boolean | Promise<boolean>;
   onStop: () => void;
   onCompact?: () => void;
+  onPromptSent?: () => void;
   sendPending: boolean;
   contextPercent: number;
   compacted: boolean;
@@ -559,19 +577,22 @@ function PromptInput({
     if (!trimmed && files.length === 0) return;
 
     setUploadError(null);
+    let sent = false;
     if (files.length > 0) {
       try {
         const refs = await uploadFiles(files);
-        await onSend(trimmed || 'Please review the attached files.', refs);
+        sent = await onSend(trimmed || 'Please review the attached files.', refs);
       } catch {
         setUploadError('Failed to upload files');
         return;
       }
     } else {
-      await onSend(trimmed);
+      sent = await onSend(trimmed);
     }
+    if (!sent) return;
     updateText('');
     setFiles([]);
+    onPromptSent?.();
     // Blur AFTER send completes — send is near-instant (WebSocket) but
     // must finish before blur clears focus lock, so the card's column
     // update from the server triggers event-driven recalc cleanly.
