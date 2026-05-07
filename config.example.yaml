@@ -2,16 +2,16 @@
 # Used by both orcd (daemon) and orc (backend/UI).
 # Copy to config.yaml and fill in your providers. config.yaml is gitignored.
 
-socket: ~/.orc/orcd.sock       # orcd UNIX socket path
+socket: ~/.orc/orcd.sock # orcd UNIX socket path
 defaultProvider: anthropic
 defaultModel: sonnet
-defaultCwd: ~/Code             # where new cards default their working directory
+defaultCwd: ~/Code # where new cards default their working directory
 # claudeCodePath: /usr/local/bin/claude   # path to claude CLI binary (omit to use PATH default)
 
 # Extra Claude settings files loaded into every session (highest priority).
 # Permissions arrays merge; other fields use last-wins.
 # extraSettings:
-#   - ~/rula-projects/.claude/settings.local.json
+#   - ~/Me/.claude/settings.local.json
 
 providers:
   # Claude via Anthropic API.
@@ -19,9 +19,9 @@ providers:
   anthropic:
     label: Anthropic
     models:
-      opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,              contextWindow: 1000000 }
-      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6,            contextWindow: 1000000 }
-      haiku:  { label: "Haiku 4.5",  modelID: claude-haiku-4-5-20251001,    contextWindow: 200000 }
+      opus: { label: 'Opus 4.7', modelID: claude-opus-4-7, contextWindow: 1000000 }
+      sonnet: { label: 'Sonnet 4.6', modelID: claude-sonnet-4-6, contextWindow: 1000000 }
+      haiku: { label: 'Haiku 4.5', modelID: claude-haiku-4-5-20251001, contextWindow: 200000 }
 
   # Example: a local proxy (like a Claude-compatible pool proxy).
   # proxy:
