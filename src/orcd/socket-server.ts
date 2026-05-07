@@ -1,13 +1,13 @@
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { createServer, type Server, type Socket } from 'net';
-import { mkdirSync, existsSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
+import { upsertMemories } from '../lib/memory-upsert';
+import { applyCompaction, prepareCompaction, type PreparedCompaction } from '../lib/session-compactor';
+import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import type { OrcdConfig, ProviderConfig } from './config';
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
 import { expandSlashCommand } from './skill-resolver';
-import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
-import type { ProviderConfig, OrcdConfig } from './config';
-import { prepareCompaction, applyCompaction, type PreparedCompaction } from '../lib/session-compactor';
-import { upsertMemories } from '../lib/memory-upsert';
 
 interface ClientState {
   socket: Socket;
@@ -18,10 +18,10 @@ export class OrcdServer {
   private server: Server | null = null;
   private clients = new Set<ClientState>();
   readonly store = new SessionStore();
-  private compacting = new Set<string>();  // session IDs currently compacting
+  private compacting = new Set<string>(); // session IDs currently compacting
   private pendingSummaries = new Map<string, PreparedCompaction>();
-  private turnActive = new Set<string>();  // sessions with a turn in progress
-  private upsertedSessions = new Set<string>();  // sessions that have had memory upsert run
+  private turnActive = new Set<string>(); // sessions with a turn in progress
+  private upsertedSessions = new Set<string>(); // sessions that have had memory upsert run
   private memoryConfig?: OrcdConfig['memoryUpsert'];
 
   constructor(
@@ -167,14 +167,16 @@ export class OrcdServer {
 
     const prompt = expandSlashCommand(action.prompt, action.cwd);
 
-    session.run({
-      prompt,
-      resume: !!action.sessionId,
-      env,
-      effort,
-    }).finally(() => {
-      console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
-    });
+    session
+      .run({
+        prompt,
+        resume: !!action.sessionId,
+        env,
+        effort,
+      })
+      .finally(() => {
+        console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
+      });
   }
 
   private handleMessage(client: ClientState, action: OrcdAction & { action: 'message' }): void {
@@ -222,7 +224,9 @@ export class OrcdServer {
     }
 
     if (client.subscriptions.has(session.id)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`);
+      console.log(
+        `[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`,
+      );
       // Already subscribed — just replay from requested index
       session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
       return;
@@ -293,16 +297,18 @@ export class OrcdServer {
 
     this.compacting.add(session.id);
     session.emitBgcStarted();
-    this.triggerCompaction(session).catch((err) => {
-      console.error(`[orcd:${session.id.slice(0, 8)}:compact] manual start failed:`, err);
-    }).finally(() => {
-      this.compacting.delete(session.id);
-      if (hydrated) {
-        this.pendingSummaries.delete(session.id);
-        this.turnActive.delete(session.id);
-        this.store.remove(session.id);
-      }
-    });
+    this.triggerCompaction(session)
+      .catch((err) => {
+        console.error(`[orcd:${session.id.slice(0, 8)}:compact] manual start failed:`, err);
+      })
+      .finally(() => {
+        this.compacting.delete(session.id);
+        if (hydrated) {
+          this.pendingSummaries.delete(session.id);
+          this.turnActive.delete(session.id);
+          this.store.remove(session.id);
+        }
+      });
   }
 
   // ── Provider env helper ──────────────────────────────────────────────────
@@ -313,11 +319,23 @@ export class OrcdServer {
       console.warn(`[orcd] buildProviderEnv: unknown provider ${provider}, using process.env only`);
       return { ...process.env } as Record<string, string>;
     }
-    return Object.assign({}, process.env,
+
+    const providerConfig: Record<string, string> = {};
+    if (cfg.type === 'bedrock') {
+      providerConfig.CLAUDE_CODE_USE_BEDROCK = '1';
+      if (cfg.region) providerConfig.AWS_REGION = cfg.region;
+      if (cfg.profile) providerConfig.AWS_PROFILE = cfg.profile;
+    } else {
+      if (cfg.baseUrl) providerConfig.ANTHROPIC_BASE_URL = cfg.baseUrl;
+      if (cfg.apiKey) providerConfig.ANTHROPIC_API_KEY = cfg.apiKey;
+      if (cfg.authToken) providerConfig.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
+    }
+
+    return Object.assign(
+      {},
+      process.env,
       { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      cfg.baseUrl ? { ANTHROPIC_BASE_URL: cfg.baseUrl } : {},
-      cfg.apiKey ? { ANTHROPIC_API_KEY: cfg.apiKey } : {},
-      cfg.authToken ? { ANTHROPIC_AUTH_TOKEN: cfg.authToken } : {},
+      { ...providerConfig },
       cfg.modelAliasEnv,
     ) as Record<string, string>;
   }
@@ -367,9 +385,8 @@ export class OrcdServer {
     // context and wasted tokens. See memory 'Auto-memory upsert architecture'.
 
     // Prepare summary (read-only, safe while session runs)
-    const pct = session.lastContextWindow > 0
-      ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0)
-      : '?';
+    const pct =
+      session.lastContextWindow > 0 ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0) : '?';
     log(`preparing summary (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
 
     const prepared = await prepareCompaction({
@@ -381,11 +398,15 @@ export class OrcdServer {
 
     this.pendingSummaries.set(sid, prepared);
     if (!this.turnActive.has(sid)) {
-      log(`summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — session inactive, applying now`);
+      log(
+        `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — session inactive, applying now`,
+      );
       await this.applyPendingCompaction(session);
       return;
     }
-    log(`summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for session_exit`);
+    log(
+      `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for session_exit`,
+    );
   }
 
   private async applyPendingCompaction(session: OrcdSession): Promise<void> {
@@ -399,7 +420,9 @@ export class OrcdServer {
     console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at session_exit`);
     const result = await applyCompaction(prepared);
     this.pendingSummaries.delete(sid);
-    console.log(`[orcd:${sid.slice(0, 8)}:compact] applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`);
+    console.log(
+      `[orcd:${sid.slice(0, 8)}:compact] applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`,
+    );
     session.emitCompactBoundary();
   }
 
@@ -437,11 +460,13 @@ export class OrcdServer {
           const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
           console.log(`[orcd:${sid.slice(0, 8)}:compact] threshold hit (${pct}%), starting`);
           session.emitBgcStarted();
-          this.triggerCompaction(session).catch((err) => {
-            console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err);
-          }).finally(() => {
-            this.compacting.delete(sid);
-          });
+          this.triggerCompaction(session)
+            .catch((err) => {
+              console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err);
+            })
+            .finally(() => {
+              this.compacting.delete(sid);
+            });
         }
       }
 

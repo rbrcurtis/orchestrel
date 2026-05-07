@@ -27,6 +27,17 @@ providers:
   #     sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 200000 }
   #     auto:   { label: Auto,         modelID: auto,              contextWindow: 200000 }
 
+  # AWS Bedrock — uses AWS credential chain (env vars, ~/.aws/credentials, IAM role).
+  # Set up: ensure aws-cli configured or env vars AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY set.
+  # bedrock:
+  #   type: bedrock
+  #   label: AWS Bedrock
+  #   region: us-east-1
+  #   # profile: default           # optional — AWS profile name
+  #   models:
+  #     opus:   { label: "Opus 4.6",   modelID: us.anthropic.claude-opus-4-6-20250514-v1:0,   contextWindow: 200000 }
+  #     sonnet: { label: "Sonnet 4.6", modelID: us.anthropic.claude-sonnet-4-6-20250514-v1:0, contextWindow: 200000 }
+
   # Example: a non-Anthropic provider using authToken instead of apiKey.
   # deepseek:
   #   label: DeepSeek

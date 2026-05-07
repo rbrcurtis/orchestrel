@@ -9,11 +9,16 @@ export interface ModelDef {
   contextWindow: number;
 }
 
+export type ProviderType = 'anthropic' | 'bedrock';
+
 export interface ProviderDef {
+  type?: ProviderType;
   label?: string;
   baseUrl?: string;
   apiKey?: string;
   authToken?: string;
+  region?: string;
+  profile?: string;
   models: Record<string, ModelDef>;
 }
 
@@ -80,10 +85,13 @@ export function parseConfig(
     }
 
     providers[id] = {
+      ...(p.type ? { type: String(p.type) as ProviderType } : {}),
       ...(p.label ? { label: String(p.label) } : {}),
       ...(p.baseUrl ? { baseUrl: resolveEnvVars(String(p.baseUrl), env) } : {}),
       ...(p.apiKey ? { apiKey: resolveEnvVars(String(p.apiKey), env) } : {}),
       ...(p.authToken ? { authToken: resolveEnvVars(String(p.authToken), env) } : {}),
+      ...(p.region ? { region: resolveEnvVars(String(p.region), env) } : {}),
+      ...(p.profile ? { profile: resolveEnvVars(String(p.profile), env) } : {}),
       models,
     };
   }
