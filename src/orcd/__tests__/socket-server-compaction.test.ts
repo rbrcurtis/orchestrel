@@ -38,7 +38,7 @@ vi.mock('../../lib/session-compactor', () => ({
 
 function createServer() {
   return new OrcdServer('/tmp/orcd-test.sock', {
-    test: { baseUrl: '', apiKey: '', models: ['test-model'], modelAliasEnv: {} },
+    test: { type: 'anthropic', baseUrl: '', apiKey: '', models: ['test-model'], modelAliasEnv: {} },
   }, { provider: 'test', model: 'test-model' });
 }
 

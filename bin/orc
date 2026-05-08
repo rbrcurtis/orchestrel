@@ -142,12 +142,15 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
     if (!provider) continue;
 
     const maybeModel = passthroughArgs[i + 1];
-    if (maybeModel && provider.models[maybeModel]) {
-      passthroughArgs.splice(i, 2);
-      return {
-        providerId: maybeProvider,
-        modelAlias: maybeModel,
-      };
+    if (maybeModel) {
+      const modelAlias = tryResolveModelAlias(provider, maybeModel);
+      if (modelAlias) {
+        passthroughArgs.splice(i, 2);
+        return {
+          providerId: maybeProvider,
+          modelAlias,
+        };
+      }
     }
 
     passthroughArgs.splice(i, 1);
@@ -173,6 +176,14 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
   }
 
   return { providerId, modelAlias };
+}
+
+function tryResolveModelAlias(provider, modelRef) {
+  try {
+    return resolveModelAlias(provider, modelRef);
+  } catch {
+    return null;
+  }
 }
 
 function extractResumeTarget(passthroughArgs) {
@@ -220,6 +231,11 @@ function resolveModelAlias(provider, modelRef) {
     return modelRef;
   }
 
+  const claudeDefaultAlias = resolveClaudeDefaultModelAlias(provider, modelRef);
+  if (claudeDefaultAlias) {
+    return claudeDefaultAlias;
+  }
+
   for (const [alias, model] of Object.entries(provider.models)) {
     if (model.modelID === modelRef) {
       return alias;
@@ -227,6 +243,18 @@ function resolveModelAlias(provider, modelRef) {
   }
 
   throw new Error(`Unknown model "${modelRef}" for provider`);
+}
+
+function resolveClaudeDefaultModelAlias(provider, modelRef) {
+  const aliases = Object.keys(provider.models);
+  const [opus, sonnet = opus, haiku = sonnet] = aliases;
+  const claudeAliases = {
+    opus,
+    sonnet,
+    haiku,
+  };
+
+  return claudeAliases[modelRef] ?? null;
 }
 
 function firstModelAlias(provider) {
