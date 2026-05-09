@@ -248,7 +248,7 @@ describe('reconcileRunningCards', () => {
     });
   });
 
-  it('keeps save-autostart running cards in running when orcd only lists stopped session', async () => {
+  it('moves auto-started running cards with an existing stopped session to review', async () => {
     const { reconcileRunningCards } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
@@ -266,10 +266,37 @@ describe('reconcileRunningCards', () => {
 
     await reconcileRunningCards(client as never, bus);
 
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith({
+      sessionId: 'sess-abc',
+      status: 'stopped',
+    });
+  });
+
+  it('keeps brand-new running cards with no sessionId in running during reconciliation', async () => {
+    const { reconcileRunningCards } = await import('./card-sessions');
+    const bus = new MessageBus();
+    const exitSpy = vi.fn();
+    bus.on('card:42:exit', exitSpy);
+    mockCards[0].column = 'running';
+    mockCards[0].sessionId = null;
+    mockCards[0].promptsSent = 0;
+    mockRepo.save.mockClear();
+    const client = {
+      list: vi.fn(async () => ({
+        type: 'session_list',
+        sessions: [],
+      })),
+      markActive: vi.fn(),
+    };
+
+    await reconcileRunningCards(client as never, bus);
+
     expect(mockCards[0].column).toBe('running');
     expect(mockRepo.save).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith({
-      sessionId: 'sess-abc',
+      sessionId: null,
       status: 'stopped',
     });
   });

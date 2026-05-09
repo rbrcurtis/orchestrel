@@ -122,7 +122,7 @@ export async function handleAgentStatus(
     const active = !!(card?.sessionId && client?.isActive(card.sessionId));
     const starting = !!card && card.column === 'running' && !card.sessionId;
 
-    if (!active && !starting && card && card.column === 'running' && (card.promptsSent ?? 0) > 0) {
+    if (!active && !starting && card && card.column === 'running') {
       card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await card.save();

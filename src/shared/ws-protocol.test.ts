@@ -99,6 +99,7 @@ describe('projectSchema', () => {
       defaultThinkingLevel: 'off',
       providerID: 'anthropic',
       color: '#ff0000',
+      archived: false,
       createdAt: '2024-01-01T00:00:00',
     }
     const result = projectSchema.safeParse(project)

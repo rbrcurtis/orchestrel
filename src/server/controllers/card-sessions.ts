@@ -144,7 +144,7 @@ async function handleSessionExit(
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
 
-  if (card && card.column === 'running' && (card.promptsSent ?? 0) > 0) {
+  if (card && card.column === 'running') {
     card.column = 'review';
     card.updatedAt = new Date().toISOString();
     await repo.save(card);
@@ -191,7 +191,7 @@ export async function reconcileRunningCards(
   }
 
   // Reconcile running-column cards whose session is no longer alive in orcd.
-  // Cards with prompted work move to review; save-autostart cards stay running.
+  // Cards with no sessionId are still in the pre-session starting window and stay in running.
   const runningCards = allCards.filter((c) => c.column === 'running');
   if (runningCards.length === 0) {
     console.log(`[reconcile] no running cards to reconcile`);
@@ -203,19 +203,20 @@ export async function reconcileRunningCards(
       console.log(`[reconcile] card ${card.id} still active in orcd`);
       continue;
     }
-    if (card.sessionId) untrackSession(card.sessionId);
-    if ((card.promptsSent ?? 0) > 0) {
-      card.column = 'review';
-      card.updatedAt = new Date().toISOString();
-      await r.save(card);
-      console.log(
-        `[reconcile] card ${card.id} moved to review (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
-      );
-    } else {
-      console.log(
-        `[reconcile] card ${card.id} session inactive (${card.sessionId ? 'session not in orcd' : 'no sessionId'})`,
-      );
+    if (!card.sessionId) {
+      console.log(`[reconcile] card ${card.id} still starting (no sessionId yet)`);
+      bus.publish(`card:${card.id}:exit`, {
+        sessionId: null,
+        status: 'stopped',
+      });
+      continue;
     }
+
+    untrackSession(card.sessionId);
+    card.column = 'review';
+    card.updatedAt = new Date().toISOString();
+    await r.save(card);
+    console.log(`[reconcile] card ${card.id} moved to review (session not in orcd)`);
     bus.publish(`card:${card.id}:exit`, {
       sessionId: card.sessionId,
       status: 'stopped',

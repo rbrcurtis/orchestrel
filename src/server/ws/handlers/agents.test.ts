@@ -102,7 +102,7 @@ describe('handleAgentStatus', () => {
     expect(callback).toHaveBeenCalledWith({});
   });
 
-  it('moves prompted inactive running cards to review and reports them as completed', async () => {
+  it('moves inactive running cards with an existing session to review and reports them as completed', async () => {
     const { handleAgentStatus } = await import('./agents');
     const callback = vi.fn();
     const emit = vi.fn();
@@ -134,7 +134,7 @@ describe('handleAgentStatus', () => {
     expect(callback).toHaveBeenCalledWith({});
   });
 
-  it('keeps save-autostart inactive running cards in running while reporting completed', async () => {
+  it('moves auto-started inactive running cards with an existing session to review', async () => {
     const { handleAgentStatus } = await import('./agents');
     const callback = vi.fn();
     const emit = vi.fn();
@@ -155,8 +155,8 @@ describe('handleAgentStatus', () => {
 
     await handleAgentStatus({ cardId: 42 }, callback, { emit } as never);
 
-    expect(card.column).toBe('running');
-    expect(save).not.toHaveBeenCalled();
+    expect(card.column).toBe('review');
+    expect(save).toHaveBeenCalled();
     expect(emit).toHaveBeenCalledWith('agent:status', expect.objectContaining({
       cardId: 42,
       active: false,
