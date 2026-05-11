@@ -85,6 +85,5 @@
 - **OpenClaw API:** POST endpoint to request session start/continue, appears as pending card needing approval
 - **Sub-tasks** within cards
 - **Cost tracking** per Claude session
-- **Slash command picker** in session UI
 - **Model/agent selection** per session
 - **PR status fetching** (GitHub API / Bitbucket API)

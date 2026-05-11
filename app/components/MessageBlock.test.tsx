@@ -110,3 +110,23 @@ describe('MessageBlock timestamp formatting', () => {
     expectDateAndTimeTokens(html, dateTokens, timeTokens);
   });
 });
+
+describe('MessageBlock user prompt rendering', () => {
+  it('renders slash commands as plain user text', () => {
+    const html = renderEntry({ kind: 'user', content: '/ask hello' });
+
+    expect(html).toContain('/ask hello');
+    expect(html).not.toContain('text-neon-cyan');
+  });
+
+  it('renders expanded skill markdown literally instead of collapsing it', () => {
+    const html = renderEntry({
+      kind: 'user',
+      content: '# Test-Driven Development\n\n## Instructions\n\nWrite the test first.',
+    });
+
+    expect(html).toContain('Test-Driven Development');
+    expect(html).toContain('## Instructions');
+    expect(html).not.toContain('skill loaded');
+  });
+});

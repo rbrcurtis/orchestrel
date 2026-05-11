@@ -51,9 +51,9 @@ function makeCard(description: string): Card {
   };
 }
 
-function renderNewCardDetail() {
+function renderNewCardDetail(opts?: { initialProjectId?: number; projectFilter?: Set<number>; projects?: Project[] }) {
   const store = new RootStore();
-  store.projects.hydrate([makeProject(42, 'Orchestrel')]);
+  store.projects.hydrate(opts?.projects ?? [makeProject(42, 'Orchestrel')]);
   store.config.hydrate({ anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } } } });
   store.cards.createCard = vi.fn(async (data) => makeCard(data.description ?? ''));
   store.cards.suggestTitle = vi.fn(async () => 'Suggested card');
@@ -61,7 +61,13 @@ function renderNewCardDetail() {
   const onClose = vi.fn();
   render(
     <StoreProvider store={store}>
-      <NewCardDetail column="backlog" initialProjectId={42} onCreated={vi.fn()} onClose={onClose} />
+      <NewCardDetail
+        column="backlog"
+        initialProjectId={opts?.initialProjectId ?? 42}
+        projectFilter={opts?.projectFilter}
+        onCreated={vi.fn()}
+        onClose={onClose}
+      />
     </StoreProvider>,
   );
 
@@ -121,15 +127,10 @@ describe('NewCardDetail description draft persistence', () => {
   });
 
   it('hides archived projects from the new card project picker', async () => {
-    const store = new RootStore();
-    store.projects.hydrate([makeProject(42, 'Active Project'), makeProject(99, 'Archived Project', true)]);
-    store.config.hydrate({ anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } } } });
-
-    render(
-      <StoreProvider store={store}>
-        <NewCardDetail column="backlog" onCreated={vi.fn()} onClose={vi.fn()} />
-      </StoreProvider>,
-    );
+    renderNewCardDetail({
+      initialProjectId: undefined,
+      projects: [makeProject(42, 'Active Project'), makeProject(99, 'Archived Project', true)],
+    });
 
     const projectSelect = screen.getAllByRole('combobox')[1];
     projectSelect.focus();
@@ -138,5 +139,37 @@ describe('NewCardDetail description draft persistence', () => {
     await waitFor(() => expect(projectSelect.getAttribute('aria-expanded')).toBe('true'));
     expect(screen.getByRole('option', { name: 'Active Project' })).not.toBeNull();
     expect(screen.queryByRole('option', { name: 'Archived Project' })).toBeNull();
+  });
+
+  it('hides filtered-out projects from the new card project picker', async () => {
+    renderNewCardDetail({
+      initialProjectId: undefined,
+      projectFilter: new Set([42]),
+      projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Hidden Project')],
+    });
+
+    const projectSelect = screen.getAllByRole('combobox')[1];
+    projectSelect.focus();
+    fireEvent.keyDown(projectSelect, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(projectSelect.getAttribute('aria-expanded')).toBe('true'));
+    expect(screen.getByRole('option', { name: 'Visible Project' })).not.toBeNull();
+    expect(screen.queryByRole('option', { name: 'Hidden Project' })).toBeNull();
+  });
+
+  it('keeps the initial pinned project visible even when it is outside the active filter', async () => {
+    renderNewCardDetail({
+      initialProjectId: 99,
+      projectFilter: new Set([42]),
+      projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Pinned Project')],
+    });
+
+    const projectSelect = screen.getAllByRole('combobox')[1];
+    projectSelect.focus();
+    fireEvent.keyDown(projectSelect, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(projectSelect.getAttribute('aria-expanded')).toBe('true'));
+    expect(screen.getByRole('option', { name: 'Visible Project' })).not.toBeNull();
+    expect(screen.getByRole('option', { name: 'Pinned Project' })).not.toBeNull();
   });
 });

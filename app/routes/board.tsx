@@ -407,6 +407,7 @@ const BoardLayout = observer(function BoardLayout() {
               {newCardColumn ? (
                 <NewCardDetail
                   column={newCardColumn}
+                  projectFilter={projectFilter}
                   onCreated={(id, _projectId) => {
                     setNewCardColumn(null);
                     setMobileCardId(id);
@@ -448,6 +449,7 @@ const BoardLayout = observer(function BoardLayout() {
                 flash={flashSlot === idx}
                 onFlashDone={clearFlashSlot}
                 newCardColumn={newCardColumn}
+                projectFilter={projectFilter}
                 dropCard={dropCard}
                 pinProjectId={pinProjectId}
                 onPin={(projectId) => pinSlot(idx, projectId)}
@@ -475,6 +477,7 @@ type ColumnSlotProps = {
   flash: boolean;
   onFlashDone: () => void;
   newCardColumn: string | null;
+  projectFilter: Set<number>;
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
   pinProjectId: PinTarget | null;
   onPin: (projectId: PinTarget) => void;
@@ -493,6 +496,7 @@ const ColumnSlot = observer(function ColumnSlot({
   flash,
   onFlashDone,
   newCardColumn,
+  projectFilter,
   dropCard,
   pinProjectId,
   onPin,
@@ -573,6 +577,7 @@ const ColumnSlot = observer(function ColumnSlot({
         {newCardColumn && index === 0 ? (
           <NewCardDetail
             column={newCardColumn}
+            projectFilter={projectFilter}
             onCreated={(id, projectId) => {
               setDraftColor(null);
               setNewCardColumn(null);
@@ -588,6 +593,7 @@ const ColumnSlot = observer(function ColumnSlot({
           <NewCardDetail
             column="running"
             initialProjectId={pinProjectId}
+            projectFilter={projectFilter}
             onCreated={(id, projectId) => {
               setCreatingCard(false);
               setDraftColor(null);

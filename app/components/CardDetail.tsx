@@ -606,6 +606,7 @@ type NewCardProps = {
   onClose: () => void;
   onColorChange?: (color: string | null) => void;
   initialProjectId?: number;
+  projectFilter?: Set<number>;
 };
 
 export const NewCardDetail = observer(function NewCardDetail({
@@ -614,6 +615,7 @@ export const NewCardDetail = observer(function NewCardDetail({
   onClose,
   onColorChange,
   initialProjectId,
+  projectFilter,
 }: NewCardProps) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
@@ -698,6 +700,12 @@ export const NewCardDetail = observer(function NewCardDetail({
       setCreating(false);
     }
   }
+
+  const visibleProjects = projectStore.active.filter((p) => {
+    if (initialProjectId != null && p.id === initialProjectId) return true;
+    if (!projectFilter || projectFilter.size === 0) return true;
+    return projectFilter.has(p.id);
+  });
 
   const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
 
@@ -801,7 +809,7 @@ export const NewCardDetail = observer(function NewCardDetail({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">None</SelectItem>
-                {projectStore.active.map((p) => (
+                {visibleProjects.map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>
                     <span className="flex items-center gap-2">
                       {p.color && (

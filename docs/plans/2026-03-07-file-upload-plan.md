@@ -516,10 +516,6 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
 
   if (!text) return null;
 
-  if (text.includes('<command-name>') || text.includes('<local-command-') || text.includes('<system-reminder>')) {
-    return null;
-  }
-
   // Extract file attachments from prompt prefix
   const fileMatch = text.match(/^I've attached the following files for you to review\. Use the Read tool to read them:\n((?:- .+\n)+)\n([\s\S]*)$/);
   let attachedFiles: { name: string; mimeType: string }[] = [];

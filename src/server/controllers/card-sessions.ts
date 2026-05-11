@@ -7,6 +7,7 @@ import type { OrcdClient } from '../orcd-client';
 // ── Session → Card routing map ───────────────────────────────────────────────
 
 const sessionCardMap = new Map<string, number>();
+const bgcMap = new Map<string, number>();
 
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
@@ -17,6 +18,21 @@ export function trackSession(cardId: number, sessionId: string): void {
 /** Remove a session from the routing map. */
 export function untrackSession(sessionId: string): void {
   sessionCardMap.delete(sessionId);
+}
+
+function isBgcSystemEvent(event: Record<string, unknown>): event is { type: 'system'; subtype?: string; session_id?: string } {
+  return (
+    event.type === 'system' &&
+    (event.subtype === 'bgc_started' || event.subtype === 'compact_boundary')
+  );
+}
+
+function routeBgcEvent(sessionId: string, event: Record<string, unknown>): number | null {
+  if (!isBgcSystemEvent(event)) {
+    console.log(`[orcd-router] routeBgcEvent: non-BGC event for session ${sessionId.slice(0, 8)}, skipping`);
+    return null;
+  }
+  return bgcMap.get(sessionId) ?? null;
 }
 
 // ── Global orcd message router ───────────────────────────────────────────────
@@ -40,6 +56,10 @@ export function initOrcdRouter(
       return;
     }
     let cardId = sessionCardMap.get(msg.sessionId);
+    if (cardId == null && msg.type === 'stream_event') {
+      const sdkEvent = msg.event as Record<string, unknown>;
+      cardId = routeBgcEvent(msg.sessionId, sdkEvent);
+    }
     if (cardId == null && msg.type === 'session_exit') {
       const card = await repo().findOneBy({ sessionId: msg.sessionId });
       if (card) {
@@ -69,6 +89,10 @@ export function initOrcdRouter(
           }
         }
 
+        if (sys.subtype === 'bgc_started') {
+          bgcMap.set(msg.sessionId, cardId);
+        }
+
         if (sys.subtype === 'compact_boundary') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
@@ -77,6 +101,7 @@ export function initOrcdRouter(
             await repo().save(card);
             console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 1`);
           }
+          bgcMap.delete(msg.sessionId);
         }
       }
     }
@@ -128,6 +153,10 @@ export function initOrcdRouter(
         await repo().save(card);
       }
       trackSession(cardId, msg.newSessionId);
+      if (bgcMap.has(msg.sessionId)) {
+        bgcMap.set(msg.newSessionId, cardId);
+        bgcMap.delete(msg.sessionId);
+      }
       console.log(`[oc:${cardId}] session forked: ${msg.sessionId.slice(0,8)} → ${msg.newSessionId.slice(0,8)}`);
     }
   });

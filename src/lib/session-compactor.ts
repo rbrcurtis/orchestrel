@@ -359,7 +359,7 @@ export async function applyCompaction(prepared: PreparedCompaction): Promise<Com
     type: 'user',
     message: {
       role: 'user',
-      content: `[Context Summary — the following summarizes the earlier part of this conversation]\n\n${summary}`,
+      content: `This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n${summary}`,
     },
     uuid: summaryUuid,
     timestamp: now,

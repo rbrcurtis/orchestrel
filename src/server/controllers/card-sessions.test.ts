@@ -1,7 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageBus } from '../bus';
 
-const mockCards = [
+type MockCard = {
+  id: number;
+  sessionId: string | null;
+  column: string;
+  promptsSent: number;
+  contextTokens: number;
+  contextWindow: number;
+  turnsCompleted: number;
+  updatedAt: string;
+  save: ReturnType<typeof vi.fn>;
+};
+
+const mockCards: MockCard[] = [
   { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, updatedAt: '', save: vi.fn() },
 ];
 const mockRepo = {
@@ -221,6 +233,54 @@ describe('orcd message router', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(sdkSpy).not.toHaveBeenCalled();
   });
+
+  it('routes late compact_boundary after session_exit via bgcMap only', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].contextTokens = 50000;
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'system', subtype: 'bgc_started', session_id: 'sess-abc' },
+    });
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 1,
+      event: { type: 'system', subtype: 'compact_boundary', session_id: 'sess-abc' },
+    });
+
+    expect(mockCards[0].contextTokens).toBe(1);
+    expect(mockRepo.save).toHaveBeenCalled();
+    expect(sdkSpy).toHaveBeenCalledWith({
+      type: 'system',
+      subtype: 'compact_boundary',
+      session_id: 'sess-abc',
+    });
+
+    sdkSpy.mockClear();
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 2,
+      event: { type: 'assistant', message: 'late hello' },
+    });
+
+    expect(sdkSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('reconcileRunningCards', () => {
@@ -229,6 +289,10 @@ describe('reconcileRunningCards', () => {
     const bus = new MessageBus();
     const exitSpy = vi.fn();
     bus.on('card:42:exit', exitSpy);
+    mockCards[0].column = 'running';
+    mockCards[0].sessionId = 'sess-abc';
+    mockCards[0].promptsSent = 1;
+    mockRepo.save.mockClear();
     const client = {
       list: vi.fn(async () => ({
         type: 'session_list',

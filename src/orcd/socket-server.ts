@@ -7,7 +7,6 @@ import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { OrcdConfig, ProviderConfig } from './config';
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
-import { expandSlashCommand } from './skill-resolver';
 
 interface ClientState {
   socket: Socket;
@@ -165,11 +164,9 @@ export class OrcdServer {
 
     const env = Object.assign(this.buildProviderEnv(action.provider), action.env) as Record<string, string>;
 
-    const prompt = expandSlashCommand(action.prompt, action.cwd);
-
     session
       .run({
-        prompt,
+        prompt: action.prompt,
         resume: !!action.sessionId,
         env,
         effort,
@@ -196,15 +193,13 @@ export class OrcdServer {
 
     const env = this.buildProviderEnv(session.provider);
 
-    const prompt = expandSlashCommand(action.prompt, session.cwd);
-
-    if (!prompt.trim()) {
+    if (!action.prompt.trim()) {
       console.warn(`[orcd:${action.sessionId.slice(0, 8)}] handleMessage: empty prompt, dropping`);
       this.send(client, { type: 'error', sessionId: action.sessionId, error: 'empty prompt' });
       return;
     }
 
-    session.sendMessage(prompt, env).finally(() => {
+    session.sendMessage(action.prompt, env).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }
@@ -471,8 +466,10 @@ export class OrcdServer {
       }
 
       if (msg.type === 'session_exit') {
-        this.compacting.delete(sid);
-        this.pendingSummaries.delete(sid);
+        // Do not clear compacting/pending summary state here.
+        // A background compaction may still be preparing after the agent turn
+        // exits, and clearing the guard early allows a resumed session to start
+        // another compaction before the first one finishes.
         this.turnActive.delete(sid);
 
         // Auto memory upsert on exit

@@ -358,35 +358,8 @@ function TurnEndBlock({ data, timestamp }: { data: TurnResult; timestamp?: numbe
 
 // --- User block ---
 
-const SLASH_CMD_RE = /(?<![^\s])\/[a-zA-Z][a-zA-Z0-9-]*/g;
-
-function renderWithSlashCommands(t: string): React.ReactNode {
-  const result: React.ReactNode[] = [];
-  let last = 0;
-  for (const m of t.matchAll(SLASH_CMD_RE)) {
-    const idx = m.index!;
-    if (idx > last) result.push(t.slice(last, idx));
-    result.push(
-      <span key={idx} className="font-mono font-semibold text-neon-cyan">
-        {m[0]}
-      </span>,
-    );
-    last = idx + m[0].length;
-  }
-  if (result.length === 0) return t;
-  if (last < t.length) result.push(t.slice(last));
-  return result;
-}
-
 function UserBlock({ content, accentColor }: { content: string; accentColor?: string | null }) {
   if (!content) return null;
-
-  if (content.includes('<command-name>') || content.includes('<local-command-') || content.includes('<system-reminder>'))
-    return null;
-
-  if (content.startsWith('# ') && (content.includes('## Instructions') || content.includes('## Arguments'))) {
-    return <div className="text-xs text-muted-foreground py-0.5 italic">skill loaded</div>;
-  }
 
   // Extract file attachments from prompt prefix
   const fileMatch = content.match(
@@ -426,7 +399,7 @@ function UserBlock({ content, accentColor }: { content: string; accentColor?: st
                 ))}
               </div>
             )}
-            {displayText && <span className="whitespace-pre-wrap break-words">{renderWithSlashCommands(displayText)}</span>}
+            {displayText && <span className="whitespace-pre-wrap break-words">{displayText}</span>}
           </div>
         </CopyableRow>
       </div>
