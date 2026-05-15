@@ -1,181 +1,264 @@
 # Orchestrel
 
-A personal kanban board that orchestrates AI coding agents. Drag a card to "Running" and an AI session starts automatically — complete with git worktree isolation, real-time streaming output, and context window tracking.
+![Orchestrel board with multiple agent sessions open](docs/assets/orchestrel.jpg)
 
-Built for managing multiple concurrent AI-assisted development tasks from a single interface.
+Orchestrel is a local-first control room for AI coding work. It combines a project-aware kanban board, a chat-style session view, git worktree automation, and a long-running Claude Agent SDK daemon so multiple coding tasks can run and resume independently.
+
+The core workflow is simple: create a card, attach it to a local project, move it to **Running**, and Orchestrel starts or resumes an agent session in the right working directory. Output streams back live, context usage is tracked, background compaction keeps long sessions usable, and completed sessions move to **Review** automatically.
 
 ## Features
 
-**Kanban Board**
-- Five-column workflow: Backlog → Ready → Running → Review → Done (+ Archive)
-- Drag-and-drop card management with sortable columns
-- Full-text search across all cards
-- Paginated card loading per column
+**Board and Chat Views**
+- Board route with Backlog, Ready, Running, Review, Done, and Archive states.
+- Chat route for a focused conversation-first workflow over the same card/session data.
+- Multi-column desktop detail panes with manual pinning, project-aware hotseat selection, and mobile overlays.
+- Project filters, full-card search, paginated column loading, archive view, and local IndexedDB cache.
+- Inline card editing, autosaved prompt drafts, copyable session IDs, and copyable worktree paths.
 
-**AI Agent Orchestration**
-- Cards in "Running" automatically spawn an AI coding session via [OpenCode](https://github.com/nicholasgriffintn/opencode)
-- Real-time streaming of agent output (text, thinking, tool calls, tool results)
-- Send follow-up prompts to active sessions
-- Model selection per card: Sonnet, Opus, or Auto
-- Configurable thinking levels: off / low / medium / high
-- Context window gauge — SVG donut showing token utilization
-- Per-turn cost tracking
-- File attachments on prompts
-- Session resume support
+**Agent Sessions**
+- Long-running `orcd` daemon manages Claude Agent SDK sessions over a UNIX socket.
+- Server-owned lifecycle: cards entering **Running** create or resume sessions; session exit moves running cards to **Review**.
+- Live streaming of assistant text, thinking, tool calls, tool results, errors, status, and context usage.
+- Follow-up prompts, Continue, Stop, reconnect, and manual compaction controls.
+- File attachments up to 25 MB per file through `/api/upload`.
+- Session transcript reload from Claude JSONL history plus live replay from the daemon event buffer.
+- Synthetic subagent activity feed from Agent/Task launches and async task notifications.
 
-**Git Worktree Integration**
-- Each card gets an isolated git worktree (configurable per project)
-- AI agent runs inside the worktree directory
-- Worktree cleanup on card archive
-- Configurable source branch (main / dev)
+**Context and Memory**
+- Per-card context gauge backed by provider/model context window metadata.
+- Configurable summarize threshold per card, including Off and 50-90% presets.
+- Two-phase background compaction: summarize while a turn is running, then rewrite JSONL at a safe idle boundary.
+- Optional memory upsert at session exit and terminal card transitions, backed by a configured memory API.
 
-**Project Management**
-- Register local git repositories as projects
-- Per-project defaults: model, thinking level, source branch, worktree toggle
-- Per-project setup commands (e.g., `pnpm install` after worktree creation)
-- Auto-assigned neon accent color per project
-- AI-generated card titles via local Ollama (optional)
+**Projects and Worktrees**
+- Project registry for local repositories and non-repo working directories.
+- Auto-detects git repositories and default branch metadata.
+- Optional per-card worktree branch creation, with project setup commands after worktree creation.
+- Worktree cleanup when a worktree-backed card is archived.
+- Per-project defaults for provider, model, thinking level, worktree usage, branch, color, and memory endpoint overrides.
+- Project archiving and Cloudflare Access user/project visibility controls.
 
-**UI / UX**
-- "Neon Decay" dark cyberpunk theme with 8 neon accent colors
-- Resizable slide-out detail panel (desktop), full-screen sheet (mobile)
-- Keyboard shortcuts (`/` for search, `Esc` to close)
-- Auto-scroll to latest output when switching cards
-- PWA support with service worker
+**Provider Configuration**
+- `config.yaml` drives providers and model aliases.
+- Anthropic API, Claude Max OAuth fallback, Claude-compatible proxies, auth-token proxies, and AWS Bedrock providers are supported.
+- Model labels and context windows are exposed to the UI and used for context tracking.
+
+**API and Auth**
+- Socket.IO is the primary app transport with typed, Zod-validated events.
+- REST API is generated with TSOA and served with Swagger UI at `/api/docs`.
+- Optional Cloudflare Access JWT auth for remote deployments; local/LAN requests use a local admin identity.
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, React Router 7 (SPA mode), MobX |
-| Styling | Tailwind CSS 4, shadcn/ui (Radix primitives) |
-| Server | Express 5, WebSocket (ws), Hono (REST API) |
-| Database | SQLite (better-sqlite3) via TypeORM |
-| AI | OpenCode SDK (`@opencode-ai/sdk`) |
-| Drag & Drop | dnd-kit |
-| Auth | Cloudflare Access JWT verification (optional) |
-| Build | Vite 7, TypeScript 5.9 |
+| --- | --- |
+| Frontend | React 19, React Router 7 SPA mode, MobX |
+| Styling | Tailwind CSS 4, shadcn/ui-style Radix components, lucide-react |
+| Realtime | Socket.IO |
+| Server | Express 5, TSOA REST routes, Swagger UI |
+| Daemon | `orcd` UNIX-socket service |
+| Agent runtime | `@anthropic-ai/claude-agent-sdk` |
+| Database | SQLite via TypeORM and better-sqlite3 |
+| Local cache | IndexedDB via idb-keyval |
+| Drag and drop | dnd-kit |
+| Build and test | Vite 7, TypeScript 5.9, Vitest, oxlint |
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Browser (SPA)                        │
-│  MobX stores ←→ WsClient (WebSocket) ←→ React components   │
-└────────────────────────┬────────────────────────────────────┘
-                         │ WebSocket
-┌────────────────────────┴────────────────────────────────────┐
-│                     Express Server                          │
-│                                                             │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────────┐ │
-│  │ WS Server│  │ REST API     │  │ Session Manager       │ │
-│  │ (handlers│  │ (Hono)       │  │                       │ │
-│  │  subs)   │  │              │  │ OpenCode SDK sessions │ │
-│  └────┬─────┘  └──────┬───────┘  │ ↕ SSE event stream   │ │
-│       │               │          └───────────┬───────────┘ │
-│       └───────┬───────┘                      │             │
-│               │                              │             │
-│  ┌────────────┴────────┐    ┌────────────────┴───────────┐ │
-│  │  SQLite (TypeORM)   │    │  OpenCode subprocess       │ │
-│  │  cards, projects    │    │  (AI agent runtime)        │ │
-│  └─────────────────────┘    └────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+```text
+┌────────────────────────────────────────────────────────────┐
+│ Browser SPA                                                │
+│ React components ←→ MobX stores ←→ Socket.IO client        │
+│ Board view, Chat view, SessionView, project settings       │
+└──────────────────────────┬─────────────────────────────────┘
+                           │ Socket.IO + REST
+┌──────────────────────────┴─────────────────────────────────┐
+│ Orchestrel web server                                      │
+│ Express, generated REST API, uploads, Socket.IO handlers   │
+│ TypeORM models, services, message bus, subscriptions       │
+│ OrcdClient reconnect/reconcile layer                       │
+└──────────────────────────┬─────────────────────────────────┘
+                           │ JSON lines over UNIX socket
+┌──────────────────────────┴─────────────────────────────────┐
+│ orcd daemon                                                │
+│ Session registry, event replay buffer, lifecycle hooks     │
+│ Claude Agent SDK query streams, compaction, memory upsert  │
+└──────────────────────────┬─────────────────────────────────┘
+                           │ Claude Code session JSONL
+┌──────────────────────────┴─────────────────────────────────┐
+│ Local projects and worktrees                               │
+│ ~/.claude/projects session history + git worktree dirs     │
+└────────────────────────────────────────────────────────────┘
 ```
 
-**Key patterns:**
-- **Server-owned session lifecycle** — the client never starts sessions directly. Moving a card to "Running" or sending a prompt triggers server-side session creation.
-- **WebSocket-first communication** — all mutations and subscriptions flow through a typed WebSocket protocol (Zod-validated).
-- **Message bus** — TypeORM entity subscribers emit events to an internal bus, which fans out to WebSocket subscriptions.
-- **SSE multiplexing** — OpenCode emits server-sent events; Orchestrel filters by session ID to route messages to the correct card.
+Key patterns:
+
+- **Daemon-owned agent runtime**: `orcd` keeps active sessions alive independently of the web server and exposes create, message, subscribe, cancel, compact, list, and memory-upsert actions.
+- **Server-owned card lifecycle**: the browser mutates cards; backend listeners start, cancel, reconcile, and route sessions.
+- **Event fanout**: TypeORM subscribers publish card/project changes to an internal bus, and Socket.IO subscriptions fan those changes to clients.
+- **Session reconciliation**: on web-server startup or `orcd` reconnect, running cards are compared with daemon session state and moved to Review if their session is no longer alive.
+- **Config-driven providers**: model aliases and context windows come from `config.yaml`, not hard-coded UI choices.
 
 ## Prerequisites
 
-- **Node.js** 20+
-- **pnpm**
-- **OpenCode** — install and configure with your Anthropic API key
-- **Ollama** (optional) — for AI-generated card titles. Runs on `localhost:11434`.
+- Node.js 20+
+- pnpm
+- Claude Code executable available at `/home/ryan/.local/bin/claude`
+- Claude authentication through Claude Max OAuth, Anthropic API key, compatible proxy credentials, or AWS Bedrock credentials
+- Optional Ollama on `localhost:11434` with `llama3.2:latest` for title suggestions
+- Optional memory API for session memory upsert
 
 ## Setup
 
 ```bash
-git clone https://github.com/your-username/orchestrel.git
-cd orchestrel
 pnpm install
-
-# Copy and configure environment
+cp config.example.yaml config.yaml
 cp .env.example .env
-# Edit .env — see comments for required/optional vars
+```
 
-# Start dev server
+Edit `config.yaml` first. It is required by both `orcd` and the web app.
+
+```yaml
+socket: ~/.orc/orcd.sock
+defaultProvider: anthropic
+defaultModel: sonnet
+defaultCwd: ~/Code
+
+providers:
+  anthropic:
+    label: Anthropic
+    models:
+      opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,   contextWindow: 1000000 }
+      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 1000000 }
+```
+
+Then run the daemon and web app in separate terminals:
+
+```bash
+pnpm orcd
 pnpm dev
 ```
 
-The app runs on `http://localhost:6194` by default.
+Development mode runs on `http://localhost:6195` by default. Production mode uses `http://localhost:6194`.
 
-### Environment Variables
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `pnpm dev` | Generate TSOA routes, start the Vite/Express development server |
+| `pnpm orcd` | Start the `orcd` session daemon |
+| `pnpm build` | Generate TSOA routes and build the React Router app |
+| `pnpm start` | Start the production Express server from the built app |
+| `pnpm test` | Run Vitest |
+| `pnpm typecheck` | Generate React Router types and run TypeScript build checks |
+| `pnpm lint` | Run oxlint over `app` and `src` |
+| `pnpm tsoa:generate` | Regenerate REST routes and OpenAPI spec |
+
+## Configuration
+
+`config.yaml` is resolved from `ORC_CONFIG` when set, otherwise `./config.yaml`.
+
+| Key | Description |
+| --- | --- |
+| `socket` | UNIX socket path used by the web server to reach `orcd` |
+| `defaultProvider` | Provider ID used by `orcd` when no card/project override applies |
+| `defaultModel` | Model alias used by `orcd` when no card/project override applies |
+| `defaultCwd` | Default base directory for new work |
+| `providers` | Provider map exposed to the UI and used by `orcd` |
+| `memoryUpsert` | Optional memory API settings used by `orcd` |
+
+Provider entries can use:
+
+| Field | Description |
+| --- | --- |
+| `label` | UI label |
+| `type` | Omit for Anthropic-compatible HTTP; use `bedrock` for AWS Bedrock |
+| `baseUrl` | Anthropic-compatible API base URL |
+| `apiKey` | Value passed as `ANTHROPIC_API_KEY` |
+| `authToken` | Value passed as `ANTHROPIC_AUTH_TOKEN` |
+| `region` / `profile` | AWS Bedrock settings |
+| `models` | Alias map with `label`, `modelID`, and `contextWindow` |
+
+`.env` controls the web server:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `6194` | Server port |
+| --- | --- | --- |
+| `PORT` | `6194` production, `6195` development | HTTP server port |
 | `HOST` | `0.0.0.0` | Bind address |
-| `NODE_ENV` | — | Set to `development` for HMR |
-| `OPENCODE_PORT` | `4097` | Port for the OpenCode subprocess |
+| `NODE_ENV` | unset | Set to `development` for Vite middleware/HMR |
+| `HMR_HOST` | unset | Optional public HMR host for tunneled development |
+| `CF_TEAM_DOMAIN` | unset | Enables Cloudflare Access JWT verification |
+| `ADMIN_EMAILS` | unset | Comma-separated Cloudflare Access emails with admin role |
 
-### Production
+Runtime data is stored in:
 
-```bash
-pnpm build
-pnpm start
-```
-
-### Cloudflare Access (optional)
-
-If exposing via Cloudflare Tunnel, Orchestrel validates `CF_Authorization` JWTs. Set the `CF_TEAM_DOMAIN` environment variable to your Cloudflare Access team domain. In development mode, auth is bypassed.
-
-## Project Structure
-
-```
-server.js                 # Express entry point (dev HMR + prod static)
-src/
-  server/
-    agents/               # Session manager, factory, OpenCode integration
-      opencode/           # SSE parsing, model resolution, message normalization
-    models/               # TypeORM entities (Card, Project)
-    services/             # Business logic (card CRUD, session orchestration, worktrees)
-    ws/                   # WebSocket server, auth, handlers, subscriptions
-    api/                  # REST endpoints (Hono)
-    worktree.ts           # Git worktree operations
-  shared/
-    ws-protocol.ts        # Zod schemas for WebSocket message types
-app/
-  routes/                 # React Router file-based routes
-    board.tsx             # Layout with nav, search, card detail panel
-    board.index.tsx       # Active board (Ready/Running/Review columns, DnD)
-    board.backlog.tsx     # Backlog view
-    board.done.tsx        # Done view
-    board.archive.tsx     # Archive view
-    settings.projects.tsx # Project configuration
-  components/             # SessionView, CardDetail, MessageBlock, ContextGauge, etc.
-  stores/                 # MobX stores (Card, Project, Session, Root)
-  lib/                    # WebSocket client, utilities
-```
+- `data/orchestrel.db` for cards, projects, users, and project visibility.
+- `~/.orc/orcd.sock` by default for the daemon socket.
+- `~/.claude/projects/.../*.jsonl` for Claude session history.
+- `/tmp/orchestrel-uploads/<session>` for uploaded prompt files.
 
 ## Card Lifecycle
 
-```
+```text
 Backlog → Ready → Running → Review → Done → Archive
                      │          ▲
                      │          │
                      └──────────┘
-                   session exits
+                  session exit
 ```
 
-1. Create a card in **Backlog** or **Ready** with a description (the prompt)
-2. Drag to **Running** — a git worktree is created and an AI session starts
-3. Watch the agent work in real-time via the detail panel
-4. When the session completes, the card moves to **Review**
-5. Send follow-up prompts to continue the conversation
-6. Move to **Done** when satisfied, **Archive** to clean up (removes worktree)
+1. Create a card on the board or start a session from `/chat`.
+2. Select a project, provider/model, optional worktree branch, source branch, and summarize threshold.
+3. Move the card to **Running** or create it directly as running.
+4. Backend listeners create the worktree if needed, run setup commands, and ask `orcd` to create or resume the session.
+5. Streamed SDK events update the transcript, counters, context gauge, subagent feed, and status.
+6. On session exit, running cards move to **Review**.
+7. Follow up from Review or Running, stop active sessions, compact long sessions manually, or move cards to Done/Archive.
+8. Archiving a worktree-backed card removes its worktree.
+
+## Project Structure
+
+```text
+server.js                         Express entry point, Vite middleware, prod static server
+config.example.yaml               Provider, model, socket, and memory config template
+app/
+  routes/                         Board and chat React Router routes
+  components/                     CardDetail, SessionView, transcript, settings, UI primitives
+  stores/                         MobX stores for root, cards, projects, sessions, config
+  lib/                            Socket.IO client, persistence, slot resolution, utilities
+src/
+  orcd/                           UNIX-socket daemon, session registry, Claude SDK runtime
+  lib/                            Compaction, summarization, memory upsert, session repair
+  server/
+    api/                          TSOA controllers and generated OpenAPI routes
+    controllers/                  Card/session orchestration
+    models/                       TypeORM entities and lightweight migrations
+    services/                     Card, project, user, and worktree services
+    ws/                           Socket.IO auth, handlers, subscriptions
+  shared/                         Config parsing, protocol types, worktree helpers, constants
+docs/                             Historical designs and implementation plans
+```
+
+## REST API
+
+The app is Socket.IO-first, but it also exposes generated REST endpoints for cards and projects. After starting the web server:
+
+- Swagger UI: `http://localhost:6194/api/docs`
+- OpenAPI JSON: `http://localhost:6194/api/docs/swagger.json`
+
+Use the development port `6195` when running `pnpm dev`.
+
+## Deployment Notes
+
+For production, build the app, run `orcd`, then start the web server:
+
+```bash
+pnpm build
+pnpm orcd
+pnpm start
+```
+
+If exposing Orchestrel remotely, set `CF_TEAM_DOMAIN` and put it behind Cloudflare Access. Localhost and LAN hosts bypass Access and receive the local admin identity; remote clients require a valid `CF_Authorization` cookie. Set `ADMIN_EMAILS` to grant project/user administration to specific Access users.
 
 ## License
 
