@@ -158,6 +158,13 @@ Development mode runs on `http://localhost:6195` by default. Production mode use
 
 `config.yaml` is resolved from `ORC_CONFIG` when set, otherwise `./config.yaml`.
 
+The `orc` wrapper also honors `ORC_PROVIDER` and `ORC_MODEL` as CLI defaults when provider/model args are omitted. Positional args still win:
+
+```bash
+ORC_PROVIDER=trackable ORC_MODEL=auto orc "summarize this repo"
+orc anthropic sonnet "use the normal config instead"
+```
+
 | Key | Description |
 | --- | --- |
 | `socket` | UNIX socket path used by the web server to reach `orcd` |

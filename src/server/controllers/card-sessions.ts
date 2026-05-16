@@ -27,12 +27,12 @@ function isBgcSystemEvent(event: Record<string, unknown>): event is { type: 'sys
   );
 }
 
-function routeBgcEvent(sessionId: string, event: Record<string, unknown>): number | null {
+function routeBgcEvent(sessionId: string, event: Record<string, unknown>): number | undefined {
   if (!isBgcSystemEvent(event)) {
     console.log(`[orcd-router] routeBgcEvent: non-BGC event for session ${sessionId.slice(0, 8)}, skipping`);
-    return null;
+    return undefined;
   }
-  return bgcMap.get(sessionId) ?? null;
+  return bgcMap.get(sessionId);
 }
 
 // ── Global orcd message router ───────────────────────────────────────────────

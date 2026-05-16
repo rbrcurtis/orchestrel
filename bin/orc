@@ -14,6 +14,8 @@ const DEFAULT_CONFIG_PATH = resolve(REPO_ROOT, 'config.yaml');
 const DEFAULT_CCH_PATH = '/home/ryan/.local/bin/cch';
 const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
 const CLAUDE_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
+const ENV_DEFAULT_PROVIDER = 'ORC_PROVIDER';
+const ENV_DEFAULT_MODEL = 'ORC_MODEL';
 
 const args = arg(
   {
@@ -41,6 +43,10 @@ function usage() {
     '  --config <path>   Override config.yaml path',
     '  --print-env       Print resolved env/model and exit',
     '  -h, --help        Show help',
+    '',
+    'Environment:',
+    '  ORC_PROVIDER      Default provider when no provider arg is present',
+    '  ORC_MODEL         Default model when no model arg is present',
   ].join('\n');
 }
 
@@ -131,9 +137,6 @@ function loadWrapperConfig(configPath) {
 }
 
 function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
-  let providerId = config.defaultProvider;
-  let modelAlias = resolveModelAlias(config.providers[providerId], config.defaultModel);
-
   for (let i = 0; i < passthroughArgs.length; i += 1) {
     const maybeProvider = passthroughArgs[i];
     if (!maybeProvider) continue;
@@ -156,7 +159,7 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
     passthroughArgs.splice(i, 1);
     return {
       providerId: maybeProvider,
-      modelAlias: firstModelAlias(provider),
+      modelAlias: resolveProviderDefaultModelAlias(provider),
     };
   }
 
@@ -175,7 +178,36 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
     }
   }
 
-  return { providerId, modelAlias };
+  return resolveDefaultProviderAndModel(config);
+}
+
+function resolveDefaultProviderAndModel(config) {
+  const providerId = envDefault(ENV_DEFAULT_PROVIDER) ?? config.defaultProvider;
+  const provider = config.providers[providerId];
+  if (!provider) {
+    throw new Error(`Unknown provider "${providerId}"`);
+  }
+
+  return {
+    providerId,
+    modelAlias: resolveModelAlias(provider, envDefault(ENV_DEFAULT_MODEL) ?? config.defaultModel),
+  };
+}
+
+function resolveProviderDefaultModelAlias(provider) {
+  const modelRef = envDefault(ENV_DEFAULT_MODEL);
+  if (modelRef) {
+    const modelAlias = tryResolveModelAlias(provider, modelRef);
+    if (modelAlias) {
+      return modelAlias;
+    }
+  }
+  return firstModelAlias(provider);
+}
+
+function envDefault(name) {
+  const value = process.env[name];
+  return value ? value : null;
 }
 
 function tryResolveModelAlias(provider, modelRef) {
