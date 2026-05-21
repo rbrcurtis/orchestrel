@@ -101,7 +101,7 @@ Key patterns:
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - pnpm
 - Claude Code executable available at `/home/ryan/.local/bin/claude`
 - Claude authentication through Claude Max OAuth, Anthropic API key, compatible proxy credentials, or AWS Bedrock credentials

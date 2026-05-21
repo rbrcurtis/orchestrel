@@ -23,6 +23,26 @@ export class ProjectStore {
     return this.projects.get(id);
   }
 
+  getProjectByName(name: string): Project | undefined {
+    const target = name.trim().toLowerCase();
+    return this.all.find((p) => p.name.toLowerCase() === target);
+  }
+
+  resolveProjectRef(ref: string | undefined): Project | undefined {
+    if (!ref) return undefined;
+
+    const trimmed = ref.trim();
+    if (trimmed.length === 0) return undefined;
+
+    const num = Number(trimmed);
+    if (Number.isFinite(num) && num > 0 && Number.isInteger(num)) {
+      const byId = this.getProject(num);
+      if (byId) return byId;
+    }
+
+    return this.getProjectByName(trimmed);
+  }
+
   get all(): Project[] {
     return Array.from(this.projects.values()).sort((a, b) => a.name.localeCompare(b.name));
   }

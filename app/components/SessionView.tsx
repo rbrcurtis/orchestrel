@@ -38,6 +38,10 @@ export const SessionView = observer(function SessionView({
   const session = sessionStore.getSession(cardId);
   const card = cardStore.getCard(cardId);
   const conversation = session?.accumulator.conversation ?? [];
+  const initialPrompt = card?.description.trim() ?? '';
+  const visibleConversation = initialPrompt
+    ? [{ kind: 'user' as const, content: initialPrompt, timestamp: card ? new Date(card.createdAt).getTime() : undefined }, ...conversation]
+    : conversation;
   const currentBlocks = session?.accumulator.currentBlocks ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
@@ -186,7 +190,7 @@ export const SessionView = observer(function SessionView({
     >
       <LazyTranscript
         cardId={cardId}
-        conversation={conversation}
+        conversation={visibleConversation}
         currentBlocks={currentBlocks}
         accentColor={accentColor}
         historyLoaded={historyLoaded}
@@ -196,7 +200,7 @@ export const SessionView = observer(function SessionView({
       />
 
       {/* Status bar — above prompt input */}
-      {(isStreaming || conversation.length > 0) && (
+      {(isStreaming || visibleConversation.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0 min-w-0 overflow-hidden">
           <StatusBadge
             status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}

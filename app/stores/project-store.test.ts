@@ -61,4 +61,29 @@ describe('ProjectStore project views', () => {
       expect.stringContaining('ProjectStore'),
     );
   });
+
+  it('resolves project by trimmed lowercase name match', () => {
+    const store = new ProjectStore();
+    store.hydrate([makeProject(1, 'Alpha'), makeProject(2, 'beta'), makeProject(3, 'beta')]);
+
+    expect(store.getProjectByName('  beta ')).toMatchObject({ id: 2, name: 'beta' });
+    expect(store.getProjectByName('BETA')).toMatchObject({ id: 2, name: 'beta' });
+  });
+
+  it('resolves project refs by numeric id first, then by name', () => {
+    const storeWithId = new ProjectStore();
+    storeWithId.hydrate([makeProject(10, 'Ten'), makeProject(11, 'Ten')]);
+
+    expect(storeWithId.resolveProjectRef('10')).toMatchObject({ id: 10, name: 'Ten' });
+    expect(storeWithId.resolveProjectRef(' 10 ')).toMatchObject({ id: 10, name: 'Ten' });
+    expect(storeWithId.resolveProjectRef('ten')).toMatchObject({ id: 10, name: 'Ten' });
+    expect(storeWithId.resolveProjectRef('  tEn ')).toMatchObject({ id: 10, name: 'Ten' });
+
+    const storeByNameOnly = new ProjectStore();
+    storeByNameOnly.hydrate([makeProject(11, 'My Project')]);
+
+    expect(storeByNameOnly.resolveProjectRef('My Project')).toMatchObject({ id: 11, name: 'My Project' });
+    expect(storeByNameOnly.resolveProjectRef('  my project ')).toMatchObject({ id: 11, name: 'My Project' });
+    expect(storeByNameOnly.resolveProjectRef('10')).toBeUndefined();
+  });
 });

@@ -6,5 +6,9 @@ export default [
     route('backlog', 'routes/board.backlog.tsx'),
     route('archive', 'routes/board.archive.tsx'),
   ]),
-  layout('routes/chat.tsx', [route('chat', 'routes/chat.index.tsx'), route('chat/:cardId', 'routes/chat.$cardId.tsx')]),
+  layout('routes/chat.tsx', [
+    route('chat', 'routes/chat.index.tsx'),
+    route('chat/:projectId', 'routes/chat.$projectId.tsx'),
+    route('chat/:projectId/:cardId', 'routes/chat.$projectId.$cardId.tsx'),
+  ]),
 ] satisfies RouteConfig;

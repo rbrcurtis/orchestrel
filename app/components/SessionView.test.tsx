@@ -48,7 +48,9 @@ vi.mock('./SubagentFeed', () => ({
 }));
 
 vi.mock('./LazyTranscript', () => ({
-  LazyTranscript: () => null,
+  LazyTranscript: ({ conversation }: { conversation: Array<{ kind: string; content?: string }> }) => (
+    <div data-testid="conversation">{conversation.map((entry) => entry.kind === 'user' ? entry.content : '').join('\n')}</div>
+  ),
 }));
 
 beforeAll(() => {
@@ -177,6 +179,26 @@ describe('SessionView context percent', () => {
     renderSessionView();
 
     expect(Number(screen.getByTestId('context-percent').textContent)).toBe(100);
+  });
+});
+
+describe('SessionView initial prompt', () => {
+  it('renders the card description as the first user message', () => {
+    setDefaultState({
+      card: { description: 'Build the project launchpad' },
+      session: {
+        accumulator: {
+          conversation: [{ kind: 'user', content: 'Follow up prompt' }],
+          currentBlocks: [],
+          subagents: new Map(),
+          retryAfterMs: null,
+        },
+      },
+    });
+
+    renderSessionView();
+
+    expect(screen.getByTestId('conversation').textContent).toBe('Build the project launchpad\nFollow up prompt');
   });
 });
 
