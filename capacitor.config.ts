@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Orc Chat',
   webDir: 'build/client',
   server: {
-    url: 'https://orchestrel.com/chat/chat',
+    url: 'https://orchestrel.com/chat/19',
     cleartext: false,
   },
 };
