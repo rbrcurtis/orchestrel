@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { StoreProvider } from '~/stores/context';
 import { RootStore } from '~/stores/root-store';
-import { NewCardDetail } from './CardDetail';
+import { CardDetail, NewCardDetail } from './CardDetail';
 import type { Card, Project } from '../../src/shared/ws-protocol';
 
 function makeProject(id: number, name: string, archived = false): Project {
@@ -51,10 +51,17 @@ function makeCard(description: string): Card {
   };
 }
 
+function providerConfig() {
+  return {
+    anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } } },
+    kpp: { label: 'KPP', models: { opus: { label: 'Opus', modelID: 'claude-opus', contextWindow: 200000 } } },
+  };
+}
+
 function renderNewCardDetail(opts?: { initialProjectId?: number; projectFilter?: Set<number>; projects?: Project[] }) {
   const store = new RootStore();
   store.projects.hydrate(opts?.projects ?? [makeProject(42, 'Orchestrel')]);
-  store.config.hydrate({ anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } } } });
+  store.config.hydrate(providerConfig());
   store.cards.createCard = vi.fn(async (data) => makeCard(data.description ?? ''));
   store.cards.suggestTitle = vi.fn(async () => 'Suggested card');
 
@@ -72,6 +79,22 @@ function renderNewCardDetail(opts?: { initialProjectId?: number; projectFilter?:
   );
 
   return { store, onClose };
+}
+
+function renderCardDetail() {
+  const store = new RootStore();
+  store.projects.hydrate([makeProject(42, 'Orchestrel')]);
+  store.cards.hydrate([makeCard('saved description')]);
+  store.config.hydrate(providerConfig());
+  store.cards.updateCard = vi.fn(async (data) => ({ ...makeCard('saved description'), ...data }));
+
+  render(
+    <StoreProvider store={store}>
+      <CardDetail cardId={7} onClose={vi.fn()} />
+    </StoreProvider>,
+  );
+
+  return { store };
 }
 
 describe('NewCardDetail description draft persistence', () => {
@@ -171,5 +194,30 @@ describe('NewCardDetail description draft persistence', () => {
     await waitFor(() => expect(projectSelect.getAttribute('aria-expanded')).toBe('true'));
     expect(screen.getByRole('option', { name: 'Visible Project' })).not.toBeNull();
     expect(screen.getByRole('option', { name: 'Pinned Project' })).not.toBeNull();
+  });
+});
+
+describe('CardDetail saved card fields', () => {
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+  });
+
+  it('shows the shared provider dropdown and saves provider changes', async () => {
+    const { store } = renderCardDetail();
+
+    const providerSelect = screen.getAllByRole('combobox')[1];
+    providerSelect.focus();
+    fireEvent.keyDown(providerSelect, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(providerSelect.getAttribute('aria-expanded')).toBe('true'));
+    fireEvent.click(screen.getByRole('option', { name: 'KPP' }));
+
+    await waitFor(() =>
+      expect(store.cards.updateCard).toHaveBeenCalledWith(expect.objectContaining({ id: 7, provider: 'kpp', model: 'opus' })),
+    );
   });
 });

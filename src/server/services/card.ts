@@ -88,11 +88,10 @@ class CardService {
   async updateCard(id: number, data: Partial<Card>): Promise<Card> {
     const card = await Card.findOneByOrFail({ id });
 
-    // Update contextWindow when model changes
-    if (data.model) {
-      const proj = card.projectId ? await Project.findOneBy({ id: card.projectId }) : null;
-      const providerID = proj?.providerID ?? getDefaultProviderID();
-      const modelCfg = getModelConfig(providerID, data.model);
+    // Update contextWindow when provider/model changes
+    if (data.provider || data.model) {
+      const providerID = data.provider ?? card.provider ?? getDefaultProviderID();
+      const modelCfg = getModelConfig(providerID, data.model ?? card.model);
       if (modelCfg) data.contextWindow = modelCfg.contextWindow;
     }
 

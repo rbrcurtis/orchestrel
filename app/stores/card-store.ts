@@ -118,6 +118,7 @@ export class CardStore {
     column?: Column;
     position?: number;
     projectId?: number | null;
+    provider?: string;
     model?: string;
     summarizeThreshold?: number;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
