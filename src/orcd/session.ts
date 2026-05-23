@@ -44,6 +44,7 @@ const SESSION_DISABLED_TOOLS = [
   'CronDelete',
   'CronList',
   'ScheduleWakeup',
+  'WebSearch',
 ] as const;
 
 export class OrcdSession {
@@ -253,7 +254,7 @@ export class OrcdSession {
         settingSources: ['user', 'project'],
         includePartialMessages: true,
         pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
-        env: opts.env,
+        env: { ...opts.env, ...(this.contextWindow ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(this.contextWindow) } : {}) },
         ...thinkingOpts,
         settings: {
           skillOverrides: disabledSkillOverrides(DEFAULT_DISABLED_SKILLS),
@@ -330,7 +331,7 @@ export class OrcdSession {
               ? (sdkRecord.modelUsage as Record<string, Record<string, number>>)
               : undefined;
             let ctxWindow = this.contextWindow || 200_000;
-            if (mu) {
+            if (!this.contextWindow && mu) {
               const first = Object.values(mu)[0];
               if (first?.contextWindow) ctxWindow = first.contextWindow;
             }

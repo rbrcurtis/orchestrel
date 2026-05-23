@@ -27,6 +27,7 @@ export interface CompactOpts {
   projectPath: string;
   model: string;
   env?: Record<string, string>;
+  contextWindow?: number;
   ratio?: number;
   maxExcerptChars?: number;
   dryRun?: boolean;
@@ -182,6 +183,7 @@ const DEFAULT_DISABLED_TOOLS = ['AskUserQuestion'] as const;
  */
 export interface QueryAgentSdkOpts {
   env?: Record<string, string>;
+  contextWindow?: number;
   /** Built-in tool allowlist. Default: `[]` (no built-ins). */
   tools?: Options['tools'];
   /** MCP servers available to the model. Default: `{}` (none). */
@@ -230,7 +232,7 @@ export async function queryAgentSdk(
       mcpServers: opts.mcpServers ?? {},
       settingSources: opts.settingSources ?? [],
       thinking: opts.thinking ?? { type: 'disabled' },
-      ...(opts.env ? { env: opts.env } : {}),
+      env: { ...opts.env, ...(opts.contextWindow ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(opts.contextWindow) } : {}) },
     },
   });
 
@@ -295,6 +297,7 @@ export async function prepareCompaction(opts: CompactOpts): Promise<PreparedComp
   const jsonlPath = await resolveJsonlPath(opts.sessionId, opts.projectPath);
   const r = await summarizeSession(opts.sessionId, opts.model, {
     env: opts.env,
+    contextWindow: opts.contextWindow,
     ratio: opts.ratio,
     maxExcerptChars: opts.maxExcerptChars,
     dryRun: opts.dryRun,

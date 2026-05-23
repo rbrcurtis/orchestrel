@@ -21,6 +21,7 @@ const CHARS_PER_TOKEN = 3.5;
 export interface SummarizeOpts {
   /** Env passed to the Agent SDK subprocess (provider routing, API keys). */
   env?: Record<string, string>;
+  contextWindow?: number;
   /** Fraction of oldest messages to summarize. Default 0.5. */
   ratio?: number;
   /** Cap on excerpt size sent to the model. Default 120_000 chars. */
@@ -191,6 +192,7 @@ export async function summarizeSession(
     model,
     {
       env: opts.env,
+      contextWindow: opts.contextWindow,
       tools: [],
       mcpServers: {},
       settingSources: [],

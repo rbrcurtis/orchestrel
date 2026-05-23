@@ -2,6 +2,46 @@ import { describe, expect, it, vi } from 'vitest';
 import { OrcdClient } from './orcd-client';
 
 describe('OrcdClient dispatch ordering', () => {
+  it('resolves create when orcd replies synchronously during send', async () => {
+    const client = new OrcdClient('/tmp/test.sock');
+    const internals = client as unknown as {
+      socket: { writable: boolean };
+      send: (action: unknown) => void;
+      dispatch: (msg: unknown) => void;
+    };
+    internals.socket = { writable: true };
+    internals.send = () => {
+      internals.dispatch({ type: 'session_created', sessionId: 'sess-new' });
+    };
+
+    await expect(client.create({
+      prompt: 'start',
+      cwd: '/tmp/project',
+      provider: 'anthropic',
+      model: 'sonnet',
+    })).resolves.toBe('sess-new');
+  });
+
+  it('rejects create when orcd returns a create-level error', async () => {
+    const client = new OrcdClient('/tmp/test.sock');
+    const internals = client as unknown as {
+      socket: { writable: boolean };
+      send: (action: unknown) => void;
+      dispatch: (msg: unknown) => void;
+    };
+    internals.socket = { writable: true };
+    internals.send = () => {
+      internals.dispatch({ type: 'error', sessionId: '', error: 'unknown provider: missing' });
+    };
+
+    await expect(client.create({
+      prompt: 'start',
+      cwd: '/tmp/project',
+      provider: 'missing',
+      model: 'sonnet',
+    })).rejects.toThrow('unknown provider: missing');
+  });
+
   it('awaits async handlers before dispatching the next message', async () => {
     const client = new OrcdClient('/tmp/test.sock');
     const events: string[] = [];

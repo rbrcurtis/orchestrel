@@ -21,8 +21,12 @@ export class OrcdClient {
   private dispatchChain = Promise.resolve();
   private destroyed = false;
 
-  /** Per-session callbacks for create flow */
-  private createCallbacks = new Map<string, (sessionId: string) => void>();
+  /** Pending create calls, resolved in the same order orcd accepts them. */
+  private pendingCreates: Array<{
+    resolve: (sessionId: string) => void;
+    reject: (err: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }> = [];
 
   /** Track which sessions we consider active (running in orcd) */
   private activeSessions = new Set<string>();
@@ -148,8 +152,23 @@ export class OrcdClient {
     contextWindow?: number;
     summarizeThreshold?: number;
   }): Promise<string> {
-    return new Promise((resolve) => {
-      const tempCb = (sessionId: string) => resolve(sessionId);
+    return new Promise((resolve, reject) => {
+      if (!this.socket?.writable) {
+        console.error('[orcd-client] not connected, cannot create session');
+        reject(new Error('OrcdClient not connected'));
+        return;
+      }
+
+      const pending = {
+        resolve,
+        reject,
+        timeout: setTimeout(() => {
+          const idx = this.pendingCreates.indexOf(pending);
+          if (idx !== -1) this.pendingCreates.splice(idx, 1);
+          reject(new Error('orcd create timeout'));
+        }, 30_000),
+      };
+      this.pendingCreates.push(pending);
 
       this.send({
         action: 'create',
@@ -163,10 +182,6 @@ export class OrcdClient {
         contextWindow: opts.contextWindow,
         summarizeThreshold: opts.summarizeThreshold,
       });
-
-      // The session_created message will have the sessionId.
-      // Use a special "pending" slot — we only create one session at a time per flow.
-      this.createCallbacks.set('_pending', tempCb);
     });
   }
 
@@ -273,10 +288,18 @@ export class OrcdClient {
     // Handle session_created for pending create calls
     if (msg.type === 'session_created') {
       this.activeSessions.add(msg.sessionId);
-      const cb = this.createCallbacks.get('_pending');
-      if (cb) {
-        this.createCallbacks.delete('_pending');
-        cb(msg.sessionId);
+      const pending = this.pendingCreates.shift();
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pending.resolve(msg.sessionId);
+      }
+    }
+
+    if (msg.type === 'error' && msg.sessionId === '') {
+      const pending = this.pendingCreates.shift();
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error(msg.error));
       }
     }
 

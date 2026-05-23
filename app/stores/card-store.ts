@@ -97,8 +97,19 @@ export class CardStore {
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     summarizeThreshold?: number;
   }): Promise<Card> {
+    let title = 'New chat';
+
+    try {
+      const suggested = await this.suggestTitle(data.description);
+      if (typeof suggested === 'string' && suggested.trim()) {
+        title = suggested.trim();
+      }
+    } catch {
+      // Fall back to default title if suggestion fails.
+    }
+
     const card = (await this.ws().emit('card:create', {
-      title: 'New chat',
+      title,
       description: data.description,
       column: 'running',
       projectId: data.projectId,

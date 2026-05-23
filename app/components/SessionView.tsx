@@ -19,6 +19,7 @@ type Props = {
   summarizeThreshold: number;
   onPromptSent?: () => void;
   promptFocusSeq?: number | null;
+  keepFocusAfterSend?: boolean;
 };
 
 export const SessionView = observer(function SessionView({
@@ -30,6 +31,7 @@ export const SessionView = observer(function SessionView({
   summarizeThreshold,
   onPromptSent,
   promptFocusSeq,
+  keepFocusAfterSend = false,
 }: Props) {
   const sessionStore = useSessionStore();
   const cardStore = useCardStore();
@@ -299,6 +301,7 @@ export const SessionView = observer(function SessionView({
         contextPercent={contextPercent}
         compacted={compacted}
         textareaRef={textareaRef}
+        keepFocusAfterSend={keepFocusAfterSend}
       />
     </div>
   );
@@ -380,6 +383,7 @@ function PromptInput({
   contextPercent,
   compacted,
   textareaRef,
+  keepFocusAfterSend = false,
 }: {
   cardId: number;
   isRunning: boolean;
@@ -393,6 +397,7 @@ function PromptInput({
   contextPercent: number;
   compacted: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
+  keepFocusAfterSend?: boolean;
 }) {
   const storageKey = `prompt-draft-${cardId}`;
   const [text, setText] = useState(() => {
@@ -485,7 +490,8 @@ function PromptInput({
     // Blur AFTER send completes — send is near-instant (WebSocket) but
     // must finish before blur clears focus lock, so the card's column
     // update from the server triggers event-driven recalc cleanly.
-    ref.current?.blur();
+    // Chat keeps focus because follow-up messages are conversational.
+    if (!keepFocusAfterSend) ref.current?.blur();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

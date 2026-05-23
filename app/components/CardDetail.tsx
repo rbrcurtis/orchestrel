@@ -98,9 +98,9 @@ function CardFields({
   const config = useConfigStore();
   const selectedProject = draft.projectId != null ? projectStore.getProject(draft.projectId) : undefined;
 
-  function patch(updates: Partial<Draft>) {
+  async function patch(updates: Partial<Draft>) {
     setDraft((d) => ({ ...d, ...updates }));
-    onPatch?.(updates);
+    await onPatch?.(updates);
   }
 
   return (

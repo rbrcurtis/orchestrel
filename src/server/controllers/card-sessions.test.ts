@@ -9,12 +9,15 @@ type MockCard = {
   contextTokens: number;
   contextWindow: number;
   turnsCompleted: number;
+  provider: string;
+  model: string;
+  summarizeThreshold: number;
   updatedAt: string;
   save: ReturnType<typeof vi.fn>;
 };
 
 const mockCards: MockCard[] = [
-  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, updatedAt: '', save: vi.fn() },
+  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn() },
 ];
 const mockRepo = {
   findOneBy: vi.fn(async (where: { id?: number; sessionId?: string }) => {
@@ -33,6 +36,9 @@ vi.mock('../models/index', () => ({
 }));
 vi.mock('../models/Card', () => ({
   Card: { findOneBy: vi.fn().mockResolvedValue(null), find: vi.fn().mockResolvedValue([]) },
+}));
+vi.mock('../sessions/worktree', () => ({
+  ensureWorktree: vi.fn(async () => '/tmp/project/.worktrees/card-42'),
 }));
 
 // We test the routing concept: orcd messages for a tracked session
@@ -58,6 +64,9 @@ describe('orcd message router', () => {
       contextTokens: 0,
       contextWindow: 200000,
       turnsCompleted: 0,
+      provider: 'anthropic',
+      model: 'sonnet',
+      summarizeThreshold: 0.6,
       updatedAt: '',
       save: vi.fn(),
     });
@@ -338,7 +347,7 @@ describe('reconcileRunningCards', () => {
     });
   });
 
-  it('keeps brand-new running cards with no sessionId in running during reconciliation', async () => {
+  it('starts running cards with no sessionId during reconciliation', async () => {
     const { reconcileRunningCards } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
@@ -353,15 +362,23 @@ describe('reconcileRunningCards', () => {
         sessions: [],
       })),
       markActive: vi.fn(),
+      create: vi.fn(async () => 'sess-new'),
     };
 
     await reconcileRunningCards(client as never, bus);
 
     expect(mockCards[0].column).toBe('running');
-    expect(mockRepo.save).not.toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith({
-      sessionId: null,
-      status: 'stopped',
+    expect(mockCards[0].sessionId).toBe('sess-new');
+    expect(client.create).toHaveBeenCalledWith({
+      prompt: '',
+      cwd: '/tmp/project/.worktrees/card-42',
+      provider: 'anthropic',
+      model: 'sonnet',
+      sessionId: undefined,
+      contextWindow: 200000,
+      summarizeThreshold: 0.6,
     });
+    expect(mockRepo.save).toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 });

@@ -255,6 +255,53 @@ describe('SessionView prompt submission', () => {
     expect(onPromptSent).not.toHaveBeenCalled();
   });
 
+  it('blurs the prompt textarea after a successful send by default', async () => {
+    setDefaultState({
+      card: { sessionId: null },
+      session: undefined,
+    });
+    sessionStore.sendMessage.mockResolvedValue(undefined);
+
+    renderSessionView({ sessionId: null });
+    const textarea = screen.getByPlaceholderText('Enter a prompt to start a session...');
+
+    textarea.focus();
+    fireEvent.change(textarea, {
+      target: { value: 'Run the ferris wheel' },
+    });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(sessionStore.sendMessage).toHaveBeenCalledWith(1011, 'Run the ferris wheel', undefined);
+      expect(document.activeElement).not.toBe(textarea);
+    });
+  });
+
+  it('keeps the prompt textarea focused after a successful send when requested', async () => {
+    setDefaultState({
+      card: { sessionId: null },
+      session: undefined,
+    });
+    sessionStore.sendMessage.mockResolvedValue(undefined);
+
+    renderSessionView({
+      sessionId: null,
+      keepFocusAfterSend: true,
+    });
+    const textarea = screen.getByPlaceholderText('Enter a prompt to start a session...');
+
+    textarea.focus();
+    fireEvent.change(textarea, {
+      target: { value: 'Run the ferris wheel' },
+    });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(sessionStore.sendMessage).toHaveBeenCalledWith(1011, 'Run the ferris wheel', undefined);
+      expect(document.activeElement).toBe(textarea);
+    });
+  });
+
   it('focuses the prompt textarea when promptFocusSeq changes', async () => {
     setDefaultState();
 

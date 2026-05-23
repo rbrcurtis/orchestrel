@@ -210,8 +210,17 @@ const BoardLayout = observer(function BoardLayout() {
   // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.repeat) return;
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        setNewCardColumn('backlog');
+        return;
+      }
+
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
 
       if (e.key === '/') {
         e.preventDefault();
@@ -229,7 +238,7 @@ const BoardLayout = observer(function BoardLayout() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat]);
+  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat, setNewCardColumn]);
 
   // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;

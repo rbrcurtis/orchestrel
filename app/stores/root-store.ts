@@ -8,10 +8,14 @@ import type { Column, SyncPayload, User } from '../../src/shared/ws-protocol';
 
 const PROJECT_FILTER_KEY = 'dispatcher-project-filter';
 
+function cardHasVisibleProject(store: RootStore, projectId: number | null): boolean {
+  return projectId != null && store.projects.getProject(projectId) != null;
+}
+
 function applySync(store: RootStore, data: SyncPayload): void {
   store.currentUser = data.user ?? null;
-  store.cards.hydrate(data.cards, true);
   store.projects.hydrate(data.projects, true, data.users);
+  store.cards.hydrate(data.cards.filter((c) => cardHasVisibleProject(store, c.projectId)), true);
   store.config.hydrate(data.providers);
 }
 
@@ -56,6 +60,8 @@ export class RootStore {
     this.ws = new WsClient({
       onSync: (data) => applySync(this, data),
       onCardUpdated: (data) => {
+        if (!cardHasVisibleProject(this, data.projectId)) return;
+
         const prev = this.cards.getCard(data.id);
         if (
           data.column === 'review' &&

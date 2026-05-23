@@ -78,13 +78,59 @@ describe('OrcdSession async Agent lifecycle', () => {
 
     expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
       options: expect.objectContaining({
-        disallowedTools: expect.arrayContaining(['AskUserQuestion']),
+        disallowedTools: expect.arrayContaining([
+          'AskUserQuestion',
+          'CronCreate',
+          'CronDelete',
+          'CronList',
+          'ScheduleWakeup',
+          'WebSearch',
+        ]),
         settings: expect.objectContaining({
           skillOverrides: expect.objectContaining({
             'claude-api': 'off',
           }),
         }),
       }),
+    }));
+  });
+
+  it('prefers configured contextWindow over SDK modelUsage metadata', async () => {
+    events.push(
+      {
+        type: 'stream_event',
+        event: {
+          type: 'message_start',
+          message: {
+            usage: { input_tokens: 12345 },
+          },
+        },
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        stop_reason: 'end_turn',
+        modelUsage: { test: { contextWindow: 200000 } },
+      },
+    );
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'qwen3-coder-next',
+      provider: 'max',
+      sessionId: 'session-context-window',
+      contextWindow: 262144,
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    await session.run({ prompt: 'go' });
+
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'context_usage',
+      contextTokens: 12345,
+      contextWindow: 262144,
     }));
   });
 

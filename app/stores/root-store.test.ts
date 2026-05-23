@@ -198,4 +198,58 @@ describe('RootStore websocket reconnect sync', () => {
     expect(emitWithAck).not.toHaveBeenCalled();
     expect(store.cards.getCard(42)).toBeUndefined();
   });
+
+  it('ignores live card updates for projects absent from the visible project store', async () => {
+    const { RootStore } = await import('./root-store');
+    const store = new RootStore();
+
+    fakeSocket.nextSubscribeData = makeSyncPayload('running');
+    store.subscribe(['running']);
+    await waitFor(() => expect(store.projects.getProject(1)).toBeDefined());
+
+    fakeSocket.trigger('card:updated', {
+      ...makeSyncPayload('running').cards[0],
+      id: 99,
+      title: 'Leaked card',
+      projectId: 2,
+    });
+
+    expect(store.cards.getCard(99)).toBeUndefined();
+  });
+
+  it('accepts live card updates for visible projects', async () => {
+    const { RootStore } = await import('./root-store');
+    const store = new RootStore();
+
+    fakeSocket.nextSubscribeData = makeSyncPayload('running');
+    store.subscribe(['running']);
+    await waitFor(() => expect(store.projects.getProject(1)).toBeDefined());
+
+    fakeSocket.trigger('card:updated', {
+      ...makeSyncPayload('running').cards[0],
+      id: 100,
+      title: 'Visible card',
+      projectId: 1,
+    });
+
+    expect(store.cards.getCard(100)?.title).toBe('Visible card');
+  });
+
+  it('filters subscribe sync cards through the visible project store', async () => {
+    const { RootStore } = await import('./root-store');
+    const store = new RootStore();
+    const sync = makeSyncPayload('running');
+    sync.cards.push({
+      ...sync.cards[0],
+      id: 101,
+      title: 'Leaked sync card',
+      projectId: 2,
+    });
+
+    fakeSocket.nextSubscribeData = sync;
+    store.subscribe(['running']);
+
+    await waitFor(() => expect(store.cards.getCard(42)).toBeDefined());
+    expect(store.cards.getCard(101)).toBeUndefined();
+  });
 });

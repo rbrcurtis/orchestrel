@@ -233,11 +233,8 @@ export async function reconcileRunningCards(
       continue;
     }
     if (!card.sessionId) {
-      console.log(`[reconcile] card ${card.id} still starting (no sessionId yet)`);
-      bus.publish(`card:${card.id}:exit`, {
-        sessionId: null,
-        status: 'stopped',
-      });
+      console.log(`[reconcile] card ${card.id} has no sessionId; starting missed session`);
+      await startCardSession(client, card);
       continue;
     }
 
@@ -292,25 +289,7 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
         `[oc:auto-start] card #${card.id} entered running ` +
           `(worktree=${!!card.worktreeBranch}, project=${card.projectId})`,
       );
-      const { ensureWorktree } = await import('../sessions/worktree');
-      const cwd = await ensureWorktree(fullCard);
-      const prompt = fullCard.sessionId ? '' : fullCard.description ?? '';
-
-      const sessionId = await client.create({
-        prompt,
-        cwd,
-        provider: fullCard.provider,
-        model: fullCard.model,
-        sessionId: fullCard.sessionId ?? undefined,
-        contextWindow: fullCard.contextWindow,
-        summarizeThreshold: fullCard.summarizeThreshold,
-      });
-
-      fullCard.sessionId = sessionId;
-      fullCard.updatedAt = new Date().toISOString();
-      await repo().save(fullCard);
-
-      trackSession(fullCard.id, sessionId);
+      await startCardSession(client, fullCard);
     }
 
     // Card left running: cancel session
@@ -406,4 +385,27 @@ export function registerMemoryUpsertOnArchive(bus: MessageBus = messageBus): voi
 
 function repo() {
   return AppDataSource.getRepository(Card);
+}
+
+async function startCardSession(client: OrcdClient, card: Card): Promise<string> {
+  const { ensureWorktree } = await import('../sessions/worktree');
+  const cwd = await ensureWorktree(card);
+  const prompt = card.sessionId ? '' : card.description ?? '';
+
+  const sessionId = await client.create({
+    prompt,
+    cwd,
+    provider: card.provider,
+    model: card.model,
+    sessionId: card.sessionId ?? undefined,
+    contextWindow: card.contextWindow,
+    summarizeThreshold: card.summarizeThreshold,
+  });
+
+  card.sessionId = sessionId;
+  card.updatedAt = new Date().toISOString();
+  await repo().save(card);
+
+  trackSession(card.id, sessionId);
+  return sessionId;
 }
