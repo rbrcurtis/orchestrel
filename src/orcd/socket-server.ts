@@ -19,6 +19,8 @@ export class OrcdServer {
   readonly store = new SessionStore();
   private compacting = new Set<string>(); // session IDs currently compacting
   private pendingSummaries = new Map<string, PreparedCompaction>();
+  private applyingSummaries = new Set<string>();
+  private exitedSessions = new Set<string>(); // sessions that reached beforeExit
   private turnActive = new Set<string>(); // sessions with a turn in progress
   private upsertedSessions = new Set<string>(); // sessions that have had memory upsert run
   private memoryConfig?: OrcdConfig['memoryUpsert'];
@@ -291,6 +293,9 @@ export class OrcdServer {
     }
 
     this.compacting.add(session.id);
+    if (hydrated || session.state !== 'running') {
+      this.exitedSessions.add(session.id);
+    }
     session.emitBgcStarted();
     this.triggerCompaction(session)
       .catch((err) => {
@@ -300,6 +305,8 @@ export class OrcdServer {
         this.compacting.delete(session.id);
         if (hydrated) {
           this.pendingSummaries.delete(session.id);
+          this.applyingSummaries.delete(session.id);
+          this.exitedSessions.delete(session.id);
           this.turnActive.delete(session.id);
           this.store.remove(session.id);
         }
@@ -389,36 +396,47 @@ export class OrcdServer {
       projectPath: session.cwd,
       model: session.model,
       env,
+      contextWindow: session.contextWindow,
     });
 
     this.pendingSummaries.set(sid, prepared);
-    if (!this.turnActive.has(sid)) {
+    if (this.exitedSessions.has(sid)) {
       log(
-        `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — session inactive, applying now`,
+        `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — beforeExit already reached, applying now`,
       );
       await this.applyPendingCompaction(session);
       return;
     }
     log(
-      `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for session_exit`,
+      `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for beforeExit`,
     );
   }
 
   private async applyPendingCompaction(session: OrcdSession): Promise<void> {
     const sid = session.id;
-    const prepared = this.pendingSummaries.get(sid);
-    if (!prepared) {
-      console.log(`[orcd:${sid.slice(0, 8)}:compact] no pending summary at session_exit`);
+    if (this.applyingSummaries.has(sid)) {
+      console.log(`[orcd:${sid.slice(0, 8)}:compact] summary apply already in progress`);
       return;
     }
 
-    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at session_exit`);
-    const result = await applyCompaction(prepared);
+    const prepared = this.pendingSummaries.get(sid);
+    if (!prepared) {
+      console.log(`[orcd:${sid.slice(0, 8)}:compact] no pending summary at beforeExit`);
+      return;
+    }
+
+    this.applyingSummaries.add(sid);
     this.pendingSummaries.delete(sid);
-    console.log(
-      `[orcd:${sid.slice(0, 8)}:compact] applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`,
-    );
-    session.emitCompactBoundary();
+    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at beforeExit`);
+    try {
+      const result = await applyCompaction(prepared);
+      console.log(
+        `[orcd:${sid.slice(0, 8)}:compact] applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`,
+      );
+      session.emitCompactBoundary();
+    } finally {
+      this.applyingSummaries.delete(sid);
+    }
   }
 
   // ── Session lifecycle hooks (called from handleCreate) ──────────────────
@@ -427,13 +445,19 @@ export class OrcdServer {
     const sid = session.id;
 
     session.onBeforeExit(async () => {
-      await this.applyPendingCompaction(session);
+      this.exitedSessions.add(sid);
+      try {
+        await this.applyPendingCompaction(session);
+      } catch (err) {
+        console.error(`[orcd:${sid.slice(0, 8)}:compact] beforeExit apply failed:`, err);
+      }
     });
 
     const hook: SessionEventCallback = (msg) => {
       if (msg.type === 'stream_event') {
         const event = msg.event as Record<string, unknown>;
         if (event.type === 'message_start') {
+          this.exitedSessions.delete(sid);
           this.turnActive.add(sid);
         }
       }

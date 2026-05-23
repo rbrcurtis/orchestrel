@@ -161,7 +161,7 @@ describe('OrcdServer prompt passthrough', () => {
 });
 
 describe('OrcdServer background compaction', () => {
-  it('applies immediately when summary finishes and session is not active', async () => {
+  it('does not apply background compaction until beforeExit even after result', async () => {
     compactorMocks.prepareCompaction.mockReset().mockResolvedValue(prepared);
     compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
     const server = createServer();
@@ -175,14 +175,16 @@ describe('OrcdServer background compaction', () => {
     hook({ type: 'context_usage', sessionId: 'session-1', contextTokens: 80, contextWindow: 100 } satisfies ContextUsageMessage);
 
     await vi.waitFor(() => expect(compactorMocks.prepareCompaction).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
     expect(emitBgcStarted).toHaveBeenCalledTimes(1);
+    expect(compactorMocks.applyCompaction).not.toHaveBeenCalled();
+    expect(emitCompactBoundary).not.toHaveBeenCalled();
+
+    await runBeforeExit();
+    expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
     expect(compactorMocks.applyCompaction).toHaveBeenCalledWith(prepared);
     expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
 
-    await runBeforeExit();
     hook({ type: 'session_exit', sessionId: 'session-1', state: 'completed' } satisfies SessionExitMessage);
-
     expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
   });
 
