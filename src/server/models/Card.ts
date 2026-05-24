@@ -45,6 +45,9 @@ export class Card extends BaseEntity {
   @Column({ name: 'worktree_branch', type: 'text', nullable: true })
   worktreeBranch!: string | null;
 
+  @Column({ type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
+  sandbox!: boolean;
+
   @Column({ name: 'source_branch', type: 'text', nullable: true })
   sourceBranch!: string | null;
 

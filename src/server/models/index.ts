@@ -80,6 +80,18 @@ export async function initDatabase(): Promise<void> {
       console.log(`[db:migrate] archived column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
     await runner.query(`UPDATE projects SET archived = 0 WHERE archived IS NULL`);
+    try {
+      await runner.query(`ALTER TABLE projects ADD COLUMN default_sandbox INTEGER NOT NULL DEFAULT 0`);
+    } catch (err) {
+      console.log(`[db:migrate] default_sandbox column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
+    try {
+      await runner.query(`ALTER TABLE cards ADD COLUMN sandbox INTEGER NOT NULL DEFAULT 0`);
+    } catch (err) {
+      console.log(`[db:migrate] cards.sandbox column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
+    await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
+    await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
     await runner.release();
   }
 }

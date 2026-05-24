@@ -10,6 +10,10 @@ vi.mock('../models/index', () => ({
   },
 }))
 
+vi.mock('../config/providers', () => ({
+  getDefaultProviderID: () => 'anthropic',
+}))
+
 let ds: DataSource
 
 beforeAll(async () => {
@@ -58,6 +62,45 @@ describe('ProjectService', () => {
 
     const found = await Project.findOneByOrFail({ id: p.id })
     expect(found.archived).toBe(true)
+  })
+
+  it('persists defaultSandbox for git projects', async () => {
+    const { mkdtemp, mkdir } = await import('fs/promises')
+    const { tmpdir } = await import('os')
+    const { join } = await import('path')
+    const { projectService } = await import('./project')
+
+    const path = await mkdtemp(join(tmpdir(), 'orchestrel-git-project-'))
+    await mkdir(join(path, '.git'))
+
+    const created = await projectService.createProject({
+      name: 'Sandbox Git',
+      path,
+      defaultWorktree: true,
+      defaultSandbox: true,
+    })
+
+    expect(created.isGitRepo).toBe(true)
+    expect(created.defaultWorktree).toBe(true)
+    expect(created.defaultSandbox).toBe(true)
+
+    const updated = await projectService.updateProject(created.id, { defaultSandbox: false })
+    expect(updated.defaultSandbox).toBe(false)
+  })
+
+  it('clears defaultSandbox when project is not a git repo', async () => {
+    const { projectService } = await import('./project')
+
+    const project = await projectService.createProject({
+      name: 'No Sandbox',
+      path: tmpdir(),
+      defaultWorktree: true,
+      defaultSandbox: true,
+    })
+
+    expect(project.isGitRepo).toBe(false)
+    expect(project.defaultWorktree).toBe(false)
+    expect(project.defaultSandbox).toBe(false)
   })
 
   it('browse returns non-hidden directories sorted', async () => {

@@ -22,6 +22,13 @@ class ProjectService {
       data.isGitRepo = existsSync(join(data.path, '.git'));
     }
 
+    if (!data.isGitRepo) {
+      data.defaultWorktree = false;
+      data.defaultSandbox = false;
+    } else if (!data.defaultWorktree) {
+      data.defaultSandbox = false;
+    }
+
     // Auto-assign first unused color from the default palette
     if (!data.color) {
       const used = (await Project.find({ select: { color: true } })).map((p) => p.color);
@@ -48,6 +55,15 @@ class ProjectService {
     // Re-detect isGitRepo if path changes
     if (data.path) {
       data.isGitRepo = existsSync(join(data.path, '.git'));
+    }
+
+    const nextIsGitRepo = data.isGitRepo ?? proj.isGitRepo;
+    const nextDefaultWorktree = data.defaultWorktree ?? proj.defaultWorktree;
+    if (!nextIsGitRepo) {
+      data.defaultWorktree = false;
+      data.defaultSandbox = false;
+    } else if (!nextDefaultWorktree) {
+      data.defaultSandbox = false;
     }
 
     repo.merge(proj, data);
