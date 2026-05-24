@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MessageBlock } from './MessageBlock';
 import { ContentBlock, type ConversationEntry } from '~/lib/message-accumulator';
 
@@ -128,5 +131,40 @@ describe('MessageBlock user prompt rendering', () => {
     expect(html).toContain('Test-Driven Development');
     expect(html).toContain('## Instructions');
     expect(html).not.toContain('skill loaded');
+  });
+});
+
+describe('MessageBlock tool rendering', () => {
+  it('renders tool input and output with matching text style in a 400px scroll area', () => {
+    render(
+      <MessageBlock
+        entry={{
+          kind: 'blocks',
+          blocks: [
+            new ContentBlock({
+              type: 'tool_use',
+              content: 'Read',
+              id: 'call_read',
+              name: 'Read',
+              input: '{"file_path":"/tmp/example.txt"}',
+              output: 'file contents',
+              complete: true,
+            }),
+          ],
+        }}
+        index={0}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Read/ }));
+
+    expect(screen.getByText('Input')).toBeTruthy();
+    expect(screen.getByText('Output')).toBeTruthy();
+    const output = screen.getByText('file contents');
+    expect(output.className).toBe('text-xs font-mono whitespace-pre-wrap break-all text-foreground min-w-0');
+    const viewport = output.closest('[data-slot="scroll-area-viewport"]');
+    expect(viewport?.className).toContain('max-h-[400px]');
+    expect(viewport?.className).not.toContain('min-h');
+    expect(viewport?.className.split(' ')).not.toContain('h-[400px]');
   });
 });

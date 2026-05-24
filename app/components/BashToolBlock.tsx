@@ -49,7 +49,7 @@ export const BashToolBlock = observer(function BashToolBlock({
       </div>
 
       {/* Terminal body */}
-      <ScrollArea className="bg-[#0d0d1a] min-h-[2rem] max-h-80">
+      <ScrollArea className="bg-[#0d0d1a]" viewportClassName="max-h-[400px]">
         <div className="px-3 py-2 min-w-0 max-w-full">
           {/* Command prompt */}
           <div className="flex gap-1.5 min-w-0">

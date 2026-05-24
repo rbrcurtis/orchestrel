@@ -41,24 +41,22 @@ export function ToolUseBlock({ name, input, output }: Props) {
         )}
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="p-2 space-y-2 bg-muted min-w-0 overflow-hidden">
-          <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Input</div>
-            <ScrollArea className="max-h-60">
+        <ScrollArea className="bg-muted" viewportClassName="max-h-[400px]">
+          <div className="p-2 space-y-2 min-w-0">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Input</div>
               <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground min-w-0">
                 {formatInput(input)}
               </pre>
-            </ScrollArea>
-          </div>
-          {output != null && (
-            <div className="min-w-0">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Output</div>
-              <ScrollArea className="max-h-60">
-                <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground min-w-0">{output}</pre>
-              </ScrollArea>
             </div>
-          )}
-        </div>
+            {output != null && (
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Output</div>
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground min-w-0">{output}</pre>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
       </CollapsibleContent>
     </Collapsible>
   );

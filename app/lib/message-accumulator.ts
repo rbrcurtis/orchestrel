@@ -21,14 +21,16 @@ export class ContentBlock {
   id?: string;
   name?: string;
   input?: string;
+  output?: string;
   complete: boolean;
 
-  constructor(init: { type: 'text' | 'thinking' | 'tool_use'; content: string; id?: string; name?: string; input?: string; complete: boolean }) {
+  constructor(init: { type: 'text' | 'thinking' | 'tool_use'; content: string; id?: string; name?: string; input?: string; output?: string; complete: boolean }) {
     this.type = init.type;
     this.content = init.content;
     this.id = init.id;
     this.name = init.name;
     this.input = init.input;
+    this.output = init.output;
     this.complete = init.complete;
     makeAutoObservable(this, { type: false, id: false, name: false });
   }
@@ -199,6 +201,11 @@ export class MessageAccumulator {
           // Array content may be a real prompt with text blocks, or an internal
           // tool_result message persisted with role=user. Only treat text-bearing
           // entries as true user turn boundaries.
+          for (const block of content) {
+            if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+              this.attachToolOutput(block.tool_use_id, textFromToolResultContent(block.content));
+            }
+          }
           const text = content
             .filter((b) => b.type === 'text')
             .map((b) => (b as { text?: string }).text ?? '')
@@ -381,15 +388,14 @@ export class MessageAccumulator {
   private handleUserMessage(msg: SdkUserMessage): void {
     for (const block of msg.message.content) {
       if (block.type !== 'tool_result' || !block.tool_use_id) continue;
-      this.completeBlockingSubagent(
-        block.tool_use_id,
-        textFromToolResultContent(block.content),
-        block.is_error ?? false,
-      );
+      const result = textFromToolResultContent(block.content);
+      this.attachToolOutput(block.tool_use_id, result);
+      this.completeBlockingSubagent(block.tool_use_id, result, block.is_error ?? false);
     }
   }
 
   private handleToolUseSummary(msg: SdkToolUseSummary): void {
+    if (msg.tool_use_id) this.attachToolOutput(msg.tool_use_id, msg.tool_result);
     this.conversation.push({
       kind: 'tool_activity',
       timestamp: msg.timestamp,
@@ -402,6 +408,20 @@ export class MessageAccumulator {
     });
 
     if (msg.tool_use_id) this.completeBlockingSubagent(msg.tool_use_id, msg.tool_result, msg.is_error ?? false);
+  }
+
+  private attachToolOutput(toolUseId: string, output: string): void {
+    const entries = [...this.conversation].reverse();
+    for (const entry of entries) {
+      if (entry.kind !== 'blocks') continue;
+      const block = entry.blocks.find((b) => b.type === 'tool_use' && b.id === toolUseId);
+      if (!block) continue;
+      block.output = output;
+      return;
+    }
+
+    const block = this.currentBlocks.find((b) => b.type === 'tool_use' && b.id === toolUseId);
+    if (block) block.output = output;
   }
 
   private completeBlockingSubagent(toolUseId: string, result: string, isError: boolean): void {

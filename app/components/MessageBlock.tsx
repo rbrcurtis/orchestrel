@@ -299,14 +299,14 @@ function BlocksEntry({ blocks, accentColor }: { blocks: ContentBlock[]; accentCo
                 key={i}
                 command={command}
                 description={description}
-                output={undefined}
-                isRunning={!block.complete}
+                output={block.output}
+                isRunning={!block.complete && !block.output}
               />
             );
           }
           return (
             <div key={i} className="py-1 min-w-0 overflow-hidden">
-              <ToolUseBlock name={name} input={input} output={undefined} />
+              <ToolUseBlock name={name} input={input} output={block.output} />
             </div>
           );
         }

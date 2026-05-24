@@ -156,4 +156,32 @@ describe('MessageAccumulator blocking subagents', () => {
 
     expect(acc.subagents.has('call_agent')).toBe(false);
   });
+
+  it('attaches SDK user tool_result output to the matching tool block', () => {
+    const acc = new MessageAccumulator();
+
+    acc.handleMessage(toolStart('call_read'));
+    acc.handleMessage(toolInput('{"file_path":"/tmp/example.txt"}'));
+    acc.handleMessage(toolStop());
+    acc.handleMessage({ type: 'stream_event', event: { type: 'message_stop' } } as SdkMessage);
+    acc.handleMessage({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'call_read',
+            content: [{ type: 'text', text: 'file contents' }],
+            is_error: false,
+          },
+        ],
+      },
+    } as SdkMessage);
+
+    const entry = acc.conversation[0];
+    expect(entry.kind).toBe('blocks');
+    if (entry.kind !== 'blocks') return;
+    expect(entry.blocks[0].output).toBe('file contents');
+  });
 });
