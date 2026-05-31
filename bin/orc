@@ -11,11 +11,11 @@ import { buildModelAliasEnv, parseConfig } from '../src/shared/config.ts';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
 const DEFAULT_CONFIG_PATH = resolve(REPO_ROOT, 'config.yaml');
-const DEFAULT_CCH_PATH = '/home/ryan/.local/bin/cch';
+const DEFAULT_PI_PATH = '/home/ryan/.local/bin/pi';
 const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
-const CLAUDE_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 const ENV_DEFAULT_PROVIDER = 'ORC_PROVIDER';
 const ENV_DEFAULT_MODEL = 'ORC_MODEL';
+const LEGACY_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 
 const args = arg(
   {
@@ -31,7 +31,7 @@ const args = arg(
 
 function usage() {
   return [
-    'Usage: orc [options] [claude args...] [provider model]',
+    'Usage: orc [options] [pi args...] [provider model]',
     '',
     'Examples:',
     '  orc trackable auto',
@@ -59,6 +59,7 @@ function main() {
   const configPath = resolveConfigPath(args['--config']);
   const config = loadWrapperConfig(configPath);
   const passthroughArgs = [...args._];
+  stripSkipPermissionsFlag(passthroughArgs);
   const resumeTarget = extractResumeTarget(passthroughArgs);
 
   const resolved = extractProviderAndModel(config, passthroughArgs, resumeTarget);
@@ -73,9 +74,9 @@ function main() {
   }
 
   rejectConflictingArgs(passthroughArgs);
-  const cchArgs = buildCchArgs(model.modelID, passthroughArgs);
+  const piArgs = buildPiArgs(model.modelID, passthroughArgs);
 
-  const env = buildClaudeEnv(provider);
+  const env = buildPiEnv(provider);
   if (args['--print-env']) {
     process.stdout.write(
       JSON.stringify(
@@ -85,8 +86,9 @@ function main() {
           modelID: model.modelID,
           ...(resolved.card ? { card: resolved.card } : {}),
           env,
-          claudeArgs: passthroughArgs,
-          cchArgs,
+          passthroughArgs,
+          piArgs,
+          piPath: resolvePiPath(),
           configPath,
         },
         null,
@@ -96,10 +98,10 @@ function main() {
     return;
   }
 
-  const cchPath = resolveCchPath();
+  const piPath = resolvePiPath();
   const child = spawn(
-    cchPath,
-    cchArgs,
+    piPath,
+    piArgs,
     {
       stdio: 'inherit',
       env: {
@@ -118,7 +120,7 @@ function main() {
   });
 
   child.on('error', (err) => {
-    console.error(`orc: failed to launch cch: ${err.message}`);
+    console.error(`orc: failed to launch pi: ${err.message}`);
     process.exit(1);
   });
 }
@@ -302,6 +304,14 @@ function resolveDbPath() {
   return DEFAULT_DB_PATH;
 }
 
+function stripSkipPermissionsFlag(passthroughArgs) {
+  for (let i = passthroughArgs.length - 1; i >= 0; i -= 1) {
+    if (passthroughArgs[i] === LEGACY_SKIP_PERMISSIONS_FLAG) {
+      passthroughArgs.splice(i, 1);
+    }
+  }
+}
+
 function rejectConflictingArgs(passthroughArgs) {
   for (const token of passthroughArgs) {
     if (token === '--model' || token === '-m' || token.startsWith('--model=')) {
@@ -310,34 +320,35 @@ function rejectConflictingArgs(passthroughArgs) {
   }
 }
 
-function buildClaudeEnv(provider) {
+function buildPiEnv(provider) {
   const env = {
-    ANTHROPIC_BASE_URL: '',
-    ANTHROPIC_API_KEY: '',
-    ANTHROPIC_AUTH_TOKEN: '',
+    PI_BASE_URL: '',
+    PI_API_KEY: '',
+    PI_AUTH_TOKEN: '',
     ...buildModelAliasEnv(provider.models),
   };
 
-  if (provider.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;
-  if (provider.apiKey) env.ANTHROPIC_API_KEY = provider.apiKey;
-  if (provider.authToken) env.ANTHROPIC_AUTH_TOKEN = provider.authToken;
+  if (provider.baseUrl) env.PI_BASE_URL = provider.baseUrl;
+  if (provider.apiKey) {
+    env.PI_API_KEY = provider.apiKey;
+    const providerType = provider.type ? String(provider.type) : '';
+    if (providerType === 'anthropic') env.ANTHROPIC_API_KEY = provider.apiKey;
+    if (providerType === 'openai') env.OPENAI_API_KEY = provider.apiKey;
+  }
+  if (provider.authToken) env.PI_AUTH_TOKEN = provider.authToken;
 
   return env;
 }
 
-function buildCchArgs(modelId, passthroughArgs) {
-  const args = ['--model', modelId, ...passthroughArgs];
-  if (!args.includes(CLAUDE_SKIP_PERMISSIONS_FLAG)) {
-    args.unshift(CLAUDE_SKIP_PERMISSIONS_FLAG);
-  }
-  return args;
+function buildPiArgs(modelId, passthroughArgs) {
+  return ['--model', modelId, ...passthroughArgs];
 }
 
-function resolveCchPath() {
-  const override = process.env.ORC_CCH_PATH;
-  if (override && existsSync(override)) return override;
-  if (existsSync(DEFAULT_CCH_PATH)) return DEFAULT_CCH_PATH;
-  throw new Error(`cch not found at ${DEFAULT_CCH_PATH}`);
+function resolvePiPath() {
+  const override = process.env.ORC_PI_PATH;
+  if (override) return override;
+  if (existsSync(DEFAULT_PI_PATH)) return DEFAULT_PI_PATH;
+  throw new Error(`pi not found at ${DEFAULT_PI_PATH}`);
 }
 
 try {
