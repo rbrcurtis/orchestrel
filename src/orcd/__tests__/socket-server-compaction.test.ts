@@ -160,6 +160,67 @@ describe('OrcdServer prompt passthrough', () => {
   });
 });
 
+describe('OrcdServer provider env', () => {
+  it('merges process env and model alias env without injecting Claude runtime env', () => {
+    const saved = {
+      CLAUDE_CODE_USE_BEDROCK: process.env.CLAUDE_CODE_USE_BEDROCK,
+      ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
+      CC_BACKGROUND_COMPACTOR_DISABLE: process.env.CC_BACKGROUND_COMPACTOR_DISABLE,
+      AWS_REGION: process.env.AWS_REGION,
+      AWS_PROFILE: process.env.AWS_PROFILE,
+      ORC_TEST_PROVIDER_ENV: process.env.ORC_TEST_PROVIDER_ENV,
+    };
+
+    try {
+      delete process.env.CLAUDE_CODE_USE_BEDROCK;
+      delete process.env.ANTHROPIC_BASE_URL;
+      delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+      delete process.env.CC_BACKGROUND_COMPACTOR_DISABLE;
+      delete process.env.AWS_REGION;
+      delete process.env.AWS_PROFILE;
+      process.env.ORC_TEST_PROVIDER_ENV = 'from-process';
+
+      const server = new OrcdServer('/tmp/orcd-test.sock', {
+        test: {
+          type: 'bedrock',
+          baseUrl: 'https://anthropic.test',
+          apiKey: 'provider-api-key',
+          authToken: 'provider-auth-token',
+          region: 'us-east-1',
+          profile: 'provider-profile',
+          models: ['test-model'],
+          modelAliasEnv: {
+            ANTHROPIC_DEFAULT_SONNET_MODEL: 'test-model',
+          },
+        },
+      }, { provider: 'test', model: 'test-model' });
+
+      const env = server['buildProviderEnv']('test');
+
+      expect(env.ORC_TEST_PROVIDER_ENV).toBe('from-process');
+      expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('test-model');
+      expect(env.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
+      expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+      expect(env.CC_BACKGROUND_COMPACTOR_DISABLE).toBeUndefined();
+      expect(env.AWS_REGION).toBeUndefined();
+      expect(env.AWS_PROFILE).toBeUndefined();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+});
+
 describe('OrcdServer background compaction', () => {
   it('does not apply background compaction until beforeExit even after result', async () => {
     compactorMocks.prepareCompaction.mockReset().mockResolvedValue(prepared);
