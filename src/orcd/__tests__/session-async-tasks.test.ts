@@ -1,22 +1,58 @@
-import { appendFile, mkdtemp, rm, writeFile } from 'fs/promises';
-import { join } from 'path';
-import { tmpdir } from 'os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrcdSession } from '../session';
+import type { PiRuntimeSession } from '../pi-runtime';
 import type { SessionEventCallback } from '../session';
 
-const events: unknown[] = [];
-const sdkQuery = vi.hoisted(() => vi.fn(() => ({
-  async *[Symbol.asyncIterator]() {
-    for (const event of events) yield event;
-  },
-  interrupt: vi.fn(),
-  setMaxThinkingTokens: vi.fn(),
-})));
-
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: sdkQuery,
+const pi = vi.hoisted(() => ({
+  createPiRuntimeSession: vi.fn(),
 }));
+
+vi.mock('../pi-runtime', () => ({
+  createPiRuntimeSession: pi.createPiRuntimeSession,
+}));
+
+interface TestRuntimeSession extends PiRuntimeSession {
+  emit(event: unknown): void;
+  resolvePrompt(): void;
+}
+
+function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRuntimeSession {
+  const subscribers = new Set<(event: unknown) => void>();
+  const session: TestRuntimeSession = {
+    id,
+    prompt: vi.fn(async () => {
+      for (const event of events) session.emit(event);
+    }),
+    subscribe: vi.fn((cb: (event: unknown) => void) => {
+      subscribers.add(cb);
+      return () => subscribers.delete(cb);
+    }),
+    abort: vi.fn(async () => undefined),
+    compact: vi.fn(async () => ({ ok: true })),
+    setEffort: vi.fn(async () => undefined),
+    getMessages: vi.fn(() => []),
+    emit(event: unknown) {
+      for (const cb of subscribers) cb(event);
+    },
+    resolvePrompt() {
+      return undefined;
+    },
+  };
+  return session;
+}
+
+function createBlockedRuntimeSession(events: unknown[] = [], id = 'session'): TestRuntimeSession {
+  const session = createRuntimeSession(events, id);
+  let resolvePrompt: (() => void) | undefined;
+  session.prompt = vi.fn(async () => {
+    for (const event of events) session.emit(event);
+    await new Promise<void>((resolve) => {
+      resolvePrompt = resolve;
+    });
+  });
+  session.resolvePrompt = () => resolvePrompt?.();
+  return session;
+}
 
 function toolUseEvent(id: string, description: string): unknown {
   return {
@@ -48,7 +84,7 @@ function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
               text: [
                 'Async agent launched successfully.',
                 `agentId: ${taskId} (internal ID - do not mention to user.)`,
-                `output_file: /tmp/claude/tasks/${taskId}.output`,
+                `output_file: /tmp/pi/tasks/${taskId}.output`,
               ].join('\n'),
             },
           ],
@@ -58,68 +94,64 @@ function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
   };
 }
 
-describe('OrcdSession async Agent lifecycle', () => {
+function taskNotification(taskId: string, toolUseId: string, status: 'completed' | 'failed' = 'completed'): unknown {
+  return {
+    type: 'message_update',
+    message: {
+      content: [
+        {
+          type: 'text',
+          text: [
+            '<task-notification>',
+            `<task-id>${taskId}</task-id>`,
+            `<tool-use-id>${toolUseId}</tool-use-id>`,
+            `<status>${status}</status>`,
+            '<result>DONE</result>',
+            '</task-notification>',
+          ].join('\n'),
+        },
+      ],
+    },
+  };
+}
+
+describe('OrcdSession Pi runtime loop', () => {
   beforeEach(() => {
-    events.length = 0;
-    sdkQuery.mockClear();
+    pi.createPiRuntimeSession.mockReset();
   });
 
-  it('disables broken skills in Agent SDK options', async () => {
-    events.push({ type: 'result', subtype: 'success', stop_reason: 'end_turn' });
+  it('creates a Pi runtime session and forwards the initial prompt', async () => {
+    const runtime = createRuntimeSession([], 'session-prompt');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-prompt',
+    });
+
+    await session.run({ prompt: 'go', effort: 'high' });
+
+    expect(pi.createPiRuntimeSession).toHaveBeenCalledWith({
+      cwd: '/tmp/project',
+      providerId: 'test-provider',
+      modelId: 'test-model',
+      effort: 'high',
+    });
+    expect(runtime.prompt).toHaveBeenCalledWith('go', undefined);
+  });
+
+  it('emits stream_event for ordinary Pi events', async () => {
+    const event = { type: 'message_update', message: { text: 'hello' } };
+    const runtime = createRuntimeSession([event], 'session-stream');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
       cwd: '/tmp',
       model: 'test-model',
       provider: 'test-provider',
-      sessionId: 'session-skills',
-    });
-
-    await session.run({ prompt: 'go' });
-
-    expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
-      options: expect.objectContaining({
-        disallowedTools: expect.arrayContaining([
-          'AskUserQuestion',
-          'CronCreate',
-          'CronDelete',
-          'CronList',
-          'ScheduleWakeup',
-          'WebSearch',
-        ]),
-        settings: expect.objectContaining({
-          skillOverrides: expect.objectContaining({
-            'claude-api': 'off',
-          }),
-        }),
-      }),
-    }));
-  });
-
-  it('prefers configured contextWindow over SDK modelUsage metadata', async () => {
-    events.push(
-      {
-        type: 'stream_event',
-        event: {
-          type: 'message_start',
-          message: {
-            usage: { input_tokens: 12345 },
-          },
-        },
-      },
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
-
-    const session = new OrcdSession({
-      cwd: '/tmp',
-      model: 'qwen3-coder-next',
-      provider: 'max',
-      sessionId: 'session-context-window',
-      contextWindow: 262144,
+      sessionId: 'session-stream',
     });
 
     const payloads: unknown[] = [];
@@ -128,208 +160,298 @@ describe('OrcdSession async Agent lifecycle', () => {
     await session.run({ prompt: 'go' });
 
     expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      sessionId: 'session-stream',
+      event,
+    }));
+  });
+
+  it('emits result for turn_end mapped events', async () => {
+    const event = {
+      type: 'turn_end',
+      message: { id: 'msg-1', text: 'done' },
+      toolResults: [{ id: 'tool-1', ok: true }],
+    };
+    const runtime = createRuntimeSession([event], 'session-result');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-result',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    await session.run({ prompt: 'go' });
+
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'result',
+      sessionId: 'session-result',
+      result: {
+        type: 'result',
+        subtype: 'success',
+        message: event.message,
+        toolResults: event.toolResults,
+      },
+    }));
+  });
+
+  it('emits context_usage for usage events', async () => {
+    const runtime = createRuntimeSession([
+      {
+        type: 'message_update',
+        message: {
+          usage: {
+            inputTokens: 12345,
+            contextWindow: 262144,
+          },
+        },
+      },
+    ], 'session-usage');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-usage',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    await session.run({ prompt: 'go' });
+
+    expect(session.lastContextTokens).toBe(12345);
+    expect(session.lastContextWindow).toBe(262144);
+    expect(payloads).toContainEqual(expect.objectContaining({
       type: 'context_usage',
+      sessionId: 'session-usage',
       contextTokens: 12345,
       contextWindow: 262144,
     }));
   });
 
-  it('delays session_exit until async task notification appears in JSONL', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
-      toolUseEvent('call_abc', 'Implement remaining tasks'),
-      asyncLaunchResult('call_abc', 'agent-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+  it('emits session_exit after completion', async () => {
+    const runtime = createRuntimeSession([], 'session-exit');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
-      cwd: dir,
+      cwd: '/tmp',
       model: 'test-model',
       provider: 'test-provider',
-      sessionId: 'session',
-      jsonlPathForTesting: jsonlPath,
-      asyncTaskPollMsForTesting: 10,
+      sessionId: 'session-exit',
     });
 
-    const received: string[] = [];
     const payloads: unknown[] = [];
-    const cb: SessionEventCallback = (msg) => {
-      received.push(msg.type);
-      payloads.push(msg);
-    };
-    session.subscribe(cb);
+    session.subscribe((msg) => payloads.push(msg));
 
-    const run = session.run({ prompt: 'go' });
+    await session.run({ prompt: 'go' });
 
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_started',
-          task_id: 'agent-123',
-          description: 'Implement remaining tasks',
-        }),
-      }));
-
-      await appendFile(jsonlPath, JSON.stringify({
-        type: 'queue-operation',
-        operation: 'enqueue',
-        content: [
-          '<task-notification>',
-          '<task-id>agent-123</task-id>',
-          '<tool-use-id>call_abc</tool-use-id>',
-          '<status>completed</status>',
-          '<result>DONE</result>',
-          '</task-notification>',
-        ].join('\n'),
-      }) + '\n');
-      await run;
-
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_notification',
-          task_id: 'agent-123',
-          status: 'completed',
-          result: 'DONE',
-        }),
-      }));
-      expect(received.at(-1)).toBe('session_exit');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    expect(payloads.at(-1)).toEqual({
+      type: 'session_exit',
+      sessionId: 'session-exit',
+      state: 'completed',
+    });
   });
 
-  it('emits failed task_notification and still exits the session', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
-      toolUseEvent('call_failed', 'Run async work that fails'),
-      asyncLaunchResult('call_failed', 'agent-failed-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+  it('sends follow-up prompts with followUp streaming behavior', async () => {
+    const runtime = createRuntimeSession([], 'session-follow-up');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
-      cwd: dir,
+      cwd: '/tmp',
       model: 'test-model',
       provider: 'test-provider',
-      sessionId: 'session-failed',
-      jsonlPathForTesting: jsonlPath,
+      sessionId: 'session-follow-up',
+    });
+
+    await session.sendMessage('continue');
+
+    expect(runtime.prompt).toHaveBeenCalledWith('continue', { streamingBehavior: 'followUp' });
+  });
+
+  it('delegates setEffort, cancel, and compact to the active Pi runtime session', async () => {
+    const runtime = createRuntimeSession([], 'session-delegate');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-delegate',
+    });
+
+    await session.run({ prompt: 'go' });
+    await session.setEffort('max');
+    await session.cancel();
+    await expect(session.compact()).resolves.toEqual({ ok: true });
+
+    expect(runtime.setEffort).toHaveBeenCalledWith('max');
+    expect(runtime.abort).toHaveBeenCalledTimes(1);
+    expect(runtime.compact).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits task_started for async agent launches seen in live Pi events', async () => {
+    const runtime = createRuntimeSession([
+      toolUseEvent('call_abc', 'Implement remaining tasks'),
+      asyncLaunchResult('call_abc', 'agent-123'),
+    ], 'session-task');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-task',
       asyncTaskPollMsForTesting: 10,
     });
 
-    const received: string[] = [];
     const payloads: unknown[] = [];
-    const cb: SessionEventCallback = (msg) => {
-      received.push(msg.type);
-      payloads.push(msg);
-    };
+    const cb: SessionEventCallback = (msg) => payloads.push(msg);
     session.subscribe(cb);
 
     const run = session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({
+        type: 'task_started',
+        task_id: 'agent-123',
+        description: 'Implement remaining tasks',
+      }),
+    })));
+    runtime.emit(taskNotification('agent-123', 'call_abc'));
+    await run;
+  });
 
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
+  it('delays session_exit until pending async task notification arrives from Pi events', async () => {
+    const runtime = createRuntimeSession([
+      toolUseEvent('call_delay', 'Wait for async work'),
+      asyncLaunchResult('call_delay', 'agent-delay-123'),
+    ], 'session-delay');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
-      await appendFile(jsonlPath, JSON.stringify({
-        type: 'queue-operation',
-        operation: 'enqueue',
-        content: [
-          '<task-notification>',
-          '<task-id>agent-failed-123</task-id>',
-          '<tool-use-id>call_failed</tool-use-id>',
-          '<status>failed</status>',
-          '<result>BLOCKED</result>',
-          '</task-notification>',
-        ].join('\n'),
-      }) + '\n');
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-delay',
+      asyncTaskPollMsForTesting: 10,
+    });
 
-      await run;
+    const payloads: unknown[] = [];
+    const received: string[] = [];
+    session.subscribe((msg) => {
+      payloads.push(msg);
+      received.push(msg.type);
+    });
 
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_notification',
-          task_id: 'agent-failed-123',
-          status: 'failed',
-          result: 'BLOCKED',
-        }),
-      }));
-      expect(payloads.at(-1)).toEqual(expect.objectContaining({
-        type: 'session_exit',
-        state: 'completed',
-      }));
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    const run = session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({ type: 'task_started', task_id: 'agent-delay-123' }),
+    })));
+    expect(received).not.toContain('session_exit');
+
+    runtime.emit(taskNotification('agent-delay-123', 'call_delay'));
+    await run;
+
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({
+        type: 'task_notification',
+        task_id: 'agent-delay-123',
+        status: 'completed',
+        result: 'DONE',
+      }),
+    }));
+    expect(payloads.at(-1)).toEqual({
+      type: 'session_exit',
+      sessionId: 'session-delay',
+      state: 'completed',
+    });
   });
 
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
+    const runtime = createRuntimeSession([
       toolUseEvent('call_cancel', 'Run follow-up async work'),
       asyncLaunchResult('call_cancel', 'agent-cancel-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+    ], 'session-cancel');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
-      cwd: dir,
+      cwd: '/tmp',
       model: 'test-model',
       provider: 'test-provider',
       sessionId: 'session-cancel',
-      jsonlPathForTesting: jsonlPath,
       asyncTaskPollMsForTesting: 10,
     });
 
-    const received: string[] = [];
     const payloads: unknown[] = [];
-    const cb: SessionEventCallback = (msg) => {
-      received.push(msg.type);
+    const received: string[] = [];
+    session.subscribe((msg) => {
       payloads.push(msg);
-    };
-    session.subscribe(cb);
+      received.push(msg.type);
+    });
 
     const run = session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({ type: 'task_started', task_id: 'agent-cancel-123' }),
+    })));
+    expect(received).not.toContain('session_exit');
 
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
+    await session.cancel();
+    await run;
 
-      await session.cancel();
-      await run;
+    expect(runtime.abort).toHaveBeenCalledTimes(1);
+    expect(payloads.at(-1)).toEqual({
+      type: 'session_exit',
+      sessionId: 'session-cancel',
+      state: 'stopped',
+    });
+  });
 
-      expect(payloads.at(-1)).toEqual(expect.objectContaining({
-        type: 'session_exit',
-        state: 'stopped',
-      }));
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+  it('rejects overlapping runs without duplicate event forwarding', async () => {
+    const event = { type: 'message_update', message: { text: 'one event' } };
+    const runtime = createBlockedRuntimeSession([], 'session-overlap');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-overlap',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    const first = session.run({ prompt: 'first' });
+    await vi.waitFor(() => expect(runtime.prompt).toHaveBeenCalledTimes(1));
+    await session.sendMessage('second');
+
+    runtime.emit(event);
+    runtime.resolvePrompt();
+    await first;
+
+    const forwardedEvents = payloads.filter((msg): msg is { type: 'stream_event'; event: unknown } => (
+      typeof msg === 'object'
+      && msg !== null
+      && 'type' in msg
+      && msg.type === 'stream_event'
+      && 'event' in msg
+      && msg.event === event
+    ));
+    expect(runtime.prompt).toHaveBeenCalledTimes(1);
+    expect(forwardedEvents).toHaveLength(1);
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'error',
+      sessionId: 'session-overlap',
+      error: 'session already running; dropping overlapping prompt',
+    }));
   });
 });

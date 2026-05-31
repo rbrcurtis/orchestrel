@@ -1,11 +1,8 @@
+/* oxlint-disable orchestrel/log-before-early-return -- session lifecycle guards intentionally return existing state without noisy per-event logs */
 import { randomUUID } from 'crypto';
-import { readFile } from 'fs/promises';
-import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
-import { resolveJsonlPath } from '../lib/session-compactor';
-import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
-import { AUTO_COMPACT_RATIO } from '../shared/constants';
 import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
+import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload } from './pi-events';
+import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
 import type {
@@ -22,31 +19,6 @@ export type SessionEventCallback = (
   msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
 ) => void;
 
-/**
- * Map effort string to SDK options for thinking/effort.
- */
-function effortToOptions(effort: string | undefined): Pick<Options, 'effort' | 'thinking'> {
-  if (effort === 'disabled') {
-    console.log(`[orcd:effort] disabled → thinking.type=disabled`);
-    return { thinking: { type: 'disabled' } };
-  }
-  const level = effort ?? 'high';
-  if (level !== 'low' && level !== 'medium' && level !== 'high' && level !== 'max') {
-    console.warn(`[orcd:effort] unknown level "${level}", defaulting to high`);
-    return { effort: 'high' };
-  }
-  return { effort: level };
-}
-
-const SESSION_DISABLED_TOOLS = [
-  'AskUserQuestion',
-  'CronCreate',
-  'CronDelete',
-  'CronList',
-  'ScheduleWakeup',
-  'WebSearch',
-] as const;
-
 export class OrcdSession {
   readonly id: string;
   state: SessionState = 'running';
@@ -61,17 +33,38 @@ export class OrcdSession {
   lastContextTokens = 0;
   lastContextWindow = 0;
 
-  private readonly jsonlPathForTesting: string | undefined;
-  private readonly asyncTaskPollMs: number;
   private readonly asyncTasks = new AsyncTaskTracker();
   private readonly agentToolDescriptions = new Map<string, string>();
   private readonly beforeExitHooks: Array<() => Promise<void>> = [];
-  private jsonlLinesRead = 0;
+  private readonly asyncTaskPollMs: number;
 
-  private activeQuery: Query | null = null;
+  private piSession: PiRuntimeSession | null = null;
+  private running = false;
   private subscribers = new Set<SessionEventCallback>();
   private onFork: ((oldId: string, newId: string) => void) | undefined;
   private forkedTo: string | undefined;
+
+  constructor(opts: {
+    cwd: string;
+    model: string;
+    provider: string;
+    bufferSize?: number;
+    sessionId?: string;
+    contextWindow?: number;
+    summarizeThreshold?: number;
+    onFork?: (oldId: string, newId: string) => void;
+    asyncTaskPollMsForTesting?: number;
+  }) {
+    this.id = opts.sessionId ?? randomUUID();
+    this.cwd = opts.cwd;
+    this.model = opts.model;
+    this.provider = opts.provider;
+    this.contextWindow = opts.contextWindow;
+    this.summarizeThreshold = opts.summarizeThreshold ?? 0;
+    this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
+    this.onFork = opts.onFork;
+    this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
+  }
 
   onBeforeExit(cb: () => Promise<void>): void {
     this.beforeExitHooks.push(cb);
@@ -125,79 +118,36 @@ export class OrcdSession {
     }
   }
 
-  private async getJsonlPath(): Promise<string> {
-    return this.jsonlPathForTesting ?? resolveJsonlPath(this.id, this.cwd);
+  private textFromPiEvent(event: unknown): string {
+    if (typeof event === 'string') return event;
+    if (Array.isArray(event)) return event.map((item) => this.textFromPiEvent(item)).filter(Boolean).join('\n');
+    if (!this.isRecord(event)) return '';
+
+    const text = event.text;
+    if (typeof text === 'string') return text;
+
+    const content = event.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) return content.map((item) => this.textFromPiEvent(item)).filter(Boolean).join('\n');
+
+    const message = event.message;
+    if (this.isRecord(message) || Array.isArray(message)) return this.textFromPiEvent(message);
+
+    return '';
   }
 
-  private async scanJsonlTaskNotifications(): Promise<void> {
-    const path = await this.getJsonlPath();
-    const text = await readFile(path, 'utf8').catch((err: unknown) => {
-      const isMissingJsonl = err instanceof Error
-        && this.isRecord(err)
-        && typeof err.code === 'string'
-        && err.code === 'ENOENT';
-      if (!isMissingJsonl) throw err;
-      return '';
-    });
+  private recordAsyncTaskNotification(event: unknown): void {
+    const notification = parseTaskNotification(this.textFromPiEvent(event));
+    if (!notification) return;
 
-    const lines = text.split('\n');
-    const readableLines = lines.at(-1) === '' ? lines.length - 1 : lines.length;
-    for (let i = this.jsonlLinesRead; i < readableLines; i += 1) {
-      const line = lines[i];
-      if (!line?.trim()) continue;
-
-      let obj: unknown;
-      try {
-        obj = JSON.parse(line) as unknown;
-      } catch (err: unknown) {
-        console.error(`[orcd:${this.id.slice(0, 8)}] invalid JSONL line while scanning task notifications:`, err);
-        continue;
-      }
-
-      if (!this.isRecord(obj)) continue;
-      if (obj.type !== 'queue-operation' || typeof obj.content !== 'string') continue;
-      const notification = parseTaskNotification(obj.content);
-      if (!notification) continue;
-
-      const event = this.asyncTasks.recordNotification(notification);
-      if (event) this.emitSyntheticTaskEvent(event);
-    }
-    this.jsonlLinesRead = readableLines;
+    const taskEvent = this.asyncTasks.recordNotification(notification);
+    if (taskEvent) this.emitSyntheticTaskEvent(taskEvent);
   }
 
   private async waitForAsyncTasks(): Promise<void> {
     while (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
-      await this.scanJsonlTaskNotifications();
-      if (!this.asyncTasks.hasPending()) {
-        console.log(`[orcd:${this.id.slice(0, 8)}] all async tasks resolved from JSONL notifications`);
-        return;
-      }
       await new Promise((resolve) => setTimeout(resolve, this.asyncTaskPollMs));
     }
-  }
-
-  constructor(opts: {
-    cwd: string;
-    model: string;
-    provider: string;
-    bufferSize?: number;
-    sessionId?: string; // For resume — use existing CC session UUID
-    contextWindow?: number;
-    summarizeThreshold?: number;
-    onFork?: (oldId: string, newId: string) => void;
-    jsonlPathForTesting?: string;
-    asyncTaskPollMsForTesting?: number;
-  }) {
-    this.id = opts.sessionId ?? randomUUID();
-    this.cwd = opts.cwd;
-    this.model = opts.model;
-    this.provider = opts.provider;
-    this.contextWindow = opts.contextWindow;
-    this.summarizeThreshold = opts.summarizeThreshold ?? 0;
-    this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
-    this.onFork = opts.onFork;
-    this.jsonlPathForTesting = opts.jsonlPathForTesting;
-    this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
   }
 
   subscribe(cb: SessionEventCallback): void {
@@ -223,9 +173,75 @@ export class OrcdSession {
     }
   }
 
+  private async getOrCreatePiSession(effort: string | undefined): Promise<PiRuntimeSession> {
+    if (this.piSession) return this.piSession;
+
+    const session = await createPiRuntimeSession({
+      cwd: this.cwd,
+      providerId: this.provider,
+      modelId: this.model,
+      effort,
+    });
+    this.piSession = session;
+
+    if (session.id !== this.id && session.id !== this.forkedTo) {
+      this.forkedTo = session.id;
+      this.onFork?.(this.id, session.id);
+      const upd: SessionIdUpdateMessage = {
+        type: 'session_id_update',
+        sessionId: this.id,
+        newSessionId: session.id,
+      };
+      for (const cb of this.subscribers) cb(upd);
+      console.log(`[orcd:${this.id.slice(0, 8)}] pi session id: ${this.id.slice(0, 8)} → ${session.id.slice(0, 8)}`);
+    }
+
+    return session;
+  }
+
+  private emitMappedPiEvent(event: unknown): void {
+    const usage = getContextUsageFromPiEvent(event);
+    const payload = mapPiEventToOrcdPayload(event);
+    const eventIndex = this.buffer.push(payload);
+
+    console.log(`[orcd:${this.id.slice(0, 8)}] ${JSON.stringify(payload)}`);
+    this.rememberAgentToolDescriptions(payload);
+    this.recordAsyncAgentLaunches(payload);
+    this.recordAsyncTaskNotification(payload);
+
+    if (this.isRecord(payload) && payload.type === 'result') {
+      const msg: SessionResultMessage = {
+        type: 'result',
+        sessionId: this.id,
+        eventIndex,
+        result: payload,
+      };
+      for (const cb of this.subscribers) cb(msg);
+    } else {
+      const msg: StreamEventMessage = {
+        type: 'stream_event',
+        sessionId: this.id,
+        eventIndex,
+        event: payload,
+      };
+      for (const cb of this.subscribers) cb(msg);
+    }
+
+    if (!usage) return;
+
+    this.lastContextTokens = usage.contextTokens;
+    this.lastContextWindow = usage.contextWindow;
+    const msg: ContextUsageMessage = {
+      type: 'context_usage',
+      sessionId: this.id,
+      contextTokens: usage.contextTokens,
+      contextWindow: usage.contextWindow,
+    };
+    for (const cb of this.subscribers) cb(msg);
+  }
+
   /**
    * Start or resume a session.
-   * Consumes the Agent SDK async iterator and broadcasts events.
    */
   async run(opts: {
     prompt: string;
@@ -234,127 +250,30 @@ export class OrcdSession {
     effort?: string;
   }): Promise<void> {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
+    void opts.env;
 
-    const thinkingOpts = effortToOptions(opts.effort);
+    if (this.running) {
+      const msg = `session already running; dropping overlapping prompt`;
+      log(msg);
+      const errMsg: SessionErrorMessage = {
+        type: 'error',
+        sessionId: this.id,
+        error: msg,
+      };
+      for (const cb of this.subscribers) cb(errMsg);
+      return;
+    }
 
-    // SDK validates autoCompactWindow as min(100000), silently drops values below
-    const autoCompactWindow = this.contextWindow
-      ? Math.max(Math.floor(this.contextWindow * AUTO_COMPACT_RATIO), 100_000)
-      : undefined;
-
-    const q = sdkQuery({
-      prompt: opts.prompt,
-      options: {
-        ...(opts.resume ? { resume: this.id } : { sessionId: this.id }),
-        cwd: this.cwd,
-        model: this.model,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        disallowedTools: [...SESSION_DISABLED_TOOLS],
-        settingSources: ['user', 'project'],
-        includePartialMessages: true,
-        pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
-        env: { ...opts.env, ...(this.contextWindow ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(this.contextWindow) } : {}) },
-        ...thinkingOpts,
-        settings: {
-          skillOverrides: disabledSkillOverrides(DEFAULT_DISABLED_SKILLS),
-          ...(autoCompactWindow ? { autoCompactWindow } : {}),
-        },
-      },
-    });
-
-    this.activeQuery = q;
-    log(`started (resume=${!!opts.resume}, model=${this.model})`);
-
+    this.running = true;
+    let unsubscribe = () => undefined;
     try {
-      // Track the last message_start usage per API call — used to compute
-      // context fill on result (getContextUsage() fails because the subprocess
-      // exits before the response arrives).
-      let lastInputTokens = 0;
+      const session = await this.getOrCreatePiSession(opts.effort);
+      unsubscribe = session.subscribe((event) => {
+        if (this.state !== 'stopped') this.emitMappedPiEvent(event);
+      });
 
-      for await (const event of q) {
-        if (this.state === 'stopped') break;
-
-        const sdkEvent = event as unknown;
-        const eventIndex = this.buffer.push(sdkEvent);
-        const sdkRecord = this.isRecord(sdkEvent) ? sdkEvent : null;
-
-        log(JSON.stringify(sdkEvent));
-        this.rememberAgentToolDescriptions(sdkEvent);
-        this.recordAsyncAgentLaunches(sdkEvent);
-
-        if (sdkRecord?.type === 'system' && sdkRecord.subtype === 'init') {
-          const ccSessionId = sdkRecord.session_id;
-          if (typeof ccSessionId === 'string' && ccSessionId !== this.id && ccSessionId !== this.forkedTo) {
-            this.forkedTo = ccSessionId;
-            this.onFork?.(this.id, ccSessionId);
-            const upd: SessionIdUpdateMessage = {
-              type: 'session_id_update',
-              sessionId: this.id,
-              newSessionId: ccSessionId,
-            };
-            for (const cb of this.subscribers) cb(upd);
-            log(`session forked: ${this.id.slice(0, 8)} → ${ccSessionId.slice(0, 8)}`);
-          }
-        }
-
-        if (sdkRecord?.type === 'stream_event') {
-          const inner = sdkRecord.event;
-          if (this.isRecord(inner) && inner.type === 'message_start') {
-            const msg = inner.message;
-            const u = this.isRecord(msg) ? (msg.usage as Record<string, number> | undefined) : undefined;
-            if (u) {
-              lastInputTokens =
-                (u.input_tokens ?? 0) +
-                (u.cache_creation_input_tokens ?? 0) +
-                (u.cache_read_input_tokens ?? 0);
-            }
-          } else if (this.isRecord(inner) && inner.type === 'message_delta' && lastInputTokens === 0) {
-            const u = this.isRecord(inner.usage) ? (inner.usage as Record<string, number>) : undefined;
-            if (u?.input_tokens && u.input_tokens > 0) {
-              lastInputTokens = u.input_tokens;
-            }
-          }
-        }
-
-        if (sdkRecord?.type === 'result') {
-          const msg: SessionResultMessage = {
-            type: 'result',
-            sessionId: this.id,
-            eventIndex,
-            result: sdkEvent,
-          };
-          for (const cb of this.subscribers) cb(msg);
-
-          if (lastInputTokens > 0) {
-            const mu = this.isRecord(sdkRecord.modelUsage)
-              ? (sdkRecord.modelUsage as Record<string, Record<string, number>>)
-              : undefined;
-            let ctxWindow = this.contextWindow || 200_000;
-            if (!this.contextWindow && mu) {
-              const first = Object.values(mu)[0];
-              if (first?.contextWindow) ctxWindow = first.contextWindow;
-            }
-            this.lastContextTokens = lastInputTokens;
-            this.lastContextWindow = ctxWindow;
-            const cuMsg: ContextUsageMessage = {
-              type: 'context_usage',
-              sessionId: this.id,
-              contextTokens: lastInputTokens,
-              contextWindow: ctxWindow,
-            };
-            for (const cb of this.subscribers) cb(cuMsg);
-          }
-        } else {
-          const msg: StreamEventMessage = {
-            type: 'stream_event',
-            sessionId: this.id,
-            eventIndex,
-            event: sdkEvent,
-          };
-          for (const cb of this.subscribers) cb(msg);
-        }
-      }
+      log(`started (resume=${!!opts.resume}, model=${this.model})`);
+      await session.prompt(opts.prompt, opts.resume ? { streamingBehavior: 'followUp' } : undefined);
 
       if (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
         log('waiting for async task notifications before session_exit');
@@ -382,14 +301,16 @@ export class OrcdSession {
         for (const cb of this.subscribers) cb(msg);
       }
     } finally {
+      this.running = false;
+      const activeSession = this.piSession;
       await this.runBeforeExitHooks();
-      this.activeQuery = null;
       const exitMsg: SessionExitMessage = {
         type: 'session_exit',
         sessionId: this.id,
         state: this.state as 'completed' | 'errored' | 'stopped',
       };
       for (const cb of this.subscribers) cb(exitMsg);
+      if (activeSession === this.piSession) unsubscribe();
     }
   }
 
@@ -397,7 +318,7 @@ export class OrcdSession {
    * Send a follow-up message (resume into existing session).
    */
   async sendMessage(prompt: string, env?: Record<string, string>, effort?: string): Promise<void> {
-    this.state = 'running';
+    if (!this.running) this.state = 'running';
     await this.run({ prompt, resume: true, env, effort });
   }
 
@@ -405,14 +326,12 @@ export class OrcdSession {
    * Change thinking budget mid-session.
    */
   async setEffort(effort: string): Promise<void> {
-    if (!this.activeQuery) {
-      console.log(`[orcd:${this.id.slice(0, 8)}] setEffort(${effort}): no active query, skipping`);
+    if (!this.piSession) {
+      console.log(`[orcd:${this.id.slice(0, 8)}] setEffort(${effort}): no active pi session, skipping`);
       return;
     }
-    // setMaxThinkingTokens is deprecated but still the only mid-session API
-    const budget = effort === 'disabled' ? 0 : null;
-    await this.activeQuery.setMaxThinkingTokens(budget);
-    console.log(`[orcd:${this.id.slice(0, 8)}] effort → ${effort} (budget=${budget})`);
+    await this.piSession.setEffort(effort);
+    console.log(`[orcd:${this.id.slice(0, 8)}] effort → ${effort}`);
   }
 
   /**
@@ -420,17 +339,22 @@ export class OrcdSession {
    */
   async cancel(): Promise<void> {
     this.state = 'stopped';
-    if (this.activeQuery) {
-      await this.activeQuery.interrupt();
+    if (this.piSession) {
+      await this.piSession.abort();
     }
+  }
+
+  async compact(): Promise<unknown> {
+    if (!this.piSession) {
+      console.log(`[orcd:${this.id.slice(0, 8)}] compact: no active pi session, skipping`);
+      return undefined;
+    }
+    return this.piSession.compact();
   }
 
   /**
    * Broadcast a synthetic compact_boundary stream_event so downstream
-   * listeners (orchestrel card-sessions.ts compact_boundary handler) can
-   * reset contextTokens immediately, without waiting for the SDK to replay
-   * the JSONL on next resume. Used by orchestrel's background compactor
-   * after applyCompaction() rewrites the JSONL.
+   * listeners can reset contextTokens immediately.
    */
   emitCompactBoundary(): void {
     this.emitSyntheticSystemEvent('compact_boundary');
