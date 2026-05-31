@@ -2,7 +2,7 @@
 
 ![Orchestrel board with multiple agent sessions open](docs/assets/orchestrel.jpg)
 
-Orchestrel is a local-first control room for AI coding work. It combines a project-aware kanban board, a chat-style session view, git worktree automation, and a long-running Claude Agent SDK daemon so multiple coding tasks can run and resume independently.
+Orchestrel is a local-first control room for AI coding work. It combines a project-aware kanban board, a chat-style session view, git worktree automation, and a long-running `orcd` daemon built on the Pi TypeScript SDK so multiple coding tasks can run and resume independently.
 
 The core workflow is simple: create a card, attach it to a local project, move it to **Running**, and Orchestrel starts or resumes an agent session in the right working directory. Output streams back live, context usage is tracked, background compaction keeps long sessions usable, and completed sessions move to **Review** automatically.
 
@@ -16,18 +16,19 @@ The core workflow is simple: create a card, attach it to a local project, move i
 - Inline card editing, autosaved prompt drafts, copyable session IDs, and copyable worktree paths.
 
 **Agent Sessions**
-- Long-running `orcd` daemon manages Claude Agent SDK sessions over a UNIX socket.
+- Long-running `orcd` daemon embeds the Pi TypeScript SDK and manages Pi agent sessions over a UNIX socket.
+- `bin/orc` wraps the `pi` CLI, applying Orchestrel provider/model defaults before handing off to Pi.
 - Server-owned lifecycle: cards entering **Running** create or resume sessions; session exit moves running cards to **Review**.
 - Live streaming of assistant text, thinking, tool calls, tool results, errors, status, and context usage.
 - Follow-up prompts, Continue, Stop, reconnect, and manual compaction controls.
 - File attachments up to 25 MB per file through `/api/upload`.
-- Session transcript reload from Claude JSONL history plus live replay from the daemon event buffer.
+- Session transcript reload from Pi session history through Pi session-manager APIs plus live replay from the daemon event buffer.
 - Synthetic subagent activity feed from Agent/Task launches and async task notifications.
 
 **Context and Memory**
 - Per-card context gauge backed by provider/model context window metadata.
 - Configurable summarize threshold per card, including Off and 50-90% presets.
-- Two-phase background compaction: summarize while a turn is running, then rewrite JSONL at a safe idle boundary.
+- Background compaction reads Pi session history, summarizes at a safe boundary, and applies compaction through the active Pi session when available.
 - Optional memory upsert at session exit and terminal card transitions, backed by a configured memory API.
 
 **Projects and Worktrees**
@@ -38,9 +39,12 @@ The core workflow is simple: create a card, attach it to a local project, move i
 - Per-project defaults for provider, model, thinking level, worktree usage, branch, color, and memory endpoint overrides.
 - Project archiving and Cloudflare Access user/project visibility controls.
 
-**Provider Configuration**
-- `config.yaml` drives providers and model aliases.
-- Anthropic API, Claude Max OAuth fallback, Claude-compatible proxies, auth-token proxies, and AWS Bedrock providers are supported.
+**Pi Resources and Provider Configuration**
+- `config.yaml` drives Orchestrel provider/model routing and context-window metadata while Pi owns its canonical runtime resources.
+- User-level Pi resources live under the Pi canonical user config directory (`~/.pi`, with current SDK agent data under `~/.pi/agent`).
+- Project instructions are `AGENTS.md` files resolved by Pi, not Claude-specific instruction files.
+- Slash commands are Pi prompt templates / commands.
+- Skills are Pi skills and remain distinct from commands.
 - Model labels and context windows are exposed to the UI and used for context tracking.
 
 **API and Auth**
@@ -57,7 +61,8 @@ The core workflow is simple: create a card, attach it to a local project, move i
 | Realtime | Socket.IO |
 | Server | Express 5, TSOA REST routes, Swagger UI |
 | Daemon | `orcd` UNIX-socket service |
-| Agent runtime | `@anthropic-ai/claude-agent-sdk` |
+| Agent runtime | Pi TypeScript SDK (`@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`) |
+| CLI wrapper | `bin/orc` wrapping the `pi` CLI |
 | Database | SQLite via TypeORM and better-sqlite3 |
 | Local cache | IndexedDB via idb-keyval |
 | Drag and drop | dnd-kit |
@@ -82,18 +87,19 @@ The core workflow is simple: create a card, attach it to a local project, move i
 ┌──────────────────────────┴─────────────────────────────────┐
 │ orcd daemon                                                │
 │ Session registry, event replay buffer, lifecycle hooks     │
-│ Claude Agent SDK query streams, compaction, memory upsert  │
+│ Pi TypeScript SDK sessions, compaction, memory upsert      │
 └──────────────────────────┬─────────────────────────────────┘
-                           │ Claude Code session JSONL
+                           │ Pi runtime/session APIs
 ┌──────────────────────────┴─────────────────────────────────┐
-│ Local projects and worktrees                               │
-│ ~/.claude/projects session history + git worktree dirs     │
+│ Local projects, worktrees, and Pi resources                │
+│ AGENTS.md + ~/.pi agent config/session storage             │
 └────────────────────────────────────────────────────────────┘
 ```
 
 Key patterns:
 
-- **Daemon-owned agent runtime**: `orcd` keeps active sessions alive independently of the web server and exposes create, message, subscribe, cancel, compact, list, and memory-upsert actions.
+- **Daemon-owned agent runtime**: `orcd` keeps active Pi sessions alive independently of the web server and exposes create, message, subscribe, cancel, compact, list, and memory-upsert actions.
+- **Pi-native resource model**: Orchestrel delegates user resources, project instructions, prompt templates/commands, skills, auth, model registry, and session storage to Pi's canonical locations and APIs.
 - **Server-owned card lifecycle**: the browser mutates cards; backend listeners start, cancel, reconcile, and route sessions.
 - **Event fanout**: TypeORM subscribers publish card/project changes to an internal bus, and Socket.IO subscriptions fan those changes to clients.
 - **Session reconciliation**: on web-server startup or `orcd` reconnect, running cards are compared with daemon session state and moved to Review if their session is no longer alive.
@@ -103,8 +109,8 @@ Key patterns:
 
 - Node.js 22+
 - pnpm
-- Claude Code executable available at `/home/ryan/.local/bin/claude`
-- Claude authentication through Claude Max OAuth, Anthropic API key, compatible proxy credentials, or AWS Bedrock credentials
+- Pi CLI available at `/home/ryan/.local/bin/pi` for `bin/orc`
+- Pi user config/auth/model resources in the canonical Pi user config directory (`~/.pi`)
 - Optional Ollama on `localhost:11434` with `llama3.2:latest` for title suggestions
 - Optional memory API for session memory upsert
 
@@ -171,20 +177,27 @@ orc anthropic sonnet "use the normal config instead"
 | `defaultProvider` | Provider ID used by `orcd` when no card/project override applies |
 | `defaultModel` | Model alias used by `orcd` when no card/project override applies |
 | `defaultCwd` | Default base directory for new work |
-| `providers` | Provider map exposed to the UI and used by `orcd` |
+| `providers` | Provider map exposed to the UI, used by `bin/orc`, and used by `orcd` for Pi model routing |
 | `memoryUpsert` | Optional memory API settings used by `orcd` |
 
-Provider entries can use:
+Provider entries keep the current Orchestrel schema and can use:
 
 | Field | Description |
 | --- | --- |
 | `label` | UI label |
-| `type` | Omit for Anthropic-compatible HTTP; use `bedrock` for AWS Bedrock |
-| `baseUrl` | Anthropic-compatible API base URL |
-| `apiKey` | Value passed as `ANTHROPIC_API_KEY` |
-| `authToken` | Value passed as `ANTHROPIC_AUTH_TOKEN` |
+| `type` | Omit for default Pi/Anthropic-format routing; use `bedrock` for AWS Bedrock |
+| `baseUrl` | Optional provider/proxy API base URL |
+| `apiKey` | Optional API key passed through to the runtime environment |
+| `authToken` | Optional bearer-style token passed through to the runtime environment |
 | `region` / `profile` | AWS Bedrock settings |
 | `models` | Alias map with `label`, `modelID`, and `contextWindow` |
+
+Pi runtime resources are intentionally separate from Orchestrel's `config.yaml`:
+
+- User-level auth, model registry, prompt templates/commands, and skills belong in Pi's canonical user config directory (`~/.pi`).
+- Project instructions belong in `AGENTS.md` files in the project tree.
+- Slash commands are Pi prompt templates / commands.
+- Skills are Pi skills and are not treated as slash commands.
 
 `.env` controls the web server:
 
@@ -201,7 +214,7 @@ Runtime data is stored in:
 
 - `data/orchestrel.db` for cards, projects, users, and project visibility.
 - `~/.orc/orcd.sock` by default for the daemon socket.
-- `~/.claude/projects/.../*.jsonl` for Claude session history.
+- Pi's canonical user config/session storage under `~/.pi` for agent auth, model registry, resources, and session history.
 - `/tmp/orchestrel-uploads/<session>` for uploaded prompt files.
 
 ## Card Lifecycle
@@ -217,8 +230,8 @@ Backlog → Ready → Running → Review → Done → Archive
 1. Create a card on the board or start a session from `/chat`.
 2. Select a project, provider/model, optional worktree branch, source branch, and summarize threshold.
 3. Move the card to **Running** or create it directly as running.
-4. Backend listeners create the worktree if needed, run setup commands, and ask `orcd` to create or resume the session.
-5. Streamed SDK events update the transcript, counters, context gauge, subagent feed, and status.
+4. Backend listeners create the worktree if needed, run setup commands, and ask `orcd` to create or resume the Pi session.
+5. Streamed Pi SDK events update the transcript, counters, context gauge, subagent feed, and status.
 6. On session exit, running cards move to **Review**.
 7. Follow up from Review or Running, stop active sessions, compact long sessions manually, or move cards to Done/Archive.
 8. Archiving a worktree-backed card removes its worktree.
@@ -228,13 +241,15 @@ Backlog → Ready → Running → Review → Done → Archive
 ```text
 server.js                         Express entry point, Vite middleware, prod static server
 config.example.yaml               Provider, model, socket, and memory config template
+bin/
+  orc                             Wrapper around the pi CLI with Orchestrel provider/model routing
 app/
   routes/                         Board and chat React Router routes
   components/                     CardDetail, SessionView, transcript, settings, UI primitives
   stores/                         MobX stores for root, cards, projects, sessions, config
   lib/                            Socket.IO client, persistence, slot resolution, utilities
 src/
-  orcd/                           UNIX-socket daemon, session registry, Claude SDK runtime
+  orcd/                           UNIX-socket daemon, session registry, Pi SDK runtime
   lib/                            Compaction, summarization, memory upsert, session repair
   server/
     api/                          TSOA controllers and generated OpenAPI routes

@@ -1,6 +1,10 @@
 # Orchestrel unified config.
-# Used by both orcd (daemon) and orc (backend/UI).
+# Used by orcd (daemon), bin/orc (pi CLI wrapper), and orc (backend/UI).
 # Copy to config.yaml and fill in your providers. config.yaml is gitignored.
+#
+# This file keeps Orchestrel's provider/model routing shape. Pi runtime resources
+# such as auth, model registry data, prompt templates/commands, and skills live
+# in Pi's canonical user config directory (~/.pi).
 
 socket: ~/.orc/orcd.sock       # orcd UNIX socket path
 defaultProvider: anthropic
@@ -8,8 +12,8 @@ defaultModel: sonnet
 defaultCwd: ~/Code             # where new cards default their working directory
 
 providers:
-  # Claude via Anthropic API.
-  # Omit baseUrl + apiKey to fall through to Claude Max OAuth (claude-agent-sdk default).
+  # Pi provider routing for Anthropic models.
+  # The provider id and modelID values must match models known to Pi's model registry.
   anthropic:
     label: Anthropic
     models:
@@ -17,7 +21,7 @@ providers:
       sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6,            contextWindow: 1000000 }
       haiku:  { label: "Haiku 4.5",  modelID: claude-haiku-4-5-20251001,    contextWindow: 200000 }
 
-  # Example: a local proxy (like a Claude-compatible pool proxy).
+  # Example: a local Pi-compatible provider/proxy route.
   # proxy:
   #   label: My Proxy
   #   baseUrl: http://127.0.0.1:3457
@@ -38,7 +42,7 @@ providers:
   #     opus:   { label: "Opus 4.6",   modelID: us.anthropic.claude-opus-4-6-20250514-v1:0,   contextWindow: 200000 }
   #     sonnet: { label: "Sonnet 4.6", modelID: us.anthropic.claude-sonnet-4-6-20250514-v1:0, contextWindow: 200000 }
 
-  # Example: a non-Anthropic provider using authToken instead of apiKey.
+  # Example: a non-Anthropic Pi provider using authToken instead of apiKey.
   # deepseek:
   #   label: DeepSeek
   #   baseUrl: http://127.0.0.1:3458
