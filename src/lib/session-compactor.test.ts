@@ -1,103 +1,51 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { applyCompaction, queryAgentSdk } from './session-compactor';
-
-const sdkQuery = vi.hoisted(() => vi.fn(() => ({
-  async *[Symbol.asyncIterator]() {
-    yield {
-      type: 'assistant',
-      message: { content: [{ type: 'text', text: 'done' }] },
-    };
-  },
-})));
-
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: sdkQuery,
-}));
-
-describe('queryAgentSdk', () => {
-  it('disables broken skills in Agent SDK options', async () => {
-    await queryAgentSdk('prompt', 'model');
-
-    expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
-      options: expect.objectContaining({
-        disallowedTools: expect.arrayContaining(['AskUserQuestion']),
-        settings: expect.objectContaining({
-          skillOverrides: expect.objectContaining({
-            'claude-api': 'off',
-          }),
-        }),
-      }),
-    }));
-  });
-});
+import { applyCompaction } from './session-compactor';
 
 describe('applyCompaction', () => {
-  it('writes a Claude-native summary wrapper after compact_boundary', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-compactor-'));
-    const jsonlPath = join(dir, 'session.jsonl');
+  it('delegates compaction to a Pi session', async () => {
+    const compact = vi.fn(async () => ({
+      messagesBefore: 20,
+      messagesCovered: 10,
+      summaryTokens: 143,
+      summaryChars: 500,
+      durationMs: 42,
+    }));
 
-    try {
-      await writeFile(jsonlPath, [
-        JSON.stringify({
-          parentUuid: null,
-          type: 'user',
-          message: { role: 'user', content: 'old user message' },
-          uuid: 'old-user',
-          timestamp: '2026-05-10T00:00:00.000Z',
-          sessionId: 'sess-1',
-          version: '2.1.138',
-        }),
-        JSON.stringify({
-          parentUuid: 'old-user',
-          type: 'assistant',
-          message: { role: 'assistant', content: 'old assistant message' },
-          uuid: 'old-assistant',
-          timestamp: '2026-05-10T00:00:01.000Z',
-          sessionId: 'sess-1',
-          version: '2.1.138',
-        }),
-        JSON.stringify({
-          parentUuid: 'old-assistant',
-          type: 'user',
-          message: { role: 'user', content: 'newest kept message' },
-          uuid: 'new-user',
-          timestamp: '2026-05-10T00:00:02.000Z',
-          sessionId: 'sess-1',
-          version: '2.1.138',
-        }),
-      ].join('\n') + '\n');
+    const result = await applyCompaction({
+      sessionId: 's1',
+      messagesBefore: 0,
+      messagesCovered: 0,
+      summaryChars: 0,
+      prepareDurationMs: 0,
+      compact,
+    });
 
-      await applyCompaction({
-        sessionId: 'sess-1',
-        jsonlPath,
-        summary: 'Summary body here.',
-        lastOldLineIdx: 1,
-        messagesBefore: 3,
-        messagesCovered: 2,
-        summaryChars: 18,
-        prepareDurationMs: 0,
-      });
+    expect(compact).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      sessionId: 's1',
+      messagesBefore: 20,
+      messagesCovered: 10,
+      summaryTokens: 143,
+      summaryChars: 500,
+      durationMs: 42,
+    });
+  });
 
-      const lines = (await readFile(jsonlPath, 'utf-8')).trim().split('\n');
-      const boundary = JSON.parse(lines[2]) as Record<string, unknown>;
-      const summary = JSON.parse(lines[3]) as Record<string, unknown>;
+  it('returns sane defaults when Pi compact returns no metadata', async () => {
+    const result = await applyCompaction({
+      sessionId: 's2',
+      messagesBefore: 7,
+      messagesCovered: 3,
+      summaryChars: 350,
+      prepareDurationMs: 0,
+      compact: vi.fn(async () => undefined),
+    });
 
-      expect(boundary).toEqual(expect.objectContaining({
-        type: 'system',
-        subtype: 'compact_boundary',
-      }));
-      expect(summary).toEqual(expect.objectContaining({
-        parentUuid: boundary.uuid,
-        type: 'user',
-      }));
-      expect((summary.message as { content: string }).content).toBe(
-        'This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\nSummary body here.',
-      );
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    expect(result.sessionId).toBe('s2');
+    expect(result.messagesBefore).toBe(7);
+    expect(result.messagesCovered).toBe(3);
+    expect(result.summaryChars).toBe(350);
+    expect(result.summaryTokens).toBe(100);
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 });

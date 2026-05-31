@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { createServer, type Server, type Socket } from 'net';
 import { dirname } from 'path';
 import { upsertMemories } from '../lib/memory-upsert';
-import { applyCompaction, prepareCompaction, type PreparedCompaction } from '../lib/session-compactor';
+import { applyCompaction, type PreparedCompaction } from '../lib/session-compactor';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { OrcdConfig, ProviderConfig } from './config';
 import { OrcdSession, type SessionEventCallback } from './session';
@@ -287,7 +287,7 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id)) {
+    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id) || this.applyingSummaries.has(session.id)) {
       console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: already compacting or pending, ignoring`);
       return;
     }
@@ -362,37 +362,32 @@ export class OrcdServer {
   private async triggerCompaction(session: OrcdSession): Promise<void> {
     const sid = session.id;
     const log = (msg: string) => console.log(`[orcd:${sid.slice(0, 8)}:compact] ${msg}`);
-    const env = this.buildProviderEnv(session.provider);
 
     // Memory upsert is NOT run here — it only runs on card finish
     // (session_exit = move to review, or explicit archive action). Running
     // it every compaction cycle produced redundant work against unchanged
     // context and wasted tokens. See memory 'Auto-memory upsert architecture'.
 
-    // Prepare summary (read-only, safe while session runs)
     const pct =
       session.lastContextWindow > 0 ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0) : '?';
-    log(`preparing summary (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
+    log(`preparing Pi compact delegate (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
 
-    const prepared = await prepareCompaction({
+    const prepared: PreparedCompaction = {
       sessionId: sid,
-      projectPath: session.cwd,
-      model: session.model,
-      env,
-      contextWindow: session.contextWindow,
-    });
+      messagesBefore: 0,
+      messagesCovered: 0,
+      summaryChars: 0,
+      prepareDurationMs: 0,
+      compact: () => session.compact(),
+    };
 
     this.pendingSummaries.set(sid, prepared);
     if (this.exitedSessions.has(sid)) {
-      log(
-        `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — beforeExit already reached, applying now`,
-      );
+      log('compact delegate ready — beforeExit already reached, applying now');
       await this.applyPendingCompaction(session);
       return;
     }
-    log(
-      `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for beforeExit`,
-    );
+    log('compact delegate ready — waiting for beforeExit');
   }
 
   private async applyPendingCompaction(session: OrcdSession): Promise<void> {
@@ -410,7 +405,7 @@ export class OrcdServer {
 
     this.applyingSummaries.add(sid);
     this.pendingSummaries.delete(sid);
-    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at beforeExit`);
+    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying Pi-native compaction at beforeExit`);
     try {
       const result = await applyCompaction(prepared);
       console.log(
@@ -456,6 +451,7 @@ export class OrcdServer {
           msg.contextWindow > 0 &&
           !this.compacting.has(sid) &&
           !this.pendingSummaries.has(sid) &&
+          !this.applyingSummaries.has(sid) &&
           msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
         ) {
           this.compacting.add(sid);

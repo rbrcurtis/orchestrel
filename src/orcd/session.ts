@@ -265,7 +265,7 @@ export class OrcdSession {
     }
 
     this.running = true;
-    let unsubscribe = () => undefined;
+    let unsubscribe: () => void = () => undefined;
     try {
       const session = await this.getOrCreatePiSession(opts.effort);
       unsubscribe = session.subscribe((event) => {
@@ -345,11 +345,8 @@ export class OrcdSession {
   }
 
   async compact(): Promise<unknown> {
-    if (!this.piSession) {
-      console.log(`[orcd:${this.id.slice(0, 8)}] compact: no active pi session, skipping`);
-      return undefined;
-    }
-    return this.piSession.compact();
+    const session = await this.getOrCreatePiSession(undefined);
+    return session.compact();
   }
 
   /**

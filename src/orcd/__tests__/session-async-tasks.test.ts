@@ -295,6 +295,28 @@ describe('OrcdSession Pi runtime loop', () => {
     expect(runtime.compact).toHaveBeenCalledTimes(1);
   });
 
+  it('creates a Pi runtime session when compacting an inactive session', async () => {
+    const runtime = createRuntimeSession([], 'session-inactive-compact');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-inactive-compact',
+    });
+
+    await expect(session.compact()).resolves.toEqual({ ok: true });
+
+    expect(pi.createPiRuntimeSession).toHaveBeenCalledWith({
+      cwd: '/tmp/project',
+      providerId: 'test-provider',
+      modelId: 'test-model',
+      effort: undefined,
+    });
+    expect(runtime.compact).toHaveBeenCalledTimes(1);
+  });
+
   it('emits task_started for async agent launches seen in live Pi events', async () => {
     const runtime = createRuntimeSession([
       toolUseEvent('call_abc', 'Implement remaining tasks'),
