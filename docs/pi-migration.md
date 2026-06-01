@@ -6,8 +6,8 @@ Orchestrel is now Pi-native at the agent runtime boundary. The web app and `orcd
 
 - `bin/orc` wraps the `pi` CLI. It resolves Orchestrel provider/model defaults from `config.yaml` and then starts Pi.
 - `orcd` embeds the Pi TypeScript SDK (`@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai`). It creates Pi sessions, subscribes to Pi events, and maps those events into Orchestrel's existing app protocol.
-- User-level runtime resources live in Pi's canonical user config directory (`~/.pi`). The current SDK uses `~/.pi/agent` for agent auth/model/session data returned by Pi's `getAgentDir()` helper.
-- Project instructions are `AGENTS.md` files in the project tree, resolved by Pi.
+- User-level runtime resources live in Pi's canonical user config directory returned by the Pi SDK (`~/.pi`, commonly with agent data under `~/.pi/agent`).
+- Project instructions are resolved by Pi from project instruction files such as `AGENTS.md` in the project tree.
 - Slash commands are Pi prompt templates / commands.
 - Skills are Pi skills. They remain distinct from slash commands and should not be treated as command replacements.
 
@@ -29,7 +29,7 @@ Use Pi's native locations and resource types:
 | Resource | Current location/model |
 | --- | --- |
 | User auth and model registry | Pi canonical user config directory (`~/.pi`, currently `~/.pi/agent` through the SDK) |
-| Project instructions | `AGENTS.md` in the project tree |
+| Project instructions | Pi project instruction files such as `AGENTS.md` |
 | Slash commands | Pi prompt templates / commands |
 | Skills | Pi skills, separate from commands |
 | Session history | Pi session storage accessed through Pi session-manager APIs |

@@ -28,7 +28,7 @@ The core workflow is simple: create a card, attach it to a local project, move i
 **Context and Memory**
 - Per-card context gauge backed by provider/model context window metadata.
 - Configurable summarize threshold per card, including Off and 50-90% presets.
-- Background compaction reads Pi session history, summarizes at a safe boundary, and applies compaction through the active Pi session when available.
+- Background compaction is Pi-native and applies through the active Pi session at safe lifecycle boundaries.
 - Optional memory upsert at session exit and terminal card transitions, backed by a configured memory API.
 
 **Projects and Worktrees**
@@ -41,8 +41,8 @@ The core workflow is simple: create a card, attach it to a local project, move i
 
 **Pi Resources and Provider Configuration**
 - `config.yaml` drives Orchestrel provider/model routing and context-window metadata while Pi owns its canonical runtime resources.
-- User-level Pi resources live under the Pi canonical user config directory (`~/.pi`, with current SDK agent data under `~/.pi/agent`).
-- Project instructions are `AGENTS.md` files resolved by Pi, not Claude-specific instruction files.
+- User-level Pi resources live under the Pi canonical user config directory returned by the Pi SDK (`~/.pi`, commonly with agent data under `~/.pi/agent`).
+- Project instructions are resolved by Pi from project instruction files such as `AGENTS.md`, not Claude-specific instruction files.
 - Slash commands are Pi prompt templates / commands.
 - Skills are Pi skills and remain distinct from commands.
 - Model labels and context windows are exposed to the UI and used for context tracking.
@@ -92,7 +92,7 @@ The core workflow is simple: create a card, attach it to a local project, move i
                            │ Pi runtime/session APIs
 ┌──────────────────────────┴─────────────────────────────────┐
 │ Local projects, worktrees, and Pi resources                │
-│ AGENTS.md + ~/.pi agent config/session storage             │
+│ Pi instruction files + canonical Pi config/session storage │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -195,7 +195,7 @@ Provider entries keep the current Orchestrel schema and can use:
 Pi runtime resources are intentionally separate from Orchestrel's `config.yaml`:
 
 - User-level auth, model registry, prompt templates/commands, and skills belong in Pi's canonical user config directory (`~/.pi`).
-- Project instructions belong in `AGENTS.md` files in the project tree.
+- Project instructions are resolved by Pi from project instruction files such as `AGENTS.md` in the project tree.
 - Slash commands are Pi prompt templates / commands.
 - Skills are Pi skills and are not treated as slash commands.
 
@@ -250,7 +250,7 @@ app/
   lib/                            Socket.IO client, persistence, slot resolution, utilities
 src/
   orcd/                           UNIX-socket daemon, session registry, Pi SDK runtime
-  lib/                            Compaction, summarization, memory upsert, session repair
+  lib/                            Pi history, compaction, summarization, memory upsert
   server/
     api/                          TSOA controllers and generated OpenAPI routes
     controllers/                  Card/session orchestration

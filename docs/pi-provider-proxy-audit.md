@@ -7,8 +7,8 @@ Current responsibilities in Orchestrel today:
 - UI provider/model aliases and labels from `config.yaml` (`src/shared/config.ts`, `src/server/config/providers.ts`).
 - Card provider/model persistence and project defaults (`src/server/models/Card.ts`, `src/server/models/Project.ts`).
 - Context window display metadata (`contextWindow`) used for card gauges and tracking (`src/server/models/Card.ts`, `src/server/controllers/card-sessions.ts`).
-- Provider credential/env routing metadata (`baseUrl`, `apiKey`, `authToken`, Bedrock `region`/`profile`) carried through config parsing (`src/shared/config.ts`, `src/orcd/config.ts`, `config.example.yaml`).
-- Proxy selection for account pools by choosing provider entries that point at proxy/KPP base URLs.
+- Provider credential/env routing metadata (`baseUrl`, `apiKey`, `authToken`, Bedrock `region`/`profile`) carried through the config model (`src/shared/config.ts`, `src/orcd/config.ts`, `config.example.yaml`). `orcd` no longer uses these as Claude env-var wiring for session execution.
+- Proxy/KPP account-pool selection remains represented at the config level, and `bin/orc` still maps provider proxy fields into Pi CLI env. The `orcd` Pi SDK path needs real-run validation before treating proxy routing as fully active there.
 
 Inventory highlights from required search terms (`ANTHROPIC_BASE_URL|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_USE_BEDROCK|baseUrl|authToken|KPP|proxy|openai|anthropic`):
 
@@ -22,9 +22,9 @@ Inventory highlights from required search terms (`ANTHROPIC_BASE_URL|ANTHROPIC_A
 Responsibilities Pi can own (or already owns in the runtime path):
 
 - Native Anthropic calls.
-- OpenAI-format calls where Pi provider integrations support them.
+- OpenAI-format calls where configured and supported by deployed Pi provider integrations.
 - Model auth storage where Pi supports it (Pi auth storage / runtime auth layers).
-- MCP and extension integration where Pi supports it.
+- MCP and extension integration where configured and supported by deployed Pi integrations.
 
 ## Keep in Orchestrel
 
