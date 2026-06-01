@@ -1,9 +1,3 @@
-import { realpath } from 'fs/promises';
-import { join } from 'path';
-import { homedir } from 'os';
-import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
-
 const CHARS_PER_TOKEN = 3.5;
 
 export interface CompactResult {
@@ -43,20 +37,6 @@ export interface PreparedCompaction {
   compact: () => Promise<unknown>;
 }
 
-const DEFAULT_DISABLED_TOOLS = ['AskUserQuestion'] as const;
-
-export interface QueryAgentSdkOpts {
-  env?: Record<string, string>;
-  contextWindow?: number;
-  tools?: Options['tools'];
-  mcpServers?: Options['mcpServers'];
-  settingSources?: Options['settingSources'];
-  maxTurns?: number;
-  disallowedTools?: Options['disallowedTools'];
-  disallowedSkills?: string[];
-  thinking?: Options['thinking'];
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -65,23 +45,6 @@ function readNumber(value: unknown, key: string, fallback: number): number {
   if (!isRecord(value)) return fallback;
   const n = value[key];
   return typeof n === 'number' && Number.isFinite(n) ? n : fallback;
-}
-
-export function computeSlug(realPath: string): string {
-  return realPath.replace(/[^a-zA-Z0-9]/g, '-');
-}
-
-// Legacy helper kept for Task 10 memory-upsert migration. It is not used by
-// Pi-native compaction; remove with the remaining Claude JSONL memory path.
-export async function resolveJsonlPath(sessionId: string, projectPath: string): Promise<string> {
-  let real: string;
-  try {
-    real = await realpath(projectPath);
-  } catch {
-    real = projectPath;
-  }
-
-  return join(homedir(), '.claude', 'projects', computeSlug(real), `${sessionId}.jsonl`);
 }
 
 export function parseLines(lines: string[]): { lastBoundaryLine: number; messages: IndexedMessage[] } {
@@ -180,46 +143,6 @@ export function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
   return parts.join('\n\n');
 }
 
-// Legacy helper kept until Task 10 replaces memory upsert's Claude-agent path.
-// Pi-native session compaction does not call this.
-export async function queryAgentSdk(
-  prompt: string,
-  model: string,
-  opts: QueryAgentSdkOpts = {},
-): Promise<{ text: string; durationMs: number }> {
-  const { query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk');
-  const t0 = Date.now();
-  const disabledSkills = [...DEFAULT_DISABLED_SKILLS, ...(opts.disallowedSkills ?? [])];
-
-  const q = sdkQuery({
-    prompt,
-    options: {
-      model,
-      maxTurns: opts.maxTurns ?? 1,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
-      tools: opts.tools ?? [],
-      disallowedTools: [...DEFAULT_DISABLED_TOOLS, ...(opts.disallowedTools ?? [])],
-      settings: { skillOverrides: disabledSkillOverrides(disabledSkills) },
-      mcpServers: opts.mcpServers ?? {},
-      settingSources: opts.settingSources ?? [],
-      thinking: opts.thinking ?? { type: 'disabled' },
-      env: { ...opts.env, ...(opts.contextWindow ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(opts.contextWindow) } : {}) },
-    },
-  });
-
-  let result = '';
-  for await (const event of q) {
-    if (!isRecord(event) || event.type !== 'assistant' || !isRecord(event.message)) continue;
-    const text = extractText(event.message.content);
-    if (text) result = text;
-  }
-
-  if (!result) throw new Error('Agent SDK query returned no assistant text');
-  return { text: result, durationMs: Date.now() - t0 };
-}
-
 export async function applyCompaction(prepared: PreparedCompaction): Promise<CompactResult> {
   const t0 = Date.now();
   const result = await prepared.compact();
@@ -236,5 +159,5 @@ export async function applyCompaction(prepared: PreparedCompaction): Promise<Com
 }
 
 export async function compactSession(_opts: CompactOpts): Promise<CompactResult> {
-  throw new Error('Offline JSONL compaction has been removed; compact active Pi sessions through orcd');
+  throw new Error('Offline session compaction has been removed; compact active Pi sessions through orcd');
 }
