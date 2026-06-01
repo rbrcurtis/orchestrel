@@ -81,6 +81,7 @@ function makeCard(contextTokens: number, contextWindow: number): Card {
     prUrl: null,
     sessionId: '8622c811-8f13-4b6e-9046-552a33ce879b',
     worktreeBranch: null,
+    sandbox: false,
     sourceBranch: null,
     model: 'gpt-5.5',
     provider: 'chatgpt',
