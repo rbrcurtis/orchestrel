@@ -98,7 +98,7 @@ function main() {
     return;
   }
 
-  const piPath = resolvePiPath();
+  const piPath = requirePiPath();
   const child = spawn(
     piPath,
     piArgs,
@@ -347,8 +347,13 @@ function buildPiArgs(modelId, passthroughArgs) {
 function resolvePiPath() {
   const override = process.env.ORC_PI_PATH;
   if (override) return override;
-  if (existsSync(DEFAULT_PI_PATH)) return DEFAULT_PI_PATH;
-  throw new Error(`pi not found at ${DEFAULT_PI_PATH}`);
+  return DEFAULT_PI_PATH;
+}
+
+function requirePiPath() {
+  const p = resolvePiPath();
+  if (!existsSync(p)) throw new Error(`pi not found at ${p}`);
+  return p;
 }
 
 try {
