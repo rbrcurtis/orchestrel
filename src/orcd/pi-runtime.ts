@@ -1,6 +1,6 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
 import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, ProviderConfigInput } from '@earendil-works/pi-coding-agent';
+import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
 
