@@ -145,13 +145,17 @@ export function wsServerPlugin(): Plugin {
             // --- One-time init: OrcdClient + controller listeners ---
             if (initState.initialized) return;
 
-            const { OrcdClient } = await import('../orcd-client');
+            const [{ OrcdClient }, { loadConfig }, { homedir }] = await Promise.all([
+              import('../orcd-client'),
+              import('../../shared/config'),
+              import('os'),
+            ]);
             const { initOrcdRouter, reconcileRunningCards, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive } =
               await import('../controllers/card-sessions');
 
             let client = initState.getOrcdClient();
             if (!client) {
-              client = new OrcdClient();
+              client = new OrcdClient(loadConfig().socket.replace(/^~/, homedir()));
               await client.connect();
               initState.setOrcdClient(client);
             }
