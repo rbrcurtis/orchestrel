@@ -148,7 +148,6 @@ export class OrcdClient {
     model: string;
     effort?: string;
     sessionId?: string;
-    env?: Record<string, string>;
     contextWindow?: number;
     summarizeThreshold?: number;
   }): Promise<string> {
@@ -178,7 +177,6 @@ export class OrcdClient {
         model: opts.model,
         effort: opts.effort,
         sessionId: opts.sessionId,
-        env: opts.env,
         contextWindow: opts.contextWindow,
         summarizeThreshold: opts.summarizeThreshold,
       });
