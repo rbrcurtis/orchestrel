@@ -105,7 +105,13 @@ vi.mock('../../lib/session-compactor', () => ({
 
 function createServer() {
   return new OrcdServer('/tmp/orcd-test.sock', {
-    test: { type: 'anthropic', baseUrl: '', apiKey: '', models: ['test-model'], modelAliasEnv: {} },
+    test: {
+      type: 'anthropic',
+      baseUrl: '',
+      apiKey: '',
+      models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
+      modelAliasEnv: {},
+    },
   }, { provider: 'test', model: 'test-model' });
 }
 
@@ -153,39 +159,35 @@ describe('OrcdServer prompt passthrough', () => {
 });
 
 describe('OrcdServer provider env', () => {
-  it('merges process env and model alias env without injecting Claude runtime env', () => {
+  it('merges process env and model alias env without injecting provider runtime env', () => {
     const saved = {
-      CLAUDE_CODE_USE_BEDROCK: process.env.CLAUDE_CODE_USE_BEDROCK,
-      ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-      ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
-      CC_BACKGROUND_COMPACTOR_DISABLE: process.env.CC_BACKGROUND_COMPACTOR_DISABLE,
-      AWS_REGION: process.env.AWS_REGION,
-      AWS_PROFILE: process.env.AWS_PROFILE,
       ORC_TEST_PROVIDER_ENV: process.env.ORC_TEST_PROVIDER_ENV,
+      ORC_PROVIDER_RUNTIME_URL: process.env.ORC_PROVIDER_RUNTIME_URL,
+      ORC_PROVIDER_RUNTIME_KEY: process.env.ORC_PROVIDER_RUNTIME_KEY,
+      ORC_PROVIDER_RUNTIME_TOKEN: process.env.ORC_PROVIDER_RUNTIME_TOKEN,
+      ORC_PROVIDER_RUNTIME_REGION: process.env.ORC_PROVIDER_RUNTIME_REGION,
+      ORC_PROVIDER_RUNTIME_PROFILE: process.env.ORC_PROVIDER_RUNTIME_PROFILE,
     };
 
     try {
-      delete process.env.CLAUDE_CODE_USE_BEDROCK;
-      delete process.env.ANTHROPIC_BASE_URL;
-      delete process.env.ANTHROPIC_API_KEY;
-      delete process.env.ANTHROPIC_AUTH_TOKEN;
-      delete process.env.CC_BACKGROUND_COMPACTOR_DISABLE;
-      delete process.env.AWS_REGION;
-      delete process.env.AWS_PROFILE;
+      delete process.env.ORC_PROVIDER_RUNTIME_URL;
+      delete process.env.ORC_PROVIDER_RUNTIME_KEY;
+      delete process.env.ORC_PROVIDER_RUNTIME_TOKEN;
+      delete process.env.ORC_PROVIDER_RUNTIME_REGION;
+      delete process.env.ORC_PROVIDER_RUNTIME_PROFILE;
       process.env.ORC_TEST_PROVIDER_ENV = 'from-process';
 
       const server = new OrcdServer('/tmp/orcd-test.sock', {
         test: {
           type: 'bedrock',
-          baseUrl: 'https://anthropic.test',
+          baseUrl: 'https://provider.test',
           apiKey: 'provider-api-key',
           authToken: 'provider-auth-token',
           region: 'us-east-1',
           profile: 'provider-profile',
-          models: ['test-model'],
+          models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
           modelAliasEnv: {
-            ANTHROPIC_DEFAULT_SONNET_MODEL: 'test-model',
+            ORC_DEFAULT_MODEL: 'test-model',
           },
         },
       }, { provider: 'test', model: 'test-model' });
@@ -193,14 +195,12 @@ describe('OrcdServer provider env', () => {
       const env = server['buildProviderEnv']('test');
 
       expect(env.ORC_TEST_PROVIDER_ENV).toBe('from-process');
-      expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('test-model');
-      expect(env.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
-      expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
-      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
-      expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
-      expect(env.CC_BACKGROUND_COMPACTOR_DISABLE).toBeUndefined();
-      expect(env.AWS_REGION).toBeUndefined();
-      expect(env.AWS_PROFILE).toBeUndefined();
+      expect(env.ORC_DEFAULT_MODEL).toBe('test-model');
+      expect(env.ORC_PROVIDER_RUNTIME_URL).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_KEY).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_TOKEN).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_REGION).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_PROFILE).toBeUndefined();
     } finally {
       for (const [key, value] of Object.entries(saved)) {
         if (value === undefined) {

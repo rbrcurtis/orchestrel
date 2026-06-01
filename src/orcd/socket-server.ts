@@ -146,6 +146,7 @@ export class OrcdServer {
       cwd: action.cwd,
       model: action.model,
       provider: action.provider,
+      providerConfig: providerCfg,
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
@@ -164,13 +165,10 @@ export class OrcdServer {
 
     const effort = action.effort ?? 'high';
 
-    const env = Object.assign(this.buildProviderEnv(action.provider), action.env) as Record<string, string>;
-
     session
       .run({
         prompt: action.prompt,
         resume: !!action.sessionId,
-        env,
         effort,
       })
       .finally(() => {
@@ -193,15 +191,13 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    const env = this.buildProviderEnv(session.provider);
-
     if (!action.prompt.trim()) {
       console.warn(`[orcd:${action.sessionId.slice(0, 8)}] handleMessage: empty prompt, dropping`);
       this.send(client, { type: 'error', sessionId: action.sessionId, error: 'empty prompt' });
       return;
     }
 
-    session.sendMessage(action.prompt, env).finally(() => {
+    session.sendMessage(action.prompt).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }
@@ -271,6 +267,7 @@ export class OrcdServer {
         cwd: action.cwd,
         model: action.model,
         provider: action.provider,
+        providerConfig: this.providers[action.provider],
         sessionId: action.sessionId,
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,

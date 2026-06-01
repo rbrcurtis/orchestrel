@@ -4,6 +4,7 @@ import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } fr
 import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload } from './pi-events';
 import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
 import { RingBuffer } from './ring-buffer';
+import type { ProviderConfig } from './config';
 import type { SessionState } from './types';
 import type {
   ContextUsageMessage,
@@ -27,6 +28,7 @@ export class OrcdSession {
   readonly provider: string;
   readonly contextWindow: number | undefined;
   readonly summarizeThreshold: number;
+  readonly providerConfig: ProviderConfig | undefined;
   readonly buffer: RingBuffer<unknown>;
 
   /** Last known context token count (updated after each result) */
@@ -52,6 +54,7 @@ export class OrcdSession {
     sessionId?: string;
     contextWindow?: number;
     summarizeThreshold?: number;
+    providerConfig?: ProviderConfig;
     onFork?: (oldId: string, newId: string) => void;
     asyncTaskPollMsForTesting?: number;
   }) {
@@ -61,6 +64,7 @@ export class OrcdSession {
     this.provider = opts.provider;
     this.contextWindow = opts.contextWindow;
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
+    this.providerConfig = opts.providerConfig;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
     this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
@@ -181,6 +185,7 @@ export class OrcdSession {
       providerId: this.provider,
       modelId: this.model,
       effort,
+      provider: this.providerConfig,
     });
     this.piSession = session;
 
@@ -246,11 +251,9 @@ export class OrcdSession {
   async run(opts: {
     prompt: string;
     resume?: boolean;
-    env?: Record<string, string>;
     effort?: string;
   }): Promise<void> {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
-    void opts.env;
 
     if (this.running) {
       const msg = `session already running; dropping overlapping prompt`;
@@ -317,9 +320,9 @@ export class OrcdSession {
   /**
    * Send a follow-up message (resume into existing session).
    */
-  async sendMessage(prompt: string, env?: Record<string, string>, effort?: string): Promise<void> {
+  async sendMessage(prompt: string, effort?: string): Promise<void> {
     if (!this.running) this.state = 'running';
-    await this.run({ prompt, resume: true, env, effort });
+    await this.run({ prompt, resume: true, effort });
   }
 
   /**

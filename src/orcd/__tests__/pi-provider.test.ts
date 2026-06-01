@@ -8,7 +8,9 @@ function providerConfig(overrides: Partial<ProviderConfig> = {}): ProviderConfig
     baseUrl: 'https://api.anthropic.com',
     apiKey: 'sk-test-key',
     authToken: 'auth-token-1',
-    models: ['claude-sonnet-4-6'],
+    models: {
+      sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
+    },
     modelAliasEnv: {
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-1',
       ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-6',

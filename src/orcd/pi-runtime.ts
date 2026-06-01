@@ -1,13 +1,24 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
 import { AuthStorage, ModelRegistry, createAgentSession, getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent';
+import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
+import type { ModelDef, ProviderType } from '../shared/config';
+
+const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
 
 export interface CreatePiRuntimeSessionOpts {
   cwd: string;
   providerId: string;
   modelId: string;
   effort?: string;
+  provider?: {
+    type: ProviderType;
+    label?: string;
+    baseUrl: string;
+    apiKey: string;
+    authToken?: string;
+    models: Record<string, ModelDef>;
+  };
 }
 
 export interface PiRuntimeSession {
@@ -42,12 +53,59 @@ function canSetThinkingLevel(session: AgentSession): session is AgentSession & {
   return typeof session.setThinkingLevel === 'function';
 }
 
+function modelName(alias: string, model: ModelDef): string {
+  return model.label || alias;
+}
+
+function modelApi(type: ProviderType): Api {
+  return type === 'bedrock' ? 'bedrock-converse-stream' : 'anthropic-messages';
+}
+
+function usesBuiltInProvider(provider: NonNullable<CreatePiRuntimeSessionOpts['provider']>): boolean {
+  return provider.type === 'anthropic' && !provider.baseUrl && !provider.apiKey && !provider.authToken;
+}
+
+function setRuntimeApiKey(authStorage: PiAuthStorage, providerId: string, apiKey: string | undefined): void {
+  if (!apiKey) return;
+  authStorage.setRuntimeApiKey(providerId, apiKey);
+}
+
+function registerOrchestrelProvider(
+  modelRegistry: ModelRegistry,
+  providerId: string,
+  provider: NonNullable<CreatePiRuntimeSessionOpts['provider']>,
+): void {
+  const api = modelApi(provider.type);
+  const cfg: ProviderConfigInput = {
+    name: provider.label ?? providerId,
+    api,
+    baseUrl: provider.baseUrl || 'https://api.anthropic.com',
+    apiKey: provider.apiKey || provider.authToken || `$${EMPTY_API_KEY_ENV}`,
+    models: Object.entries(provider.models).map(([alias, model]) => ({
+      id: model.modelID,
+      name: modelName(alias, model),
+      api,
+      reasoning: provider.type === 'anthropic',
+      input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: model.contextWindow,
+      maxTokens: 64_000,
+    })),
+  };
+
+  modelRegistry.registerProvider(providerId, cfg);
+}
+
 export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): Promise<PiRuntimeSession> {
   const agentDir = getAgentDir();
   const authStorage = AuthStorage.create(`${agentDir}/auth.json`);
   const modelRegistry = ModelRegistry.create(authStorage, `${agentDir}/models.json`);
-  const model = modelRegistry.find(opts.providerId, opts.modelId);
-  if (!model) throw new Error(`Pi model not found: ${opts.providerId}/${opts.modelId}`);
+  const providerId = opts.provider && usesBuiltInProvider(opts.provider) ? opts.provider.type : opts.providerId;
+  if (opts.provider) setRuntimeApiKey(authStorage, providerId, opts.provider.apiKey || opts.provider.authToken);
+  if (opts.provider && providerId === opts.providerId) registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider);
+  const modelId = opts.provider?.models[opts.modelId]?.modelID ?? opts.modelId;
+  const model = modelRegistry.find(providerId, modelId);
+  if (!model) throw new Error(`Pi model not found: ${providerId}/${opts.modelId}`);
 
   const result = await createAgentSession({
     cwd: opts.cwd,

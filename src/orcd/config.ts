@@ -1,14 +1,15 @@
-import type { MemoryUpsertConfig, OrchestrelConfig, ProviderType } from '../shared/config';
+import type { MemoryUpsertConfig, ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
 import { buildModelAliasEnv, loadConfig, parseConfig as parseSharedConfig, resolveEnvVars } from '../shared/config';
 
 export interface ProviderConfig {
   type: ProviderType;
+  label?: string;
   baseUrl: string;
   apiKey: string;
   authToken?: string;
   region?: string;
   profile?: string;
-  models: string[];
+  models: Record<string, ModelDef>;
   modelAliasEnv: Record<string, string>;
 }
 
@@ -29,12 +30,13 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
   for (const [id, p] of Object.entries(cfg.providers)) {
     providers[id] = {
       type: p.type ?? 'anthropic',
+      ...(p.label ? { label: p.label } : {}),
       baseUrl: p.baseUrl ?? '',
       apiKey: p.apiKey ?? '',
       ...(p.authToken ? { authToken: p.authToken } : {}),
       ...(p.region ? { region: p.region } : {}),
       ...(p.profile ? { profile: p.profile } : {}),
-      models: Object.values(p.models).map((m) => m.modelID),
+      models: p.models,
       modelAliasEnv: buildModelAliasEnv(p.models),
     };
   }

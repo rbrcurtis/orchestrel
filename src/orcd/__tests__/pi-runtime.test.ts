@@ -7,6 +7,7 @@ const mockCompact = vi.fn();
 const mockSetThinkingLevel = vi.fn();
 const mockFind = vi.fn();
 const mockCreateAgentSession = vi.fn();
+const mockSetRuntimeApiKey = vi.fn();
 const mockAuthStorageCreate = vi.fn();
 const mockModelRegistryCreate = vi.fn();
 const mockGetAgentDir = vi.fn();
@@ -42,9 +43,9 @@ describe('createPiRuntimeSession', () => {
     vi.clearAllMocks();
 
     mockGetAgentDir.mockReturnValue('/home/ryan/.pi/agent');
-    mockAuthStorageCreate.mockReturnValue({ kind: 'auth-storage' });
+    mockAuthStorageCreate.mockReturnValue({ kind: 'auth-storage', setRuntimeApiKey: mockSetRuntimeApiKey });
     mockFind.mockReturnValue({ provider: 'anthropic', id: 'claude-sonnet-4-6' });
-    mockModelRegistryCreate.mockReturnValue({ find: mockFind });
+    mockModelRegistryCreate.mockReturnValue({ find: mockFind, registerProvider: vi.fn() });
     mockCreateAgentSession.mockResolvedValue({ session: makeSession() });
     mockPrompt.mockResolvedValue(undefined);
     mockAbort.mockResolvedValue(undefined);
@@ -63,17 +64,106 @@ describe('createPiRuntimeSession', () => {
 
     expect(session.id).toBe('pi-session-1');
     expect(mockGetAgentDir).toHaveBeenCalledOnce();
+    const authStorage = { kind: 'auth-storage', setRuntimeApiKey: mockSetRuntimeApiKey };
     expect(mockAuthStorageCreate).toHaveBeenCalledWith('/home/ryan/.pi/agent/auth.json');
-    expect(mockModelRegistryCreate).toHaveBeenCalledWith({ kind: 'auth-storage' }, '/home/ryan/.pi/agent/models.json');
+    expect(mockModelRegistryCreate).toHaveBeenCalledWith(authStorage, '/home/ryan/.pi/agent/models.json');
     expect(mockFind).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
     expect(mockCreateAgentSession).toHaveBeenCalledWith({
       cwd: '/repo',
       agentDir: '/home/ryan/.pi/agent',
-      authStorage: { kind: 'auth-storage' },
-      modelRegistry: { find: mockFind },
+      authStorage,
+      modelRegistry: { find: mockFind, registerProvider: expect.any(Function) },
       model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
       thinkingLevel: 'xhigh',
     });
+  });
+
+  it('resolves app aliases for built-in Anthropic passthrough providers without re-registering them', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const registry = { find: mockFind, registerProvider: vi.fn() };
+    mockModelRegistryCreate.mockReturnValue(registry);
+
+    await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'pi-local-test',
+      modelId: 'sonnet',
+      provider: {
+        type: 'anthropic',
+        label: 'Pi Local Test',
+        baseUrl: '',
+        apiKey: '',
+        models: {
+          sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
+        },
+      },
+    });
+
+    expect(registry.registerProvider).not.toHaveBeenCalled();
+    expect(mockSetRuntimeApiKey).not.toHaveBeenCalled();
+    expect(mockFind).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
+  });
+
+  it('uses runtime API keys for built-in Anthropic providers when configured', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+
+    await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'anthropic',
+      modelId: 'sonnet',
+      provider: {
+        type: 'anthropic',
+        label: 'Anthropic',
+        baseUrl: '',
+        apiKey: 'sk-test',
+        models: {
+          sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
+        },
+      },
+    });
+
+    expect(mockSetRuntimeApiKey).toHaveBeenCalledWith('anthropic', 'sk-test');
+    expect(mockFind).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
+  });
+
+  it('registers configured proxy providers and resolves app model aliases to Pi model IDs', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const registry = { find: mockFind, registerProvider: vi.fn() };
+    mockModelRegistryCreate.mockReturnValue(registry);
+
+    await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'trackable',
+      modelId: 'sonnet',
+      provider: {
+        type: 'anthropic',
+        label: 'Trackable',
+        baseUrl: 'http://127.0.0.1:3457',
+        apiKey: 'trackable',
+        models: {
+          sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
+        },
+      },
+    });
+
+    expect(registry.registerProvider).toHaveBeenCalledWith('trackable', {
+      name: 'Trackable',
+      api: 'anthropic-messages',
+      baseUrl: 'http://127.0.0.1:3457',
+      apiKey: 'trackable',
+      models: [
+        {
+          id: 'claude-sonnet-4-6',
+          name: 'Sonnet 4.6',
+          api: 'anthropic-messages',
+          reasoning: true,
+          input: ['text', 'image'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200000,
+          maxTokens: 64000,
+        },
+      ],
+    });
+    expect(mockFind).toHaveBeenCalledWith('trackable', 'claude-sonnet-4-6');
   });
 
   it('maps unsupported or disabled efforts to stable Pi thinking levels', async () => {
