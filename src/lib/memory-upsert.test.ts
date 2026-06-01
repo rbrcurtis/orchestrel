@@ -50,6 +50,19 @@ describe('buildMemoryExcerptFromHistory', () => {
     expect(result.excerpt).not.toContain('ignore me');
     expect(result.excerpt).not.toContain('ignore unsupported');
   });
+
+  it('counts only messages represented in the excerpt', async () => {
+    const { buildMemoryExcerptFromHistory } = await import('./memory-upsert');
+
+    const result = buildMemoryExcerptFromHistory([
+      { type: 'user', message: { role: 'user', content: 'first message' } },
+      { type: 'assistant', message: { role: 'assistant', content: 'second message should not fit' } },
+    ], 25);
+
+    expect(result.messagesProcessed).toBe(1);
+    expect(result.excerpt).toContain('first message');
+    expect(result.excerpt).not.toContain('second message');
+  });
 });
 
 describe('upsertMemories', () => {

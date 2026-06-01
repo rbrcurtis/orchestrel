@@ -1,14 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockGetAgentDir = vi.fn();
-const mockGetDefaultSessionDir = vi.fn();
 const mockList = vi.fn();
 const mockOpen = vi.fn();
 const mockBuildSessionContext = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
-  getAgentDir: mockGetAgentDir,
-  getDefaultSessionDir: mockGetDefaultSessionDir,
   SessionManager: {
     list: mockList,
     open: mockOpen,
@@ -18,8 +14,6 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
 describe('getPiSessionMessages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetAgentDir.mockReturnValue('/home/ryan/.pi/agent');
-    mockGetDefaultSessionDir.mockReturnValue('/home/ryan/.pi/agent/sessions/--repo--');
     mockList.mockResolvedValue([
       { id: 'other-session', path: '/home/ryan/.pi/agent/sessions/--repo--/other.jsonl' },
       { id: 'pi-session-1', path: '/home/ryan/.pi/agent/sessions/--repo--/pi-session-1.jsonl' },
@@ -98,12 +92,10 @@ describe('getPiSessionMessages', () => {
         },
       },
     ]);
-    expect(mockGetAgentDir).toHaveBeenCalledOnce();
-    expect(mockGetDefaultSessionDir).toHaveBeenCalledWith('/repo', '/home/ryan/.pi/agent');
-    expect(mockList).toHaveBeenCalledWith('/repo', '/home/ryan/.pi/agent/sessions/--repo--');
+    expect(mockList).toHaveBeenCalledWith('/repo');
     expect(mockOpen).toHaveBeenCalledWith(
       '/home/ryan/.pi/agent/sessions/--repo--/pi-session-1.jsonl',
-      '/home/ryan/.pi/agent/sessions/--repo--',
+      undefined,
       '/repo',
     );
     expect(mockBuildSessionContext).toHaveBeenCalledOnce();

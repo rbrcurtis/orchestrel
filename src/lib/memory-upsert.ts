@@ -126,17 +126,20 @@ export function buildMemoryExcerptFromHistory(
     const text = parts.join('\n').trim();
     if (!text) continue;
 
-    messagesProcessed++;
     const clipped = text.length > 3000 ? `${text.slice(0, 3000)}…` : text;
     const line = `[${role}]: ${clipped}`;
 
     if (total + line.length > maxChars) {
       const remaining = maxChars - total;
-      if (remaining > 100) lines.push(`${line.slice(0, remaining)}\n... (truncated)`);
+      if (remaining > 100) {
+        lines.push(`${line.slice(0, remaining)}\n... (truncated)`);
+        messagesProcessed++;
+      }
       break;
     }
 
     lines.push(line);
+    messagesProcessed++;
     total += line.length;
   }
 
