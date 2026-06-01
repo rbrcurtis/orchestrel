@@ -2,10 +2,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isFunction(value: unknown): value is (...args: unknown[]) => unknown {
-  return typeof value === 'function';
-}
-
 
 function getString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
@@ -143,41 +139,14 @@ function getSessionPath(sessions: unknown[], sessionId: string): string | undefi
 
 export async function getPiSessionMessages(sessionId: string, cwd: string): Promise<unknown[]> {
   try {
-    const pi = await import('@earendil-works/pi-coding-agent');
-    const piExports: Record<string, unknown> = pi;
+    const { SessionManager } = await import('@earendil-works/pi-coding-agent');
 
-    const getAgentDir = piExports.getAgentDir;
-    const getDefaultSessionDir = piExports.getDefaultSessionDir;
-    const sessionManager = piExports.SessionManager;
-    if (!isFunction(getAgentDir) || !isRecord(sessionManager)) return [];
-
-    const listSessions = sessionManager.list;
-    const openSession = sessionManager.open;
-    if (!isFunction(listSessions) || !isFunction(openSession)) return [];
-
-    const agentDir = getAgentDir();
-    if (typeof agentDir !== 'string') return [];
-
-    let sessionDir: string | undefined;
-    if (isFunction(getDefaultSessionDir)) {
-      const dir = getDefaultSessionDir(cwd, agentDir);
-      if (typeof dir !== 'string') return [];
-      sessionDir = dir;
-    }
-
-    const sessions = await listSessions(cwd, sessionDir);
-    if (!Array.isArray(sessions)) return [];
-
+    const sessions = await SessionManager.list(cwd);
     const sessionPath = getSessionPath(sessions, sessionId);
     if (!sessionPath) return [];
 
-    const manager = openSession(sessionPath, sessionDir, cwd);
-    if (!isRecord(manager)) return [];
-
-    const buildSessionContext = manager.buildSessionContext;
-    if (!isFunction(buildSessionContext)) return [];
-
-    return getMessagesFromContext(buildSessionContext.call(manager), sessionId);
+    const manager = SessionManager.open(sessionPath, undefined, cwd);
+    return getMessagesFromContext(manager.buildSessionContext(), sessionId);
   } catch {
     return [];
   }

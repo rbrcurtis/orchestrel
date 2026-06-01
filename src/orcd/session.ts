@@ -184,6 +184,7 @@ export class OrcdSession {
       cwd: this.cwd,
       providerId: this.provider,
       modelId: this.model,
+      sessionId: this.id,
       effort,
       provider: this.providerConfig,
     });

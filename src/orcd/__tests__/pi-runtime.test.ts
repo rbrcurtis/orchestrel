@@ -10,6 +10,8 @@ const mockCreateAgentSession = vi.fn();
 const mockSetRuntimeApiKey = vi.fn();
 const mockAuthStorageCreate = vi.fn();
 const mockModelRegistryCreate = vi.fn();
+const mockSessionManagerCreate = vi.fn();
+const mockSessionManagerNewSession = vi.fn();
 const mockGetAgentDir = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
@@ -18,6 +20,9 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
   },
   ModelRegistry: {
     create: mockModelRegistryCreate,
+  },
+  SessionManager: {
+    create: mockSessionManagerCreate,
   },
   createAgentSession: mockCreateAgentSession,
   getAgentDir: mockGetAgentDir,
@@ -46,6 +51,7 @@ describe('createPiRuntimeSession', () => {
     mockAuthStorageCreate.mockReturnValue({ kind: 'auth-storage', setRuntimeApiKey: mockSetRuntimeApiKey });
     mockFind.mockReturnValue({ provider: 'anthropic', id: 'claude-sonnet-4-6' });
     mockModelRegistryCreate.mockReturnValue({ find: mockFind, registerProvider: vi.fn() });
+    mockSessionManagerCreate.mockReturnValue({ kind: 'session-manager', newSession: mockSessionManagerNewSession });
     mockCreateAgentSession.mockResolvedValue({ session: makeSession() });
     mockPrompt.mockResolvedValue(undefined);
     mockAbort.mockResolvedValue(undefined);
@@ -68,14 +74,31 @@ describe('createPiRuntimeSession', () => {
     expect(mockAuthStorageCreate).toHaveBeenCalledWith('/home/ryan/.pi/agent/auth.json');
     expect(mockModelRegistryCreate).toHaveBeenCalledWith(authStorage, '/home/ryan/.pi/agent/models.json');
     expect(mockFind).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
+    expect(mockSessionManagerCreate).toHaveBeenCalledWith('/repo');
     expect(mockCreateAgentSession).toHaveBeenCalledWith({
       cwd: '/repo',
       agentDir: '/home/ryan/.pi/agent',
       authStorage,
       modelRegistry: { find: mockFind, registerProvider: expect.any(Function) },
+      sessionManager: { kind: 'session-manager', newSession: mockSessionManagerNewSession },
       model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
       thinkingLevel: 'xhigh',
     });
+  });
+
+  it('pins Pi session storage to the orcd session id when provided', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+
+    const session = await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      sessionId: 'orcd-session-1',
+    });
+
+    expect(mockSessionManagerCreate).toHaveBeenCalledWith('/repo');
+    expect(mockSessionManagerNewSession).toHaveBeenCalledWith({ id: 'orcd-session-1' });
+    expect(session.id).toBe('pi-session-1');
   });
 
   it('resolves app aliases for built-in Anthropic passthrough providers without re-registering them', async () => {

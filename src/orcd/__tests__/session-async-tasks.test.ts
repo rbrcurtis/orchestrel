@@ -137,6 +137,7 @@ describe('OrcdSession Pi runtime loop', () => {
       cwd: '/tmp/project',
       providerId: 'test-provider',
       modelId: 'test-model',
+      sessionId: 'session-prompt',
       effort: 'high',
     });
     expect(runtime.prompt).toHaveBeenCalledWith('go', undefined);
@@ -312,6 +313,7 @@ describe('OrcdSession Pi runtime loop', () => {
       cwd: '/tmp/project',
       providerId: 'test-provider',
       modelId: 'test-model',
+      sessionId: 'session-inactive-compact',
       effort: undefined,
     });
     expect(runtime.compact).toHaveBeenCalledTimes(1);
