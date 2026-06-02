@@ -106,13 +106,13 @@ export const busRoomBridge = {
     listeners.set('context', contextHandler);
 
     const exitHandler = async (payload: unknown) => {
-      const p = payload as { sessionId: string | null; status: string };
+      const p = payload as { sessionId: string | null; status: 'completed' | 'errored' | 'stopped' };
       const { Card: CardModel } = await import('../models/Card');
       const card = await CardModel.findOneBy({ id: cardId });
       io.to(room).emit('agent:status', {
         cardId,
         active: false,
-        status: p.status as 'completed',
+        status: p.status,
         sessionId: p.sessionId,
         promptsSent: card?.promptsSent ?? 0,
         turnsCompleted: card?.turnsCompleted ?? 0,

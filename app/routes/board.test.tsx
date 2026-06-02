@@ -60,6 +60,7 @@ function makeCard(): Card {
     prUrl: null,
     sessionId: null,
     worktreeBranch: null,
+    sandbox: false,
     sourceBranch: null,
     model: 'sonnet',
     provider: 'anthropic',

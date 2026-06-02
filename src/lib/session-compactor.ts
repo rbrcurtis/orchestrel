@@ -6,6 +6,7 @@ import { readFile, writeFile, rename, realpath } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
+import { closeAndThrowOnAgentSdkRetry } from './agent-sdk-no-retry';
 import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 
 const CHARS_PER_TOKEN = 3.5;
@@ -238,6 +239,8 @@ export async function queryAgentSdk(
 
   let result = '';
   for await (const event of q) {
+    closeAndThrowOnAgentSdkRetry(event, () => q.close());
+
     const e = event as Record<string, unknown>;
     if (e.type === 'assistant') {
       const msg = e.message as Record<string, unknown> | undefined;

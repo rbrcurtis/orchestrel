@@ -111,7 +111,6 @@ export class MessageAccumulator {
   conversation: ConversationEntry[] = [];
   currentBlocks: ContentBlock[] = [];
   subagents = new Map<string, SubagentState>();
-  retryAfterMs: number | null = null;
   private historyPendingResultTimestamp?: number;
   private historyTurnCount = 0;
   private blockingSubagentToolIds = new Map<string, string>();
@@ -158,9 +157,6 @@ export class MessageAccumulator {
       case 'task_notification':
         this.handleTaskNotification(msg);
         break;
-      case 'rate_limit':
-        this.retryAfterMs = msg.retry_after_ms;
-        break;
       case 'system':
         if (msg.subtype === 'init') {
           this.finalizeBlocks();
@@ -179,7 +175,6 @@ export class MessageAccumulator {
         this.conversation.push({ kind: 'error', message: msg.message, timestamp: msg.timestamp });
         break;
       case 'status':
-        if (this.retryAfterMs !== null) this.retryAfterMs = null;
         break;
     }
   }
@@ -358,7 +353,6 @@ export class MessageAccumulator {
 
   private handleResult(msg: SdkResultMessage): void {
     this.finalizeBlocks();
-    this.retryAfterMs = null;
     this.conversation.push({
       kind: 'result',
       timestamp: msg.timestamp ?? Date.now(),
@@ -499,7 +493,6 @@ export class MessageAccumulator {
     this.conversation = [];
     this.currentBlocks = [];
     this.clearSubagents();
-    this.retryAfterMs = null;
     this.historyPendingResultTimestamp = undefined;
     this.historyTurnCount = 0;
   }

@@ -6,12 +6,18 @@ import { OrcdSession } from '../session';
 import type { SessionEventCallback } from '../session';
 
 const events: unknown[] = [];
+const sdkControls = vi.hoisted(() => ({
+  close: vi.fn(),
+  interrupt: vi.fn(),
+  setMaxThinkingTokens: vi.fn(),
+}));
 const sdkQuery = vi.hoisted(() => vi.fn(() => ({
   async *[Symbol.asyncIterator]() {
     for (const event of events) yield event;
   },
-  interrupt: vi.fn(),
-  setMaxThinkingTokens: vi.fn(),
+  close: sdkControls.close,
+  interrupt: sdkControls.interrupt,
+  setMaxThinkingTokens: sdkControls.setMaxThinkingTokens,
 })));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -62,6 +68,9 @@ describe('OrcdSession async Agent lifecycle', () => {
   beforeEach(() => {
     events.length = 0;
     sdkQuery.mockClear();
+    sdkControls.close.mockClear();
+    sdkControls.interrupt.mockClear();
+    sdkControls.setMaxThinkingTokens.mockClear();
   });
 
   it('disables broken skills in Agent SDK options', async () => {
@@ -92,6 +101,44 @@ describe('OrcdSession async Agent lifecycle', () => {
           }),
         }),
       }),
+    }));
+  });
+
+  it('closes the Agent SDK query and errors immediately on provider retry events', async () => {
+    events.push({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt: 1,
+      max_retries: 2,
+      retry_delay_ms: 1000,
+      error_status: 500,
+      error: 'server_error',
+    });
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-no-retry',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    await session.run({ prompt: 'go' });
+
+    expect(sdkControls.close).toHaveBeenCalledTimes(1);
+    expect(payloads).not.toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({ subtype: 'api_retry' }),
+    }));
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.stringContaining('HTTP 500: server_error'),
+    }));
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'session_exit',
+      state: 'errored',
     }));
   });
 

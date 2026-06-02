@@ -6,7 +6,7 @@ import { MessageAccumulator } from '../lib/message-accumulator';
 
 export interface SessionState {
   active: boolean;
-  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry';
+  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
   sessionId: string | null;
   promptsSent: number;
   turnsCompleted: number;
@@ -88,7 +88,13 @@ export class SessionStore {
         }
       }
 
-      if (sdkMsg.type === 'error' || sdkMsg.type === 'result') {
+      if (sdkMsg.type === 'error') {
+        s.active = false;
+        s.status = 'errored';
+        s.bgcInProgress = false;
+      }
+
+      if (sdkMsg.type === 'result') {
         s.bgcInProgress = false;
       }
 

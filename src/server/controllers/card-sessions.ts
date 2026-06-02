@@ -141,7 +141,7 @@ export function initOrcdRouter(
     }
 
     if (msg.type === 'session_exit') {
-      await handleSessionExit(cardId, bus);
+      await handleSessionExit(cardId, msg.state, bus);
       untrackSession(msg.sessionId);
     }
 
@@ -168,6 +168,7 @@ export function initOrcdRouter(
 
 async function handleSessionExit(
   cardId: number,
+  status: 'completed' | 'errored' | 'stopped',
   bus: MessageBus = messageBus,
 ): Promise<void> {
   const repo = AppDataSource.getRepository(Card);
@@ -181,7 +182,7 @@ async function handleSessionExit(
 
   bus.publish(`card:${cardId}:exit`, {
     sessionId: card?.sessionId,
-    status: 'completed',
+    status,
   });
 }
 

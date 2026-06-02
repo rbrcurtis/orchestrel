@@ -144,7 +144,7 @@ export const agentSendSchema = z.object({
 export const agentStatusSchema = z.object({
   cardId: z.number(),
   active: z.boolean(),
-  status: z.enum(['starting', 'running', 'completed', 'errored', 'stopped', 'retry']),
+  status: z.enum(['starting', 'running', 'completed', 'errored', 'stopped']),
   sessionId: z.string().nullable(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),

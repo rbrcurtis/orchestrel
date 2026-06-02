@@ -137,6 +137,26 @@ describe('orcd message router', () => {
     });
   });
 
+  it('preserves errored session_exit status', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    const exitSpy = vi.fn();
+    bus.on('card:42:exit', exitSpy);
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'errored',
+    });
+
+    expect(exitSpy).toHaveBeenCalledWith({
+      sessionId: 'sess-abc',
+      status: 'errored',
+    });
+  });
+
 
   it('does not reset context tokens when background compaction starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');

@@ -1,16 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { applyCompaction, queryAgentSdk } from './session-compactor';
 
+const events = vi.hoisted(() => [] as unknown[]);
+const sdkControls = vi.hoisted(() => ({
+  close: vi.fn(),
+}));
 const sdkQuery = vi.hoisted(() => vi.fn(() => ({
   async *[Symbol.asyncIterator]() {
-    yield {
-      type: 'assistant',
-      message: { content: [{ type: 'text', text: 'done' }] },
-    };
+    for (const event of events) yield event;
   },
+  close: sdkControls.close,
 })));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -18,7 +20,18 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 
 describe('queryAgentSdk', () => {
+  beforeEach(() => {
+    events.length = 0;
+    sdkQuery.mockClear();
+    sdkControls.close.mockClear();
+  });
+
   it('disables broken skills in Agent SDK options', async () => {
+    events.push({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'done' }] },
+    });
+
     await queryAgentSdk('prompt', 'model');
 
     expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
@@ -31,6 +44,21 @@ describe('queryAgentSdk', () => {
         }),
       }),
     }));
+  });
+
+  it('closes and fails immediately when the Agent SDK reports an API retry', async () => {
+    events.push({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt: 1,
+      max_retries: 2,
+      retry_delay_ms: 1000,
+      error_status: 429,
+      error: 'rate_limit',
+    });
+
+    await expect(queryAgentSdk('prompt', 'model')).rejects.toThrow('HTTP 429: rate_limit');
+    expect(sdkControls.close).toHaveBeenCalledTimes(1);
   });
 });
 

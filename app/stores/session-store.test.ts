@@ -166,4 +166,31 @@ describe('SessionStore subagent lifecycle', () => {
 
     expect(store.getSession(1011)?.accumulator.subagents.size).toBe(0);
   });
+
+  it('marks the session errored immediately when an SDK error arrives', () => {
+    const store = new SessionStore();
+
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: true,
+      status: 'running',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
+    });
+
+    store.ingestSdkMessage(1011, {
+      type: 'error',
+      message: 'Provider request failed',
+      timestamp: Date.now(),
+    } as SdkMessage);
+
+    expect(store.getSession(1011)).toMatchObject({
+      active: false,
+      status: 'errored',
+      bgcInProgress: false,
+    });
+  });
 });
