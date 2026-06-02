@@ -93,7 +93,9 @@ describe('OrcdSession async Agent lifecycle', () => {
           'CronDelete',
           'CronList',
           'ScheduleWakeup',
+          'WebFetch',
           'WebSearch',
+          'Workflow',
         ]),
         settings: expect.objectContaining({
           skillOverrides: expect.objectContaining({

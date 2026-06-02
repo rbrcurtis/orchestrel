@@ -45,7 +45,9 @@ const SESSION_DISABLED_TOOLS = [
   'CronDelete',
   'CronList',
   'ScheduleWakeup',
+  'WebFetch',
   'WebSearch',
+  'Workflow',
 ] as const;
 
 export class OrcdSession {
