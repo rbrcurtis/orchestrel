@@ -46,7 +46,7 @@ vi.mock('../sessions/worktree', () => ({
 
 describe('orcd message router', () => {
   let bus: MessageBus;
-  let handler: ((msg: unknown) => void) | null;
+  let handler: ((msg: unknown) => void | Promise<void>) | null;
 
   // Minimal mock OrcdClient — captures the onMessage handler
   const mockClient = {
@@ -400,5 +400,45 @@ describe('reconcileRunningCards', () => {
     });
     expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('routes early session events before the new sessionId save finishes', async () => {
+    vi.resetModules();
+    const { initOrcdRouter, reconcileRunningCards } = await import('./card-sessions');
+    const bus = new MessageBus();
+    let earlyHandler: ((msg: unknown) => void | Promise<void>) | null = null;
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+
+    mockCards[0].column = 'running';
+    mockCards[0].sessionId = null;
+    mockRepo.save.mockClear();
+
+    const client = {
+      onMessage: vi.fn((h: (msg: unknown) => void | Promise<void>) => { earlyHandler = h; }),
+      offMessage: vi.fn(),
+      list: vi.fn(async () => ({
+        type: 'session_list',
+        sessions: [],
+      })),
+      markActive: vi.fn(),
+      create: vi.fn(async () => 'sess-new'),
+    };
+
+    initOrcdRouter(client as never, bus);
+    mockRepo.save.mockImplementationOnce(async (card: MockCard) => {
+      await earlyHandler!({
+        type: 'stream_event',
+        sessionId: 'sess-new',
+        eventIndex: 0,
+        event: { type: 'assistant', message: 'early output' },
+      });
+      return card;
+    });
+
+    await reconcileRunningCards(client as never, bus);
+
+    expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'early output' });
+    expect(mockCards[0].sessionId).toBe('sess-new');
   });
 });

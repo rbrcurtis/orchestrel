@@ -24,6 +24,7 @@ class FakeSocket {
       this.ioHandlers.set(event, list);
       return this.io;
     },
+    open: vi.fn(),
   };
 
   emitWithAck(event: keyof ClientToServerEvents, _data: unknown): Promise<AckResponse> {
@@ -128,6 +129,7 @@ describe('RootStore websocket reconnect sync', () => {
     fakeSocket.ioHandlers.clear();
     fakeSocket.connected = true;
     fakeSocket.nextSubscribeData = undefined;
+    fakeSocket.io.open.mockClear();
     vi.clearAllMocks();
     vi.resetModules();
     vi.stubGlobal(
@@ -137,6 +139,17 @@ describe('RootStore websocket reconnect sync', () => {
         static requestPermission = vi.fn();
       },
     );
+  });
+
+  it('opens the underlying manager on forced reconnect', async () => {
+    const { RootStore } = await import('./root-store');
+    const store = new RootStore();
+
+    fakeSocket.connected = false;
+    store.ws.forceReconnect();
+
+    expect(fakeSocket.connected).toBe(true);
+    expect(fakeSocket.io.open).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes cards from subscribe sync payload after reconnect', async () => {

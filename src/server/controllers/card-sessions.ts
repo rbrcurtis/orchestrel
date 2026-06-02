@@ -404,9 +404,9 @@ async function startCardSession(client: OrcdClient, card: Card): Promise<string>
   });
 
   card.sessionId = sessionId;
+  trackSession(card.id, sessionId);
   card.updatedAt = new Date().toISOString();
   await repo().save(card);
 
-  trackSession(card.id, sessionId);
   return sessionId;
 }

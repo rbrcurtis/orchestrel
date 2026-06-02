@@ -76,6 +76,7 @@ export class WsClient {
     if (this.disposed) return;
     console.log('[ws] force reconnect requested');
     this.socket.disconnect().connect();
+    this.socket.io.open();
   }
 
   onReconnect(cb: () => void | Promise<void>) {
