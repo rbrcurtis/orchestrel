@@ -3,7 +3,7 @@ import { readFile } from 'fs/promises';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveJsonlPath } from '../lib/session-compactor';
-import { closeAndThrowOnAgentSdkRetry } from '../lib/agent-sdk-no-retry';
+import { closeAndThrowOnAgentSdkRetry, formatAgentSdkApiRetryLog } from '../lib/agent-sdk-no-retry';
 import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
 import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
@@ -237,6 +237,15 @@ export class OrcdSession {
     effort?: string;
   }): Promise<void> {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
+    const retryContext = {
+      sessionId: this.id,
+      provider: this.provider,
+      model: this.model,
+      cwd: this.cwd,
+      ...(opts.env?.ANTHROPIC_BASE_URL ? { baseUrl: opts.env.ANTHROPIC_BASE_URL } : {}),
+      hasApiKey: Boolean(opts.env?.ANTHROPIC_API_KEY),
+      hasAuthToken: Boolean(opts.env?.ANTHROPIC_AUTH_TOKEN),
+    };
 
     const thinkingOpts = effortToOptions(opts.effort);
 
@@ -279,7 +288,9 @@ export class OrcdSession {
         if (this.state === 'stopped') break;
 
         const sdkEvent = event as unknown;
-        closeAndThrowOnAgentSdkRetry(sdkEvent, () => q.close());
+        closeAndThrowOnAgentSdkRetry(sdkEvent, () => q.close(), (msg) => {
+          log(`api_retry ${formatAgentSdkApiRetryLog(msg, retryContext)}`);
+        });
 
         const eventIndex = this.buffer.push(sdkEvent);
         const sdkRecord = this.isRecord(sdkEvent) ? sdkEvent : null;

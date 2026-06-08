@@ -1,7 +1,7 @@
 import { appendFile, mkdtemp, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrcdSession } from '../session';
 import type { SessionEventCallback } from '../session';
 
@@ -71,6 +71,11 @@ describe('OrcdSession async Agent lifecycle', () => {
     sdkControls.close.mockClear();
     sdkControls.interrupt.mockClear();
     sdkControls.setMaxThinkingTokens.mockClear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('disables broken skills in Agent SDK options', async () => {
@@ -106,7 +111,7 @@ describe('OrcdSession async Agent lifecycle', () => {
     }));
   });
 
-  it('closes the Agent SDK query and errors immediately on provider retry events', async () => {
+  it('logs retry details before closing the Agent SDK query on provider retry events', async () => {
     events.push({
       type: 'system',
       subtype: 'api_retry',
@@ -114,20 +119,34 @@ describe('OrcdSession async Agent lifecycle', () => {
       max_retries: 2,
       retry_delay_ms: 1000,
       error_status: 500,
-      error: 'server_error',
+      error: {
+        message: 'server_error',
+        authToken: 'do-not-log',
+      },
     });
 
     const session = new OrcdSession({
-      cwd: '/tmp',
+      cwd: '/tmp/project',
       model: 'test-model',
       provider: 'test-provider',
       sessionId: 'session-no-retry',
     });
 
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
     const payloads: unknown[] = [];
     session.subscribe((msg) => payloads.push(msg));
 
-    await session.run({ prompt: 'go' });
+    await session.run({
+      prompt: 'go',
+      env: {
+        ANTHROPIC_BASE_URL: 'http://provider.local:8000',
+        ANTHROPIC_AUTH_TOKEN: 'secret-token',
+      },
+    });
 
     expect(sdkControls.close).toHaveBeenCalledTimes(1);
     expect(payloads).not.toContainEqual(expect.objectContaining({
@@ -142,6 +161,16 @@ describe('OrcdSession async Agent lifecycle', () => {
       type: 'session_exit',
       state: 'errored',
     }));
+
+    const retryLog = logs.find((line) => line.includes('api_retry'));
+    expect(retryLog).toEqual(expect.stringContaining('session-no-retry'));
+    expect(retryLog).toEqual(expect.stringContaining('test-provider'));
+    expect(retryLog).toEqual(expect.stringContaining('test-model'));
+    expect(retryLog).toEqual(expect.stringContaining('http://provider.local:8000'));
+    expect(retryLog).toEqual(expect.stringContaining('server_error'));
+    expect(retryLog).toEqual(expect.stringContaining('[REDACTED]'));
+    expect(retryLog).not.toContain('secret-token');
+    expect(retryLog).not.toContain('do-not-log');
   });
 
   it('prefers configured contextWindow over SDK modelUsage metadata', async () => {
