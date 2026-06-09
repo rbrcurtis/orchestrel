@@ -50,8 +50,12 @@ export async function runSetupCommands(worktreePath: string, commands: string): 
     console.log(`[worktree:${worktreePath}] runSetupCommands: no commands, skipping`);
     return;
   }
-  await execFileAsync('/bin/bash', ['-c', commands], {
+  await execFileAsync('/bin/bash', ['-lc', commands], {
     cwd: worktreePath,
+    env: {
+      ...process.env,
+      PATH: `/home/ryan/.local/bin:${process.env.PATH ?? ''}`,
+    },
     timeout: 120_000,
   });
 }

@@ -28,6 +28,7 @@ const mockRepo = {
   find: vi.fn(async () => mockCards),
   save: vi.fn(async (card: (typeof mockCards)[number]) => card),
 };
+const mockEnsureWorktree = vi.fn(async () => '/tmp/project/.worktrees/card-42');
 
 vi.mock('../models/index', () => ({
   AppDataSource: {
@@ -38,7 +39,7 @@ vi.mock('../models/Card', () => ({
   Card: { findOneBy: vi.fn().mockResolvedValue(null), find: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock('../sessions/worktree', () => ({
-  ensureWorktree: vi.fn(async () => '/tmp/project/.worktrees/card-42'),
+  ensureWorktree: mockEnsureWorktree,
 }));
 
 // We test the routing concept: orcd messages for a tracked session
@@ -73,6 +74,8 @@ describe('orcd message router', () => {
     mockRepo.findOneBy.mockClear();
     mockRepo.find.mockClear();
     mockRepo.save.mockClear();
+    mockEnsureWorktree.mockReset();
+    mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
     bus = new MessageBus();
     handler = null;
     mockClient.onMessage.mockClear();
@@ -313,6 +316,11 @@ describe('orcd message router', () => {
 });
 
 describe('reconcileRunningCards', () => {
+  beforeEach(() => {
+    mockEnsureWorktree.mockReset();
+    mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
+  });
+
   it('moves prompted running cards to review when orcd only lists stopped session', async () => {
     const { reconcileRunningCards } = await import('./card-sessions');
     const bus = new MessageBus();
@@ -400,6 +408,35 @@ describe('reconcileRunningCards', () => {
     });
     expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('moves cards to review when auto-start setup fails during reconciliation', async () => {
+    const { reconcileRunningCards } = await import('./card-sessions');
+    const bus = new MessageBus();
+    const exitSpy = vi.fn();
+    bus.on('card:42:exit', exitSpy);
+    mockCards[0].column = 'running';
+    mockCards[0].sessionId = null;
+    mockEnsureWorktree.mockRejectedValue(new Error('bun: command not found'));
+    const client = {
+      list: vi.fn(async () => ({
+        type: 'session_list',
+        sessions: [],
+      })),
+      markActive: vi.fn(),
+      create: vi.fn(async () => 'sess-new'),
+    };
+
+    await reconcileRunningCards(client as never, bus);
+
+    expect(mockCards[0].column).toBe('review');
+    expect(mockCards[0].sessionId).toBeNull();
+    expect(client.create).not.toHaveBeenCalled();
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+    expect(exitSpy).toHaveBeenCalledWith({
+      sessionId: null,
+      status: 'errored',
+    });
   });
 
   it('routes early session events before the new sessionId save finishes', async () => {

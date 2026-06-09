@@ -235,7 +235,7 @@ export async function reconcileRunningCards(
     }
     if (!card.sessionId) {
       console.log(`[reconcile] card ${card.id} has no sessionId; starting missed session`);
-      await startCardSession(client, card);
+      await startCardSession(client, card, bus);
       continue;
     }
 
@@ -290,7 +290,7 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
         `[oc:auto-start] card #${card.id} entered running ` +
           `(worktree=${!!card.worktreeBranch}, project=${card.projectId})`,
       );
-      await startCardSession(client, fullCard);
+      await startCardSession(client, fullCard, bus);
     }
 
     // Card left running: cancel session
@@ -388,25 +388,54 @@ function repo() {
   return AppDataSource.getRepository(Card);
 }
 
-async function startCardSession(client: OrcdClient, card: Card): Promise<string> {
-  const { ensureWorktree } = await import('../sessions/worktree');
-  const cwd = await ensureWorktree(card);
-  const prompt = card.sessionId ? '' : card.description ?? '';
+async function markSessionStartFailed(
+  bus: MessageBus,
+  card: Card,
+  err: unknown,
+): Promise<void> {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`[session:${card.id}] failed to start session:`, msg);
 
-  const sessionId = await client.create({
-    prompt,
-    cwd,
-    provider: card.provider,
-    model: card.model,
-    sessionId: card.sessionId ?? undefined,
-    contextWindow: card.contextWindow,
-    summarizeThreshold: card.summarizeThreshold,
-  });
-
-  card.sessionId = sessionId;
-  trackSession(card.id, sessionId);
+  card.column = 'review';
   card.updatedAt = new Date().toISOString();
   await repo().save(card);
+  bus.publish(`card:${card.id}:exit`, {
+    sessionId: card.sessionId ?? null,
+    status: 'errored',
+  });
+}
 
-  return sessionId;
+async function startCardSession(
+  client: OrcdClient,
+  card: Card,
+  bus: MessageBus = messageBus,
+): Promise<string | null> {
+  try {
+    const { ensureWorktree } = await import('../sessions/worktree');
+    const cwd = await ensureWorktree(card);
+    const prompt = card.sessionId ? '' : card.description ?? '';
+
+    const sessionId = await client.create({
+      prompt,
+      cwd,
+      provider: card.provider,
+      model: card.model,
+      sessionId: card.sessionId ?? undefined,
+      contextWindow: card.contextWindow,
+      summarizeThreshold: card.summarizeThreshold,
+    });
+
+    card.sessionId = sessionId;
+    trackSession(card.id, sessionId);
+    card.updatedAt = new Date().toISOString();
+    await repo().save(card);
+
+    console.log(`[session:${card.id}] session started: ${sessionId.slice(0, 8)}`);
+    return sessionId;
+  } catch (err) {
+    console.error(`[session:${card.id}] startCardSession error:`, err instanceof Error ? err.message : String(err));
+    await markSessionStartFailed(bus, card, err);
+    console.log(`[session:${card.id}] startCardSession returning null after failure`);
+    return null;
+  }
 }
