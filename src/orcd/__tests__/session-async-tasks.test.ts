@@ -40,6 +40,22 @@ function toolUseEvent(id: string, description: string): unknown {
   };
 }
 
+function genericToolUseEvent(id: string, name: string, description: string): unknown {
+  return {
+    type: 'assistant',
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          id,
+          name,
+          input: { description },
+        },
+      ],
+    },
+  };
+}
+
 function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
   return {
     type: 'user',
@@ -58,6 +74,22 @@ function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
               ].join('\n'),
             },
           ],
+        },
+      ],
+    },
+  };
+}
+
+function genericLaunchResult(toolUseId: string, taskId: string): unknown {
+  return {
+    type: 'user',
+    toolUseResult: { taskId },
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          content: `Monitor started (task ${taskId}, timeout 900000ms).`,
         },
       ],
     },
@@ -280,6 +312,83 @@ describe('OrcdSession async Agent lifecycle', () => {
           task_id: 'agent-123',
           status: 'completed',
           result: 'DONE',
+        }),
+      }));
+      expect(received.at(-1)).toBe('session_exit');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('delays session_exit until generic background task notification appears in JSONL', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
+    const jsonlPath = join(dir, 'session.jsonl');
+    await writeFile(jsonlPath, '');
+
+    events.push(
+      genericToolUseEvent('call_monitor', 'Monitor', 'Jenkins build completion'),
+      genericLaunchResult('call_monitor', 'monitor-123'),
+      {
+        type: 'result',
+        subtype: 'success',
+        stop_reason: 'end_turn',
+        modelUsage: { test: { contextWindow: 200000 } },
+      },
+    );
+
+    const session = new OrcdSession({
+      cwd: dir,
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-monitor',
+      jsonlPathForTesting: jsonlPath,
+      asyncTaskPollMsForTesting: 10,
+    });
+
+    const received: string[] = [];
+    const payloads: unknown[] = [];
+    const cb: SessionEventCallback = (msg) => {
+      received.push(msg.type);
+      payloads.push(msg);
+    };
+    session.subscribe(cb);
+
+    const run = session.run({ prompt: 'go' });
+
+    try {
+      await vi.waitFor(() => expect(received).toContain('result'));
+      expect(received).not.toContain('session_exit');
+      expect(payloads).toContainEqual(expect.objectContaining({
+        type: 'stream_event',
+        event: expect.objectContaining({
+          type: 'task_started',
+          task_id: 'monitor-123',
+          description: 'Jenkins build completion',
+        }),
+      }));
+
+      await appendFile(jsonlPath, JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: [
+          '<task-notification>',
+          '<task-id>monitor-123</task-id>',
+          '<tool-use-id>call_monitor</tool-use-id>',
+          '<status>completed</status>',
+          '<result>Build finished: SUCCESS</result>',
+          '</task-notification>',
+        ].join('\n'),
+      }) + '\n');
+
+      await run;
+
+      expect(payloads).toContainEqual(expect.objectContaining({
+        type: 'stream_event',
+        event: expect.objectContaining({
+          type: 'task_notification',
+          task_id: 'monitor-123',
+          status: 'completed',
+          result: 'Build finished: SUCCESS',
         }),
       }));
       expect(received.at(-1)).toBe('session_exit');

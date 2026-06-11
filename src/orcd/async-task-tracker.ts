@@ -1,5 +1,10 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure parser/tracker guard returns are intentional */
-export interface AsyncAgentLaunch {
+export interface ToolUseMetadata {
+  name: string;
+  description: string;
+}
+
+export interface BackgroundTaskLaunch {
   taskId: string;
   toolUseId: string;
   description: string;
@@ -29,7 +34,7 @@ export interface TaskNotificationEvent {
 }
 
 interface TaskState {
-  launch: AsyncAgentLaunch;
+  launch: BackgroundTaskLaunch;
   status: 'running' | 'completed' | 'failed';
 }
 
@@ -43,13 +48,60 @@ function tagValue(content: string, tag: string): string | undefined {
   return firstMatch(content, re);
 }
 
-export function parseAsyncAgentLaunch(text: string, toolUseId: string, description: string): AsyncAgentLaunch | null {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function textFromToolResultContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+
+  return content
+    .map((block) => {
+      if (!isRecord(block)) return '';
+      const text = block.text;
+      return typeof text === 'string' ? text : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function outputFileFromLaunchText(text: string): string | undefined {
+  const outputFile = firstMatch(text, /output_file:\s*(\S+)/)
+    ?? firstMatch(text, /Output is being written to:\s*(\S+)/);
+  return outputFile?.replace(/[.,;:]$/, '');
+}
+
+function descriptionFromInput(input: unknown, fallback: string): string {
+  if (!isRecord(input)) return fallback;
+  const description = input.description;
+  if (typeof description === 'string' && description.trim()) return description.trim();
+  return fallback;
+}
+
+function taskIdFromToolUseResult(result: unknown): string | undefined {
+  if (!isRecord(result)) return undefined;
+
+  const backgroundTaskId = result.backgroundTaskId;
+  if (typeof backgroundTaskId === 'string' && backgroundTaskId.trim()) return backgroundTaskId.trim();
+
+  const taskId = result.taskId;
+  if (typeof taskId === 'string' && taskId.trim()) return taskId.trim();
+
+  return undefined;
+}
+
+export function parseAsyncAgentLaunch(
+  text: string,
+  toolUseId: string,
+  description: string,
+): BackgroundTaskLaunch | null {
   if (!text.includes('Async agent launched successfully.')) return null;
 
   const taskId = firstMatch(text, /agentId:\s*([^\s(]+)/);
   if (!taskId) return null;
 
-  const outputFile = firstMatch(text, /output_file:\s*(\S+)/);
+  const outputFile = outputFileFromLaunchText(text);
   return {
     taskId,
     toolUseId,
@@ -80,54 +132,77 @@ export function parseTaskNotification(content: string): TaskNotification | null 
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function textFromToolResultContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-
-  return content
-    .map((block) => {
-      if (!isRecord(block)) return '';
-      const text = block.text;
-      return typeof text === 'string' ? text : '';
-    })
-    .filter(Boolean)
-    .join('\n');
-}
-
-export function extractAsyncAgentLaunches(
+export function extractBackgroundTaskLaunches(
   event: unknown,
-  toolDescriptions: Map<string, string>,
-): AsyncAgentLaunch[] {
+  toolUses: Map<string, ToolUseMetadata>,
+): BackgroundTaskLaunch[] {
   if (!isRecord(event) || event.type !== 'user') return [];
 
   const message = event.message;
   if (!isRecord(message) || !Array.isArray(message.content)) return [];
 
-  const launches: AsyncAgentLaunch[] = [];
+  const launches: BackgroundTaskLaunch[] = [];
   for (const block of message.content) {
     if (!isRecord(block) || block.type !== 'tool_result') continue;
 
     const toolUseId = block.tool_use_id;
     if (typeof toolUseId !== 'string') continue;
 
-    const description = toolDescriptions.get(toolUseId);
-    if (!description) continue;
+    const tool = toolUses.get(toolUseId);
+    if (!tool) continue;
 
-    const launch = parseAsyncAgentLaunch(textFromToolResultContent(block.content), toolUseId, description);
+    const text = textFromToolResultContent(block.content);
+    const taskId = taskIdFromToolUseResult(event.toolUseResult);
+    if (taskId) {
+      const outputFile = outputFileFromLaunchText(text);
+      launches.push({
+        taskId,
+        toolUseId,
+        description: tool.description,
+        ...(outputFile ? { outputFile } : {}),
+      });
+      continue;
+    }
+
+    if (tool.name !== 'Agent' && tool.name !== 'Task') continue;
+
+    const launch = parseAsyncAgentLaunch(text, toolUseId, tool.description);
     if (launch) launches.push(launch);
   }
 
   return launches;
 }
 
+export function toolUseMetadataFromEvent(event: unknown): Array<[string, ToolUseMetadata]> {
+  if (!isRecord(event) || event.type !== 'assistant') return [];
+
+  const message = event.message;
+  if (!isRecord(message) || !Array.isArray(message.content)) return [];
+
+  const metadata: Array<[string, ToolUseMetadata]> = [];
+  for (const block of message.content) {
+    if (!isRecord(block) || block.type !== 'tool_use') continue;
+
+    const toolUseId = block.id;
+    const name = block.name;
+    if (typeof toolUseId !== 'string' || typeof name !== 'string') continue;
+
+    metadata.push([
+      toolUseId,
+      {
+        name,
+        description: descriptionFromInput(block.input, `${name} background task`),
+      },
+    ]);
+  }
+
+  return metadata;
+}
+
 export class AsyncTaskTracker {
   private tasks = new Map<string, TaskState>();
 
-  recordLaunch(launch: AsyncAgentLaunch): TaskStartedEvent | null {
+  recordLaunch(launch: BackgroundTaskLaunch): TaskStartedEvent | null {
     if (this.tasks.has(launch.taskId)) return null;
     this.tasks.set(launch.taskId, { launch, status: 'running' });
     return {

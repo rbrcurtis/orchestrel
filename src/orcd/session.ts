@@ -6,7 +6,7 @@ import { resolveJsonlPath } from '../lib/session-compactor';
 import { closeAndThrowOnAgentSdkRetry, formatAgentSdkApiRetryLog } from '../lib/agent-sdk-no-retry';
 import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
-import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
+import { AsyncTaskTracker, extractBackgroundTaskLaunches, parseTaskNotification, toolUseMetadataFromEvent } from './async-task-tracker';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
 import type {
@@ -67,7 +67,7 @@ export class OrcdSession {
   private readonly jsonlPathForTesting: string | undefined;
   private readonly asyncTaskPollMs: number;
   private readonly asyncTasks = new AsyncTaskTracker();
-  private readonly agentToolDescriptions = new Map<string, string>();
+  private readonly toolUses = new Map<string, { name: string; description: string }>();
   private readonly beforeExitHooks: Array<() => Promise<void>> = [];
   private jsonlLinesRead = 0;
 
@@ -88,26 +88,9 @@ export class OrcdSession {
     return typeof value === 'object' && value !== null;
   }
 
-  private rememberAgentToolDescriptions(event: unknown): void {
-    if (this.isRecord(event) && event.type === 'assistant') {
-      const message = event.message;
-      if (this.isRecord(message) && Array.isArray(message.content)) {
-        for (const block of message.content) {
-          if (!this.isRecord(block) || block.type !== 'tool_use') continue;
-
-          const toolUseId = block.id;
-          if (typeof toolUseId !== 'string') continue;
-
-          const name = block.name;
-          const input = block.input;
-          if (!this.isRecord(input)) continue;
-          const description = input.description;
-          if (name !== 'Agent' && name !== 'Task') continue;
-          if (typeof description !== 'string' || !description.trim()) continue;
-
-          this.agentToolDescriptions.set(toolUseId, description.trim());
-        }
-      }
+  private rememberToolUses(event: unknown): void {
+    for (const [toolUseId, metadata] of toolUseMetadataFromEvent(event)) {
+      this.toolUses.set(toolUseId, metadata);
     }
   }
 
@@ -121,8 +104,8 @@ export class OrcdSession {
     for (const cb of this.subscribers) cb(msg);
   }
 
-  private recordAsyncAgentLaunches(event: unknown): void {
-    for (const launch of extractAsyncAgentLaunches(event, this.agentToolDescriptions)) {
+  private recordBackgroundTaskLaunches(event: unknown): void {
+    for (const launch of extractBackgroundTaskLaunches(event, this.toolUses)) {
       const started = this.asyncTasks.recordLaunch(launch);
       if (started) this.emitSyntheticTaskEvent(started);
     }
@@ -296,8 +279,8 @@ export class OrcdSession {
         const sdkRecord = this.isRecord(sdkEvent) ? sdkEvent : null;
 
         log(JSON.stringify(sdkEvent));
-        this.rememberAgentToolDescriptions(sdkEvent);
-        this.recordAsyncAgentLaunches(sdkEvent);
+        this.rememberToolUses(sdkEvent);
+        this.recordBackgroundTaskLaunches(sdkEvent);
 
         if (sdkRecord?.type === 'system' && sdkRecord.subtype === 'init') {
           const ccSessionId = sdkRecord.session_id;
