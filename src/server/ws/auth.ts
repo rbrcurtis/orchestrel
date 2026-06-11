@@ -16,7 +16,19 @@ export interface AuthResult {
 
 function isLocalRequest(req: IncomingMessage): boolean {
   const host = req.headers.host ?? '';
-  if (host.startsWith('localhost') || host.startsWith('127.') || host.startsWith('192.168.')) {
+  const hostname = host.startsWith('[')
+    ? host.slice(1, host.indexOf(']') === -1 ? undefined : host.indexOf(']'))
+    : host.split(':')[0];
+  const isPrivate172 = /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+
+  if (
+    hostname === 'localhost' ||
+    hostname === '::1' ||
+    hostname.startsWith('127.') ||
+    hostname.startsWith('10.') ||
+    hostname.startsWith('192.168.') ||
+    isPrivate172
+  ) {
     console.log(`[ws:auth] isLocalRequest: host=${host} matched local range`);
     return true;
   }

@@ -174,7 +174,7 @@ async function handleSessionExit(
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
 
-  if (card && card.column === 'running') {
+  if (card && card.column === 'running' && status !== 'errored') {
     card.column = 'review';
     card.updatedAt = new Date().toISOString();
     await repo.save(card);

@@ -154,6 +154,7 @@ describe('orcd message router', () => {
       state: 'errored',
     });
 
+    expect(mockCards[0].column).toBe('running');
     expect(exitSpy).toHaveBeenCalledWith({
       sessionId: 'sess-abc',
       status: 'errored',

@@ -3,6 +3,7 @@ import {
   AsyncTaskTracker,
   extractBackgroundTaskLaunches,
   parseAsyncAgentLaunch,
+  parseSdkTaskNotification,
   parseTaskNotification,
 } from '../async-task-tracker';
 
@@ -64,8 +65,48 @@ describe('parseTaskNotification', () => {
     expect(parseTaskNotification(content)?.status).toBe('failed');
   });
 
+  it('treats killed notifications as failed terminal results', () => {
+    const content = [
+      '<task-notification>',
+      '<task-id>bv8xx4z6c</task-id>',
+      '<tool-use-id>tooluse_yMsyf0cB85CRgSruDpT0Qk</tool-use-id>',
+      '<output-file>/tmp/claude/tasks/bv8xx4z6c.output</output-file>',
+      '<status>killed</status>',
+      '<summary>Monitor "Jenkins deploy for commit 24b151f" stopped</summary>',
+      '</task-notification>',
+    ].join('\n');
+
+    expect(parseTaskNotification(content)).toEqual({
+      taskId: 'bv8xx4z6c',
+      toolUseId: 'tooluse_yMsyf0cB85CRgSruDpT0Qk',
+      outputFile: '/tmp/claude/tasks/bv8xx4z6c.output',
+      status: 'failed',
+      summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+      result: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+    });
+  });
+
   it('returns null for unrelated queue content', () => {
     expect(parseTaskNotification('Continue')).toBeNull();
+  });
+});
+
+describe('parseSdkTaskNotification', () => {
+  it('treats SDK stopped Monitor notifications as failed terminal results', () => {
+    expect(parseSdkTaskNotification({
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'bbqs4eouz',
+      tool_use_id: 'tooluse_AP4AYp7XO6OzJSixgNTeJ8',
+      status: 'stopped',
+      summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+    })).toEqual({
+      taskId: 'bbqs4eouz',
+      toolUseId: 'tooluse_AP4AYp7XO6OzJSixgNTeJ8',
+      status: 'failed',
+      summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+      result: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+    });
   });
 });
 
@@ -173,6 +214,7 @@ describe('extractBackgroundTaskLaunches', () => {
       {
         taskId: 'bash-123',
         toolUseId: 'call_bash',
+        toolName: 'Bash',
         description: 'Wait before review',
         outputFile: '/tmp/tasks/bash-123.output',
       },
@@ -202,6 +244,7 @@ describe('extractBackgroundTaskLaunches', () => {
       {
         taskId: 'monitor-123',
         toolUseId: 'call_monitor',
+        toolName: 'Monitor',
         description: 'Jenkins build completion',
       },
     ]);

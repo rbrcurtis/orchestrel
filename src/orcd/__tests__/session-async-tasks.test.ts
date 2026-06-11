@@ -469,6 +469,137 @@ describe('OrcdSession async Agent lifecycle', () => {
     }
   });
 
+  it('surfaces immediate Monitor script failure and exits errored', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
+    const jsonlPath = join(dir, 'session.jsonl');
+    await writeFile(jsonlPath, '');
+
+    events.push(
+      genericToolUseEvent('tooluse_2h0xHHy7KYUWwBlJ6iCkMS', 'Monitor', 'Jenkins dev-build-image deploy for main'),
+      genericLaunchResult('tooluse_2h0xHHy7KYUWwBlJ6iCkMS', 'b4ssomoaz'),
+      {
+        type: 'result',
+        subtype: 'success',
+        stop_reason: 'end_turn',
+        modelUsage: { test: { contextWindow: 200000 } },
+      },
+    );
+
+    const session = new OrcdSession({
+      cwd: dir,
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: '94bf0aba-c5f3-4cf4-ab01-afa34ce4c58a',
+      jsonlPathForTesting: jsonlPath,
+      asyncTaskPollMsForTesting: 10,
+    });
+
+    const received: string[] = [];
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => {
+      received.push(msg.type);
+      payloads.push(msg);
+    });
+
+    const run = session.run({ prompt: 'go' });
+
+    try {
+      await vi.waitFor(() => expect(received).toContain('result'));
+      expect(received).not.toContain('session_exit');
+
+      await appendFile(jsonlPath, JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: [
+          '<task-notification>',
+          '<task-id>b4ssomoaz</task-id>',
+          '<tool-use-id>tooluse_2h0xHHy7KYUWwBlJ6iCkMS</tool-use-id>',
+          '<output-file>/tmp/claude/tasks/b4ssomoaz.output</output-file>',
+          '<status>failed</status>',
+          '<summary>Monitor "Jenkins dev-build-image deploy for main" script failed (exit 1)</summary>',
+          '</task-notification>',
+        ].join('\n'),
+      }) + '\n');
+
+      await run;
+
+      expect(payloads).toContainEqual(expect.objectContaining({
+        type: 'stream_event',
+        event: expect.objectContaining({
+          type: 'task_notification',
+          task_id: 'b4ssomoaz',
+          status: 'failed',
+          result: 'Monitor "Jenkins dev-build-image deploy for main" script failed (exit 1)',
+        }),
+      }));
+      expect(payloads.at(-1)).toEqual(expect.objectContaining({
+        type: 'session_exit',
+        state: 'errored',
+      }));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('treats stopped Monitor SDK task notification as errored session exit', async () => {
+    events.push(
+      genericToolUseEvent('tooluse_AP4AYp7XO6OzJSixgNTeJ8', 'Monitor', 'Jenkins deploy for commit 24b151f'),
+      genericLaunchResult('tooluse_AP4AYp7XO6OzJSixgNTeJ8', 'bbqs4eouz'),
+      {
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'bbqs4eouz',
+        description: 'Jenkins deploy for commit 24b151f',
+      },
+      {
+        type: 'system',
+        subtype: 'task_updated',
+        task_id: 'bbqs4eouz',
+        status: 'killed',
+      },
+      {
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'bbqs4eouz',
+        tool_use_id: 'tooluse_AP4AYp7XO6OzJSixgNTeJ8',
+        status: 'stopped',
+        summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        stop_reason: 'end_turn',
+        modelUsage: { test: { contextWindow: 200000 } },
+      },
+    );
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: '94bf0aba-c5f3-4cf4-ab01-afa34ce4c58a',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    await session.run({ prompt: 'go' });
+
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({
+        type: 'task_notification',
+        task_id: 'bbqs4eouz',
+        status: 'failed',
+        result: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+      }),
+    }));
+    expect(payloads.at(-1)).toEqual(expect.objectContaining({
+      type: 'session_exit',
+      state: 'errored',
+    }));
+  });
+
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
     const jsonlPath = join(dir, 'session.jsonl');

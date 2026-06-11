@@ -7,6 +7,7 @@ export interface ToolUseMetadata {
 export interface BackgroundTaskLaunch {
   taskId: string;
   toolUseId: string;
+  toolName?: string;
   description: string;
   outputFile?: string;
 }
@@ -37,6 +38,8 @@ interface TaskState {
   launch: BackgroundTaskLaunch;
   status: 'running' | 'completed' | 'failed';
 }
+
+const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'stopped', 'killed']);
 
 function firstMatch(text: string, re: RegExp): string | undefined {
   const match = re.exec(text);
@@ -115,20 +118,42 @@ export function parseTaskNotification(content: string): TaskNotification | null 
 
   const taskId = tagValue(content, 'task-id');
   const status = tagValue(content, 'status');
-  if (!taskId || (status !== 'completed' && status !== 'failed')) return null;
+  if (!taskId || !status || !TERMINAL_TASK_STATUSES.has(status)) return null;
 
   const toolUseId = tagValue(content, 'tool-use-id');
   const outputFile = tagValue(content, 'output-file');
   const summary = tagValue(content, 'summary');
-  const result = tagValue(content, 'result');
+  const result = tagValue(content, 'result') ?? tagValue(content, 'event') ?? summary;
 
   return {
     taskId,
-    status,
+    status: status === 'completed' ? 'completed' : 'failed',
     ...(toolUseId ? { toolUseId } : {}),
     ...(outputFile ? { outputFile } : {}),
     ...(summary ? { summary } : {}),
     ...(result ? { result } : {}),
+  };
+}
+
+export function parseSdkTaskNotification(event: unknown): TaskNotification | null {
+  if (!isRecord(event) || event.type !== 'system' || event.subtype !== 'task_notification') return null;
+
+  const taskId = event.task_id;
+  if (typeof taskId !== 'string' || !taskId.trim()) return null;
+
+  const status = event.status;
+  if (typeof status !== 'string' || !TERMINAL_TASK_STATUSES.has(status)) return null;
+
+  const toolUseId = event.tool_use_id;
+  const outputFile = event.output_file;
+  const summary = event.summary;
+
+  return {
+    taskId: taskId.trim(),
+    status: status === 'completed' ? 'completed' : 'failed',
+    ...(typeof toolUseId === 'string' && toolUseId.trim() ? { toolUseId: toolUseId.trim() } : {}),
+    ...(typeof outputFile === 'string' && outputFile.trim() ? { outputFile: outputFile.trim() } : {}),
+    ...(typeof summary === 'string' && summary.trim() ? { summary: summary.trim(), result: summary.trim() } : {}),
   };
 }
 
@@ -158,6 +183,7 @@ export function extractBackgroundTaskLaunches(
       launches.push({
         taskId,
         toolUseId,
+        toolName: tool.name,
         description: tool.description,
         ...(outputFile ? { outputFile } : {}),
       });
@@ -201,6 +227,7 @@ export function toolUseMetadataFromEvent(event: unknown): Array<[string, ToolUse
 
 export class AsyncTaskTracker {
   private tasks = new Map<string, TaskState>();
+  private failedMonitor = false;
 
   recordLaunch(launch: BackgroundTaskLaunch): TaskStartedEvent | null {
     if (this.tasks.has(launch.taskId)) return null;
@@ -217,12 +244,17 @@ export class AsyncTaskTracker {
     if (!task || task.status !== 'running') return null;
 
     task.status = notification.status;
+    if (task.launch.toolName === 'Monitor' && notification.status === 'failed') this.failedMonitor = true;
     return {
       type: 'task_notification',
       task_id: notification.taskId,
       status: notification.status,
       ...(notification.result ? { result: notification.result } : {}),
     };
+  }
+
+  hasFailedMonitor(): boolean {
+    return this.failedMonitor;
   }
 
   hasPending(): boolean {

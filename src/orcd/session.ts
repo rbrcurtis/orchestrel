@@ -6,7 +6,7 @@ import { resolveJsonlPath } from '../lib/session-compactor';
 import { closeAndThrowOnAgentSdkRetry, formatAgentSdkApiRetryLog } from '../lib/agent-sdk-no-retry';
 import { DEFAULT_DISABLED_SKILLS, DEFAULT_DISABLED_TOOLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
-import { AsyncTaskTracker, extractBackgroundTaskLaunches, parseTaskNotification, toolUseMetadataFromEvent } from './async-task-tracker';
+import { AsyncTaskTracker, extractBackgroundTaskLaunches, parseSdkTaskNotification, parseTaskNotification, toolUseMetadataFromEvent } from './async-task-tracker';
 import { RingBuffer } from './ring-buffer';
 import type { SessionState } from './types';
 import type {
@@ -98,6 +98,17 @@ export class OrcdSession {
       const started = this.asyncTasks.recordLaunch(launch);
       if (started) this.emitSyntheticTaskEvent(started);
     }
+  }
+
+  private recordSdkTaskNotification(event: unknown): void {
+    const notification = parseSdkTaskNotification(event);
+    if (!notification) {
+      console.log(`[orcd:${this.id.slice(0, 8)}] ignoring non-terminal SDK task notification`);
+      return;
+    }
+
+    const taskEvent = this.asyncTasks.recordNotification(notification);
+    if (taskEvent) this.emitSyntheticTaskEvent(taskEvent);
   }
 
   private async getJsonlPath(): Promise<string> {
@@ -270,6 +281,9 @@ export class OrcdSession {
         log(JSON.stringify(sdkEvent));
         this.rememberToolUses(sdkEvent);
         this.recordBackgroundTaskLaunches(sdkEvent);
+        if (sdkRecord?.type === 'system' && sdkRecord.subtype === 'task_notification') {
+          this.recordSdkTaskNotification(sdkEvent);
+        }
 
         if (sdkRecord?.type === 'system' && sdkRecord.subtype === 'init') {
           const ccSessionId = sdkRecord.session_id;
@@ -350,7 +364,7 @@ export class OrcdSession {
       }
 
       if (this.state !== 'stopped') {
-        this.state = 'completed';
+        this.state = this.asyncTasks.hasFailedMonitor() ? 'errored' : 'completed';
       }
       log(`exited (state=${this.state})`);
     } catch (err) {
