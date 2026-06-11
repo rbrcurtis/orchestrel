@@ -36,7 +36,16 @@ describe('queryAgentSdk', () => {
 
     expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
       options: expect.objectContaining({
-        disallowedTools: expect.arrayContaining(['AskUserQuestion']),
+        disallowedTools: expect.arrayContaining([
+          'AskUserQuestion',
+          'CronCreate',
+          'CronDelete',
+          'CronList',
+          'ScheduleWakeup',
+          'WebFetch',
+          'WebSearch',
+          'Workflow',
+        ]),
         settings: expect.objectContaining({
           skillOverrides: expect.objectContaining({
             'claude-api': 'off',

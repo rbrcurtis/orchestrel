@@ -7,7 +7,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { closeAndThrowOnAgentSdkRetry } from './agent-sdk-no-retry';
-import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
+import { DEFAULT_DISABLED_SKILLS, DEFAULT_DISABLED_TOOLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 
 const CHARS_PER_TOKEN = 3.5;
 
@@ -169,8 +169,6 @@ export function buildExcerpt(msgs: IndexedMessage[], maxChars: number): string {
 // ─── Agent SDK query (shared by compactor + memory-upsert) ─────────────────
 
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-
-const DEFAULT_DISABLED_TOOLS = ['AskUserQuestion'] as const;
 
 /**
  * Options for `queryAgentSdk`. All tool-related fields default to fully

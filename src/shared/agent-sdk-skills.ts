@@ -1,3 +1,14 @@
+export const DEFAULT_DISABLED_TOOLS = [
+  'AskUserQuestion',
+  'CronCreate',
+  'CronDelete',
+  'CronList',
+  'ScheduleWakeup',
+  'WebFetch',
+  'WebSearch',
+  'Workflow',
+] as const;
+
 export const DEFAULT_DISABLED_SKILLS = ['claude-api'] as const;
 
 export function disabledSkillOverrides(skills: readonly string[]): Record<string, 'off'> {

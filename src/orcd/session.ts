@@ -4,7 +4,7 @@ import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveJsonlPath } from '../lib/session-compactor';
 import { closeAndThrowOnAgentSdkRetry, formatAgentSdkApiRetryLog } from '../lib/agent-sdk-no-retry';
-import { DEFAULT_DISABLED_SKILLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
+import { DEFAULT_DISABLED_SKILLS, DEFAULT_DISABLED_TOOLS, disabledSkillOverrides } from '../shared/agent-sdk-skills';
 import { AUTO_COMPACT_RATIO } from '../shared/constants';
 import { AsyncTaskTracker, extractBackgroundTaskLaunches, parseTaskNotification, toolUseMetadataFromEvent } from './async-task-tracker';
 import { RingBuffer } from './ring-buffer';
@@ -38,17 +38,6 @@ function effortToOptions(effort: string | undefined): Pick<Options, 'effort' | '
   }
   return { effort: level };
 }
-
-const SESSION_DISABLED_TOOLS = [
-  'AskUserQuestion',
-  'CronCreate',
-  'CronDelete',
-  'CronList',
-  'ScheduleWakeup',
-  'WebFetch',
-  'WebSearch',
-  'Workflow',
-] as const;
 
 export class OrcdSession {
   readonly id: string;
@@ -245,7 +234,7 @@ export class OrcdSession {
         model: this.model,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
-        disallowedTools: [...SESSION_DISABLED_TOOLS],
+        disallowedTools: [...DEFAULT_DISABLED_TOOLS],
         settingSources: ['user', 'project'],
         includePartialMessages: true,
         pathToClaudeCodeExecutable: '/home/ryan/.local/bin/claude',
