@@ -94,6 +94,10 @@ function taskIdFromToolUseResult(result: unknown): string | undefined {
   return undefined;
 }
 
+function taskIdFromEvent(event: Record<string, unknown>): string | undefined {
+  return taskIdFromToolUseResult(event.toolUseResult) ?? taskIdFromToolUseResult(event.tool_use_result);
+}
+
 export function parseAsyncAgentLaunch(
   text: string,
   toolUseId: string,
@@ -177,7 +181,7 @@ export function extractBackgroundTaskLaunches(
     if (!tool) continue;
 
     const text = textFromToolResultContent(block.content);
-    const taskId = taskIdFromToolUseResult(event.toolUseResult);
+    const taskId = taskIdFromEvent(event);
     if (taskId) {
       const outputFile = outputFileFromLaunchText(text);
       launches.push({

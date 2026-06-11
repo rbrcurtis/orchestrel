@@ -600,6 +600,105 @@ describe('OrcdSession async Agent lifecycle', () => {
     }));
   });
 
+  it('delays session_exit for live Monitor SDK launch shape until terminal notification', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
+    const jsonlPath = join(dir, 'session.jsonl');
+    await writeFile(jsonlPath, '');
+
+    events.push(
+      genericToolUseEvent('tooluse_v7bAp3zxeGI01dUjXZ18RJ', 'Monitor', 'Atlas deploy #197 completion'),
+      {
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'bi71yw4dn',
+        tool_use_id: 'tooluse_v7bAp3zxeGI01dUjXZ18RJ',
+        description: 'Atlas deploy #197 completion',
+        task_type: 'local_bash',
+      },
+      {
+        type: 'user',
+        tool_use_result: { taskId: 'bi71yw4dn', timeoutMs: 600000, persistent: false },
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tooluse_v7bAp3zxeGI01dUjXZ18RJ',
+              content: 'Monitor started (task bi71yw4dn, timeout 600000ms).',
+            },
+          ],
+        },
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        stop_reason: 'end_turn',
+        modelUsage: { test: { contextWindow: 200000 } },
+      },
+    );
+
+    const session = new OrcdSession({
+      cwd: dir,
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: '94bf0aba-c5f3-4cf4-ab01-afa34ce4c58a',
+      jsonlPathForTesting: jsonlPath,
+      asyncTaskPollMsForTesting: 10,
+    });
+
+    const received: string[] = [];
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => {
+      received.push(msg.type);
+      payloads.push(msg);
+    });
+
+    const run = session.run({ prompt: 'go' });
+
+    try {
+      await vi.waitFor(() => expect(received).toContain('result'));
+      expect(received).not.toContain('session_exit');
+      expect(payloads).toContainEqual(expect.objectContaining({
+        type: 'stream_event',
+        event: expect.objectContaining({
+          type: 'task_started',
+          task_id: 'bi71yw4dn',
+          description: 'Atlas deploy #197 completion',
+        }),
+      }));
+
+      await appendFile(jsonlPath, JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: [
+          '<task-notification>',
+          '<task-id>bi71yw4dn</task-id>',
+          '<tool-use-id>tooluse_v7bAp3zxeGI01dUjXZ18RJ</tool-use-id>',
+          '<status>completed</status>',
+          '<result>prod-deploy-atlas #197 finished: SUCCESS</result>',
+          '</task-notification>',
+        ].join('\n'),
+      }) + '\n');
+
+      await run;
+
+      expect(payloads).toContainEqual(expect.objectContaining({
+        type: 'stream_event',
+        event: expect.objectContaining({
+          type: 'task_notification',
+          task_id: 'bi71yw4dn',
+          status: 'completed',
+          result: 'prod-deploy-atlas #197 finished: SUCCESS',
+        }),
+      }));
+      expect(payloads.at(-1)).toEqual(expect.objectContaining({
+        type: 'session_exit',
+        state: 'completed',
+      }));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
     const jsonlPath = join(dir, 'session.jsonl');
