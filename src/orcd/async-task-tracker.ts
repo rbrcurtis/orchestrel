@@ -82,20 +82,24 @@ function descriptionFromInput(input: unknown, fallback: string): string {
   return fallback;
 }
 
-function taskIdFromToolUseResult(result: unknown): string | undefined {
+function taskIdFromToolUseResult(result: unknown, toolName: string): string | undefined {
   if (!isRecord(result)) return undefined;
 
   const backgroundTaskId = result.backgroundTaskId;
-  if (typeof backgroundTaskId === 'string' && backgroundTaskId.trim()) return backgroundTaskId.trim();
+  if (toolName === 'Bash' && typeof backgroundTaskId === 'string' && backgroundTaskId.trim()) {
+    return backgroundTaskId.trim();
+  }
 
   const taskId = result.taskId;
-  if (typeof taskId === 'string' && taskId.trim()) return taskId.trim();
+  if (toolName === 'Monitor' && typeof taskId === 'string' && taskId.trim()) {
+    return taskId.trim();
+  }
 
   return undefined;
 }
 
-function taskIdFromEvent(event: Record<string, unknown>): string | undefined {
-  return taskIdFromToolUseResult(event.toolUseResult) ?? taskIdFromToolUseResult(event.tool_use_result);
+function taskIdFromEvent(event: Record<string, unknown>, toolName: string): string | undefined {
+  return taskIdFromToolUseResult(event.toolUseResult, toolName) ?? taskIdFromToolUseResult(event.tool_use_result, toolName);
 }
 
 export function parseAsyncAgentLaunch(
@@ -181,7 +185,7 @@ export function extractBackgroundTaskLaunches(
     if (!tool) continue;
 
     const text = textFromToolResultContent(block.content);
-    const taskId = taskIdFromEvent(event);
+    const taskId = taskIdFromEvent(event, tool.name);
     if (taskId) {
       const outputFile = outputFileFromLaunchText(text);
       launches.push({

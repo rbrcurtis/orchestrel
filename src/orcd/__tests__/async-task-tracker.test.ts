@@ -269,6 +269,28 @@ describe('extractBackgroundTaskLaunches', () => {
     expect(extractBackgroundTaskLaunches(event, new Map())).toEqual([]);
   });
 
+  it('ignores synchronous Task tool result ids', () => {
+    const event = {
+      type: 'user',
+      toolUseResult: { success: true, taskId: '1', updatedFields: ['status'] },
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'call_task_update',
+            content: 'Updated task #1 status',
+          },
+        ],
+      },
+    };
+
+    expect(extractBackgroundTaskLaunches(event, new Map([[
+      'call_task_update',
+      { name: 'TaskUpdate', description: 'Update task status' },
+    ]]))).toEqual([]);
+  });
+
   it('ignores matching Agent launch text from non-Agent tool results', () => {
     const event = {
       type: 'user',
