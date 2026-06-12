@@ -54,7 +54,7 @@ const ChatCardView = observer(function ChatCardView() {
         sessionId={card.sessionId}
         accentColor={project.color}
         model={card.model ?? 'sonnet'}
-        providerID={project.providerID ?? 'anthropic'}
+        providerID={card.provider ?? project.providerID ?? 'anthropic'}
         summarizeThreshold={card.summarizeThreshold ?? 0}
         keepFocusAfterSend
       />

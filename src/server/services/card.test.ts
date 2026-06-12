@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { Card, CardSubscriber } from '../models/Card'
 import { Project, ProjectSubscriber } from '../models/Project'
@@ -78,5 +78,21 @@ describe('CardService', () => {
     await cardService.deleteCard(c.id)
     const found = await Card.findOneBy({ id: c.id })
     expect(found).toBeNull()
+  })
+
+  it('limits Ollama title generation response length', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ response: 'Short title' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const { cardService } = await import('./card')
+    await cardService.suggestTitle('Do a task')
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { options?: { num_predict?: number } }
+    expect(body.options?.num_predict).toBeLessThanOrEqual(12)
+    fetchMock.mockRestore()
   })
 })
