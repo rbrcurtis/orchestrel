@@ -224,7 +224,6 @@ export async function queryAgentSdk(
       maxTurns: opts.maxTurns ?? 1,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      pathToClaudeCodeExecutable: join(homedir(), '.local/bin/claude'),
       tools: opts.tools ?? [],
       disallowedTools: [...DEFAULT_DISABLED_TOOLS, ...(opts.disallowedTools ?? [])],
       settings: { skillOverrides: disabledSkillOverrides(disabledSkills) },

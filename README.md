@@ -103,7 +103,7 @@ Key patterns:
 
 - Node.js 22+
 - pnpm
-- Claude Code executable available at `/home/ryan/.local/bin/claude`
+- Claude Code native binary from `@anthropic-ai/claude-agent-sdk` or a native Claude Code install
 - Claude authentication through Claude Max OAuth, Anthropic API key, compatible proxy credentials, or AWS Bedrock credentials
 - Optional Ollama on `localhost:11434` with `llama3.2:latest` for title suggestions
 - Optional memory API for session memory upsert

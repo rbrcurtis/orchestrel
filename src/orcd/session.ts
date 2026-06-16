@@ -1,7 +1,5 @@
 import { randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
-import { homedir } from 'os';
-import { join } from 'path';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveJsonlPath } from '../lib/session-compactor';
@@ -250,7 +248,6 @@ export class OrcdSession {
         disallowedTools: [...DEFAULT_DISABLED_TOOLS],
         settingSources: ['user', 'project'],
         includePartialMessages: true,
-        pathToClaudeCodeExecutable: join(homedir(), '.local/bin/claude'),
         env: { ...opts.env, ...(this.contextWindow ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(this.contextWindow) } : {}) },
         ...thinkingOpts,
         settings: {
