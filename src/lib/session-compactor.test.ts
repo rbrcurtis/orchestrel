@@ -55,7 +55,7 @@ describe('queryAgentSdk', () => {
     }));
   });
 
-  it('closes and fails immediately when the Agent SDK reports an API retry', async () => {
+  it('closes and fails immediately when the Agent SDK reports a non-500 API retry', async () => {
     events.push({
       type: 'system',
       subtype: 'api_retry',
@@ -68,6 +68,41 @@ describe('queryAgentSdk', () => {
 
     await expect(queryAgentSdk('prompt', 'model')).rejects.toThrow('HTTP 429: rate_limit');
     expect(sdkControls.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes and fails immediately when the Agent SDK retry has no HTTP status', async () => {
+    events.push({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt: 1,
+      max_retries: 2,
+      retry_delay_ms: 1000,
+      error: 'connection reset',
+    });
+
+    await expect(queryAgentSdk('prompt', 'model')).rejects.toThrow('connection error: connection reset');
+    expect(sdkControls.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets the Agent SDK retry HTTP 500+ API errors', async () => {
+    events.push(
+      {
+        type: 'system',
+        subtype: 'api_retry',
+        attempt: 1,
+        max_retries: 2,
+        retry_delay_ms: 1000,
+        error_status: 503,
+        error: 'overloaded',
+      },
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'done' }] },
+      },
+    );
+
+    await expect(queryAgentSdk('prompt', 'model')).resolves.toMatchObject({ text: 'done' });
+    expect(sdkControls.close).not.toHaveBeenCalled();
   });
 });
 

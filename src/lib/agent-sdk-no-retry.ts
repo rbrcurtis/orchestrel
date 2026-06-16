@@ -93,6 +93,10 @@ export function formatAgentSdkApiRetryLog(msg: AgentSdkApiRetryMessage, context:
   });
 }
 
+export function shouldAllowAgentSdkRetry(msg: AgentSdkApiRetryMessage): boolean {
+  return typeof msg.error_status === 'number' && msg.error_status >= 500;
+}
+
 export function closeAndThrowOnAgentSdkRetry(
   event: unknown,
   close: () => void,
@@ -100,6 +104,7 @@ export function closeAndThrowOnAgentSdkRetry(
 ): void {
   if (!isAgentSdkApiRetryMessage(event)) return;
   logRetry?.(event);
+  if (shouldAllowAgentSdkRetry(event)) return;
   close();
   throw new Error(formatAgentSdkApiRetryError(event));
 }

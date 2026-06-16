@@ -143,7 +143,7 @@ describe('OrcdSession async Agent lifecycle', () => {
     }));
   });
 
-  it('logs retry details before closing the Agent SDK query on provider retry events', async () => {
+  it('logs retry details and lets the Agent SDK retry HTTP 500+ provider errors', async () => {
     events.push({
       type: 'system',
       subtype: 'api_retry',
@@ -180,18 +180,17 @@ describe('OrcdSession async Agent lifecycle', () => {
       },
     });
 
-    expect(sdkControls.close).toHaveBeenCalledTimes(1);
-    expect(payloads).not.toContainEqual(expect.objectContaining({
+    expect(sdkControls.close).not.toHaveBeenCalled();
+    expect(payloads).toContainEqual(expect.objectContaining({
       type: 'stream_event',
       event: expect.objectContaining({ subtype: 'api_retry' }),
     }));
-    expect(payloads).toContainEqual(expect.objectContaining({
+    expect(payloads).not.toContainEqual(expect.objectContaining({
       type: 'error',
-      error: expect.stringContaining('HTTP 500: server_error'),
     }));
     expect(payloads).toContainEqual(expect.objectContaining({
       type: 'session_exit',
-      state: 'errored',
+      state: 'completed',
     }));
 
     const retryLog = logs.find((line) => line.includes('api_retry'));
@@ -203,6 +202,44 @@ describe('OrcdSession async Agent lifecycle', () => {
     expect(retryLog).toEqual(expect.stringContaining('[REDACTED]'));
     expect(retryLog).not.toContain('secret-token');
     expect(retryLog).not.toContain('do-not-log');
+  });
+
+  it('closes the Agent SDK query on non-500 provider retry events', async () => {
+    events.push({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt: 1,
+      max_retries: 2,
+      retry_delay_ms: 1000,
+      error_status: 429,
+      error: 'rate_limit',
+    });
+
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-no-retry',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    await session.run({ prompt: 'go' });
+
+    expect(sdkControls.close).toHaveBeenCalledTimes(1);
+    expect(payloads).not.toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({ subtype: 'api_retry' }),
+    }));
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.stringContaining('HTTP 429: rate_limit'),
+    }));
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'session_exit',
+      state: 'errored',
+    }));
   });
 
   it('prefers configured contextWindow over SDK modelUsage metadata', async () => {
