@@ -333,6 +333,11 @@ export class OrcdServer {
       if (cfg.authToken) providerConfig.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
     }
 
+    // modelAliasEnv sets ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL so the SDK's
+    // internal subagent spawning (Explore agents, etc.) uses the provider's tiered
+    // model mapping. On multi-model servers this enables lightweight subagents; on
+    // single-model servers (oMLX) it can cause thrashing if multiple models are
+    // configured — in that case only list one model in the provider config.
     return Object.assign(
       {},
       process.env,

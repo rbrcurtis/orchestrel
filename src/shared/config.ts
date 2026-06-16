@@ -37,6 +37,19 @@ export interface OrchestrelConfig {
   memoryUpsert?: MemoryUpsertConfig;
 }
 
+/**
+ * Map provider models to SDK model aliases (opus/sonnet/haiku).
+ *
+ * The Agent SDK uses these aliases when spawning subagents — e.g. Explore agents
+ * use the haiku alias for lightweight work. This tiered mapping is intentional:
+ * it lets providers offer a big model for primary work and smaller/faster models
+ * for subagents.
+ *
+ * CAVEAT: On single-model servers (like oMLX on a single Mac), having different
+ * models across tiers causes model thrashing — the server must unload the primary
+ * model to load a subagent model and vice versa. For such providers, configure
+ * only one model (all aliases will point to it via the fallback defaults).
+ */
 export function buildModelAliasEnv(models: Record<string, ModelDef>): Record<string, string> {
   const modelIds = Object.values(models).map((m) => m.modelID);
   const [first, second = first, third = second] = modelIds;
