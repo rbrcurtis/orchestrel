@@ -12,6 +12,17 @@ providers:
   # Omit baseUrl + apiKey to fall through to Claude Max OAuth (claude-agent-sdk default).
   anthropic:
     label: Anthropic
+    # aliases: maps semantic roles to model keys for SDK subagent spawning.
+    #   primary    → main agent model (ANTHROPIC_DEFAULT_OPUS_MODEL)
+    #   subagent   → SDK-spawned subagents (ANTHROPIC_DEFAULT_SONNET_MODEL)
+    #   lightweight → lightweight subagents like Explore (ANTHROPIC_DEFAULT_HAIKU_MODEL)
+    # If omitted, positional fallback applies (1st→opus, 2nd→sonnet, 3rd→haiku).
+    # If partial, unspecified aliases default to primary.
+    # On single-model servers (oMLX), set all aliases to the same key to avoid thrashing.
+    aliases:
+      primary: opus
+      subagent: sonnet
+      lightweight: haiku
     models:
       opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,              contextWindow: 1000000 }
       sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6,            contextWindow: 1000000 }
@@ -46,6 +57,18 @@ providers:
   #   models:
   #     reasoner: { label: "V3.2 Reasoner", modelID: deepseek-reasoner, contextWindow: 128000 }
   #     chat: { label: "V3.2 Chat", modelID: deepseek-chat, contextWindow: 128000 }
+
+  # Example: single-model local server (all aliases point to same model to avoid thrashing).
+  # omlx:
+  #   label: Local MLX
+  #   baseUrl: http://mac.local:8000
+  #   authToken: omlx
+  #   aliases:
+  #     primary: main
+  #     subagent: main
+  #     lightweight: main
+  #   models:
+  #     main: { label: "Qwen3 Coder", modelID: qwen3-coder-next, contextWindow: 262144 }
 
 # Optional: memory upsert service used by orcd at session end.
 # memoryUpsert:

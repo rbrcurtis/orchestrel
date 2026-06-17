@@ -35,7 +35,7 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
       ...(p.region ? { region: p.region } : {}),
       ...(p.profile ? { profile: p.profile } : {}),
       models: Object.values(p.models).map((m) => m.modelID),
-      modelAliasEnv: buildModelAliasEnv(p.models),
+      modelAliasEnv: buildModelAliasEnv(p.models, p.aliases),
     };
   }
   return {

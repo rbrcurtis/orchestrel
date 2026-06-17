@@ -335,9 +335,9 @@ export class OrcdServer {
 
     // modelAliasEnv sets ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL so the SDK's
     // internal subagent spawning (Explore agents, etc.) uses the provider's tiered
-    // model mapping. On multi-model servers this enables lightweight subagents; on
-    // single-model servers (oMLX) it can cause thrashing if multiple models are
-    // configured — in that case only list one model in the provider config.
+    // model mapping. Configured via the provider's `aliases` section in config.yaml
+    // (or positional fallback if aliases absent). Single-model servers should set
+    // all aliases to the same key to prevent model thrashing.
     return Object.assign(
       {},
       process.env,

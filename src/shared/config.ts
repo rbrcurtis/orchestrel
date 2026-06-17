@@ -20,6 +20,11 @@ export interface ProviderDef {
   region?: string;
   profile?: string;
   models: Record<string, ModelDef>;
+  aliases?: {
+    primary?: string;
+    subagent?: string;
+    lightweight?: string;
+  };
 }
 
 export interface MemoryUpsertConfig {
@@ -45,20 +50,40 @@ export interface OrchestrelConfig {
  * it lets providers offer a big model for primary work and smaller/faster models
  * for subagents.
  *
+ * If `aliases` is provided, resolves each semantic name (primary/subagent/lightweight)
+ * to the model key's modelID. Unspecified aliases default to `primary`.
+ * If `aliases` is absent, falls back to positional assignment from the models map.
+ *
  * CAVEAT: On single-model servers (like oMLX on a single Mac), having different
  * models across tiers causes model thrashing — the server must unload the primary
- * model to load a subagent model and vice versa. For such providers, configure
- * only one model (all aliases will point to it via the fallback defaults).
+ * model to load a subagent model and vice versa. For such providers, set all
+ * aliases to the same model key.
  */
-export function buildModelAliasEnv(models: Record<string, ModelDef>): Record<string, string> {
-  const modelIds = Object.values(models).map((m) => m.modelID);
-  const [first, second = first, third = second] = modelIds;
+export function buildModelAliasEnv(
+  models: Record<string, ModelDef>,
+  aliases?: { primary?: string; subagent?: string; lightweight?: string },
+): Record<string, string> {
   const env: Record<string, string> = {};
 
-  if (first) {
-    env.ANTHROPIC_DEFAULT_OPUS_MODEL = first;
-    env.ANTHROPIC_DEFAULT_SONNET_MODEL = second;
-    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = third;
+  if (aliases) {
+    const resolve = (key: string | undefined, fallback: string | undefined): string | undefined => {
+      const k = key ?? fallback;
+      return k ? models[k]?.modelID : undefined;
+    };
+    const primary = resolve(aliases.primary, Object.keys(models)[0]);
+    if (!primary) return env;
+    env.ANTHROPIC_DEFAULT_OPUS_MODEL = primary;
+    env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolve(aliases.subagent, aliases.primary) ?? primary;
+    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = resolve(aliases.lightweight, aliases.primary) ?? primary;
+  } else {
+    // Positional fallback: 1st→opus, 2nd→sonnet, 3rd→haiku
+    const modelIds = Object.values(models).map((m) => m.modelID);
+    const [first, second = first, third = second] = modelIds;
+    if (first) {
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = first;
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = second;
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = third;
+    }
   }
 
   return env;
@@ -97,6 +122,15 @@ export function parseConfig(
       };
     }
 
+    const rawAliases = p.aliases as Record<string, string> | undefined;
+    const aliases = rawAliases
+      ? {
+          ...(rawAliases.primary ? { primary: String(rawAliases.primary) } : {}),
+          ...(rawAliases.subagent ? { subagent: String(rawAliases.subagent) } : {}),
+          ...(rawAliases.lightweight ? { lightweight: String(rawAliases.lightweight) } : {}),
+        }
+      : undefined;
+
     providers[id] = {
       ...(p.type ? { type: String(p.type) as ProviderType } : {}),
       ...(p.label ? { label: String(p.label) } : {}),
@@ -106,6 +140,7 @@ export function parseConfig(
       ...(p.region ? { region: resolveEnvVars(String(p.region), env) } : {}),
       ...(p.profile ? { profile: resolveEnvVars(String(p.profile), env) } : {}),
       models,
+      ...(aliases ? { aliases } : {}),
     };
   }
 
