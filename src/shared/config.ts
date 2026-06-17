@@ -46,18 +46,15 @@ export interface OrchestrelConfig {
  * Map provider models to SDK model aliases (opus/sonnet/haiku).
  *
  * The Agent SDK uses these aliases when spawning subagents — e.g. Explore agents
- * use the haiku alias for lightweight work. This tiered mapping is intentional:
- * it lets providers offer a big model for primary work and smaller/faster models
- * for subagents.
+ * use the haiku alias for lightweight work. The session's own model is passed
+ * explicitly via `model:` so opus/primary is just a fallback for the env var.
  *
- * If `aliases` is provided, resolves each semantic name (primary/subagent/lightweight)
- * to the model key's modelID. Unspecified aliases default to `primary`.
+ * If `aliases` is provided, resolves semantic names (subagent/lightweight) to
+ * model key modelIDs. Opus always falls back to the first model in the map.
  * If `aliases` is absent, falls back to positional assignment from the models map.
  *
  * CAVEAT: On single-model servers (like oMLX on a single Mac), having different
- * models across tiers causes model thrashing — the server must unload the primary
- * model to load a subagent model and vice versa. For such providers, set all
- * aliases to the same model key.
+ * models across tiers causes model thrashing — set all aliases to the same key.
  */
 export function buildModelAliasEnv(
   models: Record<string, ModelDef>,
@@ -66,15 +63,14 @@ export function buildModelAliasEnv(
   const env: Record<string, string> = {};
 
   if (aliases) {
-    const resolve = (key: string | undefined, fallback: string | undefined): string | undefined => {
-      const k = key ?? fallback;
-      return k ? models[k]?.modelID : undefined;
+    const firstModelId = Object.values(models)[0]?.modelID;
+    if (!firstModelId) return env;
+    const resolveKey = (key: string | undefined): string => {
+      return (key ? models[key]?.modelID : undefined) ?? firstModelId;
     };
-    const primary = resolve(aliases.primary, Object.keys(models)[0]);
-    if (!primary) return env;
-    env.ANTHROPIC_DEFAULT_OPUS_MODEL = primary;
-    env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolve(aliases.subagent, aliases.primary) ?? primary;
-    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = resolve(aliases.lightweight, aliases.primary) ?? primary;
+    env.ANTHROPIC_DEFAULT_OPUS_MODEL = resolveKey(aliases.primary);
+    env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolveKey(aliases.subagent);
+    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = resolveKey(aliases.lightweight);
   } else {
     // Positional fallback: 1st→opus, 2nd→sonnet, 3rd→haiku
     const modelIds = Object.values(models).map((m) => m.modelID);

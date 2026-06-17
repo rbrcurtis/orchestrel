@@ -139,20 +139,20 @@ describe('buildModelAliasEnv', () => {
     });
   });
 
-  it('explicit aliases: unspecified aliases default to primary', () => {
+  it('explicit aliases: unspecified aliases default to first model', () => {
     const models = { big: model('big-id'), small: model('small-id') };
-    expect(buildModelAliasEnv(models, { primary: 'big' })).toEqual({
+    expect(buildModelAliasEnv(models, { subagent: 'small' })).toEqual({
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'big-id',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'big-id',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'small-id',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'big-id',
     });
   });
 
-  it('explicit aliases: primary defaults to first model key if omitted', () => {
+  it('explicit aliases: empty aliases object defaults all to first model', () => {
     const models = { alpha: model('alpha-id'), beta: model('beta-id') };
-    expect(buildModelAliasEnv(models, { subagent: 'beta' })).toEqual({
+    expect(buildModelAliasEnv(models, {})).toEqual({
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'alpha-id',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'beta-id',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'alpha-id',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'alpha-id',
     });
   });

@@ -13,11 +13,11 @@ providers:
   anthropic:
     label: Anthropic
     # aliases: maps semantic roles to model keys for SDK subagent spawning.
-    #   primary    → main agent model (ANTHROPIC_DEFAULT_OPUS_MODEL)
+    #   primary    → opus env var fallback (ANTHROPIC_DEFAULT_OPUS_MODEL)
     #   subagent   → SDK-spawned subagents (ANTHROPIC_DEFAULT_SONNET_MODEL)
     #   lightweight → lightweight subagents like Explore (ANTHROPIC_DEFAULT_HAIKU_MODEL)
     # If omitted, positional fallback applies (1st→opus, 2nd→sonnet, 3rd→haiku).
-    # If partial, unspecified aliases default to primary.
+    # If partial, unspecified aliases default to first model in the map.
     # On single-model servers (oMLX), set all aliases to the same key to avoid thrashing.
     aliases:
       primary: opus
