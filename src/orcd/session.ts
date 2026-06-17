@@ -245,6 +245,7 @@ export class OrcdSession {
         model: this.model,
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
+        canUseTool: async () => ({ behavior: 'allow' as const }),
         disallowedTools: [...DEFAULT_DISABLED_TOOLS],
         settingSources: ['user', 'project'],
         includePartialMessages: true,
