@@ -147,7 +147,7 @@ export function initOrcdRouter(
     }
 
     if (msg.type === 'session_exit') {
-      await handleSessionExit(cardId, msg.state, bus);
+      await handleSessionExit(cardId, msg.sessionId, msg.state, bus);
       untrackSession(msg.sessionId);
     }
 
@@ -162,6 +162,10 @@ export function initOrcdRouter(
       if (bgcMap.has(msg.sessionId)) {
         bgcMap.set(msg.newSessionId, cardId);
         bgcMap.delete(msg.sessionId);
+      }
+      if (pendingAsyncAfterTurnComplete.has(msg.sessionId)) {
+        pendingAsyncAfterTurnComplete.set(msg.newSessionId, pendingAsyncAfterTurnComplete.get(msg.sessionId) === true);
+        pendingAsyncAfterTurnComplete.delete(msg.sessionId);
       }
       console.log(`[oc:${cardId}] session forked: ${msg.sessionId.slice(0,8)} → ${msg.newSessionId.slice(0,8)}`);
     }
@@ -197,16 +201,28 @@ async function handleTurnComplete(
 
 async function handleSessionExit(
   cardId: number,
+  sessionId: string,
   status: 'completed' | 'errored' | 'stopped',
   bus: MessageBus = messageBus,
 ): Promise<void> {
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
 
-  if (card && card.column === 'running' && status !== 'errored') {
-    card.column = 'review';
-    card.updatedAt = new Date().toISOString();
-    await repo.save(card);
+  const hadPendingAsyncAfterTurn = pendingAsyncAfterTurnComplete.get(sessionId) === true;
+  pendingAsyncAfterTurnComplete.delete(sessionId);
+
+  if (card && status !== 'errored') {
+    if (card.column === 'running') {
+      card.column = 'review';
+      card.updatedAt = new Date().toISOString();
+      await repo.save(card);
+    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive') {
+      // Background/async work that kept the session alive after the turn
+      // finished — surface the card as ready so Ryan sees the new output.
+      card.column = 'ready';
+      card.updatedAt = new Date().toISOString();
+      await repo.save(card);
+    }
   }
 
   bus.publish(`card:${cardId}:exit`, {

@@ -197,6 +197,91 @@ describe('orcd message router', () => {
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
   });
 
+  it('moves non-archive cards to ready on session_exit after a pending-background turn completed', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 3,
+      hasPendingAsyncTasks: true,
+    });
+    expect(mockCards[0].column).toBe('review');
+
+    mockCards[0].column = 'done';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    expect(mockCards[0].column).toBe('ready');
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+  });
+
+  it('leaves archived cards archived when pending-background sessions exit', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 3,
+      hasPendingAsyncTasks: true,
+    });
+
+    mockCards[0].column = 'archive';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    expect(mockCards[0].column).toBe('archive');
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('does not move non-running cards to ready on ordinary foreground session_exit', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 3,
+      hasPendingAsyncTasks: false,
+    });
+
+    expect(mockCards[0].column).toBe('review');
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
+
   it('does not reset context tokens when background compaction starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
