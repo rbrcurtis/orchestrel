@@ -10,7 +10,6 @@ const sessionCardMap = new Map<string, number>();
 const bgcMap = new Map<string, number>();
 const pendingAsyncAfterTurnComplete = new Map<string, boolean>();
 
-
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
   sessionCardMap.set(sessionId, cardId);
