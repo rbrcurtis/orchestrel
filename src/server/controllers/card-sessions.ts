@@ -8,6 +8,8 @@ import type { OrcdClient } from '../orcd-client';
 
 const sessionCardMap = new Map<string, number>();
 const bgcMap = new Map<string, number>();
+const pendingAsyncAfterTurnComplete = new Map<string, boolean>();
+
 
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
@@ -60,7 +62,7 @@ export function initOrcdRouter(
       const sdkEvent = msg.event as Record<string, unknown>;
       cardId = routeBgcEvent(msg.sessionId, sdkEvent);
     }
-    if (cardId == null && msg.type === 'session_exit') {
+    if (cardId == null && (msg.type === 'session_exit' || msg.type === 'turn_complete')) {
       const card = await repo().findOneBy({ sessionId: msg.sessionId });
       if (card) {
         cardId = card.id;
@@ -118,6 +120,10 @@ export function initOrcdRouter(
       }
     }
 
+    if (msg.type === 'turn_complete') {
+      await handleTurnComplete(cardId, msg.sessionId, msg.hasPendingAsyncTasks, bus);
+    }
+
     if (msg.type === 'context_usage') {
       const card = await repo().findOneBy({ id: cardId });
       if (card) {
@@ -164,7 +170,30 @@ export function initOrcdRouter(
   console.log('[orcd-router] global handler registered');
 }
 
-// ── Session exit ─────────────────────────────────────────────────────────────
+// ── Turn complete / Session exit ─────────────────────────────────────────────
+
+async function handleTurnComplete(
+  cardId: number,
+  sessionId: string,
+  hasPendingAsyncTasks: boolean,
+  bus: MessageBus = messageBus,
+): Promise<void> {
+  pendingAsyncAfterTurnComplete.set(sessionId, hasPendingAsyncTasks);
+
+  const repo = AppDataSource.getRepository(Card);
+  const card = await repo.findOneBy({ id: cardId });
+  if (card && card.column === 'running') {
+    card.column = 'review';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
+  }
+
+  bus.publish(`card:${cardId}:sdk`, {
+    type: 'turn_complete',
+    session_id: sessionId,
+    has_pending_async_tasks: hasPendingAsyncTasks,
+  });
+}
 
 async function handleSessionExit(
   cardId: number,

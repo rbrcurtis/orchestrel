@@ -161,6 +161,41 @@ describe('orcd message router', () => {
     });
   });
 
+  it('moves running cards to review on turn_complete without untracking the live session', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 9,
+      hasPendingAsyncTasks: true,
+    });
+
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+    expect(sdkSpy).toHaveBeenCalledWith({
+      type: 'turn_complete',
+      session_id: 'sess-abc',
+      has_pending_async_tasks: true,
+    });
+
+    sdkSpy.mockClear();
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 10,
+      event: { type: 'assistant', message: 'still routed after turn complete' },
+    });
+
+    expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
+  });
 
   it('does not reset context tokens when background compaction starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
