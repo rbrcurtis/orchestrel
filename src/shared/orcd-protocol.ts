@@ -92,6 +92,13 @@ export interface SessionResultMessage {
   result: unknown;       // SDKResultMessage from Agent SDK
 }
 
+export interface TurnCompleteMessage {
+  type: 'turn_complete';
+  sessionId: string;
+  eventIndex: number;
+  hasPendingAsyncTasks: boolean;
+}
+
 export interface SessionErrorMessage {
   type: 'error';
   sessionId: string;
@@ -130,6 +137,7 @@ export type OrcdMessage =
   | SessionCreatedMessage
   | StreamEventMessage
   | SessionResultMessage
+  | TurnCompleteMessage
   | SessionErrorMessage
   | SessionExitMessage
   | ContextUsageMessage
