@@ -8,6 +8,7 @@ import type { OrcdClient } from '../orcd-client';
 
 const sessionCardMap = new Map<string, number>();
 const bgcMap = new Map<string, number>();
+const pendingAsyncAfterTurnComplete = new Map<string, boolean>();
 
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
@@ -60,7 +61,7 @@ export function initOrcdRouter(
       const sdkEvent = msg.event as Record<string, unknown>;
       cardId = routeBgcEvent(msg.sessionId, sdkEvent);
     }
-    if (cardId == null && msg.type === 'session_exit') {
+    if (cardId == null && (msg.type === 'session_exit' || msg.type === 'turn_complete')) {
       const card = await repo().findOneBy({ sessionId: msg.sessionId });
       if (card) {
         cardId = card.id;
@@ -118,6 +119,10 @@ export function initOrcdRouter(
       }
     }
 
+    if (msg.type === 'turn_complete') {
+      await handleTurnComplete(cardId, msg.sessionId, msg.hasPendingAsyncTasks, bus);
+    }
+
     if (msg.type === 'context_usage') {
       const card = await repo().findOneBy({ id: cardId });
       if (card) {
@@ -141,7 +146,7 @@ export function initOrcdRouter(
     }
 
     if (msg.type === 'session_exit') {
-      await handleSessionExit(cardId, msg.state, bus);
+      await handleSessionExit(cardId, msg.sessionId, msg.state, bus);
       untrackSession(msg.sessionId);
     }
 
@@ -157,6 +162,10 @@ export function initOrcdRouter(
         bgcMap.set(msg.newSessionId, cardId);
         bgcMap.delete(msg.sessionId);
       }
+      if (pendingAsyncAfterTurnComplete.has(msg.sessionId)) {
+        pendingAsyncAfterTurnComplete.set(msg.newSessionId, pendingAsyncAfterTurnComplete.get(msg.sessionId) === true);
+        pendingAsyncAfterTurnComplete.delete(msg.sessionId);
+      }
       console.log(`[oc:${cardId}] session forked: ${msg.sessionId.slice(0,8)} → ${msg.newSessionId.slice(0,8)}`);
     }
   });
@@ -164,20 +173,55 @@ export function initOrcdRouter(
   console.log('[orcd-router] global handler registered');
 }
 
-// ── Session exit ─────────────────────────────────────────────────────────────
+// ── Turn complete / Session exit ─────────────────────────────────────────────
+
+async function handleTurnComplete(
+  cardId: number,
+  sessionId: string,
+  hasPendingAsyncTasks: boolean,
+  bus: MessageBus = messageBus,
+): Promise<void> {
+  pendingAsyncAfterTurnComplete.set(sessionId, hasPendingAsyncTasks);
+
+  const repo = AppDataSource.getRepository(Card);
+  const card = await repo.findOneBy({ id: cardId });
+  if (card && card.column === 'running') {
+    card.column = 'review';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
+  }
+
+  bus.publish(`card:${cardId}:sdk`, {
+    type: 'turn_complete',
+    session_id: sessionId,
+    has_pending_async_tasks: hasPendingAsyncTasks,
+  });
+}
 
 async function handleSessionExit(
   cardId: number,
+  sessionId: string,
   status: 'completed' | 'errored' | 'stopped',
   bus: MessageBus = messageBus,
 ): Promise<void> {
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
 
-  if (card && card.column === 'running' && status !== 'errored') {
-    card.column = 'review';
-    card.updatedAt = new Date().toISOString();
-    await repo.save(card);
+  const hadPendingAsyncAfterTurn = pendingAsyncAfterTurnComplete.get(sessionId) === true;
+  pendingAsyncAfterTurnComplete.delete(sessionId);
+
+  if (card && status !== 'errored') {
+    if (card.column === 'running') {
+      card.column = 'review';
+      card.updatedAt = new Date().toISOString();
+      await repo.save(card);
+    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive') {
+      // Background/async work that kept the session alive after the turn
+      // finished — surface the card as ready so Ryan sees the new output.
+      card.column = 'ready';
+      card.updatedAt = new Date().toISOString();
+      await repo.save(card);
+    }
   }
 
   bus.publish(`card:${cardId}:exit`, {
@@ -291,15 +335,6 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
           `(worktree=${!!card.worktreeBranch}, project=${card.projectId})`,
       );
       await startCardSession(client, fullCard, bus);
-    }
-
-    // Card left running: cancel session
-    if (oldColumn === 'running' && newColumn !== 'running') {
-      const initState = await import('../init-state');
-      const client = initState.getOrcdClient();
-      if (card.sessionId) {
-        client?.cancel(card.sessionId);
-      }
     }
   });
 }

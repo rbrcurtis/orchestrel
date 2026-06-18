@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockCompact = vi.fn();
 const mockIsActive = vi.fn();
+const mockCancel = vi.fn();
 const mockFindOneBy = vi.fn();
 const mockEnsureWorktree = vi.fn();
 const mockTrackSession = vi.fn();
@@ -25,6 +26,7 @@ vi.mock('../../init-state', () => ({
   getOrcdClient: () => ({
     compact: mockCompact,
     isActive: mockIsActive,
+    cancel: mockCancel,
   }),
 }));
 
@@ -62,6 +64,35 @@ describe('handleAgentCompact', () => {
       contextWindow: 200_000,
       summarizeThreshold: 0.6,
     });
+  });
+});
+
+describe('handleAgentStop', () => {
+  beforeEach(() => {
+    mockCancel.mockReset();
+    mockFindOneBy.mockReset();
+  });
+
+  it('cancels the live session for the card', async () => {
+    const { handleAgentStop } = await import('./agents');
+    const callback = vi.fn();
+    mockFindOneBy.mockResolvedValue({ id: 42, sessionId: 'sess-abc' });
+
+    await handleAgentStop({ cardId: 42 }, callback);
+
+    expect(callback).toHaveBeenCalledWith({});
+    expect(mockCancel).toHaveBeenCalledWith('sess-abc');
+  });
+
+  it('does not cancel when the card has no session', async () => {
+    const { handleAgentStop } = await import('./agents');
+    const callback = vi.fn();
+    mockFindOneBy.mockResolvedValue({ id: 42, sessionId: null });
+
+    await handleAgentStop({ cardId: 42 }, callback);
+
+    expect(callback).toHaveBeenCalledWith({});
+    expect(mockCancel).not.toHaveBeenCalled();
   });
 });
 

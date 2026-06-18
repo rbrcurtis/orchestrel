@@ -143,6 +143,37 @@ describe('OrcdSession async Agent lifecycle', () => {
     }));
   });
 
+  it('emits turn_complete with no pending async tasks for an ordinary foreground turn', async () => {
+    events.push({
+      type: 'result',
+      subtype: 'success',
+      stop_reason: 'end_turn',
+      modelUsage: { test: { contextWindow: 200000 } },
+    });
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-foreground-turn',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    await session.run({ prompt: 'go' });
+
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'result',
+      sessionId: 'session-foreground-turn',
+    }));
+    expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'turn_complete',
+      sessionId: 'session-foreground-turn',
+      hasPendingAsyncTasks: false,
+    }));
+  });
+
   it('logs retry details and lets the Agent SDK retry HTTP 500+ provider errors', async () => {
     events.push({
       type: 'system',
@@ -320,6 +351,11 @@ describe('OrcdSession async Agent lifecycle', () => {
       await vi.waitFor(() => expect(received).toContain('result'));
       expect(received).not.toContain('session_exit');
       expect(payloads).toContainEqual(expect.objectContaining({
+        type: 'turn_complete',
+        sessionId: 'session',
+        hasPendingAsyncTasks: true,
+      }));
+      expect(payloads).toContainEqual(expect.objectContaining({
         type: 'stream_event',
         event: expect.objectContaining({
           type: 'task_started',
@@ -327,6 +363,8 @@ describe('OrcdSession async Agent lifecycle', () => {
           description: 'Implement remaining tasks',
         }),
       }));
+
+      expect(received.indexOf('turn_complete')).toBeGreaterThan(received.indexOf('result'));
 
       await appendFile(jsonlPath, JSON.stringify({
         type: 'queue-operation',
@@ -351,6 +389,8 @@ describe('OrcdSession async Agent lifecycle', () => {
           result: 'DONE',
         }),
       }));
+      expect(received.indexOf('turn_complete')).toBeGreaterThan(received.indexOf('result'));
+      expect(received.indexOf('turn_complete')).toBeLessThan(received.indexOf('session_exit'));
       expect(received.at(-1)).toBe('session_exit');
     } finally {
       await rm(dir, { recursive: true, force: true });

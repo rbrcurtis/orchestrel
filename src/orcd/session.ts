@@ -16,11 +16,12 @@ import type {
   SessionIdUpdateMessage,
   SessionResultMessage,
   StreamEventMessage,
+  TurnCompleteMessage,
 } from '../shared/orcd-protocol';
 import type { TaskNotificationEvent, TaskStartedEvent } from './async-task-tracker';
 
 export type SessionEventCallback = (
-  msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
+  msg: StreamEventMessage | SessionResultMessage | TurnCompleteMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
 ) => void;
 
 /**
@@ -327,6 +328,14 @@ export class OrcdSession {
             result: sdkEvent,
           };
           for (const cb of this.subscribers) cb(msg);
+
+          const turnMsg: TurnCompleteMessage = {
+            type: 'turn_complete',
+            sessionId: this.id,
+            eventIndex,
+            hasPendingAsyncTasks: this.asyncTasks.hasPending(),
+          };
+          for (const cb of this.subscribers) cb(turnMsg);
 
           if (lastInputTokens > 0) {
             const mu = this.isRecord(sdkRecord.modelUsage)
