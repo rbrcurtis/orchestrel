@@ -29,6 +29,7 @@ const mockRepo = {
   save: vi.fn(async (card: (typeof mockCards)[number]) => card),
 };
 const mockEnsureWorktree = vi.fn(async () => '/tmp/project/.worktrees/card-42');
+const mockGetOrcdClient = vi.hoisted(() => vi.fn());
 
 vi.mock('../models/index', () => ({
   AppDataSource: {
@@ -40,6 +41,9 @@ vi.mock('../models/Card', () => ({
 }));
 vi.mock('../sessions/worktree', () => ({
   ensureWorktree: mockEnsureWorktree,
+}));
+vi.mock('../init-state', () => ({
+  getOrcdClient: mockGetOrcdClient,
 }));
 
 // We test the routing concept: orcd messages for a tracked session
@@ -597,6 +601,91 @@ describe('reconcileRunningCards', () => {
     await reconcileRunningCards(client as never, bus);
 
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'early output' });
+    expect(mockCards[0].sessionId).toBe('sess-new');
+  });
+});
+
+describe('registerAutoStart', () => {
+  const mockCancel = vi.fn();
+  const mockIsActive = vi.fn();
+  const mockCreate = vi.fn();
+
+  beforeEach(() => {
+    mockCancel.mockReset();
+    mockIsActive.mockReset();
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue('sess-new');
+    mockEnsureWorktree.mockReset();
+    mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
+    mockRepo.save.mockClear();
+    mockGetOrcdClient.mockReset();
+    mockGetOrcdClient.mockReturnValue({
+      cancel: mockCancel,
+      isActive: mockIsActive,
+      create: mockCreate,
+    });
+    mockCards.splice(0, mockCards.length, {
+      id: 42,
+      sessionId: 'sess-abc',
+      column: 'running',
+      promptsSent: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
+      turnsCompleted: 0,
+      provider: 'anthropic',
+      model: 'sonnet',
+      summarizeThreshold: 0.6,
+      updatedAt: '',
+      save: vi.fn(),
+    });
+  });
+
+  it('does not cancel a live session when a card leaves running', async () => {
+    const { registerAutoStart } = await import('./card-sessions');
+    const bus = new MessageBus();
+    registerAutoStart(bus);
+
+    bus.publish('board:changed', {
+      card: mockCards[0],
+      oldColumn: 'running',
+      newColumn: 'review',
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  it('does not start a duplicate session when a card enters running with a live session', async () => {
+    const { registerAutoStart } = await import('./card-sessions');
+    const bus = new MessageBus();
+    registerAutoStart(bus);
+    mockIsActive.mockReturnValue(true);
+
+    bus.publish('board:changed', {
+      card: mockCards[0],
+      oldColumn: 'review',
+      newColumn: 'running',
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('starts a session when a card enters running without a live session', async () => {
+    const { registerAutoStart } = await import('./card-sessions');
+    const bus = new MessageBus();
+    registerAutoStart(bus);
+    mockCards[0].sessionId = null;
+    mockIsActive.mockReturnValue(false);
+
+    bus.publish('board:changed', {
+      card: mockCards[0],
+      oldColumn: 'backlog',
+      newColumn: 'running',
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCreate).toHaveBeenCalled();
     expect(mockCards[0].sessionId).toBe('sess-new');
   });
 });

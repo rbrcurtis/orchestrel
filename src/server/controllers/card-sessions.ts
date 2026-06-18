@@ -337,15 +337,6 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
       );
       await startCardSession(client, fullCard, bus);
     }
-
-    // Card left running: cancel session
-    if (oldColumn === 'running' && newColumn !== 'running') {
-      const initState = await import('../init-state');
-      const client = initState.getOrcdClient();
-      if (card.sessionId) {
-        client?.cancel(card.sessionId);
-      }
-    }
   });
 }
 
