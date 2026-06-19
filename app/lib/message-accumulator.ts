@@ -496,4 +496,53 @@ export class MessageAccumulator {
     this.historyPendingResultTimestamp = undefined;
     this.historyTurnCount = 0;
   }
+
+  serialize(): unknown[] {
+    return this.conversation.map((entry) => {
+      if (entry.kind !== 'blocks') return { ...entry };
+      return {
+        ...entry,
+        blocks: entry.blocks.map((b) => ({
+          type: b.type,
+          content: b.content,
+          id: b.id,
+          name: b.name,
+          input: b.input,
+          output: b.output,
+          complete: b.complete,
+        })),
+      };
+    });
+  }
+
+  hydrate(data: unknown[]): void {
+    const entries: ConversationEntry[] = [];
+    for (const raw of data) {
+      const entry = raw as ConversationEntry;
+      if (entry.kind === 'blocks') {
+        const blocks = (entry.blocks as unknown as Array<{
+          type: 'text' | 'thinking' | 'tool_use';
+          content: string;
+          id?: string;
+          name?: string;
+          input?: string;
+          output?: string;
+          complete: boolean;
+        }>).map((b) => new ContentBlock({
+          type: b.type,
+          content: b.content,
+          id: b.id,
+          name: b.name,
+          input: b.input,
+          output: b.output,
+          complete: b.complete,
+        }));
+        entries.push({ ...entry, blocks });
+      } else {
+        entries.push(entry);
+      }
+    }
+    this.conversation = entries;
+    this.currentBlocks = [];
+  }
 }
