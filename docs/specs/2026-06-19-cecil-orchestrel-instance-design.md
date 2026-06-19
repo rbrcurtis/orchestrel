@@ -10,9 +10,9 @@ Stand up a second, independent Orchestrel deployment owned by a new Linux user `
 - New Linux user `cecil` (password `greek`), home `/home/cecil`.
 - Separate clone of the repo at `/home/cecil/Code/orchestrel`, tracking `origin/main`.
 - Separate runtime state: own `data/`, `config.yaml`, `~/.orc/` socket.
-- Own service pair (`orcd-cecil`, `orchestrel-cecil`) on port `6196`.
-- Cloudflare tunnel ingress + Zero Trust Access (email OTP) for `cecil.orchestrel.com`, plus an un-gated `hmr.cecil.orchestrel.com` for Vite HMR.
-- Daily systemd timer that resets the clone to `origin/main`, reinstalls deps, and restarts Cecil's services.
+- Own service pair (`orcd-cecil`, `orchestrel-cecil`) on port `6196`, running a **production build** (`pnpm build` + `pnpm start`), not the HMR dev server.
+- Cloudflare tunnel ingress + Zero Trust Access (email OTP) for `cecil.orchestrel.com`. No HMR host needed (production build).
+- Daily systemd timer that resets the clone to `origin/main`, reinstalls deps, rebuilds, and restarts Cecil's services.
 - Cecil's three existing projects physically **moved** into `/home/cecil/Code/`.
 
 ## Why a separate clone (not a shared worktree)
@@ -29,9 +29,10 @@ A git worktree sharing Ryan's object store was considered, but worktrees require
 | orcd socket | `~/.orc/orcd.sock` (ryan home) | `~/.orc/orcd.sock` (cecil home) |
 | DB / data | `data/` in ryan checkout | `data/` in cecil checkout |
 | config.yaml | full provider set | Ray only |
+| Run mode | `pnpm dev` (HMR) | `pnpm build` + `pnpm start` (production) |
 | Services | `orcd`, `orchestrel` | `orcd-cecil`, `orchestrel-cecil` |
 | Public host | `orchestrel.com` | `cecil.orchestrel.com` |
-| HMR host | `hmr.orchestrel.com` | `hmr.cecil.orchestrel.com` |
+| HMR host | `hmr.orchestrel.com` | none (production build) |
 | Access OTP | `wednesday@gmail.com` | `cecilgcurtis@gmail.com` + `wednesday@gmail.com` |
 
 ## Components
@@ -45,7 +46,7 @@ A git worktree sharing Ryan's object store was considered, but worktrees require
 
 - Clone the Orchestrel repo to `/home/cecil/Code/orchestrel`, owned by `cecil`, tracking `origin/main`.
   - Source remote: the same `origin` Ryan's checkout uses (look it up via `git -C /home/ryan/Code/orchestrel remote get-url origin`).
-- Run `pnpm install` once after clone.
+- Run `pnpm install` then `pnpm build` once after clone (production build outputs to `build/client/`).
 - These files are gitignored and must be created in the clone (not provided by git): `config.yaml`, `data/`. `CLAUDE.md` is also gitignored — not required for runtime.
 
 ### 3. Cecil's `config.yaml`
@@ -91,15 +92,15 @@ Mirror Ryan's two units, adjusted for user/paths/port. `.service` files are giti
 `orchestrel-cecil.service`:
 - `User=cecil`
 - `WorkingDirectory=/home/cecil/Code/orchestrel`
-- `ExecStart=<cecil node bin>/pnpm dev`
-- `Environment=NODE_ENV=development`
+- `ExecStart=<cecil node bin>/pnpm start`
+- `Environment=NODE_ENV=production`
 - `Environment=CF_TEAM_DOMAIN=wednesday-access`
 - `Environment=ADMIN_EMAILS=cecilgcurtis@gmail.com,wednesday@gmail.com`
 - `Environment=PORT=6196`
-- `Environment=HMR_HOST=hmr.cecil.orchestrel.com`
 - `Environment=PATH=<cecil node bin>:/usr/local/bin:/usr/bin:/bin`
 - `Restart=on-failure`
 - `After=network.target orcd-cecil.service`, `Wants=orcd-cecil.service`
+- Requires a successful `pnpm build` beforehand (done at setup and on each sync).
 
 Enable both (auto-start on boot).
 
@@ -107,16 +108,14 @@ Enable both (auto-start on boot).
 
 Reuse the existing shared tunnel (`/etc/cloudflared/config.yml`, tunnel `c9e6bfd3-...`).
 
-- Add ingress rules (before the catch-all `http_status:404`):
+- Add ingress rule (before the catch-all `http_status:404`):
   - `cecil.orchestrel.com → http://localhost:6196`
-  - `hmr.cecil.orchestrel.com → http://localhost:6196`
 - `sudo systemctl restart cloudflared.service`.
 - DNS (orchestrel.com zone, via CF API; key at `/home/ryan/cloudflared/cloudflare.key`):
   - Proxied CNAME `cecil.orchestrel.com` → tunnel.
-  - Proxied CNAME `hmr.cecil.orchestrel.com` → tunnel.
 - Cloudflare Zero Trust Access app on `cecil.orchestrel.com`:
   - Email OTP policy allowing `cecilgcurtis@gmail.com` and `wednesday@gmail.com` (both already configured in CF).
-  - No Access app on `hmr.cecil.orchestrel.com` (Vite HMR WebSocket bypass, matching how `hmr.orchestrel.com` is left un-gated).
+- No HMR host is required since Cecil runs a production build.
 
 ### 7. Move Cecil's projects
 
@@ -153,11 +152,12 @@ fi
 
 git reset --hard origin/main
 pnpm install --frozen-lockfile
+pnpm build
 sudo systemctl restart orcd-cecil orchestrel-cecil
 ```
 
 - Wrap invocation with `flock -n /tmp/orchestrel-cecil-sync.lock` to prevent overlap.
-- No `pnpm build` step: the service runs `pnpm dev` (HMR), matching Ryan's setup.
+- `pnpm build` is required because the service runs the production build (`pnpm start`).
 - `cecil` needs passwordless sudo for exactly the restart command. Add a sudoers drop-in `/etc/sudoers.d/orchestrel-cecil`:
   - `cecil ALL=(root) NOPASSWD: /usr/bin/systemctl restart orcd-cecil orchestrel-cecil`
 
@@ -174,7 +174,6 @@ Systemd timer `orchestrel-cecil-sync.timer` (daily) + `orchestrel-cecil-sync.ser
 1. `sudo systemctl status orcd-cecil orchestrel-cecil` → both active.
 2. `curl -sS localhost:6196` returns the app.
 3. `https://cecil.orchestrel.com` prompts CF Access OTP; OTP to `cecilgcurtis@gmail.com` logs in.
-4. HMR works through the tunnel (edit a frontend file in Cecil's clone, see live update).
-5. Cecil's board shows his three projects; creating a card uses the Ray provider/model.
+4. Cecil's board shows his three projects; creating a card uses the Ray provider/model.
 6. Trigger sync manually (`sudo -u cecil sync-orchestrel-cecil`) and confirm reset + restart.
 7. Confirm Ryan's instance (`orchestrel.com`, port 6194) is unaffected.
