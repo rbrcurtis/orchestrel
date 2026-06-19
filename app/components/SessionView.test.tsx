@@ -8,6 +8,8 @@ import type { Card } from '../../src/shared/ws-protocol';
 const sessionStore = {
   getSession: vi.fn(),
   loadHistory: vi.fn(),
+  hydrateFromCache: vi.fn(() => Promise.resolve()),
+  startPersisting: vi.fn(),
   requestStatus: vi.fn(),
   sendMessage: vi.fn(),
   stopSession: vi.fn(),
