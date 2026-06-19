@@ -23,8 +23,14 @@ export async function ensureWorktree(card: Card): Promise<string> {
 
   if (proj.setupCommands) {
     console.log(`[session:${card.id}] running setup commands...`);
-    await runSetupCommands(wtPath, proj.setupCommands);
-    console.log(`[session:${card.id}] setup commands done`);
+    try {
+      await runSetupCommands(wtPath, proj.setupCommands);
+      console.log(`[session:${card.id}] setup commands done`);
+    } catch (err) {
+      // Setup failure must not block the session — the worktree exists and the
+      // agent can run (and fix setup itself). Log and continue.
+      console.error(`[session:${card.id}] setup commands failed (continuing):`, err instanceof Error ? err.message : String(err));
+    }
   }
   copyOpencodeConfig(proj.path, wtPath);
 

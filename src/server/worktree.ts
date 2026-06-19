@@ -1,5 +1,6 @@
 import { execFile, execFileSync } from 'child_process';
 import { existsSync, copyFileSync } from 'fs';
+import { dirname } from 'path';
 import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
@@ -50,11 +51,16 @@ export async function runSetupCommands(worktreePath: string, commands: string): 
     console.log(`[worktree:${worktreePath}] runSetupCommands: no commands, skipping`);
     return;
   }
-  await execFileAsync('/bin/bash', ['-lc', commands], {
+  // `bash -lc` sources login profiles which rebuild PATH from scratch and drop
+  // the nvm node dir the service runs with — so `yarn`/`npm` setup steps fail
+  // with `env: 'node': No such file or directory`. Re-export node's own bin dir
+  // inside the command so it survives the profile reset.
+  const nodeBin = dirname(process.execPath);
+  await execFileAsync('/bin/bash', ['-lc', `export PATH="${nodeBin}:/home/ryan/.local/bin:$PATH"; ${commands}`], {
     cwd: worktreePath,
     env: {
       ...process.env,
-      PATH: `/home/ryan/.local/bin:${process.env.PATH ?? ''}`,
+      PATH: `${nodeBin}:/home/ryan/.local/bin:${process.env.PATH ?? ''}`,
     },
     timeout: 120_000,
   });
