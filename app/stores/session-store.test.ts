@@ -3,6 +3,13 @@ import { SessionStore } from './session-store';
 import type { SdkMessage } from '../lib/sdk-types';
 import type { WsClient } from '../lib/ws-client';
 
+vi.mock('../lib/conversation-cache', () => ({
+  readConversation: vi.fn(),
+  writeConversation: vi.fn(() => Promise.resolve()),
+}));
+
+import { readConversation } from '../lib/conversation-cache';
+
 function startBlockingSubagent(store: SessionStore, cardId: number): void {
   store.ingestSdkMessage(cardId, {
     type: 'stream_event',
@@ -192,5 +199,33 @@ describe('SessionStore subagent lifecycle', () => {
       status: 'errored',
       bgcInProgress: false,
     });
+  });
+});
+
+describe('SessionStore hydrateFromCache', () => {
+  it('paints cached conversation when history not yet loaded', async () => {
+    vi.mocked(readConversation).mockResolvedValue([{ kind: 'user', content: 'cached' }]);
+    const store = new SessionStore();
+
+    await store.hydrateFromCache(1);
+
+    const s = store.getSession(1);
+    expect(s?.cacheHydrated).toBe(true);
+    expect(s?.accumulator.conversation).toEqual([
+      expect.objectContaining({ kind: 'user', content: 'cached' }),
+    ]);
+  });
+
+  it('does not clobber already-loaded history', async () => {
+    vi.mocked(readConversation).mockResolvedValue([{ kind: 'user', content: 'cached' }]);
+    const store = new SessionStore();
+    store.ingestHistory(1, []); // sets historyLoaded = true
+    store.getSession(1)!.accumulator.addUserMessage('live');
+
+    await store.hydrateFromCache(1);
+
+    expect(store.getSession(1)?.accumulator.conversation).toEqual([
+      expect.objectContaining({ kind: 'user', content: 'live' }),
+    ]);
   });
 });
