@@ -387,10 +387,20 @@ Expected: the three dirs exist under `/home/cecil/Code` owned by cecil; old `/ho
 
 > Schema additions/inserts via sqlite3 CLI are safe. NEVER run WAL checkpoint/journal commands.
 
-- [ ] **Step 1: Confirm Cecil's DB exists with a projects table**
+- [ ] **Step 1: Initialize Cecil's DB schema (the app does NOT auto-create base tables)**
+
+The app uses TypeORM with `synchronize: false` and assumes the base `projects`/`cards` tables already exist (it only runs idempotent ALTER/CREATE-IF-NOT-EXISTS migrations). A fresh `data/orchestrel.db` is a 0-byte file and `orchestrel-cecil` will crash-loop with `no such table: projects` until the schema is loaded. Load Ryan's current production schema (structure only, no rows) into Cecil's empty DB:
+
+```bash
+sqlite3 /home/ryan/Code/orchestrel/data/orchestrel.db .schema | grep -v 'CREATE TABLE sqlite_sequence' > /tmp/orc-schema.sql
+chmod 644 /tmp/orc-schema.sql
+sudo -u cecil bash -lc 'sqlite3 ~/Code/orchestrel/data/orchestrel.db < /tmp/orc-schema.sql'
+rm -f /tmp/orc-schema.sql
+sudo systemctl restart orchestrel-cecil
+```
 
 Run: `sudo -u cecil bash -lc 'sqlite3 ~/Code/orchestrel/data/orchestrel.db ".tables"'`
-Expected: includes `projects` and `cards`. (The app creates these on first boot in Task 7. If missing, restart `orchestrel-cecil` and recheck.)
+Expected: `cards  project_users  projects  users`.
 
 - [ ] **Step 2: Insert the three projects into Cecil's DB**
 
