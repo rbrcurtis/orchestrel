@@ -72,6 +72,8 @@ export const SessionView = observer(function SessionView({
   // immediately (avoiding the race where messages arrive before sessionId is known).
   // Called again once sessionId is available to actually load history.
   useEffect(() => {
+    sessionStore.hydrateFromCache(cardId).catch(() => {});
+    sessionStore.startPersisting(cardId);
     const sid = sessionStoreId ?? sessionId;
     if (sid && session?.historyLoaded) return; // history already loaded — nothing to do
     sessionStore.loadHistory(cardId, sid ?? undefined);
