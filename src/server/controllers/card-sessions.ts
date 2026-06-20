@@ -215,10 +215,10 @@ async function handleSessionExit(
       card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await repo.save(card);
-    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive') {
+    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive' && card.column !== 'review') {
       // Background/async work that kept the session alive after the turn
-      // finished — surface the card as ready so Ryan sees the new output.
-      card.column = 'ready';
+      // finished — surface the card in review so Ryan sees the new output.
+      card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await repo.save(card);
     }

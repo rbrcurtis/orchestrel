@@ -201,7 +201,7 @@ describe('orcd message router', () => {
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
   });
 
-  it('moves non-archive cards to ready on session_exit after a pending-background turn completed', async () => {
+  it('surfaces non-archive cards in review on session_exit after a pending-background turn completed', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
@@ -226,7 +226,7 @@ describe('orcd message router', () => {
       state: 'completed',
     });
 
-    expect(mockCards[0].column).toBe('ready');
+    expect(mockCards[0].column).toBe('review');
     expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
   });
 
