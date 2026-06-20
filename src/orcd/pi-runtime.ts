@@ -97,6 +97,14 @@ function registerOrchestrelProvider(
   modelRegistry.registerProvider(providerId, cfg);
 }
 
+async function getSessionPath(cwd: string, sessionId: string): Promise<string | undefined> {
+  const sessions = await SessionManager.list(cwd);
+  for (const session of sessions) {
+    if (session.id === sessionId && typeof session.path === 'string') return session.path;
+  }
+  return undefined;
+}
+
 export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): Promise<PiRuntimeSession> {
   const agentDir = getAgentDir();
   const authStorage = AuthStorage.create(`${agentDir}/auth.json`);
@@ -108,9 +116,14 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   const model = modelRegistry.find(providerId, modelId);
   if (!model) throw new Error(`Pi model not found: ${providerId}/${opts.modelId}`);
 
-  const sessionManager = SessionManager.create(opts.cwd);
+  let sessionManager = SessionManager.create(opts.cwd);
   const requestedSessionId = opts.sessionId;
-  if (requestedSessionId) sessionManager.newSession({ id: requestedSessionId });
+  if (requestedSessionId) {
+    const sessionPath = await getSessionPath(opts.cwd, requestedSessionId);
+    sessionManager = sessionPath
+      ? SessionManager.open(sessionPath, undefined, opts.cwd)
+      : SessionManager.create(opts.cwd, undefined, { id: requestedSessionId });
+  }
 
   const result = await createAgentSession({
     cwd: opts.cwd,

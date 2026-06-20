@@ -4,7 +4,7 @@ import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { OrcdServer } from '../socket-server';
 import { OrcdSession, type SessionEventCallback } from '../session';
-import type { ContextUsageMessage, SessionResultMessage, SessionExitMessage, CompactAction } from '../../shared/orcd-protocol';
+import type { ContextUsageMessage, SessionResultMessage, SessionExitMessage, CompactAction, StreamEventMessage } from '../../shared/orcd-protocol';
 
 async function createSkillProject(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'orchestrel-skill-project-'));
@@ -18,7 +18,7 @@ async function createSkillProject(): Promise<string> {
 
 function createClient() {
   return {
-    socket: { writable: true, write: vi.fn() } as never,
+    socket: { writable: true, write: vi.fn() },
     subscriptions: new Map(),
   };
 }
@@ -155,6 +155,54 @@ describe('OrcdServer prompt passthrough', () => {
 
   it('passes slash prompts through unchanged on follow-up messages', async () => {
     expect(await collectPromptFromMessage('/ask hello')).toBe('/ask hello');
+  });
+});
+
+describe('OrcdServer subscriptions', () => {
+  it('does not replay the full buffer on duplicate live subscribes without a cursor', () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'session-subscribe',
+    });
+    server.store.add(session);
+    session['emitSyntheticSystemEvent']('compact_boundary');
+
+    server['handleAction'](client, { action: 'subscribe', sessionId: session.id });
+    const writesAfterFirst = client.socket.write.mock.calls.length;
+    expect(writesAfterFirst).toBe(1);
+
+    server['handleAction'](client, { action: 'subscribe', sessionId: session.id });
+    expect(client.socket.write).toHaveBeenCalledTimes(writesAfterFirst);
+  });
+
+  it('replays only events after the requested cursor for duplicate subscribes', () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'session-subscribe-cursor',
+    });
+    server.store.add(session);
+    session['emitSyntheticSystemEvent']('compact_boundary');
+    session['emitSyntheticSystemEvent']('bgc_started');
+
+    server['handleAction'](client, { action: 'subscribe', sessionId: session.id });
+    client.socket.write.mockClear();
+
+    server['handleAction'](client, { action: 'subscribe', sessionId: session.id, afterEventIndex: 0 });
+
+    expect(client.socket.write).toHaveBeenCalledTimes(1);
+    const line = client.socket.write.mock.calls[0]?.[0];
+    expect(typeof line).toBe('string');
+    const msg = JSON.parse(line as string) as StreamEventMessage;
+    expect(msg.eventIndex).toBe(1);
+    expect(msg.event).toEqual(expect.objectContaining({ subtype: 'bgc_started' }));
   });
 });
 

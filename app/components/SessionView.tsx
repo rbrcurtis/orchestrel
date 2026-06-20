@@ -41,7 +41,10 @@ export const SessionView = observer(function SessionView({
   const card = cardStore.getCard(cardId);
   const conversation = session?.accumulator.conversation ?? [];
   const initialPrompt = card?.description.trim() ?? '';
-  const visibleConversation = initialPrompt
+  const hasHistoryInitialPrompt = initialPrompt
+    ? conversation.some((entry) => entry.kind === 'user' && entry.content === initialPrompt)
+    : false;
+  const visibleConversation = initialPrompt && !hasHistoryInitialPrompt
     ? [{ kind: 'user' as const, content: initialPrompt, timestamp: card ? new Date(card.createdAt).getTime() : undefined }, ...conversation]
     : conversation;
   const currentBlocks = session?.accumulator.currentBlocks ?? [];

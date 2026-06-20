@@ -74,7 +74,18 @@ export function initOrcdRouter(
 
     if (msg.type === 'stream_event') {
       const sdkEvent = msg.event as Record<string, unknown>;
-      bus.publish(`card:${cardId}:sdk`, sdkEvent);
+      if (
+        sdkEvent.type === 'message_start' ||
+        sdkEvent.type === 'content_block_start' ||
+        sdkEvent.type === 'content_block_delta' ||
+        sdkEvent.type === 'content_block_stop' ||
+        sdkEvent.type === 'message_stop' ||
+        sdkEvent.type === 'message_delta'
+      ) {
+        bus.publish(`card:${cardId}:sdk`, { type: 'stream_event', event: sdkEvent });
+      } else {
+        bus.publish(`card:${cardId}:sdk`, sdkEvent);
+      }
 
       if (sdkEvent.type === 'system') {
         const sys = sdkEvent as { subtype?: string; session_id?: string };
@@ -392,6 +403,7 @@ async function startCardSession(client: OrcdClient, card: Card): Promise<string>
   const cwd = await ensureWorktree(card);
   const prompt = card.sessionId ? '' : card.description ?? '';
 
+  const startedFromDescription = !card.sessionId;
   const sessionId = await client.create({
     prompt,
     cwd,
@@ -403,6 +415,7 @@ async function startCardSession(client: OrcdClient, card: Card): Promise<string>
   });
 
   card.sessionId = sessionId;
+  if (startedFromDescription) card.promptsSent = (card.promptsSent ?? 0) + 1;
   card.updatedAt = new Date().toISOString();
   await repo().save(card);
 

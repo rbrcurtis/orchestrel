@@ -2,13 +2,46 @@ import { describe, expect, it } from 'vitest';
 import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload } from '../pi-events';
 
 describe('pi event boundary mapper', () => {
-  it('passes ordinary Pi events through unchanged', () => {
+  it('passes unsupported ordinary Pi events through unchanged', () => {
     const event = {
-      type: 'message_update',
-      message: { id: 'msg-1', text: 'hello' },
+      type: 'agent_start',
     };
 
     expect(mapPiEventToOrcdPayload(event)).toBe(event);
+  });
+
+  it('maps Pi assistant text updates to Claude-shaped stream events', () => {
+    expect(mapPiEventToOrcdPayload({
+      type: 'message_start',
+      message: { role: 'assistant', content: [] },
+    })).toEqual({
+      type: 'message_start',
+      message: { role: 'assistant', content: [] },
+    });
+    expect(mapPiEventToOrcdPayload({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_start', contentIndex: 0 },
+    })).toEqual({
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'text', text: '' },
+    });
+    expect(mapPiEventToOrcdPayload({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'hello' },
+    })).toEqual({
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'text_delta', text: 'hello' },
+    });
+    expect(mapPiEventToOrcdPayload({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_end', contentIndex: 0 },
+    })).toEqual({ type: 'content_block_stop', index: 0 });
+    expect(mapPiEventToOrcdPayload({
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hello' }] },
+    })).toEqual({ type: 'message_stop' });
   });
 
   it('maps turn_end to result-like payload', () => {

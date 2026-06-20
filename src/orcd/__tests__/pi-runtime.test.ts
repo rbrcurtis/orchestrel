@@ -11,7 +11,8 @@ const mockSetRuntimeApiKey = vi.fn();
 const mockAuthStorageCreate = vi.fn();
 const mockModelRegistryCreate = vi.fn();
 const mockSessionManagerCreate = vi.fn();
-const mockSessionManagerNewSession = vi.fn();
+const mockSessionManagerList = vi.fn();
+const mockSessionManagerOpen = vi.fn();
 const mockGetAgentDir = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
@@ -23,6 +24,8 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
   },
   SessionManager: {
     create: mockSessionManagerCreate,
+    list: mockSessionManagerList,
+    open: mockSessionManagerOpen,
   },
   createAgentSession: mockCreateAgentSession,
   getAgentDir: mockGetAgentDir,
@@ -51,7 +54,9 @@ describe('createPiRuntimeSession', () => {
     mockAuthStorageCreate.mockReturnValue({ kind: 'auth-storage', setRuntimeApiKey: mockSetRuntimeApiKey });
     mockFind.mockReturnValue({ provider: 'anthropic', id: 'claude-sonnet-4-6' });
     mockModelRegistryCreate.mockReturnValue({ find: mockFind, registerProvider: vi.fn() });
-    mockSessionManagerCreate.mockReturnValue({ kind: 'session-manager', newSession: mockSessionManagerNewSession });
+    mockSessionManagerCreate.mockReturnValue({ kind: 'session-manager-create' });
+    mockSessionManagerList.mockResolvedValue([]);
+    mockSessionManagerOpen.mockReturnValue({ kind: 'session-manager-open' });
     mockCreateAgentSession.mockResolvedValue({ session: makeSession() });
     mockPrompt.mockResolvedValue(undefined);
     mockAbort.mockResolvedValue(undefined);
@@ -80,13 +85,13 @@ describe('createPiRuntimeSession', () => {
       agentDir: '/home/ryan/.pi/agent',
       authStorage,
       modelRegistry: { find: mockFind, registerProvider: expect.any(Function) },
-      sessionManager: { kind: 'session-manager', newSession: mockSessionManagerNewSession },
+      sessionManager: { kind: 'session-manager-create' },
       model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
       thinkingLevel: 'xhigh',
     });
   });
 
-  it('pins Pi session storage to the orcd session id when provided', async () => {
+  it('pins new Pi session storage to the orcd session id when provided', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
 
     const session = await createPiRuntimeSession({
@@ -96,9 +101,31 @@ describe('createPiRuntimeSession', () => {
       sessionId: 'orcd-session-1',
     });
 
-    expect(mockSessionManagerCreate).toHaveBeenCalledWith('/repo');
-    expect(mockSessionManagerNewSession).toHaveBeenCalledWith({ id: 'orcd-session-1' });
+    expect(mockSessionManagerList).toHaveBeenCalledWith('/repo');
+    expect(mockSessionManagerCreate).toHaveBeenLastCalledWith('/repo', undefined, { id: 'orcd-session-1' });
+    expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionManager: { kind: 'session-manager-create' },
+    }));
     expect(session.id).toBe('pi-session-1');
+  });
+
+  it('opens existing Pi session storage when resuming by orcd session id', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    mockSessionManagerList.mockResolvedValue([
+      { id: 'orcd-session-1', path: '/home/ryan/.pi/agent/sessions/repo/session.jsonl' },
+    ]);
+
+    await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      sessionId: 'orcd-session-1',
+    });
+
+    expect(mockSessionManagerOpen).toHaveBeenCalledWith('/home/ryan/.pi/agent/sessions/repo/session.jsonl', undefined, '/repo');
+    expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionManager: { kind: 'session-manager-open' },
+    }));
   });
 
   it('resolves app aliases for built-in Anthropic passthrough providers without re-registering them', async () => {

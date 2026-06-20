@@ -60,7 +60,7 @@ describe('getPiSessionMessages', () => {
       },
       {
         type: 'assistant',
-        uuid: 'pi-session-1-pi-history-1',
+        uuid: 'pi-session-1-pi-history-2',
         session_id: 'pi-session-1',
         parent_tool_use_id: null,
         timestamp: 2,
@@ -140,6 +140,34 @@ describe('getPiSessionMessages', () => {
         timestamp: undefined,
         message: { role: 'user', content: 'hello' },
       },
+    ]);
+  });
+
+  it('merges duplicate Pi session files with the same session id in chronological order', async () => {
+    const { getPiSessionMessages } = await import('./pi-session-history');
+    mockList.mockResolvedValue([
+      { id: 'pi-session-1', path: '/home/ryan/.pi/agent/sessions/repo/newer.jsonl' },
+      { id: 'pi-session-1', path: '/home/ryan/.pi/agent/sessions/repo/older.jsonl' },
+    ]);
+    mockOpen
+      .mockReturnValueOnce({
+        buildSessionContext: () => ({
+          messages: [{ role: 'user', content: 'older turn', timestamp: 1 }],
+        }),
+      })
+      .mockReturnValueOnce({
+        buildSessionContext: () => ({
+          messages: [{ role: 'assistant', content: [{ type: 'text', text: 'newer turn' }], timestamp: 2 }],
+        }),
+      });
+
+    const messages = await getPiSessionMessages('pi-session-1', '/repo');
+
+    expect(mockOpen).toHaveBeenNthCalledWith(1, '/home/ryan/.pi/agent/sessions/repo/older.jsonl', undefined, '/repo');
+    expect(mockOpen).toHaveBeenNthCalledWith(2, '/home/ryan/.pi/agent/sessions/repo/newer.jsonl', undefined, '/repo');
+    expect(messages).toEqual([
+      expect.objectContaining({ type: 'user', message: { role: 'user', content: 'older turn' } }),
+      expect.objectContaining({ type: 'assistant', message: expect.objectContaining({ content: [{ type: 'text', text: 'newer turn' }] }) }),
     ]);
   });
 

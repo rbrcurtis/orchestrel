@@ -220,8 +220,9 @@ export class OrcdServer {
       console.log(
         `[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`,
       );
-      // Already subscribed — just replay from requested index
-      session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
+      if (action.afterEventIndex !== undefined) {
+        session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
+      }
       return;
     }
 

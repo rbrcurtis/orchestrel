@@ -45,8 +45,9 @@ function toHistoryMessage(message: unknown, sessionId: string, idx: number): unk
   if (!isRecord(message)) return undefined;
 
   const timestamp = getNumber(message.timestamp);
+  const uuidIndex = message.role === 'assistant' ? idx + 1 : idx;
   const base = {
-    uuid: makeUuid(sessionId, idx),
+    uuid: makeUuid(sessionId, uuidIndex),
     session_id: sessionId,
     parent_tool_use_id: null,
     timestamp,
@@ -128,13 +129,14 @@ function getMessagesFromContext(ctx: unknown, sessionId: string): unknown[] {
   return messages;
 }
 
-function getSessionPath(sessions: unknown[], sessionId: string): string | undefined {
+function getSessionPaths(sessions: unknown[], sessionId: string): string[] {
+  const paths: string[] = [];
   for (const session of sessions) {
     if (!isRecord(session)) continue;
     if (session.id !== sessionId) continue;
-    return typeof session.path === 'string' ? session.path : undefined;
+    if (typeof session.path === 'string') paths.push(session.path);
   }
-  return undefined;
+  return paths;
 }
 
 export async function getPiSessionMessages(sessionId: string, cwd: string): Promise<unknown[]> {
@@ -142,11 +144,13 @@ export async function getPiSessionMessages(sessionId: string, cwd: string): Prom
     const { SessionManager } = await import('@earendil-works/pi-coding-agent');
 
     const sessions = await SessionManager.list(cwd);
-    const sessionPath = getSessionPath(sessions, sessionId);
-    if (!sessionPath) return [];
-
-    const manager = SessionManager.open(sessionPath, undefined, cwd);
-    return getMessagesFromContext(manager.buildSessionContext(), sessionId);
+    const sessionPaths = getSessionPaths(sessions, sessionId);
+    const messages: unknown[] = [];
+    for (const sessionPath of sessionPaths.reverse()) {
+      const manager = SessionManager.open(sessionPath, undefined, cwd);
+      messages.push(...getMessagesFromContext(manager.buildSessionContext(), sessionId));
+    }
+    return messages;
   } catch {
     return [];
   }

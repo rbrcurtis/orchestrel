@@ -14,10 +14,11 @@ type MockCard = {
   summarizeThreshold: number;
   updatedAt: string;
   save: ReturnType<typeof vi.fn>;
+  description: string;
 };
 
 const mockCards: MockCard[] = [
-  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn() },
+  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn(), description: '' },
 ];
 const mockRepo = {
   findOneBy: vi.fn(async (where: { id?: number; sessionId?: string }) => {
@@ -69,6 +70,7 @@ describe('orcd message router', () => {
       summarizeThreshold: 0.6,
       updatedAt: '',
       save: vi.fn(),
+      description: '',
     });
     mockRepo.findOneBy.mockClear();
     mockRepo.find.mockClear();
@@ -96,6 +98,28 @@ describe('orcd message router', () => {
 
     await new Promise((r) => setTimeout(r, 10));
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'hello' });
+  });
+
+  it('wraps Claude-shaped stream events before publishing to the SDK bus topic', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+
+    handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hello' } },
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sdkSpy).toHaveBeenCalledWith({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hello' } },
+    });
   });
 
   it('ignores messages for untracked sessions', async () => {
@@ -378,6 +402,7 @@ describe('reconcileRunningCards', () => {
       contextWindow: 200000,
       summarizeThreshold: 0.6,
     });
+    expect(mockCards[0].promptsSent).toBe(1);
     expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
   });

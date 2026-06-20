@@ -23,6 +23,8 @@ const args = arg(
     '-h': '--help',
     '--config': String,
     '--print-env': Boolean,
+    '--prompt': String,
+    '-p': '--prompt',
   },
   {
     permissive: true,
@@ -36,12 +38,13 @@ function usage() {
     'Examples:',
     '  orc trackable auto',
     '  orc --resume abc123 trackable auto',
-    '  orc trackable auto "what time is it?"',
+    '  orc -p "what time is it?" trackable auto',
     '  orc --print-env trackable auto',
     '',
     'Options:',
     '  --config <path>   Override config.yaml path',
     '  --print-env       Print resolved env/model and exit',
+    '  -p, --prompt      Run a one-shot prompt through Pi',
     '  -h, --help        Show help',
     '',
     'Environment:',
@@ -62,6 +65,7 @@ function main() {
   stripSkipPermissionsFlag(passthroughArgs);
   const resumeTarget = extractResumeTarget(passthroughArgs);
 
+  const prompt = args['--prompt'];
   const resolved = extractProviderAndModel(config, passthroughArgs, resumeTarget);
   const provider = config.providers[resolved.providerId];
   if (!provider) {
@@ -74,7 +78,7 @@ function main() {
   }
 
   rejectConflictingArgs(passthroughArgs);
-  const piArgs = buildPiArgs(model.modelID, passthroughArgs);
+  const piArgs = buildPiArgs(model.modelID, passthroughArgs, prompt);
 
   const env = buildPiEnv(provider);
   if (args['--print-env']) {
@@ -158,6 +162,14 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
       }
     }
 
+    const trailingModel = args['--prompt'] ? findPromptTrailingModel(provider, passthroughArgs, i) : null;
+    if (trailingModel) {
+      return {
+        providerId: maybeProvider,
+        modelAlias: trailingModel,
+      };
+    }
+
     passthroughArgs.splice(i, 1);
     return {
       providerId: maybeProvider,
@@ -181,6 +193,16 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
   }
 
   return resolveDefaultProviderAndModel(config);
+}
+
+function findPromptTrailingModel(provider, passthroughArgs, providerIndex) {
+  const lastIndex = passthroughArgs.length - 1;
+  if (lastIndex <= providerIndex) return null;
+  const modelAlias = tryResolveModelAlias(provider, passthroughArgs[lastIndex]);
+  if (!modelAlias) return null;
+  passthroughArgs.splice(lastIndex, 1);
+  passthroughArgs.splice(providerIndex, 1);
+  return modelAlias;
 }
 
 function resolveDefaultProviderAndModel(config) {
@@ -340,7 +362,8 @@ function buildPiEnv(provider) {
   return env;
 }
 
-function buildPiArgs(modelId, passthroughArgs) {
+function buildPiArgs(modelId, passthroughArgs, prompt) {
+  if (prompt !== undefined) return ['--model', modelId, '--mode', 'json', '-p', prompt, ...passthroughArgs];
   return ['--model', modelId, ...passthroughArgs];
 }
 
