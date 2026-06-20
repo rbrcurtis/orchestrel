@@ -201,6 +201,26 @@ describe('SessionView initial prompt', () => {
 
     expect(screen.getByTestId('conversation').textContent).toBe('Build the project launchpad\nFollow up prompt');
   });
+
+  it('does not render the description twice when history already starts with it', () => {
+    setDefaultState({
+      card: { description: 'Build the project launchpad' },
+      session: {
+        accumulator: {
+          conversation: [
+            { kind: 'user', content: 'Build the project launchpad' },
+            { kind: 'user', content: 'Follow up prompt' },
+          ],
+          currentBlocks: [],
+          subagents: new Map(),
+        },
+      },
+    });
+
+    renderSessionView();
+
+    expect(screen.getByTestId('conversation').textContent).toBe('Build the project launchpad\nFollow up prompt');
+  });
 });
 
 describe('SessionView prompt submission', () => {
