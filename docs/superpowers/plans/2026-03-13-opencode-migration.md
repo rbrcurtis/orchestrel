@@ -1346,7 +1346,7 @@ Expected: OpenCode TUI connects to the running server
 
 - [ ] **Step 5: Test session via Orchestrel UI**
 
-1. Open `dispatch.rbrcurtis.com` (or `localhost:6194`)
+1. Open `localhost:6194`
 2. Create a card on an Anthropic project
 3. Move to running — should start an OpenCode session
 4. Verify messages stream to the SessionView

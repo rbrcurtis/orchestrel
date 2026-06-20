@@ -111,7 +111,6 @@ export class MessageAccumulator {
   conversation: ConversationEntry[] = [];
   currentBlocks: ContentBlock[] = [];
   subagents = new Map<string, SubagentState>();
-  retryAfterMs: number | null = null;
   private historyPendingResultTimestamp?: number;
   private historyTurnCount = 0;
   private blockingSubagentToolIds = new Map<string, string>();
@@ -158,9 +157,6 @@ export class MessageAccumulator {
       case 'task_notification':
         this.handleTaskNotification(msg);
         break;
-      case 'rate_limit':
-        this.retryAfterMs = msg.retry_after_ms;
-        break;
       case 'system':
         if (msg.subtype === 'init') {
           this.finalizeBlocks();
@@ -179,7 +175,6 @@ export class MessageAccumulator {
         this.conversation.push({ kind: 'error', message: msg.message, timestamp: msg.timestamp });
         break;
       case 'status':
-        if (this.retryAfterMs !== null) this.retryAfterMs = null;
         break;
     }
   }
@@ -358,7 +353,6 @@ export class MessageAccumulator {
 
   private handleResult(msg: SdkResultMessage): void {
     this.finalizeBlocks();
-    this.retryAfterMs = null;
     this.conversation.push({
       kind: 'result',
       timestamp: msg.timestamp ?? Date.now(),
@@ -499,8 +493,56 @@ export class MessageAccumulator {
     this.conversation = [];
     this.currentBlocks = [];
     this.clearSubagents();
-    this.retryAfterMs = null;
     this.historyPendingResultTimestamp = undefined;
     this.historyTurnCount = 0;
+  }
+
+  serialize(): unknown[] {
+    return this.conversation.map((entry) => {
+      if (entry.kind !== 'blocks') return { ...entry };
+      return {
+        ...entry,
+        blocks: entry.blocks.map((b) => ({
+          type: b.type,
+          content: b.content,
+          id: b.id,
+          name: b.name,
+          input: b.input,
+          output: b.output,
+          complete: b.complete,
+        })),
+      };
+    });
+  }
+
+  hydrate(data: unknown[]): void {
+    const entries: ConversationEntry[] = [];
+    for (const raw of data) {
+      const entry = raw as ConversationEntry;
+      if (entry.kind === 'blocks') {
+        const blocks = (entry.blocks as unknown as Array<{
+          type: 'text' | 'thinking' | 'tool_use';
+          content: string;
+          id?: string;
+          name?: string;
+          input?: string;
+          output?: string;
+          complete: boolean;
+        }>).map((b) => new ContentBlock({
+          type: b.type,
+          content: b.content,
+          id: b.id,
+          name: b.name,
+          input: b.input,
+          output: b.output,
+          complete: b.complete,
+        }));
+        entries.push({ ...entry, blocks });
+      } else {
+        entries.push(entry);
+      }
+    }
+    this.conversation = entries;
+    this.currentBlocks = [];
   }
 }

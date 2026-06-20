@@ -41,10 +41,12 @@ export const SessionView = observer(function SessionView({
   const card = cardStore.getCard(cardId);
   const conversation = session?.accumulator.conversation ?? [];
   const initialPrompt = card?.description.trim() ?? '';
-  const hasHistoryInitialPrompt = initialPrompt
-    ? conversation.some((entry) => entry.kind === 'user' && entry.content === initialPrompt)
-    : false;
-  const visibleConversation = initialPrompt && !hasHistoryInitialPrompt
+  // The card description is the initial prompt. For new sessions it's also the first
+  // message in the loaded history, so prepending unconditionally would render it twice.
+  const firstEntry = conversation[0];
+  const historyStartsWithPrompt =
+    firstEntry?.kind === 'user' && firstEntry.content.trim() === initialPrompt;
+  const visibleConversation = initialPrompt && !historyStartsWithPrompt
     ? [{ kind: 'user' as const, content: initialPrompt, timestamp: card ? new Date(card.createdAt).getTime() : undefined }, ...conversation]
     : conversation;
   const currentBlocks = session?.accumulator.currentBlocks ?? [];
@@ -75,6 +77,8 @@ export const SessionView = observer(function SessionView({
   // immediately (avoiding the race where messages arrive before sessionId is known).
   // Called again once sessionId is available to actually load history.
   useEffect(() => {
+    sessionStore.hydrateFromCache(cardId).catch(() => {});
+    sessionStore.startPersisting(cardId);
     const sid = sessionStoreId ?? sessionId;
     if (sid && session?.historyLoaded) return; // history already loaded — nothing to do
     sessionStore.loadHistory(cardId, sid ?? undefined);
@@ -104,8 +108,7 @@ export const SessionView = observer(function SessionView({
       sessionStatus === 'running' ||
       sessionStatus === 'completed' ||
       sessionStatus === 'errored' ||
-      sessionStatus === 'stopped' ||
-      sessionStatus === 'retry'
+      sessionStatus === 'stopped'
     ) {
       setIsStarting(false);
     }
@@ -142,10 +145,6 @@ export const SessionView = observer(function SessionView({
 
   const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
-  const retryAfterMs = session?.accumulator.retryAfterMs ?? null;
-  const retryInfo = sessionStatus === 'retry' && retryAfterMs != null
-    ? { retryAfterMs }
-    : null;
 
   async function handleSend(message: string, files?: FileRef[]) {
     try {
@@ -210,11 +209,6 @@ export const SessionView = observer(function SessionView({
           <StatusBadge
             status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
           />
-          {retryInfo && (
-            <span className="text-[11px] text-neon-amber truncate min-w-0">
-              Rate limited — retrying in {Math.ceil(retryInfo.retryAfterMs / 1000)}s
-            </span>
-          )}
           {showCounters && (
             <span className="text-[11px] text-muted-foreground shrink-0">
               {turnsCompleted}/{promptsSent} turns
@@ -326,10 +320,6 @@ function StatusBadge({ status }: { status: string }) {
     case 'stopped':
       variant = 'secondary';
       label = 'Completed';
-      break;
-    case 'retry':
-      variant = 'outline';
-      label = 'Retrying...';
       break;
     default:
       variant = 'destructive';

@@ -29,6 +29,10 @@ export class CardStore {
     return Array.from(this.cards.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  get cardsByUpdatedDesc(): Card[] {
+    return Array.from(this.cards.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
   getCard(id: number): Card | undefined {
     return this.cards.get(id);
   }

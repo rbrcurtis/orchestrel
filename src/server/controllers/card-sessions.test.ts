@@ -29,6 +29,8 @@ const mockRepo = {
   find: vi.fn(async () => mockCards),
   save: vi.fn(async (card: (typeof mockCards)[number]) => card),
 };
+const mockEnsureWorktree = vi.fn(async () => '/tmp/project/.worktrees/card-42');
+const mockGetOrcdClient = vi.hoisted(() => vi.fn());
 
 vi.mock('../models/index', () => ({
   AppDataSource: {
@@ -39,7 +41,10 @@ vi.mock('../models/Card', () => ({
   Card: { findOneBy: vi.fn().mockResolvedValue(null), find: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock('../sessions/worktree', () => ({
-  ensureWorktree: vi.fn(async () => '/tmp/project/.worktrees/card-42'),
+  ensureWorktree: mockEnsureWorktree,
+}));
+vi.mock('../init-state', () => ({
+  getOrcdClient: mockGetOrcdClient,
 }));
 
 // We test the routing concept: orcd messages for a tracked session
@@ -47,7 +52,7 @@ vi.mock('../sessions/worktree', () => ({
 
 describe('orcd message router', () => {
   let bus: MessageBus;
-  let handler: ((msg: unknown) => void) | null;
+  let handler: ((msg: unknown) => void | Promise<void>) | null;
 
   // Minimal mock OrcdClient — captures the onMessage handler
   const mockClient = {
@@ -75,6 +80,8 @@ describe('orcd message router', () => {
     mockRepo.findOneBy.mockClear();
     mockRepo.find.mockClear();
     mockRepo.save.mockClear();
+    mockEnsureWorktree.mockReset();
+    mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
     bus = new MessageBus();
     handler = null;
     mockClient.onMessage.mockClear();
@@ -161,6 +168,147 @@ describe('orcd message router', () => {
     });
   });
 
+  it('preserves errored session_exit status', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    const exitSpy = vi.fn();
+    bus.on('card:42:exit', exitSpy);
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'errored',
+    });
+
+    expect(mockCards[0].column).toBe('running');
+    expect(exitSpy).toHaveBeenCalledWith({
+      sessionId: 'sess-abc',
+      status: 'errored',
+    });
+  });
+
+  it('moves running cards to review on turn_complete without untracking the live session', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 9,
+      hasPendingAsyncTasks: true,
+    });
+
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+    expect(sdkSpy).toHaveBeenCalledWith({
+      type: 'turn_complete',
+      session_id: 'sess-abc',
+      has_pending_async_tasks: true,
+    });
+
+    sdkSpy.mockClear();
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 10,
+      event: { type: 'assistant', message: 'still routed after turn complete' },
+    });
+
+    expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
+  });
+
+  it('surfaces non-archive cards in review on session_exit after a pending-background turn completed', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 3,
+      hasPendingAsyncTasks: true,
+    });
+    expect(mockCards[0].column).toBe('review');
+
+    mockCards[0].column = 'done';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+  });
+
+  it('leaves archived cards archived when pending-background sessions exit', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 3,
+      hasPendingAsyncTasks: true,
+    });
+
+    mockCards[0].column = 'archive';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    expect(mockCards[0].column).toBe('archive');
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('does not move non-running cards to ready on ordinary foreground session_exit', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 3,
+      hasPendingAsyncTasks: false,
+    });
+
+    expect(mockCards[0].column).toBe('review');
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
 
   it('does not reset context tokens when background compaction starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
@@ -317,6 +465,11 @@ describe('orcd message router', () => {
 });
 
 describe('reconcileRunningCards', () => {
+  beforeEach(() => {
+    mockEnsureWorktree.mockReset();
+    mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
+  });
+
   it('moves prompted running cards to review when orcd only lists stopped session', async () => {
     const { reconcileRunningCards } = await import('./card-sessions');
     const bus = new MessageBus();
@@ -405,5 +558,160 @@ describe('reconcileRunningCards', () => {
     expect(mockCards[0].promptsSent).toBe(1);
     expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('moves cards to review when auto-start setup fails during reconciliation', async () => {
+    const { reconcileRunningCards } = await import('./card-sessions');
+    const bus = new MessageBus();
+    const exitSpy = vi.fn();
+    bus.on('card:42:exit', exitSpy);
+    mockCards[0].column = 'running';
+    mockCards[0].sessionId = null;
+    mockEnsureWorktree.mockRejectedValue(new Error('bun: command not found'));
+    const client = {
+      list: vi.fn(async () => ({
+        type: 'session_list',
+        sessions: [],
+      })),
+      markActive: vi.fn(),
+      create: vi.fn(async () => 'sess-new'),
+    };
+
+    await reconcileRunningCards(client as never, bus);
+
+    expect(mockCards[0].column).toBe('review');
+    expect(mockCards[0].sessionId).toBeNull();
+    expect(client.create).not.toHaveBeenCalled();
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+    expect(exitSpy).toHaveBeenCalledWith({
+      sessionId: null,
+      status: 'errored',
+    });
+  });
+
+  it('routes early session events before the new sessionId save finishes', async () => {
+    vi.resetModules();
+    const { initOrcdRouter, reconcileRunningCards } = await import('./card-sessions');
+    const bus = new MessageBus();
+    let earlyHandler: ((msg: unknown) => void | Promise<void>) | null = null;
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+
+    mockCards[0].column = 'running';
+    mockCards[0].sessionId = null;
+    mockRepo.save.mockClear();
+
+    const client = {
+      onMessage: vi.fn((h: (msg: unknown) => void | Promise<void>) => { earlyHandler = h; }),
+      offMessage: vi.fn(),
+      list: vi.fn(async () => ({
+        type: 'session_list',
+        sessions: [],
+      })),
+      markActive: vi.fn(),
+      create: vi.fn(async () => 'sess-new'),
+    };
+
+    initOrcdRouter(client as never, bus);
+    mockRepo.save.mockImplementationOnce(async (card: MockCard) => {
+      await earlyHandler!({
+        type: 'stream_event',
+        sessionId: 'sess-new',
+        eventIndex: 0,
+        event: { type: 'assistant', message: 'early output' },
+      });
+      return card;
+    });
+
+    await reconcileRunningCards(client as never, bus);
+
+    expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'early output' });
+    expect(mockCards[0].sessionId).toBe('sess-new');
+  });
+});
+
+describe('registerAutoStart', () => {
+  const mockCancel = vi.fn();
+  const mockIsActive = vi.fn();
+  const mockCreate = vi.fn();
+
+  beforeEach(() => {
+    mockCancel.mockReset();
+    mockIsActive.mockReset();
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue('sess-new');
+    mockEnsureWorktree.mockReset();
+    mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
+    mockRepo.save.mockClear();
+    mockGetOrcdClient.mockReset();
+    mockGetOrcdClient.mockReturnValue({
+      cancel: mockCancel,
+      isActive: mockIsActive,
+      create: mockCreate,
+    });
+    mockCards.splice(0, mockCards.length, {
+      id: 42,
+      sessionId: 'sess-abc',
+      column: 'running',
+      promptsSent: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
+      turnsCompleted: 0,
+      provider: 'anthropic',
+      model: 'sonnet',
+      summarizeThreshold: 0.6,
+      updatedAt: '',
+      save: vi.fn(),
+      description: '',
+    });
+  });
+
+  it('does not cancel a live session when a card leaves running', async () => {
+    const { registerAutoStart } = await import('./card-sessions');
+    const bus = new MessageBus();
+    registerAutoStart(bus);
+
+    bus.publish('board:changed', {
+      card: mockCards[0],
+      oldColumn: 'running',
+      newColumn: 'review',
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  it('does not start a duplicate session when a card enters running with a live session', async () => {
+    const { registerAutoStart } = await import('./card-sessions');
+    const bus = new MessageBus();
+    registerAutoStart(bus);
+    mockIsActive.mockReturnValue(true);
+
+    bus.publish('board:changed', {
+      card: mockCards[0],
+      oldColumn: 'review',
+      newColumn: 'running',
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('starts a session when a card enters running without a live session', async () => {
+    const { registerAutoStart } = await import('./card-sessions');
+    const bus = new MessageBus();
+    registerAutoStart(bus);
+    mockCards[0].sessionId = null;
+    mockIsActive.mockReturnValue(false);
+
+    bus.publish('board:changed', {
+      card: mockCards[0],
+      oldColumn: 'backlog',
+      newColumn: 'running',
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCreate).toHaveBeenCalled();
+    expect(mockCards[0].sessionId).toBe('sess-new');
   });
 });

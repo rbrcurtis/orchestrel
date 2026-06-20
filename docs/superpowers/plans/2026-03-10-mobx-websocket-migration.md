@@ -745,7 +745,7 @@ git commit -m "feat: DB mutator with broadcast for cards and projects"
 import type { IncomingMessage } from 'http'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 
-const CF_TEAM_DOMAIN = 'rbrcurtis' // <team>.cloudflareaccess.com
+const CF_TEAM_DOMAIN = process.env.CF_TEAM_DOMAIN // <team>.cloudflareaccess.com
 const CERTS_URL = `https://${CF_TEAM_DOMAIN}.cloudflareaccess.com/cdn-cgi/access/certs`
 
 // jose caches JWK set and handles rotation automatically

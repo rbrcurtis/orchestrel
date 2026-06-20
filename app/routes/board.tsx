@@ -244,9 +244,9 @@ const BoardLayout = observer(function BoardLayout() {
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      <header className="shrink-0 px-8 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
+    <div className="h-dvh overflow-hidden flex flex-col bg-background">
+      <header className="shrink-0 px-3 sm:px-8 py-3 border-b border-border flex flex-nowrap items-center justify-between gap-2 sm:gap-3">
+        <div className="flex flex-1 min-w-0 items-center gap-2 sm:gap-4">
           <h1 className="text-xl font-bold text-foreground hidden sm:block">Orchestrel</h1>
           {/* Mobile: dropdown nav */}
           <Select value={location.pathname} onValueChange={(v) => navigate(v)}>
@@ -369,9 +369,9 @@ const BoardLayout = observer(function BoardLayout() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Left: rows area */}
-        <ScrollArea className="flex-1" style={{ minWidth: 272 }}>
+        <ScrollArea className="flex-1 min-h-0" style={{ minWidth: 272 }}>
           <Outlet
             context={{
               search,

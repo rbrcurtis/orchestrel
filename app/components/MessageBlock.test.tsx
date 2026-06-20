@@ -134,6 +134,40 @@ describe('MessageBlock user prompt rendering', () => {
   });
 });
 
+describe('MessageBlock code block rendering', () => {
+  function renderCode(content: string) {
+    return renderEntry({
+      kind: 'blocks',
+      blocks: [new ContentBlock({ type: 'text', content, complete: true })],
+    });
+  }
+
+  it('renders a fenced code block without a language as a non-wrapping block, preserving newlines', () => {
+    const html = renderCode('```\n┌──────┐\n│ node │ ──► server\n└──────┘\n```');
+
+    // Block, not inline: rendered inside a <pre> with no-wrap whitespace
+    expect(html).toContain('<pre');
+    expect(html).toContain('whitespace-pre');
+    expect(html).not.toContain('whitespace-pre-wrap');
+    // Newlines / alignment preserved
+    expect(html).toContain('┌──────┐');
+    expect(html).toContain('└──────┘');
+  });
+
+  it('renders language-tagged and language-less fences identically (no language detection)', () => {
+    const withLang = renderCode('```ts\nconst x = 1;\n```');
+    const withoutLang = renderCode('```\nconst x = 1;\n```');
+
+    // Both go through the same `pre` path: non-wrapping block, same wrapper markup
+    for (const html of [withLang, withoutLang]) {
+      expect(html).toContain('<pre');
+      expect(html).toContain('whitespace-pre');
+      expect(html).not.toContain('whitespace-pre-wrap');
+      expect(html).toContain('const x = 1;');
+    }
+  });
+});
+
 describe('MessageBlock tool rendering', () => {
   it('renders tool input and output with matching text style in a 400px scroll area', () => {
     render(

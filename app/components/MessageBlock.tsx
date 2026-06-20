@@ -87,6 +87,15 @@ function linkifyChildren(children: React.ReactNode, color: string): React.ReactN
   return children;
 }
 
+/** Recursively extract raw text from a hast node (used for code blocks) */
+function nodeText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const n = node as { type?: string; value?: string; children?: unknown[] };
+  if (n.type === 'text' && typeof n.value === 'string') return n.value;
+  if (Array.isArray(n.children)) return n.children.map(nodeText).join('');
+  return '';
+}
+
 /** Build react-markdown component overrides with accent-colored links */
 function mdComponents(linkColor: string): Components {
   return {
@@ -101,25 +110,26 @@ function mdComponents(linkColor: string): Components {
         {children}
       </a>
     ),
-    code: ({ className, children, ...rest }) => {
-      const isBlock = className?.startsWith('language-');
-      const linked = linkifyChildren(children, linkColor);
-      if (isBlock) {
-        return (
-          <pre className="bg-elevated rounded px-3 py-2 text-xs my-2 max-w-full whitespace-pre-wrap break-all overflow-hidden">
-            <code className={className} {...rest}>
-              {linked}
-            </code>
-          </pre>
-        );
-      }
-      return (
-        <code className="bg-elevated rounded px-1 py-0.5 text-xs" {...rest}>
-          {linked}
-        </code>
-      );
-    },
-    pre: ({ children }) => <>{children}</>,
+    // Inline code only. Fenced ``` blocks are rendered by the `pre` override
+    // below, so every code block renders identically regardless of language.
+    code: ({ children, ...rest }) => (
+      <code className="bg-elevated rounded px-1 py-0.5 text-xs" {...rest}>
+        {linkifyChildren(children, linkColor)}
+      </code>
+    ),
+    // All fenced code blocks render the same way: no-wrapping `whitespace-pre`
+    // inside a horizontal ScrollArea so ASCII diagrams and wide code keep their
+    // alignment and scroll instead of wrapping. We read the raw text from the
+    // hast node so language and detection logic are unnecessary. ScrollArea
+    // avoids native scrollbars per UI rules.
+    pre: ({ node }) => (
+      <ScrollArea className="bg-elevated rounded text-xs my-2 max-w-full">
+        <pre className="px-3 py-2 whitespace-pre">
+          <code>{linkifyChildren(nodeText(node), linkColor)}</code>
+        </pre>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
+    ),
     ul: ({ children }) => <ul className="list-disc pl-5 space-y-0.5">{children}</ul>,
     ol: ({ children }) => <ol className="list-decimal pl-5 space-y-0.5">{children}</ol>,
     li: ({ children }) => <li className="text-sm">{children}</li>,

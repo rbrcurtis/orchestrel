@@ -115,11 +115,6 @@ export interface SdkTaskNotification {
   result?: string;
 }
 
-export interface SdkRateLimit {
-  type: 'rate_limit';
-  retry_after_ms: number;
-}
-
 export interface SdkStatus {
   type: 'status';
   status: string;
@@ -142,7 +137,6 @@ export type SdkMessage =
   | SdkTaskStarted
   | SdkTaskProgress
   | SdkTaskNotification
-  | SdkRateLimit
   | SdkStatus
   | SdkError;
 

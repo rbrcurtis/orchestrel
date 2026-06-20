@@ -1,17 +1,19 @@
-import { makeAutoObservable, observable, runInAction } from 'mobx';
+import { makeAutoObservable, observable, runInAction, autorun, type IReactionDisposer } from 'mobx';
 import type { AgentStatus, FileRef } from '../../src/shared/ws-protocol';
 import type { WsClient } from '../lib/ws-client';
 import type { SdkMessage, HistoryMessage } from '../lib/sdk-types';
 import { MessageAccumulator } from '../lib/message-accumulator';
+import { readConversation, writeConversation } from '../lib/conversation-cache';
 
 export interface SessionState {
   active: boolean;
-  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry';
+  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
   sessionId: string | null;
   promptsSent: number;
   turnsCompleted: number;
   accumulator: MessageAccumulator;
   historyLoaded: boolean;
+  cacheHydrated: boolean;
   contextTokens: number;
   contextWindow: number;
   bgcInProgress: boolean;
@@ -26,6 +28,7 @@ function defaultSession(): SessionState {
     turnsCompleted: 0,
     accumulator: new MessageAccumulator(),
     historyLoaded: false,
+    cacheHydrated: false,
     contextTokens: 0,
     contextWindow: 200_000,
     bgcInProgress: false,
@@ -38,12 +41,14 @@ export class SessionStore {
   stoppingCards = observable.set<number>();
   private stopIntervals = new Map<number, NodeJS.Timeout>();
   private loadingCards = new Set<number>();
+  private persistDisposers = new Map<number, IReactionDisposer>();
   private _ws: WsClient | null = null;
 
   constructor() {
-    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws'>(this, {
+    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | 'persistDisposers' | '_ws'>(this, {
       stopIntervals: false,
       loadingCards: false,
+      persistDisposers: false,
       _ws: false,
     });
   }
@@ -63,6 +68,33 @@ export class SessionStore {
 
   getSession(cardId: number): SessionState | undefined {
     return this.sessions.get(cardId);
+  }
+
+  async hydrateFromCache(cardId: number): Promise<void> {
+    const s = this.getOrCreate(cardId);
+    if (s.historyLoaded || s.cacheHydrated) return;
+    const entries = await readConversation(cardId);
+    if (!entries || entries.length === 0) return;
+    runInAction(() => {
+      // loadHistory may have won the race while we awaited the cache read
+      if (s.historyLoaded) return;
+      s.accumulator.hydrate(entries);
+      s.cacheHydrated = true;
+    });
+  }
+
+  startPersisting(cardId: number): void {
+    if (this.persistDisposers.has(cardId)) return;
+    const s = this.getOrCreate(cardId);
+    const dispose = autorun(
+      () => {
+        const entries = s.accumulator.serialize();
+        if (entries.length === 0) return;
+        writeConversation(cardId, entries).catch(() => {});
+      },
+      { delay: 1000 },
+    );
+    this.persistDisposers.set(cardId, dispose);
   }
 
   // ── Incoming server messages ────────────────────────────────────────────────
@@ -88,7 +120,13 @@ export class SessionStore {
         }
       }
 
-      if (sdkMsg.type === 'error' || sdkMsg.type === 'result') {
+      if (sdkMsg.type === 'error') {
+        s.active = false;
+        s.status = 'errored';
+        s.bgcInProgress = false;
+      }
+
+      if (sdkMsg.type === 'result') {
         s.bgcInProgress = false;
       }
 

@@ -11,15 +11,15 @@ interface SearchBarProps {
 export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
   function SearchBar({ value, onChange }, ref) {
     return (
-      <div className="relative w-full max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+      <div className="relative min-w-0 flex-1 sm:max-w-sm">
+        <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <Input
           ref={ref}
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Search cards..."
-          className="pl-9 pr-8"
+          className="pl-9 sm:pl-10 pr-8"
         />
         {value && (
           <Button

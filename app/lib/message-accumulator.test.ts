@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MessageAccumulator } from './message-accumulator';
+import { MessageAccumulator, ContentBlock } from './message-accumulator';
 import type { SdkMessage } from './sdk-types';
 
 function toolStart(id: string): SdkMessage {
@@ -183,5 +183,52 @@ describe('MessageAccumulator blocking subagents', () => {
     expect(entry.kind).toBe('blocks');
     if (entry.kind !== 'blocks') return;
     expect(entry.blocks[0].output).toBe('file contents');
+  });
+});
+
+describe('MessageAccumulator serialize/hydrate', () => {
+  it('round-trips conversation, rebuilding ContentBlock instances', () => {
+    const acc = new MessageAccumulator();
+    acc.handleHistoryMessage({
+      type: 'assistant',
+      uuid: 'msg_1',
+      session_id: 'sess_1',
+      parent_tool_use_id: null,
+      timestamp: Date.UTC(2026, 5, 19, 12, 0, 0),
+      message: {
+        role: 'assistant',
+        model: 'claude-sonnet-4',
+        content: [
+          { type: 'text', text: 'hello' },
+          { type: 'tool_use', id: 'tool_1', name: 'Read', input: { file: 'a.ts' } },
+        ],
+      },
+    });
+    acc.flushHistory();
+
+    const snapshot = acc.serialize();
+    // snapshot must survive a JSON round-trip (this is what IndexedDB stores)
+    const wireSafe = JSON.parse(JSON.stringify(snapshot)) as unknown[];
+
+    const restored = new MessageAccumulator();
+    restored.hydrate(wireSafe);
+
+    expect(restored.conversation.length).toBe(acc.conversation.length);
+    const blocksEntry = restored.conversation.find((e) => e.kind === 'blocks');
+    expect(blocksEntry).toBeDefined();
+    if (blocksEntry?.kind !== 'blocks') throw new Error('expected blocks entry');
+    const toolBlock = blocksEntry.blocks.find((b) => b.type === 'tool_use');
+    expect(toolBlock).toBeInstanceOf(ContentBlock);
+    expect(toolBlock?.id).toBe('tool_1');
+    expect(toolBlock?.input).toBe(JSON.stringify({ file: 'a.ts' }));
+    expect(toolBlock?.complete).toBe(true);
+  });
+
+  it('hydrate replaces existing conversation', () => {
+    const acc = new MessageAccumulator();
+    acc.addUserMessage('first');
+    acc.hydrate([{ kind: 'user', content: 'second' }]);
+    expect(acc.conversation.length).toBe(1);
+    expect(acc.conversation[0]).toMatchObject({ kind: 'user', content: 'second' });
   });
 });

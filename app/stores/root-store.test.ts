@@ -24,6 +24,7 @@ class FakeSocket {
       this.ioHandlers.set(event, list);
       return this.io;
     },
+    open: vi.fn(),
   };
 
   emitWithAck(event: keyof ClientToServerEvents, _data: unknown): Promise<AckResponse> {
@@ -128,6 +129,7 @@ describe('RootStore websocket reconnect sync', () => {
     fakeSocket.ioHandlers.clear();
     fakeSocket.connected = true;
     fakeSocket.nextSubscribeData = undefined;
+    fakeSocket.io.open.mockClear();
     vi.clearAllMocks();
     vi.resetModules();
     vi.stubGlobal(
@@ -137,6 +139,17 @@ describe('RootStore websocket reconnect sync', () => {
         static requestPermission = vi.fn();
       },
     );
+  });
+
+  it('opens the underlying manager on forced reconnect', async () => {
+    const { RootStore } = await import('./root-store');
+    const store = new RootStore();
+
+    fakeSocket.connected = false;
+    store.ws.forceReconnect();
+
+    expect(fakeSocket.connected).toBe(true);
+    expect(fakeSocket.io.open).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes cards from subscribe sync payload after reconnect', async () => {
@@ -235,6 +248,51 @@ describe('RootStore websocket reconnect sync', () => {
     });
 
     expect(store.cards.getCard(100)?.title).toBe('Visible card');
+  });
+
+  function stubNotification(into: string[]) {
+    vi.stubGlobal(
+      'Notification',
+      class {
+        static permission = 'granted';
+        static requestPermission = vi.fn();
+        onclick: (() => void) | null = null;
+        constructor(title: string) {
+          into.push(title);
+        }
+      },
+    );
+  }
+
+  async function reviewTransition() {
+    const { RootStore } = await import('./root-store');
+    const store = new RootStore();
+    fakeSocket.nextSubscribeData = makeSyncPayload('running');
+    store.subscribe(['running', 'review']);
+    await waitFor(() => expect(store.cards.getCard(42)?.column).toBe('running'));
+    fakeSocket.trigger('card:updated', { ...makeSyncPayload('review').cards[0] });
+  }
+
+  it('does not notify when the window is visible even without input focus', async () => {
+    const notifications: string[] = [];
+    stubNotification(notifications);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+
+    await reviewTransition();
+
+    expect(notifications).toEqual([]);
+  });
+
+  it('notifies when the window is hidden and unfocused', async () => {
+    const notifications: string[] = [];
+    stubNotification(notifications);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+
+    await reviewTransition();
+
+    expect(notifications).toEqual(['Reconnect me']);
   });
 
   it('filters subscribe sync cards through the visible project store', async () => {

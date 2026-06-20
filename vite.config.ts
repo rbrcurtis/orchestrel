@@ -59,7 +59,17 @@ export default defineConfig(({ isSsrBuild }) => ({
       // src/orcd is a standalone daemon (layer 3) with its own systemd lifecycle —
       // Vite watching it triggers full browser reloads via the shared src/shared/*
       // module graph, which is pure noise for frontend HMR.
-      ignored: ['**/.worktrees/**', '**/data/**', '**/.react-router/**', '**/src/orcd/**'],
+      //
+      // Card sessions can also develop in generated worktrees under this repo.
+      // Those copies include the same src/shared modules, so watching them makes
+      // this dev server reload for changes that belong to another session.
+      ignored: [
+        '**/.worktrees/**',
+        '**/.claude/worktrees/**',
+        '**/data/**',
+        '**/.react-router/**',
+        '**/src/orcd/**',
+      ],
     },
   },
   plugins: [wsServerPlugin(), pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],

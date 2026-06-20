@@ -67,6 +67,7 @@ export class RootStore {
           data.column === 'review' &&
           prev &&
           prev.column !== 'review' &&
+          document.visibilityState !== 'visible' &&
           !document.hasFocus() &&
           Notification.permission === 'granted'
         ) {

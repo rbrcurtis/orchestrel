@@ -8,6 +8,7 @@ import type { OrcdClient } from '../orcd-client';
 
 const sessionCardMap = new Map<string, number>();
 const bgcMap = new Map<string, number>();
+const pendingAsyncAfterTurnComplete = new Map<string, boolean>();
 
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
@@ -60,7 +61,7 @@ export function initOrcdRouter(
       const sdkEvent = msg.event as Record<string, unknown>;
       cardId = routeBgcEvent(msg.sessionId, sdkEvent);
     }
-    if (cardId == null && msg.type === 'session_exit') {
+    if (cardId == null && (msg.type === 'session_exit' || msg.type === 'turn_complete')) {
       const card = await repo().findOneBy({ sessionId: msg.sessionId });
       if (card) {
         cardId = card.id;
@@ -129,6 +130,10 @@ export function initOrcdRouter(
       }
     }
 
+    if (msg.type === 'turn_complete') {
+      await handleTurnComplete(cardId, msg.sessionId, msg.hasPendingAsyncTasks, bus);
+    }
+
     if (msg.type === 'context_usage') {
       const card = await repo().findOneBy({ id: cardId });
       if (card) {
@@ -152,7 +157,7 @@ export function initOrcdRouter(
     }
 
     if (msg.type === 'session_exit') {
-      await handleSessionExit(cardId, bus);
+      await handleSessionExit(cardId, msg.sessionId, msg.state, bus);
       untrackSession(msg.sessionId);
     }
 
@@ -168,6 +173,10 @@ export function initOrcdRouter(
         bgcMap.set(msg.newSessionId, cardId);
         bgcMap.delete(msg.sessionId);
       }
+      if (pendingAsyncAfterTurnComplete.has(msg.sessionId)) {
+        pendingAsyncAfterTurnComplete.set(msg.newSessionId, pendingAsyncAfterTurnComplete.get(msg.sessionId) === true);
+        pendingAsyncAfterTurnComplete.delete(msg.sessionId);
+      }
       console.log(`[oc:${cardId}] session forked: ${msg.sessionId.slice(0,8)} → ${msg.newSessionId.slice(0,8)}`);
     }
   });
@@ -175,24 +184,60 @@ export function initOrcdRouter(
   console.log('[orcd-router] global handler registered');
 }
 
-// ── Session exit ─────────────────────────────────────────────────────────────
+// ── Turn complete / Session exit ─────────────────────────────────────────────
 
-async function handleSessionExit(
+async function handleTurnComplete(
   cardId: number,
+  sessionId: string,
+  hasPendingAsyncTasks: boolean,
   bus: MessageBus = messageBus,
 ): Promise<void> {
+  pendingAsyncAfterTurnComplete.set(sessionId, hasPendingAsyncTasks);
+
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
-
   if (card && card.column === 'running') {
     card.column = 'review';
     card.updatedAt = new Date().toISOString();
     await repo.save(card);
   }
 
+  bus.publish(`card:${cardId}:sdk`, {
+    type: 'turn_complete',
+    session_id: sessionId,
+    has_pending_async_tasks: hasPendingAsyncTasks,
+  });
+}
+
+async function handleSessionExit(
+  cardId: number,
+  sessionId: string,
+  status: 'completed' | 'errored' | 'stopped',
+  bus: MessageBus = messageBus,
+): Promise<void> {
+  const repo = AppDataSource.getRepository(Card);
+  const card = await repo.findOneBy({ id: cardId });
+
+  const hadPendingAsyncAfterTurn = pendingAsyncAfterTurnComplete.get(sessionId) === true;
+  pendingAsyncAfterTurnComplete.delete(sessionId);
+
+  if (card && status !== 'errored') {
+    if (card.column === 'running') {
+      card.column = 'review';
+      card.updatedAt = new Date().toISOString();
+      await repo.save(card);
+    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive' && card.column !== 'review') {
+      // Background/async work that kept the session alive after the turn
+      // finished — surface the card in review so Ryan sees the new output.
+      card.column = 'review';
+      card.updatedAt = new Date().toISOString();
+      await repo.save(card);
+    }
+  }
+
   bus.publish(`card:${cardId}:exit`, {
     sessionId: card?.sessionId,
-    status: 'completed',
+    status,
   });
 }
 
@@ -245,7 +290,7 @@ export async function reconcileRunningCards(
     }
     if (!card.sessionId) {
       console.log(`[reconcile] card ${card.id} has no sessionId; starting missed session`);
-      await startCardSession(client, card);
+      await startCardSession(client, card, bus);
       continue;
     }
 
@@ -300,16 +345,7 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
         `[oc:auto-start] card #${card.id} entered running ` +
           `(worktree=${!!card.worktreeBranch}, project=${card.projectId})`,
       );
-      await startCardSession(client, fullCard);
-    }
-
-    // Card left running: cancel session
-    if (oldColumn === 'running' && newColumn !== 'running') {
-      const initState = await import('../init-state');
-      const client = initState.getOrcdClient();
-      if (card.sessionId) {
-        client?.cancel(card.sessionId);
-      }
+      await startCardSession(client, fullCard, bus);
     }
   });
 }
@@ -398,27 +434,58 @@ function repo() {
   return AppDataSource.getRepository(Card);
 }
 
-async function startCardSession(client: OrcdClient, card: Card): Promise<string> {
-  const { ensureWorktree } = await import('../sessions/worktree');
-  const cwd = await ensureWorktree(card);
-  const prompt = card.sessionId ? '' : card.description ?? '';
+async function markSessionStartFailed(
+  bus: MessageBus,
+  card: Card,
+  err: unknown,
+): Promise<void> {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`[session:${card.id}] failed to start session:`, msg);
 
-  const startedFromDescription = !card.sessionId;
-  const sessionId = await client.create({
-    prompt,
-    cwd,
-    provider: card.provider,
-    model: card.model,
-    sessionId: card.sessionId ?? undefined,
-    contextWindow: card.contextWindow,
-    summarizeThreshold: card.summarizeThreshold,
-  });
-
-  card.sessionId = sessionId;
-  if (startedFromDescription) card.promptsSent = (card.promptsSent ?? 0) + 1;
+  card.column = 'review';
   card.updatedAt = new Date().toISOString();
   await repo().save(card);
+  bus.publish(`card:${card.id}:exit`, {
+    sessionId: card.sessionId ?? null,
+    status: 'errored',
+  });
+}
 
-  trackSession(card.id, sessionId);
-  return sessionId;
+async function startCardSession(
+  client: OrcdClient,
+  card: Card,
+  bus: MessageBus = messageBus,
+): Promise<string | null> {
+  try {
+    const { ensureWorktree } = await import('../sessions/worktree');
+    const cwd = await ensureWorktree(card);
+    const startedFromDescription = !card.sessionId;
+    const prompt = card.sessionId ? '' : card.description ?? '';
+
+    const sessionId = await client.create({
+      prompt,
+      cwd,
+      provider: card.provider,
+      model: card.model,
+      sessionId: card.sessionId ?? undefined,
+      contextWindow: card.contextWindow,
+      summarizeThreshold: card.summarizeThreshold,
+    });
+
+    card.sessionId = sessionId;
+    // The card description is the first prompt sent. Follow-up prompts increment
+    // promptsSent in the ws message handler; this covers the initial start.
+    if (startedFromDescription) card.promptsSent = (card.promptsSent ?? 0) + 1;
+    trackSession(card.id, sessionId);
+    card.updatedAt = new Date().toISOString();
+    await repo().save(card);
+
+    console.log(`[session:${card.id}] session started: ${sessionId.slice(0, 8)}`);
+    return sessionId;
+  } catch (err) {
+    console.error(`[session:${card.id}] startCardSession error:`, err instanceof Error ? err.message : String(err));
+    await markSessionStartFailed(bus, card, err);
+    console.log(`[session:${card.id}] startCardSession returning null after failure`);
+    return null;
+  }
 }

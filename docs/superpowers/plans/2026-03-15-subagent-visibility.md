@@ -668,7 +668,7 @@ sudo systemctl restart orchestrel.service
 
 - [ ] **Step 2: Test subagent visibility**
 
-Open dispatch.rbrcurtis.com. Start a card in Running with a project and a prompt that triggers subagent usage (e.g. "explore the codebase and implement X"). Verify:
+Open `localhost:6194`. Start a card in Running with a project and a prompt that triggers subagent usage (e.g. "explore the codebase and implement X"). Verify:
 - Subagent rows appear in the feed between status bar and prompt input
 - Each row shows green dot + title + tool activity text
 - Activity text updates as subagent tools change

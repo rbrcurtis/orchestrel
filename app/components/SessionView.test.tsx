@@ -8,6 +8,8 @@ import type { Card } from '../../src/shared/ws-protocol';
 const sessionStore = {
   getSession: vi.fn(),
   loadHistory: vi.fn(),
+  hydrateFromCache: vi.fn(() => Promise.resolve()),
+  startPersisting: vi.fn(),
   requestStatus: vi.fn(),
   sendMessage: vi.fn(),
   stopSession: vi.fn(),
@@ -118,7 +120,6 @@ function setDefaultState(overrides?: {
       conversation: [],
       currentBlocks: [],
       subagents: new Map(),
-      retryAfterMs: null,
     },
     historyLoaded: true,
     contextTokens: 139030,
@@ -192,7 +193,26 @@ describe('SessionView initial prompt', () => {
           conversation: [{ kind: 'user', content: 'Follow up prompt' }],
           currentBlocks: [],
           subagents: new Map(),
-          retryAfterMs: null,
+        },
+      },
+    });
+
+    renderSessionView();
+
+    expect(screen.getByTestId('conversation').textContent).toBe('Build the project launchpad\nFollow up prompt');
+  });
+
+  it('does not render the description twice when history already starts with it', () => {
+    setDefaultState({
+      card: { description: 'Build the project launchpad' },
+      session: {
+        accumulator: {
+          conversation: [
+            { kind: 'user', content: 'Build the project launchpad' },
+            { kind: 'user', content: 'Follow up prompt' },
+          ],
+          currentBlocks: [],
+          subagents: new Map(),
         },
       },
     });

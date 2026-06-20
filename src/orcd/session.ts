@@ -13,11 +13,12 @@ import type {
   SessionIdUpdateMessage,
   SessionResultMessage,
   StreamEventMessage,
+  TurnCompleteMessage,
 } from '../shared/orcd-protocol';
 import type { TaskNotificationEvent, TaskStartedEvent } from './async-task-tracker';
 
 export type SessionEventCallback = (
-  msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
+  msg: StreamEventMessage | SessionResultMessage | TurnCompleteMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
 ) => void;
 
 export class OrcdSession {
@@ -223,6 +224,18 @@ export class OrcdSession {
         result: payload,
       };
       for (const cb of this.subscribers) cb(msg);
+
+      // A result means one agent turn finished. Background tasks (monitors,
+      // subagents) may still be running, so this is NOT session_exit — the orc
+      // backend uses turn_complete to move the card to review while orcd keeps
+      // the session alive until the SDK iterator actually closes.
+      const turnMsg: TurnCompleteMessage = {
+        type: 'turn_complete',
+        sessionId: this.id,
+        eventIndex,
+        hasPendingAsyncTasks: this.asyncTasks.hasPending(),
+      };
+      for (const cb of this.subscribers) cb(turnMsg);
     } else {
       const msg: StreamEventMessage = {
         type: 'stream_event',

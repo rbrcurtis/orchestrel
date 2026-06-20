@@ -19,7 +19,7 @@ async function createSkillProject(): Promise<string> {
 function createClient() {
   return {
     socket: { writable: true, write: vi.fn() },
-    subscriptions: new Map(),
+    subscriptions: new Map<string, SessionEventCallback>(),
   };
 }
 
@@ -29,7 +29,7 @@ async function collectPromptFromCreate(prompt: string): Promise<string> {
   try {
     const server = createServer();
     const client = createClient();
-    server['handleAction'](client, {
+    server['handleAction'](client as never, {
       action: 'create',
       prompt,
       cwd: dir,
@@ -62,7 +62,7 @@ async function collectPromptFromMessage(prompt: string): Promise<string> {
     server.store.add(session);
     server['attachLifecycleHooks'](session);
 
-    server['handleAction'](client, {
+    server['handleAction'](client as never, {
       action: 'message',
       sessionId: session.id,
       prompt,
@@ -171,11 +171,11 @@ describe('OrcdServer subscriptions', () => {
     server.store.add(session);
     session['emitSyntheticSystemEvent']('compact_boundary');
 
-    server['handleAction'](client, { action: 'subscribe', sessionId: session.id });
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id });
     const writesAfterFirst = client.socket.write.mock.calls.length;
     expect(writesAfterFirst).toBe(1);
 
-    server['handleAction'](client, { action: 'subscribe', sessionId: session.id });
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id });
     expect(client.socket.write).toHaveBeenCalledTimes(writesAfterFirst);
   });
 
@@ -192,10 +192,10 @@ describe('OrcdServer subscriptions', () => {
     session['emitSyntheticSystemEvent']('compact_boundary');
     session['emitSyntheticSystemEvent']('bgc_started');
 
-    server['handleAction'](client, { action: 'subscribe', sessionId: session.id });
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id });
     client.socket.write.mockClear();
 
-    server['handleAction'](client, { action: 'subscribe', sessionId: session.id, afterEventIndex: 0 });
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id, afterEventIndex: 0 });
 
     expect(client.socket.write).toHaveBeenCalledTimes(1);
     const line = client.socket.write.mock.calls[0]?.[0];
@@ -362,7 +362,7 @@ describe('OrcdServer background compaction', () => {
     };
 
     try {
-      server['handleAction'](client, {
+      server['handleAction'](client as never, {
         action: 'compact',
         sessionId: 'session-1',
         cwd: '/tmp/project',

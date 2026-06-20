@@ -28,7 +28,7 @@ export const ChatSidebar = observer(function ChatSidebar({ activeCardId, project
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
   const project = projectId == null ? null : projectStore.getProject(projectId);
-  const cards = projectId == null ? [] : cardStore.cardsByCreatedDesc.filter((card) => card.projectId === projectId);
+  const cards = projectId == null ? [] : cardStore.cardsByUpdatedDesc.filter((card) => card.projectId === projectId);
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">

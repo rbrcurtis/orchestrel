@@ -67,12 +67,12 @@ This is a **purely event-driven system**. Every handler reacts to a single event
 ## Dev Server
 
 - **Local URL:** `http://localhost:6194`
-- **Tunnel URL:** `https://dispatch.rbrcurtis.com` (Cloudflare tunnel, requires Access auth)
+- **Tunnel URL:** Cloudflare tunnel, Access-gated (hostname configured per deployment)
 
 ## DB Backups
 
 - **Cron:** every 15 minutes via `scripts/backup-db.sh`
-- **Location:** `/mnt/D/Sync/orchestra-backups/orchestrel-YYYYMMDD-HHMMSS.db`
+- **Location:** configured backup directory; files named `orchestrel-YYYYMMDD-HHMMSS.db`
 - **Retention:** 3-day rolling (older backups auto-pruned)
 
 ## UI Rules
@@ -136,4 +136,4 @@ CREATE TABLE project_users (
 ## Guardrails
 
 - **DB file:** `data/orchestrel.db` — Schema additions (`ALTER TABLE ADD COLUMN`) via sqlite3 CLI are safe anytime. NEVER truncate DB files or run WAL management commands (`wal_checkpoint`, `PRAGMA journal_mode`, etc.) — SQLite handles this automatically. A `wal_checkpoint(TRUNCATE)` previously destroyed ~68 cards.
-- **Vite HMR:** works through tunnel via `hmr.orchestrel.com` (bypasses CF Access). Config is env-driven: systemd sets `HMR_HOST=hmr.orchestrel.com` → Vite uses that host + port 443. Without `HMR_HOST` (local dev), Vite auto-detects. Do NOT hardcode HMR settings in vite.config.ts.
+- **Vite HMR:** works through the tunnel via a dedicated HMR host. Config is env-driven: systemd sets `HMR_HOST` → Vite uses that host + port 443. Without `HMR_HOST` (local dev), Vite auto-detects. Do NOT hardcode HMR settings in vite.config.ts.
