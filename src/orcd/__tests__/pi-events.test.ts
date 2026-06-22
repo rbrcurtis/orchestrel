@@ -59,6 +59,22 @@ describe('pi event boundary mapper', () => {
     });
   });
 
+  it('maps an errored turn_end to an error result carrying the provider message', () => {
+    const event = {
+      type: 'turn_end',
+      message: { role: 'assistant', stopReason: 'error', errorMessage: 'out of extra usage' },
+      toolResults: [],
+    };
+
+    expect(mapPiEventToOrcdPayload(event)).toEqual({
+      type: 'result',
+      subtype: 'error_during_execution',
+      message: event.message,
+      toolResults: [],
+      errorMessage: 'out of extra usage',
+    });
+  });
+
   it('maps turn_end with missing toolResults to empty array', () => {
     const event = {
       type: 'turn_end',

@@ -76,11 +76,21 @@ export function mapPiEventToOrcdPayload(event: unknown): unknown {
 
   const toolResults = Array.isArray(event.toolResults) ? event.toolResults : [];
 
+  // A turn whose assistant message stopped with an error still arrives as
+  // turn_end — reflect that as an error result (with the provider's message)
+  // instead of silently rendering "Turn complete" in the UI.
+  const message = event.message;
+  const stopReason = isRecord(message) ? message.stopReason : undefined;
+  const errorMessage =
+    isRecord(message) && typeof message.errorMessage === 'string' ? message.errorMessage : undefined;
+  const subtype = stopReason === 'error' ? 'error_during_execution' : 'success';
+
   return {
     type: 'result',
-    subtype: 'success',
+    subtype,
     message: event.message,
     toolResults,
+    ...(errorMessage ? { errorMessage } : {}),
   };
 }
 

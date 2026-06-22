@@ -7,6 +7,7 @@ export interface ProviderConfig {
   baseUrl: string;
   apiKey: string;
   authToken?: string;
+  oauth?: string;
   region?: string;
   profile?: string;
   models: Record<string, ModelDef>;
@@ -34,6 +35,7 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
       baseUrl: p.baseUrl ?? '',
       apiKey: p.apiKey ?? '',
       ...(p.authToken ? { authToken: p.authToken } : {}),
+      ...(p.oauth ? { oauth: p.oauth } : {}),
       ...(p.region ? { region: p.region } : {}),
       ...(p.profile ? { profile: p.profile } : {}),
       models: p.models,

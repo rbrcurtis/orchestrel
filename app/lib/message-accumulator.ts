@@ -38,6 +38,7 @@ export class ContentBlock {
 
 export interface TurnResult {
   subtype: string;
+  errorMessage?: string;
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
@@ -358,6 +359,7 @@ export class MessageAccumulator {
       timestamp: msg.timestamp ?? Date.now(),
       data: {
         subtype: msg.subtype,
+        ...(msg.errorMessage ? { errorMessage: msg.errorMessage } : {}),
         costUsd: msg.total_cost_usd,
         inputTokens: msg.usage?.input_tokens ?? 0,
         outputTokens: msg.usage?.output_tokens ?? 0,
