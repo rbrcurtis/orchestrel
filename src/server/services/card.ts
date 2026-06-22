@@ -96,9 +96,11 @@ class CardService {
       if (modelCfg) data.contextWindow = modelCfg.contextWindow;
     }
 
-    // Kill session when card leaves running/review
+    // Kill session when card leaves running/review — but NOT when archiving.
+    // Archiving while a session is running lets the agent finish (e.g. a final
+    // fire-and-forget command); the session_exit handler keeps the card archived.
     const liveColumns = new Set<string>(['running', 'review']);
-    if (data.column && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
+    if (data.column && data.column !== 'archive' && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
       const initState = await import('../init-state');
       const client = initState.getOrcdClient();
       if (card.sessionId && client?.isActive(card.sessionId)) {

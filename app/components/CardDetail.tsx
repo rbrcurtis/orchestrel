@@ -517,7 +517,7 @@ export const CardDetail = observer(function CardDetail({
               </Badge>
             </SelectTrigger>
             <SelectContent>
-              {STATUSES.filter((s) => !sessionActive || s === col || s === 'done' || s === 'archive').map((s) => (
+              {STATUSES.map((s) => (
                 <SelectItem key={s} value={s}>
                   {statusLabels[s]}
                 </SelectItem>

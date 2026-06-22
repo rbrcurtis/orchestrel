@@ -3,6 +3,12 @@ import { DataSource } from 'typeorm'
 import { Card, CardSubscriber } from '../models/Card'
 import { Project, ProjectSubscriber } from '../models/Project'
 
+const mockCancel = vi.fn()
+const mockIsActive = vi.fn(() => true)
+vi.mock('../init-state', () => ({
+  getOrcdClient: () => ({ isActive: mockIsActive, cancel: mockCancel }),
+}))
+
 let ds: DataSource
 
 beforeAll(async () => {
@@ -78,6 +84,26 @@ describe('CardService', () => {
     await cardService.deleteCard(c.id)
     const found = await Card.findOneBy({ id: c.id })
     expect(found).toBeNull()
+  })
+
+  it('does not cancel a live session when archiving a running card, but does when moving back to backlog', async () => {
+    const { cardService } = await import('./card')
+    mockCancel.mockClear()
+
+    // Archiving a running card must let the session keep running (final
+    // fire-and-forget commands) — the worktree is cleaned up on session_exit.
+    const archived = await cardService.createCard({ title: 'Archive live', description: 'd', column: 'running' })
+    archived.sessionId = 'sess-live'
+    await archived.save()
+    await cardService.updateCard(archived.id, { column: 'archive' })
+    expect(mockCancel).not.toHaveBeenCalled()
+
+    // Moving out of running to a non-live column still kills the session.
+    const stopped = await cardService.createCard({ title: 'Stop live', description: 'd', column: 'running' })
+    stopped.sessionId = 'sess-live-2'
+    await stopped.save()
+    await cardService.updateCard(stopped.id, { column: 'backlog' })
+    expect(mockCancel).toHaveBeenCalledWith('sess-live-2')
   })
 
   it('limits Ollama title generation response length', async () => {

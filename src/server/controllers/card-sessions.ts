@@ -224,6 +224,13 @@ async function handleSessionExit(
     }
   }
 
+  // If the card was archived while its session kept running, the board:changed
+  // handler deferred worktree cleanup to avoid breaking the live session.
+  // Now that the session has actually exited, remove the worktree.
+  if (card && card.column === 'archive') {
+    await cleanupWorktreeForCard(card);
+  }
+
   bus.publish(`card:${cardId}:exit`, {
     sessionId: card?.sessionId,
     status,
@@ -339,6 +346,35 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
   });
 }
 
+// Remove the worktree for an archived card. Returns true if a removal was
+// attempted/completed, false if there was nothing to clean up.
+async function cleanupWorktreeForCard(card: Card): Promise<void> {
+  if (!card.worktreeBranch || !card.projectId) {
+    console.log(`[oc:worktree] card ${card.id} has no worktree/project, skipping cleanup`);
+    return;
+  }
+
+  try {
+    const { Project } = await import('../models/Project');
+    const proj = await Project.findOneBy({ id: card.projectId });
+    if (!proj) {
+      console.log(`[oc:worktree] card ${card.id} project ${card.projectId} not found, skipping cleanup`);
+      return;
+    }
+
+    const { resolveWorkDir } = await import('../../shared/worktree');
+    const wtPath = resolveWorkDir(card.worktreeBranch, proj.path);
+    const { removeWorktree, worktreeExists } = await import('../worktree');
+    if (worktreeExists(wtPath)) {
+      removeWorktree(proj.path, wtPath);
+      console.log(`[oc:worktree] removed ${wtPath}`);
+    }
+  } catch (err) {
+    console.error(`[oc:worktree] cleanup failed for card ${card.id}:`, err);
+    // handled: cleanup failure is non-fatal
+  }
+}
+
 export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
   bus.subscribe('board:changed', async (payload) => {
     const { card, oldColumn, newColumn } = payload as {
@@ -355,31 +391,17 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
       return;
     }
 
-    const c = card as Card;
-    if (!c.worktreeBranch || !c.projectId) {
-      console.log(`[oc:worktree] card ${c.id} has no worktree/project, skipping cleanup`);
+    // Archiving no longer kills a live session — the agent may still be running
+    // a final fire-and-forget command in its worktree. Removing it now would
+    // break that session, so defer cleanup until session_exit fires.
+    const initState = await import('../init-state');
+    const client = initState.getOrcdClient();
+    if (card.sessionId && client?.isActive(card.sessionId)) {
+      console.log(`[oc:worktree] card ${card.id} archived with live session ${card.sessionId.slice(0, 8)}, deferring worktree cleanup to session_exit`);
       return;
     }
 
-    try {
-      const { Project } = await import('../models/Project');
-      const proj = await Project.findOneBy({ id: c.projectId });
-      if (!proj) {
-        console.log(`[oc:worktree] card ${c.id} project ${c.projectId} not found, skipping cleanup`);
-        return;
-      }
-
-      const { resolveWorkDir } = await import('../../shared/worktree');
-      const wtPath = resolveWorkDir(c.worktreeBranch, proj.path);
-      const { removeWorktree, worktreeExists } = await import('../worktree');
-      if (worktreeExists(wtPath)) {
-        removeWorktree(proj.path, wtPath);
-        console.log(`[oc:worktree] removed ${wtPath}`);
-      }
-    } catch (err) {
-      console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
-      // handled: cleanup failure is non-fatal
-    }
+    await cleanupWorktreeForCard(card);
   });
 }
 
