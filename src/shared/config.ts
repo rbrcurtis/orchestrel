@@ -17,6 +17,7 @@ export interface ProviderDef {
   baseUrl?: string;
   apiKey?: string;
   authToken?: string;
+  oauth?: string;
   region?: string;
   profile?: string;
   models: Record<string, ModelDef>;
@@ -133,6 +134,7 @@ export function parseConfig(
       ...(p.baseUrl ? { baseUrl: resolveEnvVars(String(p.baseUrl), env) } : {}),
       ...(p.apiKey ? { apiKey: resolveEnvVars(String(p.apiKey), env) } : {}),
       ...(p.authToken ? { authToken: resolveEnvVars(String(p.authToken), env) } : {}),
+      ...(p.oauth ? { oauth: String(p.oauth) } : {}),
       ...(p.region ? { region: resolveEnvVars(String(p.region), env) } : {}),
       ...(p.profile ? { profile: resolveEnvVars(String(p.profile), env) } : {}),
       models,

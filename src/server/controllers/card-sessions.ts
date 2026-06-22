@@ -75,7 +75,18 @@ export function initOrcdRouter(
 
     if (msg.type === 'stream_event') {
       const sdkEvent = msg.event as Record<string, unknown>;
-      bus.publish(`card:${cardId}:sdk`, sdkEvent);
+      if (
+        sdkEvent.type === 'message_start' ||
+        sdkEvent.type === 'content_block_start' ||
+        sdkEvent.type === 'content_block_delta' ||
+        sdkEvent.type === 'content_block_stop' ||
+        sdkEvent.type === 'message_stop' ||
+        sdkEvent.type === 'message_delta'
+      ) {
+        bus.publish(`card:${cardId}:sdk`, { type: 'stream_event', event: sdkEvent });
+      } else {
+        bus.publish(`card:${cardId}:sdk`, sdkEvent);
+      }
 
       if (sdkEvent.type === 'system') {
         const sys = sdkEvent as { subtype?: string; session_id?: string };
@@ -470,6 +481,7 @@ async function startCardSession(
   try {
     const { ensureWorktree } = await import('../sessions/worktree');
     const cwd = await ensureWorktree(card);
+    const startedFromDescription = !card.sessionId;
     const prompt = card.sessionId ? '' : card.description ?? '';
 
     const sessionId = await client.create({
@@ -483,6 +495,9 @@ async function startCardSession(
     });
 
     card.sessionId = sessionId;
+    // The card description is the first prompt sent. Follow-up prompts increment
+    // promptsSent in the ws message handler; this covers the initial start.
+    if (startedFromDescription) card.promptsSent = (card.promptsSent ?? 0) + 1;
     trackSession(card.id, sessionId);
     card.updatedAt = new Date().toISOString();
     await repo().save(card);

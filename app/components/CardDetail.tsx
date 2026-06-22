@@ -21,7 +21,7 @@ import {
 } from '~/components/ui/alert-dialog';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
-import { cn } from '~/lib/utils';
+import { cn, copyText } from '~/lib/utils';
 import { slugify } from '../../src/shared/worktree';
 import type { Column, Project } from '../../src/shared/ws-protocol';
 
@@ -856,9 +856,9 @@ function CopyPathButton({
     ? `${projectPath}/.worktrees/${worktreeBranch}`
     : projectPath;
 
-  function handleCopy() {
+  async function handleCopy() {
     if (!path) return;
-    navigator.clipboard.writeText(path);
+    await copyText(path);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -890,8 +890,8 @@ function CopyPathButton({
 function CopyResumeButton({ sessionId, cardId }: { sessionId: string; cardId: number }) {
   const [copied, setCopied] = useState(false);
 
-  function handleCopy() {
-    navigator.clipboard.writeText(`${sessionId} # card ${cardId}`);
+  async function handleCopy() {
+    await copyText(`${sessionId} # card ${cardId}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }

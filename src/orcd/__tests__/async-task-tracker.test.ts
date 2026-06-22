@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   AsyncTaskTracker,
-  extractBackgroundTaskLaunches,
+  extractAsyncAgentLaunches,
   parseAsyncAgentLaunch,
-  parseSdkTaskNotification,
   parseTaskNotification,
 } from '../async-task-tracker';
 
@@ -65,48 +64,8 @@ describe('parseTaskNotification', () => {
     expect(parseTaskNotification(content)?.status).toBe('failed');
   });
 
-  it('treats killed notifications as failed terminal results', () => {
-    const content = [
-      '<task-notification>',
-      '<task-id>bv8xx4z6c</task-id>',
-      '<tool-use-id>tooluse_yMsyf0cB85CRgSruDpT0Qk</tool-use-id>',
-      '<output-file>/tmp/claude/tasks/bv8xx4z6c.output</output-file>',
-      '<status>killed</status>',
-      '<summary>Monitor "Jenkins deploy for commit 24b151f" stopped</summary>',
-      '</task-notification>',
-    ].join('\n');
-
-    expect(parseTaskNotification(content)).toEqual({
-      taskId: 'bv8xx4z6c',
-      toolUseId: 'tooluse_yMsyf0cB85CRgSruDpT0Qk',
-      outputFile: '/tmp/claude/tasks/bv8xx4z6c.output',
-      status: 'failed',
-      summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
-      result: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
-    });
-  });
-
   it('returns null for unrelated queue content', () => {
     expect(parseTaskNotification('Continue')).toBeNull();
-  });
-});
-
-describe('parseSdkTaskNotification', () => {
-  it('treats SDK stopped Monitor notifications as failed terminal results', () => {
-    expect(parseSdkTaskNotification({
-      type: 'system',
-      subtype: 'task_notification',
-      task_id: 'bbqs4eouz',
-      tool_use_id: 'tooluse_AP4AYp7XO6OzJSixgNTeJ8',
-      status: 'stopped',
-      summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
-    })).toEqual({
-      taskId: 'bbqs4eouz',
-      toolUseId: 'tooluse_AP4AYp7XO6OzJSixgNTeJ8',
-      status: 'failed',
-      summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
-      result: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
-    });
   });
 });
 
@@ -153,8 +112,8 @@ describe('AsyncTaskTracker', () => {
   });
 });
 
-describe('extractBackgroundTaskLaunches', () => {
-  it('extracts async Agent launch from SDK user tool_result event', () => {
+describe('extractAsyncAgentLaunches', () => {
+  it('extracts async launch from SDK user tool_result event', () => {
     const event = {
       type: 'user',
       message: {
@@ -178,10 +137,7 @@ describe('extractBackgroundTaskLaunches', () => {
       },
     };
 
-    expect(extractBackgroundTaskLaunches(event, new Map([[
-      'call_abc',
-      { name: 'Agent', description: 'Implement remaining tasks' },
-    ]]))).toEqual([
+    expect(extractAsyncAgentLaunches(event, new Map([['call_abc', 'Implement remaining tasks']]))).toEqual([
       {
         taskId: 'agent-123',
         toolUseId: 'call_abc',
@@ -191,107 +147,7 @@ describe('extractBackgroundTaskLaunches', () => {
     ]);
   });
 
-  it('extracts generic launch from backgroundTaskId', () => {
-    const event = {
-      type: 'user',
-      toolUseResult: { backgroundTaskId: 'bash-123' },
-      message: {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'call_bash',
-            content: 'Command running in background with ID: bash-123. Output is being written to: /tmp/tasks/bash-123.output.',
-          },
-        ],
-      },
-    };
-
-    expect(extractBackgroundTaskLaunches(event, new Map([[
-      'call_bash',
-      { name: 'Bash', description: 'Wait before review' },
-    ]]))).toEqual([
-      {
-        taskId: 'bash-123',
-        toolUseId: 'call_bash',
-        toolName: 'Bash',
-        description: 'Wait before review',
-        outputFile: '/tmp/tasks/bash-123.output',
-      },
-    ]);
-  });
-
-  it('extracts generic launch from taskId', () => {
-    const event = {
-      type: 'user',
-      toolUseResult: { taskId: 'monitor-123', timeoutMs: 900000, persistent: false },
-      message: {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'call_monitor',
-            content: 'Monitor started (task monitor-123, timeout 900000ms). You will be notified on each event.',
-          },
-        ],
-      },
-    };
-
-    expect(extractBackgroundTaskLaunches(event, new Map([[
-      'call_monitor',
-      { name: 'Monitor', description: 'Jenkins build completion' },
-    ]]))).toEqual([
-      {
-        taskId: 'monitor-123',
-        toolUseId: 'call_monitor',
-        toolName: 'Monitor',
-        description: 'Jenkins build completion',
-      },
-    ]);
-  });
-
-  it('ignores generic task ids without known tool metadata', () => {
-    const event = {
-      type: 'user',
-      toolUseResult: { taskId: 'monitor-123' },
-      message: {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'call_monitor',
-            content: 'Monitor started (task monitor-123, timeout 900000ms).',
-          },
-        ],
-      },
-    };
-
-    expect(extractBackgroundTaskLaunches(event, new Map())).toEqual([]);
-  });
-
-  it('ignores synchronous Task tool result ids', () => {
-    const event = {
-      type: 'user',
-      toolUseResult: { success: true, taskId: '1', updatedFields: ['status'] },
-      message: {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'call_task_update',
-            content: 'Updated task #1 status',
-          },
-        ],
-      },
-    };
-
-    expect(extractBackgroundTaskLaunches(event, new Map([[
-      'call_task_update',
-      { name: 'TaskUpdate', description: 'Update task status' },
-    ]]))).toEqual([]);
-  });
-
-  it('ignores matching Agent launch text from non-Agent tool results', () => {
+  it('ignores matching launch text from non-Agent tool results', () => {
     const event = {
       type: 'user',
       message: {
@@ -316,9 +172,6 @@ describe('extractBackgroundTaskLaunches', () => {
       },
     };
 
-    expect(extractBackgroundTaskLaunches(event, new Map([[
-      'call_read',
-      { name: 'Read', description: 'Read fixture' },
-    ]]))).toEqual([]);
+    expect(extractAsyncAgentLaunches(event, new Map())).toEqual([]);
   });
 });

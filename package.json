@@ -18,11 +18,13 @@
     "cap:open:android": "cap open android"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.119",
+    "@anthropic-ai/sdk": "0.91.1",
     "@capacitor/core": "^8.3.4",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@earendil-works/pi-ai": "0.78.0",
+    "@earendil-works/pi-coding-agent": "0.78.0",
     "@react-router/express": "7.12.0",
     "@react-router/node": "7.12.0",
     "@tsoa/runtime": "7.0.0-alpha.0",

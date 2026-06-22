@@ -7,6 +7,7 @@ import { ToolUseBlock } from './ToolUseBlock';
 import { BashToolBlock } from './BashToolBlock';
 import { ScrollArea, ScrollBar } from '~/components/ui/scroll-area';
 import type { ConversationEntry, ContentBlock, TurnResult } from '~/lib/message-accumulator';
+import { copyText } from '~/lib/utils';
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
@@ -167,7 +168,7 @@ function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(text);
+    void copyText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }, [text]);
@@ -349,14 +350,31 @@ function TurnEndBlock({ data, timestamp }: { data: TurnResult; timestamp?: numbe
     ? calcCostFromModelUsage(data.modelUsage, data.costUsd)
     : data.costUsd;
   const durationSec = data.durationMs != null ? (data.durationMs / 1000).toFixed(1) : null;
+  const time = formatEntryTime(timestamp);
+
+  // An errored turn previously rendered as the neutral "Turn complete" divider,
+  // hiding the provider's failure reason. Surface the actual message instead.
+  if (!isSuccess) {
+    const detail = data.errorMessage?.trim() || data.subtype || 'unknown error';
+    return (
+      <div className="my-2 min-w-0 overflow-hidden">
+        <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive min-w-0">
+          <div className="font-semibold">
+            Turn failed{time ? ` · ${time}` : ''}
+          </div>
+          <div className="mt-1 whitespace-pre-wrap break-all overflow-hidden text-destructive/90">{detail}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
       <div className="flex items-center gap-2 w-full min-w-0">
         <div className="flex-1 border-t border-border shrink min-w-2" />
-        <span className={`shrink-0 ${isSuccess ? '' : 'text-destructive'}`}>
-          {isSuccess ? 'Turn complete' : `Error: ${data.subtype ?? 'unknown'}`}
-          {formatEntryTime(timestamp) ? ` · ${formatEntryTime(timestamp)}` : ''}
+        <span className="shrink-0">
+          Turn complete
+          {time ? ` · ${time}` : ''}
           {cost != null && ` · $${cost.toFixed(4)}`}
           {durationSec != null && ` · ${durationSec}s`}
         </span>

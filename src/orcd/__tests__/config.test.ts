@@ -39,7 +39,9 @@ providers:
     expect(cfg.defaultProvider).toBe('anthropic');
     expect(cfg.providers.anthropic.baseUrl).toBe('https://api.anthropic.com');
     expect(cfg.providers.anthropic.apiKey).toBe('test-key');
-    expect(cfg.providers.anthropic.models).toEqual(['claude-sonnet-4-6']);
+    expect(cfg.providers.anthropic.models).toEqual({
+      sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
+    });
   });
 
   it('resolves env vars in apiKey', () => {

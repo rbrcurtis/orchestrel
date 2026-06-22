@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { createServer, type Server, type Socket } from 'net';
 import { dirname } from 'path';
 import { upsertMemories } from '../lib/memory-upsert';
-import { applyCompaction, prepareCompaction, type PreparedCompaction } from '../lib/session-compactor';
+import { applyCompaction, type PreparedCompaction } from '../lib/session-compactor';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { OrcdConfig, ProviderConfig } from './config';
 import { OrcdSession, type SessionEventCallback } from './session';
@@ -146,6 +146,7 @@ export class OrcdServer {
       cwd: action.cwd,
       model: action.model,
       provider: action.provider,
+      providerConfig: providerCfg,
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
@@ -164,13 +165,10 @@ export class OrcdServer {
 
     const effort = action.effort ?? 'high';
 
-    const env = Object.assign(this.buildProviderEnv(action.provider), action.env) as Record<string, string>;
-
     session
       .run({
         prompt: action.prompt,
         resume: !!action.sessionId,
-        env,
         effort,
       })
       .finally(() => {
@@ -193,15 +191,13 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    const env = this.buildProviderEnv(session.provider);
-
     if (!action.prompt.trim()) {
       console.warn(`[orcd:${action.sessionId.slice(0, 8)}] handleMessage: empty prompt, dropping`);
       this.send(client, { type: 'error', sessionId: action.sessionId, error: 'empty prompt' });
       return;
     }
 
-    session.sendMessage(action.prompt, env).finally(() => {
+    session.sendMessage(action.prompt).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }
@@ -224,8 +220,9 @@ export class OrcdServer {
       console.log(
         `[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`,
       );
-      // Already subscribed — just replay from requested index
-      session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
+      if (action.afterEventIndex !== undefined) {
+        session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
+      }
       return;
     }
 
@@ -271,6 +268,7 @@ export class OrcdServer {
         cwd: action.cwd,
         model: action.model,
         provider: action.provider,
+        providerConfig: this.providers[action.provider],
         sessionId: action.sessionId,
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,
@@ -287,7 +285,7 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id)) {
+    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id) || this.applyingSummaries.has(session.id)) {
       console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: already compacting or pending, ignoring`);
       return;
     }
@@ -322,29 +320,11 @@ export class OrcdServer {
       return { ...process.env } as Record<string, string>;
     }
 
-    const providerConfig: Record<string, string> = {};
-    if (cfg.type === 'bedrock') {
-      providerConfig.CLAUDE_CODE_USE_BEDROCK = '1';
-      if (cfg.region) providerConfig.AWS_REGION = cfg.region;
-      if (cfg.profile) providerConfig.AWS_PROFILE = cfg.profile;
-    } else {
-      if (cfg.baseUrl) providerConfig.ANTHROPIC_BASE_URL = cfg.baseUrl;
-      if (cfg.apiKey) providerConfig.ANTHROPIC_API_KEY = cfg.apiKey;
-      if (cfg.authToken) providerConfig.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
-    }
-
-    // modelAliasEnv sets ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL so the SDK's
-    // internal subagent spawning (Explore agents, etc.) uses the provider's tiered
-    // model mapping. Configured via the provider's `aliases` section in config.yaml
-    // (or positional fallback if aliases absent). Single-model servers should set
-    // all aliases to the same key to prevent model thrashing.
-    return Object.assign(
-      {},
-      process.env,
-      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      { ...providerConfig },
-      cfg.modelAliasEnv,
-    ) as Record<string, string>;
+    // Pi runtime injects provider baseUrl/apiKey via the Model object and
+    // AuthStorage.setRuntimeApiKey (see pi-runtime.ts) — not via process.env.
+    // modelAliasEnv sets ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL for tiered
+    // subagent model mapping, configured via the provider's `aliases` in config.yaml.
+    return Object.assign({}, process.env, cfg.modelAliasEnv) as Record<string, string>;
   }
 
   // ── Memory upsert ───────────────────────────────────────────────────────
@@ -384,37 +364,32 @@ export class OrcdServer {
   private async triggerCompaction(session: OrcdSession): Promise<void> {
     const sid = session.id;
     const log = (msg: string) => console.log(`[orcd:${sid.slice(0, 8)}:compact] ${msg}`);
-    const env = this.buildProviderEnv(session.provider);
 
     // Memory upsert is NOT run here — it only runs on card finish
     // (session_exit = move to review, or explicit archive action). Running
     // it every compaction cycle produced redundant work against unchanged
     // context and wasted tokens. See memory 'Auto-memory upsert architecture'.
 
-    // Prepare summary (read-only, safe while session runs)
     const pct =
       session.lastContextWindow > 0 ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0) : '?';
-    log(`preparing summary (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
+    log(`preparing Pi compact delegate (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
 
-    const prepared = await prepareCompaction({
+    const prepared: PreparedCompaction = {
       sessionId: sid,
-      projectPath: session.cwd,
-      model: session.model,
-      env,
-      contextWindow: session.contextWindow,
-    });
+      messagesBefore: 0,
+      messagesCovered: 0,
+      summaryChars: 0,
+      prepareDurationMs: 0,
+      compact: () => session.compact(),
+    };
 
     this.pendingSummaries.set(sid, prepared);
     if (this.exitedSessions.has(sid)) {
-      log(
-        `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — beforeExit already reached, applying now`,
-      );
+      log('compact delegate ready — beforeExit already reached, applying now');
       await this.applyPendingCompaction(session);
       return;
     }
-    log(
-      `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for beforeExit`,
-    );
+    log('compact delegate ready — waiting for beforeExit');
   }
 
   private async applyPendingCompaction(session: OrcdSession): Promise<void> {
@@ -432,7 +407,7 @@ export class OrcdServer {
 
     this.applyingSummaries.add(sid);
     this.pendingSummaries.delete(sid);
-    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at beforeExit`);
+    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying Pi-native compaction at beforeExit`);
     try {
       const result = await applyCompaction(prepared);
       console.log(
@@ -478,6 +453,7 @@ export class OrcdServer {
           msg.contextWindow > 0 &&
           !this.compacting.has(sid) &&
           !this.pendingSummaries.has(sid) &&
+          !this.applyingSummaries.has(sid) &&
           msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
         ) {
           this.compacting.add(sid);

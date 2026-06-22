@@ -8,7 +8,6 @@ export interface CreateAction {
   model: string;
   effort?: string;       // 'high' | 'medium' | 'low' | 'disabled'
   sessionId?: string;    // Resume existing session
-  env?: Record<string, string>;  // ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY
   contextWindow?: number;
   summarizeThreshold?: number;  // 0-1, fraction of context window to trigger compaction
 }
@@ -82,14 +81,14 @@ export interface StreamEventMessage {
   type: 'stream_event';
   sessionId: string;
   eventIndex: number;
-  event: unknown;        // SDKMessage from Agent SDK
+  event: unknown;        // Runtime stream event
 }
 
 export interface SessionResultMessage {
   type: 'result';
   sessionId: string;
   eventIndex: number;
-  result: unknown;       // SDKResultMessage from Agent SDK
+  result: unknown;       // Runtime turn result
 }
 
 export interface TurnCompleteMessage {
@@ -121,7 +120,7 @@ export interface ContextUsageMessage {
 export interface SessionIdUpdateMessage {
   type: 'session_id_update';
   sessionId: string;       // orcd-level session id (unchanged, for routing)
-  newSessionId: string;    // CC's new session_id after a fork
+  newSessionId: string;    // Runtime session id after a fork
 }
 
 export interface SessionListMessage {
