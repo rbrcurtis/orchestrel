@@ -2,14 +2,15 @@
 /*
  * Claude Code streamSimple for the Claude Max OAuth provider.
  *
- * Vendored/adapted from leohenon/pi-anthropic-oauth (MIT). Pi keys streamSimple
- * by `api`, so registering this for our anthropic-messages OAuth provider also
- * intercepts every other anthropic-format provider (okkanti/trackable/ray) — we
- * therefore reshape ONLY for the OAuth provider and delegate everything else to
- * Pi's default anthropic stream. The reshape (Claude Code identity, claude-code
- * betas, Bearer OAuth token, Claude Code tool names) is what makes Anthropic
- * classify the request as legitimate Claude Code traffic and bill it against the
- * Max plan instead of rejecting it with "out of extra usage".
+ * Vendored/adapted from leohenon/pi-anthropic-oauth (MIT). This reshapes the
+ * request into legitimate Claude Code traffic (Claude Code identity, claude-code
+ * betas, Bearer OAuth token, Claude Code tool names) — what makes Anthropic
+ * classify it as Claude Code traffic and bill it against the Max plan instead of
+ * rejecting it with "out of extra usage". Pi keys streamSimple by `api`, so
+ * registering this for our anthropic-messages OAuth provider also intercepts
+ * every other anthropic-format provider (okkanti/trackable/ray) — we therefore
+ * reshape ONLY for the OAuth provider and delegate everything else to Pi's
+ * default anthropic stream.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageCreateParamsStreaming } from '@anthropic-ai/sdk/resources/messages.js';
@@ -25,9 +26,9 @@ import {
   type StopReason,
   streamSimpleAnthropic,
 } from '@earendil-works/pi-ai';
-import { getClaudeMaxAccessToken } from './claude-code-auth';
-import { convertPiMessagesToAnthropic, convertPiToolsToAnthropic, fromClaudeCodeToolName, type IndexedBlock } from './claude-code-convert';
-import { buildClaudeCodeSystemPrompt } from './claude-code-prompt';
+import { getAccessToken } from './auth';
+import { convertPiMessagesToAnthropic, convertPiToolsToAnthropic, fromClaudeCodeToolName, type IndexedBlock } from './convert';
+import { buildClaudeCodeSystemPrompt } from './prompt';
 
 const REQUIRED_BETAS = ['claude-code-20250219', 'oauth-2025-04-20', 'interleaved-thinking-2025-05-14'] as const;
 const USER_AGENT = process.env.ORCHESTREL_CLAUDE_CODE_UA ?? 'claude-code/2.1.97';
@@ -80,7 +81,7 @@ export function makeClaudeCodeStream(oauthProviderId: string) {
       };
 
       try {
-        const apiKey = await getClaudeMaxAccessToken();
+        const apiKey = await getAccessToken();
 
         const defaultHeaders: Record<string, string> = {
           accept: 'application/json',

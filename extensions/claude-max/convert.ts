@@ -18,7 +18,7 @@ import type {
   ToolCall,
   ToolResultMessage,
 } from '@earendil-works/pi-ai';
-import { sanitizeSurrogates } from './claude-code-prompt';
+import { sanitizeSurrogates } from './prompt';
 
 type ToolResultContentBlock =
   | { type: 'text'; text: string }

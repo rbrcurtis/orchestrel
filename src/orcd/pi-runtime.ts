@@ -3,15 +3,8 @@ import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, getAgen
 import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
-import { makeClaudeCodeStream } from './claude-code-stream';
 
 const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
-
-// Providers with `oauth: claude-max` authenticate against Anthropic using the
-// local Claude Max OAuth token and reshape requests to look like Claude Code
-// (see claude-code-stream.ts). This avoids Anthropic's harness classifier that
-// rejects raw Pi requests with "out of extra usage".
-const CLAUDE_MAX_OAUTH = 'claude-max';
 
 export interface CreatePiRuntimeSessionOpts {
   cwd: string;
@@ -86,15 +79,11 @@ function registerOrchestrelProvider(
   provider: NonNullable<CreatePiRuntimeSessionOpts['provider']>,
 ): void {
   const api = modelApi(provider.type);
-  const isClaudeMaxOAuth = provider.oauth === CLAUDE_MAX_OAUTH;
   const cfg: ProviderConfigInput = {
     name: provider.label ?? providerId,
     api,
     baseUrl: provider.baseUrl || 'https://api.anthropic.com',
-    // The OAuth stream supplies a Bearer token itself; pi only needs a non-empty
-    // apiKey to pass provider validation when models are defined.
-    apiKey: isClaudeMaxOAuth ? 'claude-max-oauth' : provider.apiKey || provider.authToken || `$${EMPTY_API_KEY_ENV}`,
-    ...(isClaudeMaxOAuth ? { streamSimple: makeClaudeCodeStream(providerId) } : {}),
+    apiKey: provider.apiKey || provider.authToken || `$${EMPTY_API_KEY_ENV}`,
     models: Object.entries(provider.models).map(([alias, model]) => ({
       id: model.modelID,
       name: modelName(alias, model),
@@ -148,6 +137,15 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     thinkingLevel: effortToThinkingLevel(opts.effort),
   });
   const session = result.session;
+
+  // Bind extensions to emit the `session_start` event. Extensions that only
+  // register providers/tools at load (e.g. claude-max) work without this, but
+  // any extension that initializes on session_start (e.g. the MCP adapter that
+  // connects to MCP servers) needs it. Pi's own headless print-mode binds here
+  // too. Bindings are minimal — orcd has no TUI and drives sessions directly.
+  await session.bindExtensions({
+    onError: (err) => console.error(`[orcd] extension error (${err.extensionPath}): ${err.error}`),
+  });
 
   return {
     id: session.sessionId,

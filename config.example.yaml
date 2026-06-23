@@ -32,6 +32,20 @@ providers:
       sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6,            contextWindow: 1000000 }
       haiku:  { label: "Haiku 4.5",  modelID: claude-haiku-4-5-20251001,    contextWindow: 200000 }
 
+  # Example: Claude Max subscription auth (OAuth) instead of an API key.
+  # claude-max:
+  #   label: Claude Max
+  #   baseUrl: https://api.anthropic.com
+  #   oauth: claude-max
+  #   models:
+  #     opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,   contextWindow: 1000000 }
+  #     sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 1000000 }
+  #
+  # oauth: claude-max requires the `claude-max` Pi extension installed at
+  # ~/.pi/agent/extensions/claude-max (run scripts/install-claude-max-extension.sh).
+  # orcd itself contains no provider-specific code; the extension self-registers
+  # auth + Claude Code request reshaping for this provider.
+
   # Example: a local Pi-compatible provider/proxy route.
   # proxy:
   #   label: My Proxy
