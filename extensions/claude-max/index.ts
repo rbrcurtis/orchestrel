@@ -11,7 +11,7 @@ const extension: ExtensionFactory = (pi) => {
     api: 'anthropic-messages',
     baseUrl: 'https://api.anthropic.com',
     oauth: claudeMaxOAuth,
-    streamSimple: makeClaudeCodeStream(),
+    streamSimple: makeClaudeCodeStream(PROVIDER_NAME),
     // No `models`: augments orchestrel's catalog (verified in Task 0 spike).
   });
 };

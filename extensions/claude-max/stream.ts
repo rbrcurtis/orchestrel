@@ -6,8 +6,11 @@
  * request into legitimate Claude Code traffic (Claude Code identity, claude-code
  * betas, Bearer OAuth token, Claude Code tool names) — what makes Anthropic
  * classify it as Claude Code traffic and bill it against the Max plan instead of
- * rejecting it with "out of extra usage". Registered only on the Claude Max
- * provider, so there is no other-provider fallthrough.
+ * rejecting it with "out of extra usage". Pi keys streamSimple by `api`, so
+ * registering this for our anthropic-messages OAuth provider also intercepts
+ * every other anthropic-format provider (okkanti/trackable/ray) — we therefore
+ * reshape ONLY for the OAuth provider and delegate everything else to Pi's
+ * default anthropic stream.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageCreateParamsStreaming } from '@anthropic-ai/sdk/resources/messages.js';
@@ -21,6 +24,7 @@ import {
   type Model,
   type SimpleStreamOptions,
   type StopReason,
+  streamSimpleAnthropic,
 } from '@earendil-works/pi-ai';
 import { getAccessToken } from './auth';
 import { convertPiMessagesToAnthropic, convertPiToolsToAnthropic, fromClaudeCodeToolName, type IndexedBlock } from './convert';
@@ -44,13 +48,17 @@ function mapStopReason(reason: string | null | undefined): StopReason {
   }
 }
 
-/** Build the Claude Code reshaping streamSimple for the Claude Max provider. */
-export function makeClaudeCodeStream() {
+/** Build a streamSimple that reshapes only `oauthProviderId`'s requests. */
+export function makeClaudeCodeStream(oauthProviderId: string) {
   return function streamClaudeCodeOAuth(
     model: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions,
   ): AssistantMessageEventStream {
+    if (model.provider !== oauthProviderId) {
+      return streamSimpleAnthropic(model as Model<'anthropic-messages'>, context, options);
+    }
+
     const stream = createAssistantMessageEventStream();
 
     void (async () => {
