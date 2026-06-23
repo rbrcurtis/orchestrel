@@ -5,6 +5,7 @@ const mockSubscribe = vi.fn();
 const mockAbort = vi.fn();
 const mockCompact = vi.fn();
 const mockSetThinkingLevel = vi.fn();
+const mockBindExtensions = vi.fn();
 const mockFind = vi.fn();
 const mockCreateAgentSession = vi.fn();
 const mockSetRuntimeApiKey = vi.fn();
@@ -41,6 +42,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     abort: mockAbort,
     compact: mockCompact,
     setThinkingLevel: mockSetThinkingLevel,
+    bindExtensions: mockBindExtensions,
     messages: [{ role: 'user', content: 'hello' }],
     ...overrides,
   };
@@ -61,6 +63,7 @@ describe('createPiRuntimeSession', () => {
     mockPrompt.mockResolvedValue(undefined);
     mockAbort.mockResolvedValue(undefined);
     mockCompact.mockResolvedValue({ ok: true });
+    mockBindExtensions.mockResolvedValue(undefined);
   });
 
   it('creates a Pi session with Pi resource paths and mapped effort', async () => {
@@ -89,6 +92,9 @@ describe('createPiRuntimeSession', () => {
       model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
       thinkingLevel: 'xhigh',
     });
+    // Must bind extensions so the session_start event fires — extensions like
+    // the MCP adapter initialize on it. Without this, MCP servers never connect.
+    expect(mockBindExtensions).toHaveBeenCalledOnce();
   });
 
   it('pins new Pi session storage to the orcd session id when provided', async () => {

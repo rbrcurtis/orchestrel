@@ -138,6 +138,15 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   });
   const session = result.session;
 
+  // Bind extensions to emit the `session_start` event. Extensions that only
+  // register providers/tools at load (e.g. claude-max) work without this, but
+  // any extension that initializes on session_start (e.g. the MCP adapter that
+  // connects to MCP servers) needs it. Pi's own headless print-mode binds here
+  // too. Bindings are minimal — orcd has no TUI and drives sessions directly.
+  await session.bindExtensions({
+    onError: (err) => console.error(`[orcd] extension error (${err.extensionPath}): ${err.error}`),
+  });
+
   return {
     id: session.sessionId,
 
