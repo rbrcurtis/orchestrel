@@ -29,7 +29,9 @@ Personal kanban board + Claude Code orchestration app.
 
 ### Provider Routing
 
-Provider config lives in `./config.yaml` at the repo root (gitignored; see `config.example.yaml`). Both orcd and the orc backend read it via `src/shared/config.ts`. Each provider has `label`, optional `baseUrl`/`apiKey`/`authToken`, and a `models` map of `alias → { label, modelID, contextWindow }`. orcd sets `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` on the agent subprocess only for fields that are set — omit all three to fall through to Claude Max OAuth via the Agent SDK. KPP reads the API key to determine which account pool to route to. All providers work identically — no special cases.
+Provider config lives in `./config.yaml` at the repo root (gitignored; see `config.example.yaml`). Both orcd and the orc backend read it via `src/shared/config.ts`. Each provider has `label`, optional `baseUrl`/`apiKey`/`authToken`/`oauth`, and a `models` map of `alias → { label, modelID, contextWindow }`. orcd registers every provider generically from config with no provider-specific branches — all providers work identically, no special cases.
+
+**Provider-specific behavior lives outside orcd, in Pi extensions (layer 5).** Claude Max OAuth and its Claude Code request reshaping are NOT in orcd's application code. A standalone Pi extension at `extensions/claude-max/` (symlinked to `~/.pi/agent/extensions/claude-max` via `scripts/install-claude-max-extension.sh`) is auto-discovered by Pi and self-registers the `oauth` block + `streamSimple` reshaper that augments the `anthropic` provider. orcd imports nothing from it. Setting `oauth: claude-max` on a provider in `config.yaml` depends on that extension being installed; without it the provider has no working auth.
 
 ## Code Style
 
