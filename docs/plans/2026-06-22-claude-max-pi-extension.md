@@ -21,8 +21,11 @@ Per the design discussion the rule is **purest option, every decision**:
 ### Credential source of truth
 `~/.claude/.credentials.json` stays the source of truth (interop with the `claude` CLI is a hard requirement). The oauth block's `login()` reads that file headlessly (no interactive prompts — orcd is a daemon), `refreshToken()` refreshes against `https://console.anthropic.com/v1/oauth/token` and writes the rotated token back to that file, and `getApiKey()` returns `creds.access`. Pi's own `auth.json` becomes a cache populated from these.
 
-### Simplification unlocked
-Because `streamSimple` is now attached to **only** the `"anthropic"` provider (not registered globally by API format), the current global guard `if (model.provider !== oauthProviderId) return streamSimpleAnthropic(...)` is no longer needed — other anthropic-format providers (okkanti/trackable/ray) never receive this `streamSimple`. The guard is removed during the move.
+### Guard is REQUIRED (correction — original plan premise was wrong)
+The plan originally assumed `streamSimple` would be attached to "only the `anthropic` provider" so the `if (model.provider !== oauthProviderId) return streamSimpleAnthropic(...)` guard could be dropped. **That is false** (caught in Task 3 code review, verified against pi source). Pi's `registerApiProvider` keys the stream handler **globally by `api`** (`apiProviderRegistry.set(provider.api, …)` in `@earendil-works/pi-ai/dist/api-registry.js`), and `wrapStreamSimple` only checks `model.api`, never `model.provider`. So a `streamSimple` registered for `anthropic-messages` intercepts **every** anthropic-format provider (okkanti/trackable/ray) — which is exactly why the original guard delegated non-matching providers back to `streamSimpleAnthropic`. The guard is **kept**: `makeClaudeCodeStream(PROVIDER_NAME)` takes the provider id and `streamClaudeCodeOAuth` early-returns `streamSimpleAnthropic(model, context, options)` when `model.provider !== oauthProviderId`.
+
+### Token sourcing (correction to Task 0 spike (b))
+The spike noted Pi passes the resolved key via `options.apiKey`. We do **not** rely on that: Pi's `AuthStorage` only auto-refreshes its own `auth.json`, never `~/.claude/.credentials.json`, which must stay canonical for `claude` CLI interop. So `stream.ts` sources the token via `getAccessToken()` in `auth.ts` (reads `~/.claude` fresh, refreshes on expiry with `REFRESH_SKEW_MS=60_000` + single-flight dedupe), matching the original orcd behavior.
 
 ### Spike outcome (Task 0)
 
