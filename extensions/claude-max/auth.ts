@@ -17,6 +17,7 @@ import type { OAuthCredentials, OAuthLoginCallbacks } from '@earendil-works/pi-a
 const CREDENTIALS_PATH = join(homedir(), '.claude', '.credentials.json');
 const TOKEN_URL = 'https://console.anthropic.com/v1/oauth/token';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+const REFRESH_SKEW_MS = 60_000;
 
 function readClaudeCreds(): OAuthCredentials {
   const raw = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf8')) as Record<string, unknown>;
@@ -71,3 +72,24 @@ export const claudeMaxOAuth = {
     return creds.access;
   },
 } satisfies NonNullable<import('@earendil-works/pi-coding-agent').ProviderConfig['oauth']>;
+
+let inflight: Promise<OAuthCredentials> | null = null;
+
+/**
+ * Return a valid Claude Max OAuth access token, sourced fresh from
+ * ~/.claude/.credentials.json and refreshed on near-expiry. Pi's AuthStorage
+ * only auto-refreshes its own auth.json, never ~/.claude, so the stream sources
+ * its token here instead of trusting options.apiKey. Single-flight dedupes
+ * concurrent refreshes so we make at most one token request at a time.
+ */
+export async function getAccessToken(): Promise<string> {
+  const creds = readClaudeCreds();
+  if (creds.expires - Date.now() > REFRESH_SKEW_MS) return creds.access;
+
+  if (!inflight) {
+    inflight = claudeMaxOAuth.refreshToken(creds).finally(() => {
+      inflight = null;
+    });
+  }
+  return (await inflight).access;
+}
