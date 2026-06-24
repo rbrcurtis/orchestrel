@@ -1,11 +1,67 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure boundary mapper uses guard returns without session context */
+import type { TaskNotificationEvent, TaskProgressEvent, TaskStartedEvent } from './async-task-tracker';
+
 export interface ContextUsage {
   contextTokens: number;
   contextWindow: number;
 }
 
+/** Name of the LLM-callable tool the pi-subagents extension registers. */
+const SUBAGENT_TOOL_NAME = 'Agent';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Human-readable "what is the subagent doing right now" line from the extension's
+ * AgentDetails (carried on tool_execution_update.partialResult). Prefer the live
+ * `activity` ("finding files", "running command", …); fall back to status.
+ */
+function subagentProgressText(partial: unknown): string {
+  if (!isRecord(partial)) return '';
+  const activity = typeof partial.activity === 'string' ? partial.activity.trim() : '';
+  if (activity) return activity;
+  const status = typeof partial.status === 'string' ? partial.status.trim() : '';
+  return status;
+}
+
+/**
+ * Map a Pi `Agent` tool execution event (from the pi-subagents extension) into the
+ * harness-neutral subagent task events the UI already renders (SubagentFeed). The
+ * tool call id doubles as the task id, so this converges with the blocking-subagent
+ * line item the UI creates from the `Agent` tool_use block (same key).
+ *
+ * tool_execution_* fire for every tool, so non-`Agent` events return null. Returns
+ * null for updates with no activity text — the caller additionally dedupes
+ * unchanged progress so spinner-only frames don't flood the stream.
+ */
+export function mapSubagentExecEvent(
+  event: unknown,
+): TaskStartedEvent | TaskProgressEvent | TaskNotificationEvent | null {
+  if (!isRecord(event)) return null;
+  if (event.toolName !== SUBAGENT_TOOL_NAME) return null;
+  const taskId = event.toolCallId;
+  if (typeof taskId !== 'string') return null;
+
+  if (event.type === 'tool_execution_start') {
+    const args = isRecord(event.args) ? event.args : {};
+    const description =
+      typeof args.description === 'string' && args.description.trim() ? args.description.trim() : 'Subagent';
+    return { type: 'task_started', task_id: taskId, description };
+  }
+
+  if (event.type === 'tool_execution_update') {
+    const data = subagentProgressText(event.partialResult);
+    if (!data) return null;
+    return { type: 'task_progress', task_id: taskId, data };
+  }
+
+  if (event.type === 'tool_execution_end') {
+    return { type: 'task_notification', task_id: taskId, status: event.isError === true ? 'failed' : 'completed' };
+  }
+
+  return null;
 }
 
 function readUsageNumber(usage: Record<string, unknown>, camelKey: string, snakeKey: string): number | null {

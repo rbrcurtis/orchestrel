@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload } from '../pi-events';
+import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload, mapSubagentExecEvent } from '../pi-events';
 
 describe('pi event boundary mapper', () => {
   it('passes unsupported ordinary Pi events through unchanged', () => {
@@ -127,5 +127,48 @@ describe('pi event boundary mapper', () => {
       contextTokens: 456,
       contextWindow: 262144,
     });
+  });
+});
+
+describe('subagent tool_execution mapper', () => {
+  it('ignores tool_execution events for non-Agent tools', () => {
+    expect(mapSubagentExecEvent({ type: 'tool_execution_start', toolName: 'bash', toolCallId: 't1', args: {} })).toBeNull();
+    expect(mapSubagentExecEvent({ type: 'tool_execution_end', toolName: 'read', toolCallId: 't1', isError: false })).toBeNull();
+  });
+
+  it('maps Agent start to task_started using the tool description', () => {
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'call-1', args: { description: 'Explore repo' } }),
+    ).toEqual({ type: 'task_started', task_id: 'call-1', description: 'Explore repo' });
+  });
+
+  it('falls back to a generic description when the Agent call omits one', () => {
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'call-1', args: {} }),
+    ).toEqual({ type: 'task_started', task_id: 'call-1', description: 'Subagent' });
+  });
+
+  it('maps Agent updates to task_progress preferring live activity over status', () => {
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'call-1', partialResult: { activity: 'finding files', status: 'running' } }),
+    ).toEqual({ type: 'task_progress', task_id: 'call-1', data: 'finding files' });
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'call-1', partialResult: { status: 'running' } }),
+    ).toEqual({ type: 'task_progress', task_id: 'call-1', data: 'running' });
+  });
+
+  it('returns null for an Agent update with no activity or status (caller drops it)', () => {
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'call-1', partialResult: {} }),
+    ).toBeNull();
+  });
+
+  it('maps Agent end to task_notification, reflecting the error flag', () => {
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'call-1', isError: false }),
+    ).toEqual({ type: 'task_notification', task_id: 'call-1', status: 'completed' });
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'call-1', isError: true }),
+    ).toEqual({ type: 'task_notification', task_id: 'call-1', status: 'failed' });
   });
 });

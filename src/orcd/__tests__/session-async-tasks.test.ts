@@ -439,6 +439,40 @@ describe('OrcdSession Pi runtime loop', () => {
     });
   });
 
+  it('maps Pi subagent tool_execution events to the subagent line-item feed, deduping unchanged progress', async () => {
+    const runtime = createRuntimeSession([
+      { type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'sub-1', args: { description: 'Explore repo' } },
+      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'finding files', status: 'running' } },
+      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'finding files', status: 'running' } },
+      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'editing', status: 'running' } },
+      { type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'sub-1', isError: false },
+    ], 'session-subagent');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-subagent',
+    });
+
+    const taskEvents: Array<Record<string, unknown>> = [];
+    session.subscribe((msg) => {
+      if (msg.type !== 'stream_event') return;
+      const evt = msg.event as Record<string, unknown>;
+      if (typeof evt.type === 'string' && evt.type.startsWith('task_')) taskEvents.push(evt);
+    });
+
+    await session.run({ prompt: 'go' });
+
+    expect(taskEvents).toEqual([
+      { type: 'task_started', task_id: 'sub-1', description: 'Explore repo' },
+      { type: 'task_progress', task_id: 'sub-1', data: 'finding files' },
+      { type: 'task_progress', task_id: 'sub-1', data: 'editing' },
+      { type: 'task_notification', task_id: 'sub-1', status: 'completed' },
+    ]);
+  });
+
   it('rejects overlapping runs without duplicate event forwarding', async () => {
     const event = { type: 'message_update', message: { text: 'one event' } };
     const runtime = createBlockedRuntimeSession([], 'session-overlap');

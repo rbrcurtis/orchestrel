@@ -21,6 +21,12 @@ export interface TaskStartedEvent {
   description: string;
 }
 
+export interface TaskProgressEvent {
+  type: 'task_progress';
+  task_id: string;
+  data: string;
+}
+
 export interface TaskNotificationEvent {
   type: 'task_notification';
   task_id: string;

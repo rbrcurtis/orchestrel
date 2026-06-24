@@ -1,7 +1,7 @@
 /* oxlint-disable orchestrel/log-before-early-return -- session lifecycle guards intentionally return existing state without noisy per-event logs */
 import { randomUUID } from 'crypto';
 import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
-import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload } from './pi-events';
+import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload, mapSubagentExecEvent } from './pi-events';
 import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
 import { RingBuffer } from './ring-buffer';
 import type { ProviderConfig } from './config';
@@ -15,7 +15,7 @@ import type {
   StreamEventMessage,
   TurnCompleteMessage,
 } from '../shared/orcd-protocol';
-import type { TaskNotificationEvent, TaskStartedEvent } from './async-task-tracker';
+import type { TaskNotificationEvent, TaskProgressEvent, TaskStartedEvent } from './async-task-tracker';
 
 export type SessionEventCallback = (
   msg: StreamEventMessage | SessionResultMessage | TurnCompleteMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
@@ -38,6 +38,7 @@ export class OrcdSession {
 
   private readonly asyncTasks = new AsyncTaskTracker();
   private readonly agentToolDescriptions = new Map<string, string>();
+  private readonly lastSubagentProgress = new Map<string, string>();
   private readonly beforeExitHooks: Array<() => Promise<void>> = [];
   private readonly asyncTaskPollMs: number;
 
@@ -106,7 +107,7 @@ export class OrcdSession {
     }
   }
 
-  private emitSyntheticTaskEvent(event: TaskStartedEvent | TaskNotificationEvent): void {
+  private emitSyntheticTaskEvent(event: TaskStartedEvent | TaskProgressEvent | TaskNotificationEvent): void {
     const msg: StreamEventMessage = {
       type: 'stream_event',
       sessionId: this.id,
@@ -139,6 +140,26 @@ export class OrcdSession {
     if (this.isRecord(message) || Array.isArray(message)) return this.textFromPiEvent(message);
 
     return '';
+  }
+
+  /**
+   * Turn the pi-subagents extension's `Agent` tool_execution_* events into the
+   * subagent line-item lifecycle the UI renders (task_started/progress/notification).
+   * Progress frames are deduped on the activity text so spinner-only ticks don't
+   * flood the stream.
+   */
+  private recordPiSubagentEvent(event: unknown): void {
+    const taskEvent = mapSubagentExecEvent(event);
+    if (!taskEvent) return;
+
+    if (taskEvent.type === 'task_progress') {
+      if (this.lastSubagentProgress.get(taskEvent.task_id) === taskEvent.data) return;
+      this.lastSubagentProgress.set(taskEvent.task_id, taskEvent.data);
+    } else if (taskEvent.type === 'task_notification') {
+      this.lastSubagentProgress.delete(taskEvent.task_id);
+    }
+
+    this.emitSyntheticTaskEvent(taskEvent);
   }
 
   private recordAsyncTaskNotification(event: unknown): void {
@@ -215,6 +236,7 @@ export class OrcdSession {
     this.rememberAgentToolDescriptions(payload);
     this.recordAsyncAgentLaunches(payload);
     this.recordAsyncTaskNotification(payload);
+    this.recordPiSubagentEvent(event);
 
     if (this.isRecord(payload) && payload.type === 'result') {
       const msg: SessionResultMessage = {
