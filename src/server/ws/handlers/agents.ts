@@ -28,6 +28,12 @@ export async function handleAgentSend(
       // Follow-up to active session — ensure tracked in router map
       trackSession(cardId, card.sessionId);
       client.message(card.sessionId, prompt);
+      // Submitting a prompt should surface the card as running immediately,
+      // rather than waiting for the agent's first streamed token (handleTurnStart).
+      // Skip archived cards — those were intentionally pulled off the board.
+      if (card.column !== 'running' && card.column !== 'archive') {
+        card.column = 'running';
+      }
       card.updatedAt = new Date().toISOString();
       await card.save();
     } else {
