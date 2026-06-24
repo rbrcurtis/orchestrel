@@ -8,20 +8,19 @@
  * no DB update needed, and orcd's resume path (SessionManager.list → open by id)
  * finds it.
  *
- * Conversion is pragmatic and lossy on tool-call *structure*: tool_use /
- * tool_result blocks are flattened into readable text rather than reconstructed
- * as Pi `toolResult`-role messages. This preserves the *content* the model needs
- * to pick up context (verified: imported sessions recall prior tool outputs),
- * without the fragile job of re-pairing tool calls across the role split. Turns
- * are linearized into a single branch — each kept entry chains to the previous
- * kept entry, so dropped lines (sidechains, meta, queue ops) never leave broken
- * parent pointers.
+ * Tool calls are reconstructed faithfully — `tool_use` → Pi `toolCall` content
+ * blocks, `tool_result` → standalone Pi `toolResult` messages, ids paired (see
+ * buildPiSession). An earlier version flattened tool calls into `[tool call: …]`
+ * text; the model then in-context-learned that pattern and emitted tool calls as
+ * plain text, so nothing executed and turns ended immediately. Turns are
+ * linearized into a single branch, and dropped lines (sidechains, meta, queue
+ * ops) never leave broken parent pointers.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
-import type { AssistantMessage, Message, TextContent } from '@earendil-works/pi-ai';
+import type { AssistantMessage, Message, TextContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 
@@ -39,6 +38,8 @@ interface ClaudeBlock {
 
 interface ClaudeLine {
   type?: string;
+  uuid?: string;
+  parentUuid?: string | null;
   isSidechain?: boolean;
   isMeta?: boolean;
   cwd?: string;
@@ -77,35 +78,57 @@ function parseLines(jsonlPath: string): ClaudeLine[] {
   return out;
 }
 
-/** Flatten a Claude content block array into plain text, recording tool names. */
-function blocksToText(blocks: ClaudeBlock[], toolNames: Map<string, string>): string {
-  const parts: string[] = [];
-  for (const b of blocks) {
-    if (b.type === 'text' && b.text) {
-      parts.push(b.text);
-    } else if (b.type === 'thinking' && b.thinking) {
-      parts.push(`[thinking]\n${b.thinking}`);
-    } else if (b.type === 'tool_use') {
-      if (b.id && b.name) toolNames.set(b.id, b.name);
-      parts.push(`[tool call: ${b.name ?? 'tool'}] ${JSON.stringify(b.input ?? {})}`);
-    } else if (b.type === 'tool_result') {
-      const name = b.tool_use_id ? toolNames.get(b.tool_use_id) ?? 'tool' : 'tool';
-      let txt = '';
-      if (typeof b.content === 'string') txt = b.content;
-      else if (Array.isArray(b.content)) {
-        txt = (b.content as { text?: string }[]).map((c) => c?.text ?? '').join('\n');
-      }
-      parts.push(`[tool result: ${name}${b.is_error ? ' ERROR' : ''}]\n${txt}`);
+/**
+ * Claude transcripts are a tree linked by uuid/parentUuid; file order is NOT
+ * logical order (async tool logging interleaves writes — a tool_result line can
+ * be written before its tool_use line). Reconstruct the real conversation order
+ * by walking the parent chain from the most-recent leaf back to the root, like
+ * Pi's own buildSessionContext. This follows the active branch and drops
+ * abandoned (edited-away) branches.
+ */
+function orderByTree(lines: ClaudeLine[]): ClaudeLine[] {
+  const byUuid = new Map<string, ClaudeLine>();
+  for (const l of lines) if (l.uuid) byUuid.set(l.uuid, l);
+  const parents = new Set<string>();
+  for (const l of lines) if (l.parentUuid) parents.add(l.parentUuid);
+
+  const leaves = lines
+    .filter((l) => l.uuid && !parents.has(l.uuid) && !l.isSidechain && !l.isMeta && (l.type === 'user' || l.type === 'assistant'))
+    .sort((a, b) => (Date.parse(b.timestamp ?? '') || 0) - (Date.parse(a.timestamp ?? '') || 0));
+  const leaf = leaves[0];
+  if (!leaf) return lines; // no uuid metadata — fall back to file order
+
+  const chain: ClaudeLine[] = [];
+  const seen = new Set<string>();
+  let cur: ClaudeLine | undefined = leaf;
+  while (cur) {
+    if (cur.uuid) {
+      if (seen.has(cur.uuid)) break; // cycle guard
+      seen.add(cur.uuid);
     }
+    chain.push(cur);
+    cur = cur.parentUuid ? byUuid.get(cur.parentUuid) : undefined;
   }
-  return parts.join('\n\n').trim();
+  return chain.reverse();
 }
 
-function lineToText(line: ClaudeLine, toolNames: Map<string, string>): string {
-  const content = line.message?.content;
-  if (typeof content === 'string') return content.trim();
-  if (Array.isArray(content)) return blocksToText(content as ClaudeBlock[], toolNames);
+function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return (content as { type?: string; text?: string }[]).map((c) => (c?.type === 'text' ? c.text ?? '' : '')).join('\n');
   return '';
+}
+
+function makeAssistant(content: (TextContent | ToolCall)[], model: string | undefined, ts: number): AssistantMessage {
+  return {
+    role: 'assistant',
+    content,
+    api: 'anthropic-messages',
+    provider: 'anthropic',
+    model: model ?? 'claude-sonnet-4-6',
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: 'stop',
+    timestamp: ts,
+  };
 }
 
 export interface BuiltSession {
@@ -116,6 +139,17 @@ export interface BuiltSession {
 
 /**
  * Parse a Claude transcript into preserved-id Pi messages without writing.
+ *
+ * Tool calls are reconstructed FAITHFULLY, not flattened to text: Claude
+ * `tool_use` blocks become Pi `toolCall` content blocks and `tool_result`
+ * blocks become standalone Pi `toolResult` messages, with ids paired. Flattening
+ * to `[tool call: ...]` text was a real bug — the model in-context-learned that
+ * pattern and emitted tool calls as plain text, so nothing executed and turns
+ * ended immediately. To keep Anthropic's tool_use/tool_result pairing valid, a
+ * tool_use is only kept when a matching tool_result exists later (and vice
+ * versa); unpaired ones are dropped. `thinking` blocks are dropped (their stale
+ * signatures can't be replayed).
+ *
  * @param overrideSessionId Use this id instead of the transcript's own.
  * @param overrideCwd Use this cwd instead of the one recorded in the transcript.
  */
@@ -126,43 +160,77 @@ export function buildPiSession(jsonlPath: string, overrideSessionId?: string, ov
   const cwd = overrideCwd ?? lines.find((l) => typeof l.cwd === 'string' && l.cwd)?.cwd;
   if (!cwd) throw new Error('cwd not found in transcript; pass an explicit cwd');
 
+  const kept = orderByTree(lines).filter((l) => !l.isSidechain && !l.isMeta && (l.type === 'user' || l.type === 'assistant') && l.message);
+
+  // Prescan: only keep tool_use/tool_result pairs where BOTH sides are present,
+  // so Anthropic's pairing requirement holds.
+  const useIds = new Set<string>();
+  const resultIds = new Set<string>();
   const toolNames = new Map<string, string>();
+  for (const line of kept) {
+    const content = line.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content as ClaudeBlock[]) {
+      if (b.type === 'tool_use' && b.id) {
+        useIds.add(b.id);
+        if (b.name) toolNames.set(b.id, b.name);
+      } else if (b.type === 'tool_result' && b.tool_use_id) {
+        resultIds.add(b.tool_use_id);
+      }
+    }
+  }
+  const paired = (id: string | undefined): boolean => !!id && useIds.has(id) && resultIds.has(id);
+
   const messages: Message[] = [];
-  let lastRole: 'user' | 'assistant' | null = null;
-
-  for (const line of lines) {
-    if (line.isSidechain || line.isMeta) continue;
-    if (line.type !== 'user' && line.type !== 'assistant') continue;
-    if (!line.message) continue;
-    const role = line.type;
-    const text = lineToText(line, toolNames);
-    if (!text) continue;
+  for (const line of kept) {
+    const role = line.type as 'user' | 'assistant';
     const ts = line.timestamp ? Date.parse(line.timestamp) : Date.now();
+    const content = line.message?.content;
 
-    // Collapse consecutive same-role turns so the branch alternates cleanly.
-    if (role === lastRole) {
+    if (role === 'assistant') {
+      const blocks: (TextContent | ToolCall)[] = [];
+      if (typeof content === 'string') {
+        if (content.trim()) blocks.push({ type: 'text', text: content });
+      } else if (Array.isArray(content)) {
+        for (const b of content as ClaudeBlock[]) {
+          if (b.type === 'text' && b.text) blocks.push({ type: 'text', text: b.text });
+          else if (b.type === 'tool_use' && paired(b.id)) blocks.push({ type: 'toolCall', id: b.id!, name: b.name ?? 'tool', arguments: (b.input as Record<string, unknown>) ?? {} });
+        }
+      }
+      if (blocks.length === 0) continue;
       const prev = messages[messages.length - 1];
-      if (prev.role === 'user' && typeof prev.content === 'string') prev.content += `\n\n${text}`;
-      else if (prev.role === 'assistant') (prev.content[0] as TextContent).text += `\n\n${text}`;
+      if (prev && prev.role === 'assistant') prev.content.push(...blocks);
+      else messages.push(makeAssistant(blocks, line.message?.model, ts));
       continue;
     }
 
-    if (role === 'user') {
-      messages.push({ role: 'user', content: text, timestamp: ts });
-    } else {
-      const assistant: AssistantMessage = {
-        role: 'assistant',
-        content: [{ type: 'text', text }],
-        api: 'anthropic-messages',
-        provider: 'anthropic',
-        model: line.message.model ?? 'claude-sonnet-4-6',
-        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-        stopReason: 'stop',
-        timestamp: ts,
-      };
-      messages.push(assistant);
+    // user role: tool_result blocks become toolResult messages; text becomes a user message
+    if (typeof content === 'string') {
+      if (content.trim()) messages.push({ role: 'user', content, timestamp: ts });
+      continue;
     }
-    lastRole = role;
+    if (!Array.isArray(content)) continue;
+    const textParts: string[] = [];
+    for (const b of content as ClaudeBlock[]) {
+      if (b.type === 'text' && b.text) textParts.push(b.text);
+      else if (b.type === 'tool_result' && paired(b.tool_use_id)) {
+        const tr: ToolResultMessage = {
+          role: 'toolResult',
+          toolCallId: b.tool_use_id!,
+          toolName: toolNames.get(b.tool_use_id!) ?? 'tool',
+          content: [{ type: 'text', text: toolResultText(b.content) }],
+          isError: !!b.is_error,
+          timestamp: ts,
+        };
+        messages.push(tr);
+      }
+    }
+    if (textParts.length) {
+      const text = textParts.join('\n\n');
+      const prev = messages[messages.length - 1];
+      if (prev && prev.role === 'user' && typeof prev.content === 'string') prev.content += `\n\n${text}`;
+      else messages.push({ role: 'user', content: text, timestamp: ts });
+    }
   }
 
   return { sessionId, cwd, messages };
