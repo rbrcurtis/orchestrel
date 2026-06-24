@@ -200,6 +200,30 @@ describe('OrcdSession Pi runtime loop', () => {
     }));
   });
 
+  it('emits a system/init event on first run so the UI shows "Session started"', async () => {
+    const runtime = createRuntimeSession([], 'session-init');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-init',
+    });
+
+    const initEvents: Array<Record<string, unknown>> = [];
+    session.subscribe((msg) => {
+      if (msg.type !== 'stream_event') return;
+      const evt = msg.event as Record<string, unknown>;
+      if (evt.type === 'system' && evt.subtype === 'init') initEvents.push(evt);
+    });
+
+    await session.run({ prompt: 'go' });
+
+    expect(initEvents).toHaveLength(1);
+    expect(initEvents[0]).toMatchObject({ type: 'system', subtype: 'init', session_id: 'session-init', model: 'test-model' });
+  });
+
   it('emits context_usage for usage events', async () => {
     const runtime = createRuntimeSession([
       {

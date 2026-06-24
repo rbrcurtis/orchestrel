@@ -43,6 +43,7 @@ export class OrcdSession {
   private readonly asyncTaskPollMs: number;
 
   private piSession: PiRuntimeSession | null = null;
+  private initEmitted = false;
   private running = false;
   private subscribers = new Set<SessionEventCallback>();
   private onFork: ((oldId: string, newId: string) => void) | undefined;
@@ -307,6 +308,10 @@ export class OrcdSession {
     let unsubscribe: () => void = () => undefined;
     try {
       const session = await this.getOrCreatePiSession(opts.effort);
+      if (!this.initEmitted) {
+        this.initEmitted = true;
+        this.emitSessionInit();
+      }
       unsubscribe = session.subscribe((event) => {
         if (this.state !== 'stopped') this.emitMappedPiEvent(event);
       });
@@ -398,6 +403,32 @@ export class OrcdSession {
 
   emitBgcStarted(): void {
     this.emitSyntheticSystemEvent('bgc_started');
+  }
+
+  /**
+   * Emit a synthetic `system`/`init` event so the UI renders its "Session started
+   * · <model>" line. The Claude Agent SDK emitted this natively; Pi does not, so
+   * orcd synthesizes it once per session lifecycle (first run). The history path
+   * synthesizes its own init from the persisted session context (see
+   * pi-session-history), so reopening a card stays consistent.
+   */
+  private emitSessionInit(): void {
+    const model = this.providerConfig?.models[this.model]?.modelID ?? this.model;
+    const event = {
+      type: 'system',
+      subtype: 'init',
+      session_id: this.id,
+      model,
+      timestamp: Date.now(),
+    };
+    const eventIndex = this.buffer.push(event);
+    const msg: StreamEventMessage = {
+      type: 'stream_event',
+      sessionId: this.id,
+      eventIndex,
+      event,
+    };
+    for (const cb of this.subscribers) cb(msg);
   }
 
   private emitSyntheticSystemEvent(subtype: 'compact_boundary' | 'bgc_started'): void {
