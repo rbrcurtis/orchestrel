@@ -225,6 +225,59 @@ describe('orcd message router', () => {
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
   });
 
+  it('moves a review card back to running when the agent starts another turn', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].column = 'review';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'message_start', message: { role: 'assistant' } },
+    });
+
+    expect(mockCards[0].column).toBe('running');
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+  });
+
+  it('does not resurrect an archived card when an assistant turn starts', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].column = 'archive';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'message_start', message: { role: 'assistant' } },
+    });
+
+    expect(mockCards[0].column).toBe('archive');
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('ignores a user message_start (only assistant turns flip to running)', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].column = 'review';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'message_start', message: { role: 'user' } },
+    });
+
+    expect(mockCards[0].column).toBe('review');
+  });
+
   it('surfaces non-archive cards in review on session_exit after a pending-background turn completed', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);

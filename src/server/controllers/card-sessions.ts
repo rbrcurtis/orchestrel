@@ -88,6 +88,15 @@ export function initOrcdRouter(
         bus.publish(`card:${cardId}:sdk`, sdkEvent);
       }
 
+      // An assistant turn beginning means the agent is actively working again.
+      // A turn ending moves the card to review, but the agent may immediately
+      // start another turn — pull the card back to running so its state tracks
+      // the agent, not just the user's prompt submission.
+      const startMsg = sdkEvent.message as { role?: string } | undefined;
+      if (sdkEvent.type === 'message_start' && startMsg?.role === 'assistant') {
+        await handleTurnStart(cardId);
+      }
+
       if (sdkEvent.type === 'system') {
         const sys = sdkEvent as { subtype?: string; session_id?: string };
 
@@ -184,7 +193,21 @@ export function initOrcdRouter(
   console.log('[orcd-router] global handler registered');
 }
 
-// ── Turn complete / Session exit ─────────────────────────────────────────────
+// ── Turn start / complete / Session exit ─────────────────────────────────────
+
+async function handleTurnStart(cardId: number): Promise<void> {
+  const repo = AppDataSource.getRepository(Card);
+  const card = await repo.findOneBy({ id: cardId });
+  // Move to running only from a non-running, non-archive column: already-running
+  // is a no-op, and archive means the card was intentionally pulled off the board.
+  if (card && card.column !== 'running' && card.column !== 'archive') {
+    const from = card.column;
+    card.column = 'running';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
+    console.log(`[oc:${cardId}] agent turn started → running (was ${from})`);
+  }
+}
 
 async function handleTurnComplete(
   cardId: number,
