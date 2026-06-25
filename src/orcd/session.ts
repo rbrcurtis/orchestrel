@@ -228,8 +228,15 @@ export class OrcdSession {
     return session;
   }
 
+  /** Context window for the active model — Pi usage events don't carry one. */
+  private resolveContextWindow(): number | undefined {
+    if (this.contextWindow && this.contextWindow > 0) return this.contextWindow;
+    const fromConfig = this.providerConfig?.models[this.model]?.contextWindow;
+    return fromConfig && fromConfig > 0 ? fromConfig : undefined;
+  }
+
   private emitMappedPiEvent(event: unknown): void {
-    const usage = getContextUsageFromPiEvent(event);
+    const usage = getContextUsageFromPiEvent(event, this.resolveContextWindow());
     const payload = mapPiEventToOrcdPayload(event);
     const eventIndex = this.buffer.push(payload);
 

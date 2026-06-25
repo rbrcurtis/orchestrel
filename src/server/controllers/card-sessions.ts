@@ -89,9 +89,10 @@ export function initOrcdRouter(
       }
 
       // An assistant turn beginning means the agent is actively working again.
-      // A turn ending moves the card to review, but the agent may immediately
-      // start another turn — pull the card back to running so its state tracks
-      // the agent, not just the user's prompt submission.
+      // Card→review now fires only on agent_end (end of the whole run), so this
+      // no longer fights per-turn flicker; it remains as a guard to pull a card
+      // back to running if the agent resumes work while it sits in review
+      // (e.g. a queued follow-up), so its state tracks the agent.
       const startMsg = sdkEvent.message as { role?: string } | undefined;
       if (sdkEvent.type === 'message_start' && startMsg?.role === 'assistant') {
         await handleTurnStart(cardId);

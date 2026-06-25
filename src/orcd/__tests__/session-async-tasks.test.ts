@@ -167,13 +167,16 @@ describe('OrcdSession Pi runtime loop', () => {
     }));
   });
 
-  it('emits result for turn_end mapped events', async () => {
-    const event = {
-      type: 'turn_end',
-      message: { id: 'msg-1', text: 'done' },
-      toolResults: [{ id: 'tool-1', ok: true }],
-    };
-    const runtime = createRuntimeSession([event], 'session-result');
+  it('emits result on agent_end (once per run), not on intermediate turn_end', async () => {
+    const assistant = { role: 'assistant', stopReason: 'end_turn', text: 'done' };
+    const runtime = createRuntimeSession(
+      [
+        // An intermediate tool round must NOT produce a result (would flip the card).
+        { type: 'turn_end', message: { id: 'msg-mid', text: 'thinking' }, toolResults: [] },
+        { type: 'agent_end', willRetry: false, messages: [{ role: 'user', text: 'go' }, assistant] },
+      ],
+      'session-result',
+    );
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
@@ -183,21 +186,16 @@ describe('OrcdSession Pi runtime loop', () => {
       sessionId: 'session-result',
     });
 
-    const payloads: unknown[] = [];
-    session.subscribe((msg) => payloads.push(msg));
+    const results: unknown[] = [];
+    session.subscribe((msg) => {
+      if (msg.type === 'result') results.push(msg.result);
+    });
 
     await session.run({ prompt: 'go' });
 
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'result',
-      sessionId: 'session-result',
-      result: {
-        type: 'result',
-        subtype: 'success',
-        message: event.message,
-        toolResults: event.toolResults,
-      },
-    }));
+    expect(results).toEqual([
+      { type: 'result', subtype: 'success', message: assistant, toolResults: [] },
+    ]);
   });
 
   it('emits a system/init event on first run so the UI shows "Session started"', async () => {
@@ -229,9 +227,13 @@ describe('OrcdSession Pi runtime loop', () => {
       {
         type: 'message_update',
         message: {
+          // Pi's Usage shape: components + totalTokens, no context window.
           usage: {
-            inputTokens: 12345,
-            contextWindow: 262144,
+            input: 12000,
+            output: 300,
+            cacheRead: 45,
+            cacheWrite: 0,
+            totalTokens: 12345,
           },
         },
       },
@@ -243,6 +245,8 @@ describe('OrcdSession Pi runtime loop', () => {
       model: 'test-model',
       provider: 'test-provider',
       sessionId: 'session-usage',
+      // Window comes from session config, not the usage event.
+      contextWindow: 262144,
     });
 
     const payloads: unknown[] = [];

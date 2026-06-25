@@ -128,29 +128,70 @@ export function mapPiEventToOrcdPayload(event: unknown): unknown {
     return event;
   }
 
-  if (event.type !== 'turn_end') return event;
+  // `result` (and the card→review / turn-count signals derived from it) maps to
+  // Pi's `agent_end`, which fires ONCE per run — one user prompt's full agentic
+  // loop. `turn_end` fires per internal tool round (many per prompt); keying card
+  // lifecycle off it made cards flip running↔review on every round. So turn_end
+  // now passes through as an ordinary stream event and only agent_end is a result.
+  if (event.type === 'agent_end') {
+    // A retrying agent_end is a transient stop before an automatic retry, not a
+    // real completion — let it through as a stream event so the card stays running.
+    if (event.willRetry === true) return event;
 
-  const toolResults = Array.isArray(event.toolResults) ? event.toolResults : [];
+    const messages = Array.isArray(event.messages) ? event.messages : [];
+    const lastAssistant = lastAssistantMessage(messages);
+    const stopReason = isRecord(lastAssistant) ? lastAssistant.stopReason : undefined;
+    const errorMessage =
+      isRecord(lastAssistant) && typeof lastAssistant.errorMessage === 'string'
+        ? lastAssistant.errorMessage
+        : undefined;
+    const subtype = stopReason === 'error' ? 'error_during_execution' : 'success';
 
-  // A turn whose assistant message stopped with an error still arrives as
-  // turn_end — reflect that as an error result (with the provider's message)
-  // instead of silently rendering "Turn complete" in the UI.
-  const message = event.message;
-  const stopReason = isRecord(message) ? message.stopReason : undefined;
-  const errorMessage =
-    isRecord(message) && typeof message.errorMessage === 'string' ? message.errorMessage : undefined;
-  const subtype = stopReason === 'error' ? 'error_during_execution' : 'success';
+    return {
+      type: 'result',
+      subtype,
+      ...(lastAssistant ? { message: lastAssistant } : {}),
+      toolResults: [],
+      ...(errorMessage ? { errorMessage } : {}),
+    };
+  }
 
-  return {
-    type: 'result',
-    subtype,
-    message: event.message,
-    toolResults,
-    ...(errorMessage ? { errorMessage } : {}),
-  };
+  return event;
 }
 
-export function getContextUsageFromPiEvent(event: unknown): ContextUsage | null {
+/** Last assistant message in a Pi transcript (agent_end carries the full run). */
+function lastAssistantMessage(messages: unknown[]): Record<string, unknown> | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (isRecord(m) && m.role === 'assistant') return m;
+  }
+  return undefined;
+}
+
+/**
+ * Context tokens consumed by the conversation, matching Pi's own footer/compaction
+ * accounting (`calculateContextTokens`): prefer the provider-reported `totalTokens`,
+ * otherwise sum the components. Pi's Usage uses `input`/`output`/`cacheRead`/`cacheWrite`
+ * (camelCase), so the SDK-shaped `inputTokens`/snake_case reads never matched.
+ */
+function piContextTokens(usage: Record<string, unknown>): number | null {
+  const total = readUsageNumber(usage, 'totalTokens', 'total_tokens');
+  if (total !== null && total > 0) return total;
+
+  const input = readUsageNumber(usage, 'input', 'input_tokens') ?? 0;
+  const output = readUsageNumber(usage, 'output', 'output_tokens') ?? 0;
+  const cacheRead = readUsageNumber(usage, 'cacheRead', 'cache_read') ?? 0;
+  const cacheWrite = readUsageNumber(usage, 'cacheWrite', 'cache_write') ?? 0;
+  const sum = input + output + cacheRead + cacheWrite;
+  return sum > 0 ? sum : null;
+}
+
+/**
+ * Pull context usage off a Pi assistant message event. Pi's Usage carries no context
+ * window (it lives on the model), so the window is supplied by the caller from session
+ * config; an event-level window is honored if a provider ever includes one.
+ */
+export function getContextUsageFromPiEvent(event: unknown, fallbackWindow?: number): ContextUsage | null {
   if (!isRecord(event)) return null;
 
   const message = event.message;
@@ -159,9 +200,13 @@ export function getContextUsageFromPiEvent(event: unknown): ContextUsage | null 
   const usage = message.usage;
   if (!isRecord(usage)) return null;
 
-  const contextTokens = readUsageNumber(usage, 'inputTokens', 'input_tokens');
-  const contextWindow = readUsageNumber(usage, 'contextWindow', 'context_window');
-  if (contextTokens === null || contextWindow === null) return null;
+  const contextTokens = piContextTokens(usage);
+  if (contextTokens === null) return null;
+
+  const windowFromUsage = readUsageNumber(usage, 'contextWindow', 'context_window');
+  const contextWindow =
+    windowFromUsage ?? (typeof fallbackWindow === 'number' && fallbackWindow > 0 ? fallbackWindow : null);
+  if (contextWindow === null) return null;
 
   return { contextTokens, contextWindow };
 }
