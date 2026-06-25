@@ -19,7 +19,7 @@ const TOKEN_URL = 'https://console.anthropic.com/v1/oauth/token';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const REFRESH_SKEW_MS = 60_000;
 
-function readClaudeCreds(): OAuthCredentials {
+export function readClaudeCreds(): OAuthCredentials {
   const raw = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf8')) as Record<string, unknown>;
   const o = raw.claudeAiOauth as Record<string, unknown> | undefined;
   const access = o?.accessToken;
@@ -75,14 +75,36 @@ export const claudeMaxOAuth = {
 
 let inflight: Promise<OAuthCredentials> | null = null;
 
+// Optional remote token source. When set (e.g. on a secondary instance that
+// must run through someone else's subscription), getAccessToken fetches the
+// access token from a token server that solely owns the OAuth refresh, instead
+// of reading/refreshing ~/.claude itself — so this instance never rotates (and
+// thus never invalidates) the shared refresh token. Unset = local path.
+const TOKEN_SERVER_URL = process.env.CLAUDE_MAX_TOKEN_URL;
+const TOKEN_SERVER_SECRET = process.env.CLAUDE_MAX_TOKEN_SECRET;
+
+async function fetchTokenFromServer(): Promise<string> {
+  const url = `${TOKEN_SERVER_URL!.replace(/\/$/, '')}/token`;
+  const res = await fetch(url, {
+    headers: TOKEN_SERVER_SECRET ? { authorization: `Bearer ${TOKEN_SERVER_SECRET}` } : {},
+  });
+  if (!res.ok) throw new Error(`claude-max token server ${res.status} ${(await res.text()).slice(0, 120)}`);
+  const data = (await res.json()) as { access?: string };
+  if (!data.access) throw new Error('claude-max token server returned no access token');
+  return data.access;
+}
+
 /**
- * Return a valid Claude Max OAuth access token, sourced fresh from
- * ~/.claude/.credentials.json and refreshed on near-expiry. Pi's AuthStorage
+ * Return a valid Claude Max OAuth access token. With CLAUDE_MAX_TOKEN_URL set,
+ * fetch it from the token server (which owns refresh). Otherwise source it fresh
+ * from ~/.claude/.credentials.json and refresh on near-expiry. Pi's AuthStorage
  * only auto-refreshes its own auth.json, never ~/.claude, so the stream sources
  * its token here instead of trusting options.apiKey. Single-flight dedupes
  * concurrent refreshes so we make at most one token request at a time.
  */
 export async function getAccessToken(): Promise<string> {
+  if (TOKEN_SERVER_URL) return fetchTokenFromServer();
+
   const creds = readClaudeCreds();
   if (creds.expires - Date.now() > REFRESH_SKEW_MS) return creds.access;
 
