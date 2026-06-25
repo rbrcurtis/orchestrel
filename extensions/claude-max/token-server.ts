@@ -13,11 +13,31 @@
  * bearer secret; required in practice), CLAUDE_MAX_TOKEN_HOST (default 127.0.0.1).
  */
 import { createServer } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { claudeMaxOAuth, readClaudeCreds } from './auth';
 
 const PORT = Number(process.env.CLAUDE_MAX_TOKEN_PORT ?? 8126);
 const HOST = process.env.CLAUDE_MAX_TOKEN_HOST ?? '127.0.0.1';
-const SECRET = process.env.CLAUDE_MAX_TOKEN_SECRET ?? '';
+
+// Fail closed: this endpoint hands out a live Claude Max access token, so refuse
+// to start without a secret rather than serving it unauthenticated.
+const SECRET = process.env.CLAUDE_MAX_TOKEN_SECRET;
+if (!SECRET) {
+  console.error('[token-server] CLAUDE_MAX_TOKEN_SECRET is required; refusing to start');
+  process.exit(1);
+}
+// Token in plaintext over the wire — loopback only unless someone adds TLS.
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
+if (!LOOPBACK.has(HOST)) {
+  console.error(`[token-server] refusing non-loopback host ${HOST} (no TLS)`);
+  process.exit(1);
+}
+
+const EXPECTED_AUTH = Buffer.from(`Bearer ${SECRET}`);
+function authorized(header: string | undefined): boolean {
+  const got = Buffer.from(header ?? '');
+  return got.length === EXPECTED_AUTH.length && timingSafeEqual(got, EXPECTED_AUTH);
+}
 // Refresh this far before expiry so a consumer never receives a stale token.
 const MARGIN_MS = 5 * 60_000;
 const TICK_MS = 60_000;
@@ -52,7 +72,7 @@ const server = createServer((req, res) => {
     res.end();
     return;
   }
-  if (SECRET && req.headers.authorization !== `Bearer ${SECRET}`) {
+  if (!authorized(req.headers.authorization)) {
     res.writeHead(401);
     res.end();
     return;
