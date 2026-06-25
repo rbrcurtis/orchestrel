@@ -11,7 +11,7 @@ import { buildModelAliasEnv, parseConfig } from '../src/shared/config.ts';
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
 const DEFAULT_CONFIG_PATH = resolve(REPO_ROOT, 'config.yaml');
-const DEFAULT_PI_PATH = '/home/ryan/.local/bin/pi';
+const DEFAULT_PI_PATH = resolve(REPO_ROOT, 'node_modules', '.bin', 'pi');
 const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
 const ENV_DEFAULT_PROVIDER = 'ORC_PROVIDER';
 const ENV_DEFAULT_MODEL = 'ORC_MODEL';
