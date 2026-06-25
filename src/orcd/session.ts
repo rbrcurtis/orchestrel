@@ -300,14 +300,18 @@ export class OrcdSession {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
 
     if (this.running) {
-      const msg = `session already running; dropping overlapping prompt`;
-      log(msg);
-      const errMsg: SessionErrorMessage = {
-        type: 'error',
-        sessionId: this.id,
-        error: msg,
-      };
-      for (const cb of this.subscribers) cb(errMsg);
+      // A turn is already streaming. Pi queues messages natively, so hand the
+      // prompt to its queue (followUp = run after the current turn finishes)
+      // instead of dropping it. The in-flight run()'s await on session.prompt()
+      // only resolves once Pi drains the queue, so session_exit still fires at
+      // the right time and events keep flowing through the existing
+      // subscription — this branch starts no second run loop.
+      if (this.piSession) {
+        log('session running; queueing overlapping prompt as followUp');
+        await this.piSession.prompt(opts.prompt, { streamingBehavior: 'followUp' });
+      } else {
+        log('session running but no pi session yet; dropping overlapping prompt');
+      }
       return;
     }
 

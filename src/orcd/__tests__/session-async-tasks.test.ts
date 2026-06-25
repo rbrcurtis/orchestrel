@@ -41,19 +41,6 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
   return session;
 }
 
-function createBlockedRuntimeSession(events: unknown[] = [], id = 'session'): TestRuntimeSession {
-  const session = createRuntimeSession(events, id);
-  let resolvePrompt: (() => void) | undefined;
-  session.prompt = vi.fn(async () => {
-    for (const event of events) session.emit(event);
-    await new Promise<void>((resolve) => {
-      resolvePrompt = resolve;
-    });
-  });
-  session.resolvePrompt = () => resolvePrompt?.();
-  return session;
-}
-
 function toolUseEvent(id: string, description: string): unknown {
   return {
     type: 'assistant',
@@ -501,9 +488,17 @@ describe('OrcdSession Pi runtime loop', () => {
     ]);
   });
 
-  it('rejects overlapping runs without duplicate event forwarding', async () => {
-    const event = { type: 'message_update', message: { text: 'one event' } };
-    const runtime = createBlockedRuntimeSession([], 'session-overlap');
+  it('queues an overlapping prompt into Pi instead of dropping it', async () => {
+    let releaseFirst: (() => void) | undefined;
+    const runtime = createRuntimeSession([], 'session-overlap');
+    // The follow-up enqueue returns immediately (Pi accepts it into its queue);
+    // the initial run blocks so the session stays "running" while the overlap arrives.
+    runtime.prompt = vi.fn(async (_text: string, opts?: { streamingBehavior?: string }) => {
+      if (opts?.streamingBehavior === 'followUp') return;
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+    });
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
@@ -520,24 +515,12 @@ describe('OrcdSession Pi runtime loop', () => {
     await vi.waitFor(() => expect(runtime.prompt).toHaveBeenCalledTimes(1));
     await session.sendMessage('second');
 
-    runtime.emit(event);
-    runtime.resolvePrompt();
-    await first;
+    // The overlapping prompt was handed to Pi's queue as a follow-up, not dropped.
+    expect(runtime.prompt).toHaveBeenCalledTimes(2);
+    expect(runtime.prompt).toHaveBeenLastCalledWith('second', { streamingBehavior: 'followUp' });
+    expect(payloads).not.toContainEqual(expect.objectContaining({ type: 'error' }));
 
-    const forwardedEvents = payloads.filter((msg): msg is { type: 'stream_event'; event: unknown } => (
-      typeof msg === 'object'
-      && msg !== null
-      && 'type' in msg
-      && msg.type === 'stream_event'
-      && 'event' in msg
-      && msg.event === event
-    ));
-    expect(runtime.prompt).toHaveBeenCalledTimes(1);
-    expect(forwardedEvents).toHaveLength(1);
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'error',
-      sessionId: 'session-overlap',
-      error: 'session already running; dropping overlapping prompt',
-    }));
+    releaseFirst?.();
+    await first;
   });
 });
