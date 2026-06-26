@@ -45,6 +45,14 @@ export class OrcdSession {
   private piSession: PiRuntimeSession | null = null;
   private initEmitted = false;
   private running = false;
+  // Per-run() exit bookkeeping. A run is identified by runEpoch so a forced
+  // exit from cancel() can't clobber a later resumed turn (see finalizeExit).
+  private runEpoch = 0;
+  private exitFinalized = false;
+  private currentUnsubscribe: (() => void) | null = null;
+  // How long cancel() waits for abort() to unwind the run loop naturally before
+  // forcing session_exit itself (handles tools wedged on an un-abortable read).
+  private readonly cancelGraceMs: number;
   private subscribers = new Set<SessionEventCallback>();
   private onFork: ((oldId: string, newId: string) => void) | undefined;
   private forkedTo: string | undefined;
@@ -60,6 +68,7 @@ export class OrcdSession {
     providerConfig?: ProviderConfig;
     onFork?: (oldId: string, newId: string) => void;
     asyncTaskPollMsForTesting?: number;
+    cancelGraceMsForTesting?: number;
   }) {
     this.id = opts.sessionId ?? randomUUID();
     this.cwd = opts.cwd;
@@ -71,6 +80,7 @@ export class OrcdSession {
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
     this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
+    this.cancelGraceMs = opts.cancelGraceMsForTesting ?? 4000;
   }
 
   onBeforeExit(cb: () => Promise<void>): void {
@@ -316,16 +326,21 @@ export class OrcdSession {
     }
 
     this.running = true;
-    let unsubscribe: () => void = () => undefined;
+    const epoch = ++this.runEpoch;
+    this.exitFinalized = false;
     try {
       const session = await this.getOrCreatePiSession(opts.effort);
       if (!this.initEmitted) {
         this.initEmitted = true;
         this.emitSessionInit();
       }
-      unsubscribe = session.subscribe((event) => {
+      const unsubscribe = session.subscribe((event) => {
         if (this.state !== 'stopped') this.emitMappedPiEvent(event);
       });
+      // Only detach if the active pi session hasn't been swapped out (fork).
+      this.currentUnsubscribe = () => {
+        if (session === this.piSession) unsubscribe();
+      };
 
       log(`started (resume=${!!opts.resume}, model=${this.model})`);
       await session.prompt(opts.prompt, opts.resume ? { streamingBehavior: 'followUp' } : undefined);
@@ -356,17 +371,31 @@ export class OrcdSession {
         for (const cb of this.subscribers) cb(msg);
       }
     } finally {
-      this.running = false;
-      const activeSession = this.piSession;
-      await this.runBeforeExitHooks();
-      const exitMsg: SessionExitMessage = {
-        type: 'session_exit',
-        sessionId: this.id,
-        state: this.state as 'completed' | 'errored' | 'stopped',
-      };
-      for (const cb of this.subscribers) cb(exitMsg);
-      if (activeSession === this.piSession) unsubscribe();
+      await this.finalizeExit(epoch);
     }
+  }
+
+  /**
+   * Emit session_exit and tear down the run's subscription — exactly once per
+   * run() invocation. Called from run()'s finally on natural completion AND from
+   * cancel() when abort() can't unwind a wedged turn (e.g. a tool blocked on a
+   * native read that won't observe the abort signal). Idempotent and epoch-
+   * guarded: a stale call from an abandoned run can't fire session_exit for, or
+   * detach the subscription of, a newer resumed turn.
+   */
+  private async finalizeExit(epoch: number): Promise<void> {
+    if (epoch !== this.runEpoch || this.exitFinalized) return;
+    this.exitFinalized = true;
+    this.running = false;
+    await this.runBeforeExitHooks();
+    const exitMsg: SessionExitMessage = {
+      type: 'session_exit',
+      sessionId: this.id,
+      state: this.state as 'completed' | 'errored' | 'stopped',
+    };
+    for (const cb of this.subscribers) cb(exitMsg);
+    this.currentUnsubscribe?.();
+    this.currentUnsubscribe = null;
   }
 
   /**
@@ -394,8 +423,25 @@ export class OrcdSession {
    */
   async cancel(): Promise<void> {
     this.state = 'stopped';
+    const epoch = this.runEpoch;
     if (this.piSession) {
       await this.piSession.abort();
+    }
+    // abort() asks pi's turn loop to stop, but a tool blocked on an un-abortable
+    // native read (e.g. a wedged ssh whose backgrounded ControlMaster keeps the
+    // captured stdout pipe open) won't observe it — prompt() never resolves, so
+    // run()'s finally never runs and the card stays stuck in "running". Poll
+    // briefly for the loop to unwind on its own; if it doesn't within the grace
+    // window, force session_exit so the card reliably reconciles. finalizeExit is
+    // idempotent + epoch-guarded, so a later natural resolution (or a resumed
+    // turn) is unaffected.
+    const step = 50;
+    for (let waited = 0; this.running && epoch === this.runEpoch && waited < this.cancelGraceMs; waited += step) {
+      await new Promise((resolve) => setTimeout(resolve, step));
+    }
+    if (this.running && epoch === this.runEpoch) {
+      console.log(`[orcd:${this.id.slice(0, 8)}] cancel: run loop wedged after abort; forcing session_exit`);
+      await this.finalizeExit(epoch);
     }
   }
 

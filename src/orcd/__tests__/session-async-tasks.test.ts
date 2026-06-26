@@ -454,6 +454,40 @@ describe('OrcdSession Pi runtime loop', () => {
     });
   });
 
+  it('forces session_exit on cancel when the run loop is wedged after abort', async () => {
+    // Models the real lockup: a bash tool blocked on a native pipe read (a wedged
+    // ssh whose ControlMaster holds stdout open) means prompt() never resolves and
+    // abort() can't interrupt it. cancel() must still reconcile the card.
+    const runtime = createRuntimeSession([], 'session-wedged');
+    runtime.prompt = vi.fn(() => new Promise<void>(() => undefined));
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-wedged',
+      cancelGraceMsForTesting: 20,
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    // run() never resolves because prompt() is wedged — don't await it.
+    void session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(runtime.prompt).toHaveBeenCalledTimes(1));
+    expect(payloads.some((m) => (m as { type: string }).type === 'session_exit')).toBe(false);
+
+    await session.cancel();
+
+    expect(runtime.abort).toHaveBeenCalledTimes(1);
+    expect(payloads.at(-1)).toEqual({
+      type: 'session_exit',
+      sessionId: 'session-wedged',
+      state: 'stopped',
+    });
+  });
+
   it('maps Pi subagent tool_execution events to the subagent line-item feed, deduping unchanged progress', async () => {
     const runtime = createRuntimeSession([
       { type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'sub-1', args: { description: 'Explore repo' } },
