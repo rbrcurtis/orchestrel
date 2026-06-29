@@ -25,6 +25,12 @@ function anthropicProvider(alias: string, label: string, cw: number): Record<str
   };
 }
 
+// Use a high, widely-spaced random base port per test to avoid collisions with
+// other suites that bind OrcdServer on random ports during a full test run.
+function basePort(): number {
+  return 14000 + Math.floor(Math.random() * 4000);
+}
+
 async function tempRepo(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'multi-node-'));
   execFileSync('git', ['init', '-b', 'main'], { cwd: dir });
@@ -41,13 +47,15 @@ describe('multi-node isolation', () => {
   });
 
   it('two nodes report independent capabilities and prepare worktrees independently', async () => {
+    const portA = basePort();
+    const portB = portA + 1;
     const a = new OrcdServer(
-      { listen: { host: '127.0.0.1', port: 7811 }, authToken: 'a-tok', name: 'nodeA' },
+      { listen: { host: '127.0.0.1', port: portA }, authToken: 'a-tok', name: 'nodeA' },
       anthropicProvider('sonnet', 'Sonnet', 1_000_000),
       { provider: 'anthropic', model: 'sonnet' },
     );
     const b = new OrcdServer(
-      { listen: { host: '127.0.0.1', port: 7812 }, authToken: 'b-tok', name: 'nodeB' },
+      { listen: { host: '127.0.0.1', port: portB }, authToken: 'b-tok', name: 'nodeB' },
       anthropicProvider('haiku', 'Haiku', 200_000),
       { provider: 'anthropic', model: 'haiku' },
     );
@@ -55,8 +63,8 @@ describe('multi-node isolation', () => {
     await b.start();
     cleanup.push(() => a.stop(), () => b.stop());
 
-    const ca = new OrcdClient({ host: '127.0.0.1', port: 7811, token: 'a-tok', name: 'nodeA' });
-    const cb = new OrcdClient({ host: '127.0.0.1', port: 7812, token: 'b-tok', name: 'nodeB' });
+    const ca = new OrcdClient({ host: '127.0.0.1', port: portA, token: 'a-tok', name: 'nodeA' });
+    const cb = new OrcdClient({ host: '127.0.0.1', port: portB, token: 'b-tok', name: 'nodeB' });
     await ca.connect();
     await cb.connect();
     cleanup.push(() => ca.disconnect(), () => cb.disconnect());
@@ -74,15 +82,16 @@ describe('multi-node isolation', () => {
   });
 
   it('rejects a client presenting the wrong token', async () => {
+    const port = basePort();
     const a = new OrcdServer(
-      { listen: { host: '127.0.0.1', port: 7813 }, authToken: 'right', name: 'nodeA' },
+      { listen: { host: '127.0.0.1', port }, authToken: 'right', name: 'nodeA' },
       anthropicProvider('sonnet', 'Sonnet', 1_000),
       { provider: 'anthropic', model: 'sonnet' },
     );
     await a.start();
     cleanup.push(() => a.stop());
 
-    const c = new OrcdClient({ host: '127.0.0.1', port: 7813, token: 'wrong', name: 'nodeA' });
+    const c = new OrcdClient({ host: '127.0.0.1', port, token: 'wrong', name: 'nodeA' });
     await expect(c.connect()).rejects.toBeTruthy();
     c.disconnect();
   });
