@@ -113,9 +113,11 @@ vi.mock('../../lib/session-compactor', () => ({
 }));
 
 function createServer() {
-  return new OrcdServer('/tmp/orcd-test.sock', {
-    test: { type: 'anthropic', baseUrl: '', apiKey: '', models: ['test-model'], modelAliasEnv: {} },
-  }, { provider: 'test', model: 'test-model' });
+  return new OrcdServer(
+    { listen: { host: '127.0.0.1', port: 0 }, authToken: 'tok', name: 'local' },
+    { test: { type: 'anthropic', baseUrl: '', apiKey: '', models: ['test-model'], modelLabels: {}, modelAliasEnv: {} } },
+    { provider: 'test', model: 'test-model' },
+  );
 }
 
 function createSession() {

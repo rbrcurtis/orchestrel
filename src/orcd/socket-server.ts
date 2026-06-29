@@ -1,10 +1,14 @@
-import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { createServer, type Server, type Socket } from 'net';
-import { dirname } from 'path';
 import { upsertMemories } from '../lib/memory-upsert';
 import { applyCompaction, prepareCompaction, type PreparedCompaction } from '../lib/session-compactor';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { OrcdConfig, ProviderConfig } from './config';
+
+export interface OrcdListenConfig {
+  listen: { host: string; port: number };
+  authToken: string;
+  name: string;
+}
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
 
@@ -26,7 +30,7 @@ export class OrcdServer {
   private memoryConfig?: OrcdConfig['memoryUpsert'];
 
   constructor(
-    private socketPath: string,
+    private opts: OrcdListenConfig,
     private providers: Record<string, ProviderConfig>,
     private defaults: { provider: string; model: string },
     memoryConfig?: OrcdConfig['memoryUpsert'],
@@ -36,27 +40,18 @@ export class OrcdServer {
 
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const dir = dirname(this.socketPath);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-      // Remove stale socket file
-      if (existsSync(this.socketPath)) unlinkSync(this.socketPath);
-
       this.server = createServer((socket) => this.handleConnection(socket));
       this.server.on('error', reject);
-      this.server.listen(this.socketPath, () => {
-        console.log(`[orcd] listening on ${this.socketPath}`);
+      this.server.listen(this.opts.listen.port, this.opts.listen.host, () => {
+        console.log(`[orcd] listening on ${this.opts.listen.host}:${this.opts.listen.port}`);
         resolve();
       });
     });
   }
 
   stop(): void {
-    for (const client of this.clients) {
-      client.socket.destroy();
-    }
+    for (const client of this.clients) client.socket.destroy();
     this.server?.close();
-    if (existsSync(this.socketPath)) unlinkSync(this.socketPath);
     console.log('[orcd] stopped');
   }
 
