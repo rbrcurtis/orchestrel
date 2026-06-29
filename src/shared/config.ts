@@ -34,7 +34,9 @@ export interface MemoryUpsertConfig {
 }
 
 export interface OrchestrelConfig {
-  socket: string;
+  listen: { host: string; port: number };
+  authToken: string;
+  name: string;
   defaultProvider: string;
   defaultModel: string;
   defaultCwd?: string;
@@ -140,6 +142,12 @@ export function parseConfig(
     };
   }
 
+  const rawListen = (raw.listen ?? {}) as Record<string, unknown>;
+  const listen = {
+    host: String(rawListen.host ?? '127.0.0.1'),
+    port: Number(rawListen.port ?? 7420),
+  };
+
   const mu = raw.memoryUpsert as Record<string, unknown> | undefined;
   const memoryUpsert: MemoryUpsertConfig | undefined = mu
     ? {
@@ -150,7 +158,9 @@ export function parseConfig(
     : undefined;
 
   return {
-    socket: String(raw.socket ?? '~/.orc/orcd.sock'),
+    listen,
+    authToken: raw.authToken != null ? resolveEnvVars(String(raw.authToken), env) : '',
+    name: raw.name != null ? String(raw.name) : 'local',
     defaultProvider: String(raw.defaultProvider ?? 'anthropic'),
     defaultModel: String(raw.defaultModel ?? 'claude-sonnet-4-6'),
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
