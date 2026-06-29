@@ -139,6 +139,15 @@ export class OrcdServer {
       case 'capabilities':
         this.send(client, this.buildCapabilities(action.requestId));
         break;
+      case 'worktree_prepare':
+        this.handleWorktreePrepare(client, action);
+        break;
+      case 'worktree_remove':
+        this.handleWorktreeRemove(client, action);
+        break;
+      case 'path_validate':
+        this.handlePathValidate(client, action);
+        break;
     }
   }
 
@@ -341,6 +350,40 @@ export class OrcdServer {
           this.store.remove(session.id);
         }
       });
+  }
+
+  // ── Worktree / path actions ────────────────────────────────────────────────
+
+  private async handleWorktreePrepare(client: ClientState, action: OrcdAction & { action: 'worktree_prepare' }): Promise<void> {
+    try {
+      const { prepareWorktree } = await import('./worktree-ops');
+      const res = await prepareWorktree({
+        projectPath: action.projectPath, branch: action.branch,
+        sourceBranch: action.sourceBranch, setupCommands: action.setupCommands,
+      });
+      this.send(client, { type: 'worktree_ready', requestId: action.requestId, path: res.path, branch: res.branch });
+    } catch (err) {
+      console.error(`[orcd] worktree_prepare failed (${action.branch}):`, err instanceof Error ? err.message : err);
+      this.send(client, { type: 'error', sessionId: '', requestId: action.requestId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async handleWorktreeRemove(client: ClientState, action: OrcdAction & { action: 'worktree_remove' }): Promise<void> {
+    try {
+      const { existsSync } = await import('fs');
+      const { removeWorktree } = await import('./worktree-ops');
+      if (existsSync(action.path)) removeWorktree(action.projectPath, action.path);
+      this.send(client, { type: 'ok', requestId: action.requestId });
+    } catch (err) {
+      console.error(`[orcd] worktree_remove failed (${action.path}):`, err instanceof Error ? err.message : err);
+      this.send(client, { type: 'error', sessionId: '', requestId: action.requestId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async handlePathValidate(client: ClientState, action: OrcdAction & { action: 'path_validate' }): Promise<void> {
+    const { validatePath } = await import('./worktree-ops');
+    const res = await validatePath(action.path);
+    this.send(client, { type: 'path_validated', requestId: action.requestId, ...res });
   }
 
   // ── Provider env helper ──────────────────────────────────────────────────
