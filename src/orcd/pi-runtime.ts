@@ -1,6 +1,6 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
-import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
+import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, ModelRegistry, SessionManager, createAgentSession, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
+import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
 
@@ -29,6 +29,10 @@ export interface PiRuntimeSession {
   subscribe(cb: (event: unknown) => void): () => void;
   abort(): Promise<void>;
   compact(instructions?: string): Promise<unknown>;
+  /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
+  prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal): Promise<CompactionResult | null>;
+  /** Splice a prepared compaction into the session tree and rebuild context. Call only when idle. */
+  applyBgCompaction(result: CompactionResult): void;
   setEffort(effort: string): Promise<void>;
   getMessages(): unknown[];
 }
@@ -166,6 +170,49 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     async compact(instructions) {
       if (!canCompact(session)) return undefined;
       return session.compact(instructions);
+    },
+
+    async prepareBgCompaction(keepFraction, currentTokens, signal) {
+      const sm = session.sessionManager as unknown as {
+        getBranch(): Array<{ type: string; id: string; message?: unknown }>;
+      };
+      const entries = sm.getBranch();
+      const keepRecentTokens = Math.floor(currentTokens * keepFraction);
+      const cut = findCutPoint(entries as never, 0, entries.length, keepRecentTokens);
+      const firstKeptIdx = cut.firstKeptEntryIndex;
+      if (firstKeptIdx <= 0) return null;
+      const toSummarize = entries
+        .slice(0, firstKeptIdx)
+        .filter((e) => e.type === 'message' && e.message !== undefined)
+        .map((e) => e.message);
+      if (toSummarize.length === 0) return null;
+      const auth = await modelRegistry.getApiKeyAndHeaders(model as Model<Api>);
+      const apiKey = 'apiKey' in auth ? (auth as { apiKey?: string }).apiKey : undefined;
+      const headers = 'headers' in auth ? (auth as { headers?: Record<string, string> }).headers : undefined;
+      const agent = (session as unknown as { agent: { streamFn?: unknown } }).agent;
+      const summary = await generateSummary(
+        toSummarize as never,
+        model as Model<Api>,
+        DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+        apiKey,
+        headers,
+        signal,
+        undefined,
+        undefined,
+        effortToThinkingLevel(opts.effort),
+        agent.streamFn as never,
+      );
+      return { summary, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
+    },
+
+    applyBgCompaction(result) {
+      const sm = session.sessionManager as unknown as {
+        appendCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number, details: unknown, fromHook: boolean): string;
+        buildSessionContext(): { messages: unknown[] };
+      };
+      sm.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true);
+      const agent = (session as unknown as { agent: { state: { messages: unknown[] } } }).agent;
+      agent.state.messages = sm.buildSessionContext().messages;
     },
 
     async setEffort(effort) {

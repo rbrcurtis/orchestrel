@@ -29,6 +29,8 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
     }),
     abort: vi.fn(async () => undefined),
     compact: vi.fn(async () => ({ ok: true })),
+    prepareBgCompaction: vi.fn(async () => null),
+    applyBgCompaction: vi.fn(() => undefined),
     setEffort: vi.fn(async () => undefined),
     getMessages: vi.fn(() => []),
     emit(event: unknown) {
