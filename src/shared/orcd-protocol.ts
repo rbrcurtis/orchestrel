@@ -11,43 +11,51 @@ export interface CreateAction {
   env?: Record<string, string>;  // ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY
   contextWindow?: number;
   summarizeThreshold?: number;  // 0-1, fraction of context window to trigger compaction
+  requestId?: string;
 }
 
 export interface MessageAction {
   action: 'message';
   sessionId: string;
   prompt: string;
+  requestId?: string;
 }
 
 export interface SetEffortAction {
   action: 'set_effort';
   sessionId: string;
   effort: string;
+  requestId?: string;
 }
 
 export interface SubscribeAction {
   action: 'subscribe';
   sessionId: string;
   afterEventIndex?: number;
+  requestId?: string;
 }
 
 export interface UnsubscribeAction {
   action: 'unsubscribe';
   sessionId: string;
+  requestId?: string;
 }
 
 export interface ListAction {
   action: 'list';
+  requestId?: string;
 }
 
 export interface CancelAction {
   action: 'cancel';
   sessionId: string;
+  requestId?: string;
 }
 
 export interface MemoryUpsertAction {
   action: 'memory_upsert';
   sessionId: string;
+  requestId?: string;
 }
 
 export interface CompactAction {
@@ -58,6 +66,7 @@ export interface CompactAction {
   model: string;
   contextWindow?: number;
   summarizeThreshold?: number;
+  requestId?: string;
 }
 
 export type OrcdAction =
@@ -103,6 +112,7 @@ export interface SessionErrorMessage {
   type: 'error';
   sessionId: string;
   error: string;
+  requestId?: string;
 }
 
 export interface SessionExitMessage {
@@ -131,6 +141,7 @@ export interface SessionListMessage {
     state: 'running' | 'completed' | 'errored' | 'stopped';
     cwd: string;
   }>;
+  requestId?: string;
 }
 
 export type OrcdMessage =
