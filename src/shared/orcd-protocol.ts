@@ -69,6 +69,12 @@ export interface CompactAction {
   requestId?: string;
 }
 
+export interface HelloAction {
+  action: 'hello';
+  token: string;
+  requestId?: string;
+}
+
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -78,7 +84,8 @@ export type OrcdAction =
   | ListAction
   | CancelAction
   | MemoryUpsertAction
-  | CompactAction;
+  | CompactAction
+  | HelloAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -144,6 +151,20 @@ export interface SessionListMessage {
   requestId?: string;
 }
 
+export interface CapabilityProvider {
+  id: string;
+  label: string;
+  models: Array<{ alias: string; label: string; contextWindow: number }>;
+}
+
+export interface CapabilitiesMessage {
+  type: 'capabilities';
+  requestId?: string;
+  name: string;
+  providers: CapabilityProvider[];
+  defaults: { provider: string; model: string };
+}
+
 export type OrcdMessage =
   | SessionCreatedMessage
   | StreamEventMessage
@@ -153,4 +174,5 @@ export type OrcdMessage =
   | SessionExitMessage
   | ContextUsageMessage
   | SessionIdUpdateMessage
-  | SessionListMessage;
+  | SessionListMessage
+  | CapabilitiesMessage;
