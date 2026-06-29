@@ -43,11 +43,17 @@ keeping Pi's native auto-compaction as the safety net.
 | Parameter | Value | Source |
 |-----------|-------|--------|
 | Trigger threshold | `summarizeThreshold`, default **0.6** (60% of context window) | per-card `cards.summarize_threshold` |
-| Compaction ratio | **0.5** — summarize oldest 50% of messages, keep newest 50% | `selectCutoff` |
-| Cutoff snapping | `floor(count * 0.5)`, then snap backward so the cut never splits a tool_use/tool_result pair | `selectCutoff` |
-| Excerpt cap | **120,000 chars** sent to the summarizer | `summarize-session` |
-| Summary model | the session's own model (`card.model`) | — |
+| Keep target | **~50%** of current context — keep newest half, summarize the oldest half | `keepRecentTokens` |
+| Cut selection | Pi's `prepareCompaction`/`findCutPoint` with `keepRecentTokens = floor(currentContextTokens * 0.5)`; snaps to a turn boundary, never splits a tool_use/tool_result pair | Pi `prepareCompaction` |
+| Summary model | the session's own model (`card.model`), via Pi's `compact()` summarizer | — |
 | Safety net | Pi native auto-compaction at ~92%, left enabled | Pi default |
+
+> **Cut is token-based, not count-based.** The pre-migration BGC used a
+> count-based `selectCutoff` (`floor(messageCount * 0.5)`). The Pi-native rewrite
+> uses Pi's token-based `prepareCompaction` (`keepRecentTokens ≈ 50% of current
+> context tokens`) so it can reuse Pi's tested cut + summarizer + provider auth
+> (incl. claude-max OAuth) rather than hand-rolling an OAuth-aware model call.
+> Same policy intent ("compact the oldest ~half"), more robust mechanism.
 
 Only the **mechanism** changes, not the policy.
 
@@ -101,29 +107,39 @@ check) stays coherent with the safety-net path.
 
 ## Components
 
-### 1. Summarizer — `src/lib/summarize-session.ts` (restore real model call)
+### 1 + 2. pi-runtime: summarize + apply — `src/orcd/pi-runtime.ts`
 
-Currently a stub that throws. Restore the out-of-band summarization:
+The summary call and the apply both need the live `AgentSession`'s internals
+(`agent.streamFn` for OAuth, `sessionManager`, `agent.state.messages`), so both
+live on the pi-runtime wrapper, which closes over `session`, `modelRegistry`, and
+`model`. Two new methods on `PiRuntimeSession`:
 
-- Input: the session's branch entries (`sessionManager.getBranch()`), ratio
-  (0.5), excerpt cap (120k), session model + provider auth.
-- `selectCutoff(entries, 0.5)`: `floor(messageCount * 0.5)`, snap backward off
-  any tool_use/tool_result boundary so the kept side begins on a clean turn.
-- Build the excerpt of the oldest half (capped at 120k chars), call the session
-  model to produce the summary text.
-- Output: `{ summary, firstKeptEntryId, tokensBefore, messagesCovered }`, where
-  `firstKeptEntryId` is the Pi entry id at the cutoff.
+- **`prepareBgCompaction(keepFraction, currentTokens, signal)`** — runs the
+  out-of-band summary, parallel-safe (reads entries; does NOT mutate the session
+  or abort a turn):
+  ```ts
+  const entries = session.sessionManager.getBranch()
+  const settings = { enabled: true, reserveTokens: 0,
+                     keepRecentTokens: Math.floor(currentTokens * keepFraction) }
+  const prep = prepareCompaction(entries, settings)   // Pi export; undefined ⇒ nothing to compact
+  if (!prep) return null
+  const { apiKey, headers } = await modelRegistry.getApiKeyAndHeaders(model)
+  const result = await compact(prep, model, apiKey, headers, undefined, signal,
+                               thinkingLevel, session.agent.streamFn)   // Pi export
+  return result  // { summary, firstKeptEntryId, tokensBefore, details }
+  ```
 
-Operates on Pi session entries, not raw JSONL lines. This call runs concurrently
-with the live session; it does not abort or block it.
+- **`applyBgCompaction(result)`** — the fast splice, done only when the session
+  is idle:
+  ```ts
+  session.sessionManager.appendCompaction(result.summary, result.firstKeptEntryId,
+                                          result.tokensBefore, result.details, /*fromHook*/ true)
+  session.agent.state.messages = session.sessionManager.buildSessionContext().messages
+  ```
 
-### 2. pi-runtime apply — `src/orcd/pi-runtime.ts`
-
-- New `applyBgCompaction(firstKeptEntryId, summary, tokensBefore)`:
-  `session.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, undefined, true)`
-  then `session.agent.state.messages = session.sessionManager.buildSessionContext().messages`.
-- New `getBranchEntries()` exposing `session.sessionManager.getBranch()` for the
-  summarizer's cutoff selection.
+`prepareCompaction`/`compact` are imported from `@earendil-works/pi-coding-agent`
+(exported from the package root). Because `prepareCompaction` returns `undefined`
+when there is nothing left to compact, it also doubles as the staleness check.
 
 ### 3. BGC controller — `src/orcd/socket-server.ts`
 
@@ -131,10 +147,13 @@ Replaces `triggerCompaction`, `pendingSummaries`, `applyPendingCompaction`, and
 the `onBeforeExit` apply hook. On a `context_usage` event:
 
 - If `summarizeThreshold > 0` and `contextTokens / contextWindow >= threshold`
-  and no BGC already in flight for this session: emit `bgc_started`, start the
-  summarizer **in parallel** (fire-and-forget; the live session keeps running).
+  and no BGC already in flight for this session: emit `bgc_started`, call
+  `prepareBgCompaction(0.5, contextTokens, signal)` **in parallel**
+  (fire-and-forget; the live session keeps running). `null` ⇒ nothing to compact,
+  clear the guard.
 - When the summary resolves: wait for the session to be idle (`turnActive`
-  false), then call `applyBgCompaction` and emit `compact_boundary`.
+  false); re-check that the latest branch entry is not already a compaction; then
+  call `applyBgCompaction(result)` and emit `compact_boundary`.
 - Reuse the existing `compacting` set as the single-in-flight guard.
 
 The existing `context_usage` *emission* (UI context wheel) is unchanged.
@@ -148,10 +167,19 @@ safety net compacts (not just when orcd's BGC does).
 
 ### 5. Cleanup
 
-Delete now-dead Claude-era code: `compactSession` stub and the unused parser
-helpers in `src/lib/session-compactor.ts`, `AUTO_COMPACT_RATIO`
-(`src/shared/constants.ts`, zero importers), and `src/orcd/import-claude-session.ts`
-(zero importers).
+Delete now-dead Claude-era code, after the new mechanism removes their last
+importers:
+
+- `src/lib/session-compactor.ts` (its `applyCompaction`/`PreparedCompaction` were
+  the prepare/defer plumbing; its `parseLines`/`buildExcerpt` only fed the dead
+  summarize preview).
+- `src/lib/summarize-session.ts` and the preview scripts that use it
+  (`scripts/summarize.ts`, `scripts/test-summarize.ts`) — dead-run-only, replaced
+  by the Pi-native summary path.
+- `AUTO_COMPACT_RATIO` in `src/shared/constants.ts` (zero importers).
+- `src/orcd/import-claude-session.ts` (zero importers).
+
+The plan re-verifies importers before each deletion.
 
 ## Data flow
 
