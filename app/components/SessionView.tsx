@@ -89,6 +89,16 @@ export const SessionView = observer(function SessionView({
     sessionStore.requestStatus(cardId);
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Release this card's in-memory conversation when the view unmounts / switches
+  // away. The transcript is persisted to IndexedDB, so this only frees RAM; the
+  // store rehydrates from cache on reopen. Keyed on cardId alone so it fires only
+  // on a real card change, not when sessionId resolves mid-session.
+  useEffect(() => {
+    return () => {
+      sessionStore.evictSession(cardId).catch(() => {});
+    };
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Card switch reset
   useEffect(() => {
     setNotification(null);
@@ -577,7 +587,7 @@ function PromptInput({
         <div className="text-xs text-destructive mb-1 text-right pr-[46px] sm:pr-[38px]">{uploadError}</div>
       )}
       <div className={`flex gap-2 ${dragging ? 'ring-2 ring-neon-cyan/50 rounded-md' : ''}`}>
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Textarea
             ref={ref}
             value={text}
@@ -587,7 +597,6 @@ function PromptInput({
             onFocus={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-focus', { detail: { cardId } }))}
             onBlur={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-blur'))}
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
-            maxLength={10000}
             rows={3}
             // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
             className="resize-none min-h-full max-h-40 overflow-y-auto pr-10 focus-ring"
