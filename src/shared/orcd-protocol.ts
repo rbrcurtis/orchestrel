@@ -80,6 +80,28 @@ export interface CapabilitiesAction {
   requestId?: string;
 }
 
+export interface WorktreePrepareAction {
+  action: 'worktree_prepare';
+  requestId?: string;
+  projectPath: string;
+  branch: string;
+  sourceBranch?: string;
+  setupCommands?: string;
+}
+
+export interface WorktreeRemoveAction {
+  action: 'worktree_remove';
+  requestId?: string;
+  projectPath: string;
+  path: string;
+}
+
+export interface PathValidateAction {
+  action: 'path_validate';
+  requestId?: string;
+  path: string;
+}
+
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -91,7 +113,10 @@ export type OrcdAction =
   | MemoryUpsertAction
   | CompactAction
   | HelloAction
-  | CapabilitiesAction;
+  | CapabilitiesAction
+  | WorktreePrepareAction
+  | WorktreeRemoveAction
+  | PathValidateAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -171,6 +196,26 @@ export interface CapabilitiesMessage {
   defaults: { provider: string; model: string };
 }
 
+export interface WorktreeReadyMessage {
+  type: 'worktree_ready';
+  requestId?: string;
+  path: string;
+  branch: string;
+}
+
+export interface OkMessage {
+  type: 'ok';
+  requestId?: string;
+}
+
+export interface PathValidatedMessage {
+  type: 'path_validated';
+  requestId?: string;
+  exists: boolean;
+  isGitRepo: boolean;
+  defaultBranch: string | null;
+}
+
 export type OrcdMessage =
   | SessionCreatedMessage
   | StreamEventMessage
@@ -181,4 +226,7 @@ export type OrcdMessage =
   | ContextUsageMessage
   | SessionIdUpdateMessage
   | SessionListMessage
-  | CapabilitiesMessage;
+  | CapabilitiesMessage
+  | WorktreeReadyMessage
+  | OkMessage
+  | PathValidatedMessage;
