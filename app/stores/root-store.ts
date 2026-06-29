@@ -17,6 +17,7 @@ function applySync(store: RootStore, data: SyncPayload): void {
   store.projects.hydrate(data.projects, true, data.users);
   store.cards.hydrate(data.cards.filter((c) => cardHasVisibleProject(store, c.projectId)), true);
   store.config.hydrate(data.providers);
+  store.config.hydrateNodes(data.nodes);
 }
 
 async function resubscribeAll(store: RootStore): Promise<void> {

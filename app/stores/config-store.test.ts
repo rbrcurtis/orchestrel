@@ -126,4 +126,36 @@ describe('ConfigStore', () => {
       expect(store.allProviders).toEqual([]);
     });
   });
+
+  describe('nodes', () => {
+    const NODES = [
+      { name: 'local', connected: true, providers: FIXTURE, defaults: { provider: 'anthropic', model: 'sonnet' } },
+      { name: 'gpubox', connected: false, providers: {} },
+    ];
+
+    it('hydrates nodes and exposes only connected ones', () => {
+      const store = new ConfigStore();
+      store.hydrateNodes(NODES);
+      expect(store.nodes.length).toBe(2);
+      expect(store.connectedNodes.map((n) => n.name)).toEqual(['local']);
+    });
+
+    it('returns per-node providers and models', () => {
+      const store = new ConfigStore();
+      store.hydrateNodes(NODES);
+      expect(store.providersForNode('local').anthropic.label).toBe('Anthropic');
+      expect(store.getModelsForNode('local', 'anthropic')).toEqual([
+        ['sonnet', FIXTURE.anthropic.models.sonnet],
+        ['opus', FIXTURE.anthropic.models.opus],
+      ]);
+      expect(store.defaultModelForNode('local', 'anthropic')).toBe('sonnet');
+    });
+
+    it('returns empty providers for an offline or unknown node', () => {
+      const store = new ConfigStore();
+      store.hydrateNodes(NODES);
+      expect(store.providersForNode('gpubox')).toEqual({});
+      expect(store.defaultModelForNode('nope', 'anthropic')).toBe('sonnet');
+    });
+  });
 });
