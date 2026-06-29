@@ -69,6 +69,9 @@ export class Project extends BaseEntity {
   @Column({ name: 'provider_id', type: 'text' })
   providerID!: string;
 
+  @Column({ name: 'node_name', type: 'text', default: 'local' })
+  nodeName!: string;
+
   @Column({ type: 'text', default: '#00f0ff' })
   color!: string;
 

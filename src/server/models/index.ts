@@ -75,6 +75,16 @@ export async function initDatabase(): Promise<void> {
       console.log(`[db:migrate] memory_* column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
     try {
+      await runner.query(`ALTER TABLE projects ADD COLUMN node_name TEXT NOT NULL DEFAULT 'local'`);
+    } catch (err) {
+      console.log(`[db:migrate] projects.node_name add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
+    try {
+      await runner.query(`ALTER TABLE cards ADD COLUMN node_name TEXT NOT NULL DEFAULT 'local'`);
+    } catch (err) {
+      console.log(`[db:migrate] cards.node_name add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
+    try {
       await runner.query(`ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
     } catch (err) {
       console.log(`[db:migrate] archived column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
