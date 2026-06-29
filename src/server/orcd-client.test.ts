@@ -3,7 +3,7 @@ import { OrcdClient } from './orcd-client';
 
 describe('OrcdClient dispatch ordering', () => {
   it('resolves create when orcd replies synchronously during send', async () => {
-    const client = new OrcdClient('/tmp/test.sock');
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as {
       socket: { writable: boolean };
       send: (action: unknown) => void;
@@ -23,7 +23,7 @@ describe('OrcdClient dispatch ordering', () => {
   });
 
   it('rejects create when orcd returns a create-level error', async () => {
-    const client = new OrcdClient('/tmp/test.sock');
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as {
       socket: { writable: boolean };
       send: (action: unknown) => void;
@@ -43,7 +43,7 @@ describe('OrcdClient dispatch ordering', () => {
   });
 
   it('awaits async handlers before dispatching the next message', async () => {
-    const client = new OrcdClient('/tmp/test.sock');
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const events: string[] = [];
     let release = () => {};
     const gate = new Promise<void>((resolve) => {
@@ -88,7 +88,7 @@ describe('OrcdClient dispatch ordering', () => {
   });
 
   it('continues dispatching after a handler throws', async () => {
-    const client = new OrcdClient('/tmp/test.sock');
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const events: string[] = [];
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -122,5 +122,45 @@ describe('OrcdClient dispatch ordering', () => {
     expect(events).toEqual(['exit']);
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+
+  it('constructs with host/port/token options', () => {
+    const client = new OrcdClient({ host: '10.0.0.1', port: 7420, token: 'tok', name: 'gpubox' });
+    expect(client.nodeName).toBe('gpubox');
+  });
+
+  it('correlates a request by requestId and resolves on reply', async () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as {
+      socket: { writable: boolean };
+      send: (a: { requestId?: string }) => void;
+      dispatch: (m: unknown) => void;
+    };
+    internals.socket = { writable: true };
+    internals.send = (a) => {
+      internals.dispatch({ type: 'path_validated', requestId: a.requestId, exists: true, isGitRepo: true, defaultBranch: 'main' });
+    };
+    const res = await client.pathValidate('/repo');
+    expect(res).toMatchObject({ exists: true, isGitRepo: true, defaultBranch: 'main' });
+  });
+
+  it('caches capabilities from a hello reply', async () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as {
+      socket: { writable: boolean };
+      send: (a: { requestId?: string }) => void;
+      dispatch: (m: unknown) => void;
+    };
+    internals.socket = { writable: true };
+    internals.send = (a) => {
+      internals.dispatch({
+        type: 'capabilities', requestId: a.requestId, name: 'local',
+        providers: [{ id: 'anthropic', label: 'Anthropic', models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 }] }],
+        defaults: { provider: 'anthropic', model: 'sonnet' },
+      });
+    };
+    const caps = await client.sayHello();
+    expect(caps.providers[0].id).toBe('anthropic');
+    expect(client.capabilities?.name).toBe('local');
   });
 });

@@ -1,14 +1,20 @@
 import { createConnection, type Socket } from 'net';
-import { homedir } from 'os';
 import type {
   OrcdAction,
   OrcdMessage,
 } from '../shared/orcd-protocol';
 
+export interface OrcdClientOpts {
+  host: string;
+  port: number;
+  token: string;
+  name: string;
+}
+
 type MessageHandler = (msg: OrcdMessage) => void | Promise<void>;
 
 /**
- * Client for the orcd Unix socket.
+ * Client for the orcd TCP socket.
  * Manages connection, reconnection, and message dispatch.
  */
 export class OrcdClient {
@@ -21,6 +27,9 @@ export class OrcdClient {
   private dispatchChain = Promise.resolve();
   private destroyed = false;
 
+  readonly nodeName: string;
+  private opts: OrcdClientOpts;
+
   /** Pending create calls, resolved in the same order orcd accepts them. */
   private pendingCreates: Array<{
     resolve: (sessionId: string) => void;
@@ -28,13 +37,23 @@ export class OrcdClient {
     timeout: ReturnType<typeof setTimeout>;
   }> = [];
 
+  /** Generic requestId-based pending requests */
+  private pending = new Map<string, { resolve: (m: OrcdMessage) => void; reject: (e: Error) => void; timeout: ReturnType<typeof setTimeout> }>();
+  private reqCounter = 0;
+
+  /** Cached capabilities from hello handshake */
+  capabilities: import('../shared/orcd-protocol').CapabilitiesMessage | null = null;
+
   /** Track which sessions we consider active (running in orcd) */
   private activeSessions = new Set<string>();
 
   /** Callback invoked when OrcdClient reconnects (orcd restarted) */
   private reconnectCallback: (() => void) | null = null;
 
-  constructor(private socketPath?: string) {}
+  constructor(opts: OrcdClientOpts) {
+    this.opts = opts;
+    this.nodeName = opts.name;
+  }
 
   /**
    * Register a callback for when OrcdClient reconnects to orcd.
@@ -48,19 +67,17 @@ export class OrcdClient {
    * Connect to orcd. Reconnects automatically on disconnect.
    */
   connect(): Promise<void> {
-    const path = this.socketPath ?? `${homedir()}/.orc/orcd.sock`;
     return new Promise((resolve, reject) => {
       this.destroyed = false;
-      const sock = createConnection({ path }, () => {
+      const sock = createConnection({ host: this.opts.host, port: this.opts.port }, () => {
         this.connected = true;
         this.buf = '';
         const isReconnect = this.hasConnectedBefore;
         this.hasConnectedBefore = true;
-        console.log(`[orcd-client] ${isReconnect ? 're' : ''}connected`);
-        if (isReconnect) {
-          this.reconnectCallback?.();
-        }
-        resolve();
+        console.log(`[orcd-client:${this.nodeName}] ${isReconnect ? 're' : ''}connected`);
+        this.sayHello()
+          .then(() => { if (isReconnect) this.reconnectCallback?.(); resolve(); })
+          .catch((err: Error) => { console.error(`[orcd-client:${this.nodeName}] hello failed:`, err.message); reject(err); });
       });
 
       sock.on('data', (data) => {
@@ -74,7 +91,7 @@ export class OrcdClient {
             const msg = JSON.parse(line) as OrcdMessage;
             this.dispatch(msg);
           } catch (err) {
-            console.warn(`[orcd-client] skipping malformed message:`, err instanceof Error ? err.message : err, 'line:', line.slice(0, 120));
+            console.warn(`[orcd-client:${this.nodeName}] skipping malformed message:`, err instanceof Error ? err.message : err, 'line:', line.slice(0, 120));
           }
         }
       });
@@ -85,13 +102,13 @@ export class OrcdClient {
         // Reconcile will re-seed from orcd.list() on reconnect.
         this.activeSessions.clear();
         if (this.destroyed) {
-          console.log('[orcd-client] disconnected after explicit shutdown');
+          console.log(`[orcd-client:${this.nodeName}] disconnected after explicit shutdown`);
           return;
         }
-        console.log('[orcd-client] disconnected, reconnecting in 2s...');
+        console.log(`[orcd-client:${this.nodeName}] disconnected, reconnecting in 2s...`);
         this.reconnectTimer = setTimeout(() => {
           this.connect().catch((err) => {
-            console.error('[orcd-client] reconnect failed:', (err as Error).message);
+            console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (err as Error).message);
           });
         }, 2000);
       });
@@ -100,7 +117,7 @@ export class OrcdClient {
         if (!this.connected) {
           reject(err);
         } else {
-          console.error('[orcd-client] socket error:', err.message);
+          console.error(`[orcd-client:${this.nodeName}] socket error:`, err.message);
         }
       });
 
@@ -132,10 +149,31 @@ export class OrcdClient {
    */
   send(action: OrcdAction): void {
     if (!this.socket?.writable) {
-      console.error('[orcd-client] not connected, dropping action:', action.action);
+      console.error(`[orcd-client:${this.nodeName}] not connected, dropping action:`, action.action);
       return;
     }
     this.socket.write(JSON.stringify(action) + '\n');
+  }
+
+  private nextRequestId(): string {
+    return `${this.nodeName}-${Date.now()}-${this.reqCounter++}`;
+  }
+
+  private request(action: OrcdAction): Promise<OrcdMessage> {
+    const requestId = this.nextRequestId();
+    return new Promise((resolve, reject) => {
+      if (!this.socket?.writable) {
+        console.warn(`[orcd-client:${this.nodeName}] not connected, cannot send request: ${action.action}`);
+        reject(new Error(`OrcdClient[${this.nodeName}] not connected`));
+        return;
+      }
+      const timeout = setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error(`request timeout: ${action.action}`));
+      }, 130_000);
+      this.pending.set(requestId, { resolve, reject, timeout });
+      this.send({ ...action, requestId });
+    });
   }
 
   /**
@@ -154,7 +192,7 @@ export class OrcdClient {
   }): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!this.socket?.writable) {
-        console.error('[orcd-client] not connected, cannot create session');
+        console.error(`[orcd-client:${this.nodeName}] not connected, cannot create session`);
         reject(new Error('OrcdClient not connected'));
         return;
       }
@@ -264,6 +302,42 @@ export class OrcdClient {
     });
   }
 
+  /**
+   * Perform the hello handshake and cache capabilities.
+   */
+  async sayHello(): Promise<import('../shared/orcd-protocol').CapabilitiesMessage> {
+    const msg = await this.request({ action: 'hello', token: this.opts.token } as OrcdAction);
+    if (msg.type !== 'capabilities') throw new Error('expected capabilities reply to hello');
+    this.capabilities = msg;
+    return msg;
+  }
+
+  /**
+   * Validate that a path exists on the remote node.
+   */
+  async pathValidate(path: string): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null }> {
+    const msg = await this.request({ action: 'path_validate', path } as OrcdAction);
+    if (msg.type !== 'path_validated') throw new Error('expected path_validated reply');
+    return { exists: msg.exists, isGitRepo: msg.isGitRepo, defaultBranch: msg.defaultBranch };
+  }
+
+  /**
+   * Prepare a worktree on the remote node.
+   */
+  async worktreePrepare(opts: { projectPath: string; branch: string; sourceBranch?: string; setupCommands?: string }): Promise<{ path: string; branch: string }> {
+    const msg = await this.request({ action: 'worktree_prepare', ...opts } as OrcdAction);
+    if (msg.type !== 'worktree_ready') throw new Error('expected worktree_ready reply');
+    return { path: msg.path, branch: msg.branch };
+  }
+
+  /**
+   * Remove a worktree on the remote node.
+   */
+  async worktreeRemove(projectPath: string, path: string): Promise<void> {
+    const msg = await this.request({ action: 'worktree_remove', projectPath, path } as OrcdAction);
+    if (msg.type !== 'ok') throw new Error('expected ok reply');
+  }
+
   isConnected(): boolean {
     return this.connected;
   }
@@ -285,6 +359,19 @@ export class OrcdClient {
   }
 
   private dispatch(msg: OrcdMessage): void {
+    // Short-circuit: if the message carries a requestId matching a pending request, resolve it directly.
+    // This only fires for messages sent via request(), never for create/list which don't set requestId.
+    const anyMsg = msg as OrcdMessage & { requestId?: string };
+    if (anyMsg.requestId && this.pending.has(anyMsg.requestId)) {
+      const p = this.pending.get(anyMsg.requestId)!;
+      clearTimeout(p.timeout);
+      this.pending.delete(anyMsg.requestId);
+      if (msg.type === 'error') p.reject(new Error((msg as { error: string }).error));
+      else p.resolve(msg);
+      console.log(`[orcd-client:${this.nodeName}] request ${anyMsg.requestId} resolved (${msg.type})`);
+      return;
+    }
+
     // Handle session_created for pending create calls
     if (msg.type === 'session_created') {
       this.activeSessions.add(msg.sessionId);
@@ -320,7 +407,7 @@ export class OrcdClient {
           try {
             await handler(msg);
           } catch (err) {
-            console.error('[orcd-client] handler error:', err);
+            console.error(`[orcd-client:${this.nodeName}] handler error:`, err);
           }
         }
       });
