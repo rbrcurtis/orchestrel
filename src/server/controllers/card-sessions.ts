@@ -1,3 +1,4 @@
+import { readdirSync, readlinkSync } from 'fs';
 import { Card } from '../models/Card';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
@@ -437,6 +438,99 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
     }
 
     await cleanupWorktreeForCard(card);
+  });
+}
+
+// Kill stray processes a session left running in its worktree — e.g. the
+// `sleep 900` background poll loops Pi spawns but never reaps when the agent
+// session exits (they orphan onto the orcd process and pile up, holding GBs of
+// RAM). Attribution is by working directory, so it only touches processes that
+// belong to THIS card's worktree and never another live session's. Once the
+// worktree dir has been removed (archive cleanup) the kernel appends a
+// " (deleted)" suffix to the cwd symlink target — strip it before comparing.
+// The trailing-slash guard prevents a prefix collision between sibling
+// worktrees (e.g. `neural-engine` vs `neural-engine-optimization`).
+// True when a process working directory belongs to `worktree`. Strips the
+// kernel's " (deleted)" suffix (present after the worktree dir is removed) and
+// uses a trailing-slash guard so a sibling worktree whose path is a string
+// prefix (e.g. `neural-engine` vs `neural-engine-optimization`) is NOT matched.
+export function cwdMatchesWorktree(rawCwd: string, worktree: string): boolean {
+  const cwd = rawCwd.replace(/ \(deleted\)$/, '');
+  return cwd === worktree || cwd.startsWith(`${worktree}/`);
+}
+
+/* oxlint-disable orchestrel/log-in-catch, orchestrel/log-before-early-return --
+   per-pid /proc scan: catches fire for every process that exits mid-scan or
+   isn't readable; logging each one would be pure noise. The caller logs the
+   total reaped count. */
+function reapWorktreeProcesses(worktree: string): number {
+  let pids: string[];
+  try {
+    pids = readdirSync('/proc');
+  } catch {
+    return 0;
+  }
+  const self = process.pid;
+  let killed = 0;
+  for (const name of pids) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
+    if (pid === self) continue;
+    let cwd: string;
+    try {
+      cwd = readlinkSync(`/proc/${pid}/cwd`);
+    } catch {
+      continue; // process gone or not ours
+    }
+    if (!cwdMatchesWorktree(cwd, worktree)) continue;
+    try {
+      process.kill(pid, 'SIGKILL');
+      killed++;
+    } catch {
+      // already gone — fine
+    }
+  }
+  return killed;
+}
+/* oxlint-enable orchestrel/log-in-catch, orchestrel/log-before-early-return */
+
+// Reap a card's leftover worktree processes whenever it lands in a column that
+// isn't active work. running/review may legitimately have live background
+// tasks; done/ready/archive/backlog must not, so anything still running in the
+// worktree is an orphan and gets killed. Independent board:changed listener:
+// order-independent (strips " (deleted)" so it composes with worktree cleanup
+// regardless of which fires first) and assumes nothing about prior steps.
+export function registerProcessReaper(bus: MessageBus = messageBus): void {
+  bus.subscribe('board:changed', async (payload) => {
+    const { card, newColumn } = payload as {
+      card: Card | null;
+      oldColumn: string | null;
+      newColumn: string | null;
+    };
+    if (!card) {
+      console.log(`[reaper] board:changed with null card, skipping`);
+      return;
+    }
+    // running/review may have live background work — leave it alone. (High
+    // frequency; intentionally silent.)
+    // oxlint-disable-next-line orchestrel/log-before-early-return
+    if (newColumn === 'running' || newColumn === 'review') return;
+    if (!card.worktreeBranch || !card.projectId) {
+      console.log(`[reaper] card ${card.id} → ${newColumn}: no worktree, skipping`);
+      return;
+    }
+
+    const { Project } = await import('../models/Project');
+    const proj = await Project.findOneBy({ id: card.projectId });
+    if (!proj) {
+      console.log(`[reaper] card ${card.id} → ${newColumn}: project ${card.projectId} not found, skipping`);
+      return;
+    }
+
+    const { resolveWorkDir } = await import('../../shared/worktree');
+    const wt = resolveWorkDir(card.worktreeBranch, proj.path);
+    const n = reapWorktreeProcesses(wt);
+    console.log(`[reaper] card ${card.id} → ${newColumn}: reaped ${n} process(es) under ${wt}`);
   });
 }
 

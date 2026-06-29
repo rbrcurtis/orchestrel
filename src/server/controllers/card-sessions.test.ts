@@ -768,3 +768,26 @@ describe('registerAutoStart', () => {
     expect(mockCards[0].sessionId).toBe('sess-new');
   });
 });
+
+describe('cwdMatchesWorktree', () => {
+  const wt = '/home/ryan/Code/transcription/.worktrees/neural-engine';
+
+  it('matches the worktree root and nested paths', async () => {
+    const { cwdMatchesWorktree } = await import('./card-sessions');
+    expect(cwdMatchesWorktree(wt, wt)).toBe(true);
+    expect(cwdMatchesWorktree(`${wt}/src/bin`, wt)).toBe(true);
+  });
+
+  it('matches even after the worktree dir was deleted', async () => {
+    const { cwdMatchesWorktree } = await import('./card-sessions');
+    // The kernel appends " (deleted)" to /proc/<pid>/cwd once the dir is removed.
+    expect(cwdMatchesWorktree(`${wt} (deleted)`, wt)).toBe(true);
+  });
+
+  it('does not match a sibling worktree that shares a path prefix', async () => {
+    const { cwdMatchesWorktree } = await import('./card-sessions');
+    // Without the trailing-slash guard this would reap the wrong session.
+    expect(cwdMatchesWorktree(`${wt}-optimization`, wt)).toBe(false);
+    expect(cwdMatchesWorktree(`${wt}-optimization/src`, wt)).toBe(false);
+  });
+});
