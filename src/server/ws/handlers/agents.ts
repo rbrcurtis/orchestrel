@@ -3,6 +3,7 @@ import { Card } from '../../models/Card';
 import { buildPromptWithFiles } from '../../sessions/manager';
 import { trackSession } from '../../controllers/card-sessions';
 import { ensureWorktree } from '../../sessions/worktree';
+import { isCompactCommand } from '../../../shared/slash-commands';
 
 export async function handleAgentSend(
   data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
@@ -19,6 +20,34 @@ export async function handleAgentSend(
     if (!client) throw new Error('OrcdClient not initialized');
 
     const card = await Card.findOneByOrFail({ id: cardId });
+
+    // `/compact` typed in the chat box is a Pi TUI command with no meaning on
+    // the SDK path. Route it to the real compaction signal instead of counting
+    // it as a prompt or moving the card to running. For a live session, forward
+    // it as a message so orcd detects + compacts; for an inactive session with
+    // history, rehydrate-and-compact directly (orcd can't intercept a message
+    // for a session it isn't running).
+    if (isCompactCommand(message)) {
+      if (card.sessionId && client.isActive(card.sessionId)) {
+        trackSession(cardId, card.sessionId);
+        client.message(card.sessionId, message);
+      } else if (card.sessionId) {
+        const cwd = await ensureWorktree(card);
+        trackSession(cardId, card.sessionId);
+        client.compact({
+          sessionId: card.sessionId,
+          cwd,
+          provider: card.provider,
+          model: card.model,
+          contextWindow: card.contextWindow,
+          summarizeThreshold: card.summarizeThreshold,
+        });
+      } else {
+        console.log(`[session:${cardId}] /compact ignored — no session to compact`);
+      }
+      return;
+    }
+
     const prompt = buildPromptWithFiles(message, files);
 
     // Increment prompts sent

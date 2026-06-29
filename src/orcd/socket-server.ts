@@ -4,6 +4,7 @@ import { dirname } from 'path';
 import { upsertMemories } from '../lib/memory-upsert';
 import { applyCompaction, type PreparedCompaction } from '../lib/session-compactor';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import { isCompactCommand } from '../shared/slash-commands';
 import type { OrcdConfig, ProviderConfig } from './config';
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
@@ -191,6 +192,15 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
+    // `/compact` (and other Pi TUI slash commands) are not interpreted on the
+    // headless SDK path — without this they reach the model as literal prompt
+    // text. Route the command to the real compaction signal instead.
+    if (isCompactCommand(action.prompt)) {
+      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → triggering compaction`);
+      this.beginCompaction(session, false);
+      return;
+    }
+
     if (!action.prompt.trim()) {
       console.warn(`[orcd:${action.sessionId.slice(0, 8)}] handleMessage: empty prompt, dropping`);
       this.send(client, { type: 'error', sessionId: action.sessionId, error: 'empty prompt' });
@@ -285,8 +295,17 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
+    this.beginCompaction(session, hydrated);
+  }
+
+  /**
+   * Run a compaction on a session already in the store. Guards against
+   * concurrent/duplicate compaction. A `hydrated` session — created only to
+   * compact an inactive session — is torn down from the store afterward.
+   */
+  private beginCompaction(session: OrcdSession, hydrated: boolean): void {
     if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id) || this.applyingSummaries.has(session.id)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: already compacting or pending, ignoring`);
+      console.log(`[orcd:${session.id.slice(0, 8)}:compact] beginCompaction: already compacting or pending, ignoring`);
       return;
     }
 
@@ -297,7 +316,7 @@ export class OrcdServer {
     session.emitBgcStarted();
     this.triggerCompaction(session)
       .catch((err) => {
-        console.error(`[orcd:${session.id.slice(0, 8)}:compact] manual start failed:`, err);
+        console.error(`[orcd:${session.id.slice(0, 8)}:compact] start failed:`, err);
       })
       .finally(() => {
         this.compacting.delete(session.id);
