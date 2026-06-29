@@ -4,6 +4,7 @@ import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } fr
 import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload, mapSubagentExecEvent } from './pi-events';
 import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
 import { RingBuffer } from './ring-buffer';
+import type { CompactionResult } from '@earendil-works/pi-coding-agent';
 import type { ProviderConfig } from './config';
 import type { SessionState } from './types';
 import type {
@@ -246,6 +247,16 @@ export class OrcdSession {
   }
 
   private emitMappedPiEvent(event: unknown): void {
+    if (this.isRecord(event) && event.type === 'compaction_start') {
+      this.emitBgcStarted();
+      return;
+    }
+    if (this.isRecord(event) && event.type === 'compaction_end') {
+      // Pi's own auto-compaction (the ~92% safety net) finished — surface it so
+      // the UI context wheel resets even when orcd's BGC didn't drive it.
+      this.emitCompactBoundary();
+      return;
+    }
     const usage = getContextUsageFromPiEvent(event, this.resolveContextWindow());
     const payload = mapPiEventToOrcdPayload(event);
     const eventIndex = this.buffer.push(payload);
@@ -448,6 +459,24 @@ export class OrcdSession {
   async compact(): Promise<unknown> {
     const session = await this.getOrCreatePiSession(undefined);
     return session.compact();
+  }
+
+  /** True when no turn is currently streaming — safe to splice a compaction. */
+  isIdle(): boolean {
+    return !this.running;
+  }
+
+  /** Run an out-of-band BGC summary. Parallel-safe; null = nothing to compact. */
+  async prepareBgCompaction(keepFraction: number, signal: AbortSignal): Promise<CompactionResult | null> {
+    const session = await this.getOrCreatePiSession(undefined);
+    return session.prepareBgCompaction(keepFraction, this.lastContextTokens, signal);
+  }
+
+  /** Splice a prepared BGC compaction into the session tree. Call only when idle. */
+  applyBgCompaction(result: CompactionResult): void {
+    if (!this.piSession) return;
+    this.piSession.applyBgCompaction(result);
+    this.emitCompactBoundary();
   }
 
   /**
