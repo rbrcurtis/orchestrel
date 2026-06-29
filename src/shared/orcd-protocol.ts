@@ -75,6 +75,11 @@ export interface HelloAction {
   requestId?: string;
 }
 
+export interface CapabilitiesAction {
+  action: 'capabilities';
+  requestId?: string;
+}
+
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -85,7 +90,8 @@ export type OrcdAction =
   | CancelAction
   | MemoryUpsertAction
   | CompactAction
-  | HelloAction;
+  | HelloAction
+  | CapabilitiesAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
