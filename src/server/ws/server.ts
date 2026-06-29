@@ -146,37 +146,39 @@ export function wsServerPlugin(): Plugin {
             if (initState.initialized) return;
 
             const { OrcdClient } = await import('../orcd-client');
+            const { loadNodeRegistry } = await import('../config/nodes');
             const { initOrcdRouter, reconcileRunningCards, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive } =
               await import('../controllers/card-sessions');
 
-            let client = initState.getOrcdClient();
-            if (!client) {
-              client = new OrcdClient();
-              await client.connect();
-              initState.setOrcdClient(client);
+            const nodes = loadNodeRegistry();
+            for (const node of nodes) {
+              let client = initState.getClientByNode(node.name);
+              if (!client) {
+                client = new OrcdClient({ host: node.host, port: node.port, token: node.authToken, name: node.name });
+                initState.setClientForNode(node.name, client);
+                try {
+                  await client.connect();
+                } catch (err) {
+                  console.error(`[orcd] node ${node.name} initial connect failed (will retry):`, (err as Error).message);
+                }
+              }
+              initOrcdRouter(client);
+              try {
+                await reconcileRunningCards(client);
+              } catch (err) {
+                console.error(`[startup] reconcile failed for ${node.name}:`, err);
+              }
+              const nodeClient = client;
+              nodeClient.onReconnect(() => {
+                console.log(`[orcd] node ${node.name} reconnected, reconciling...`);
+                reconcileRunningCards(nodeClient).catch((e) => console.error(`[orcd] reconnect reconcile ${node.name}:`, e));
+              });
             }
-
-            // Register the single global orcd message router
-            initOrcdRouter(client);
-
-            // Reconcile running cards at startup and on every orcd reconnect
-            try {
-              await reconcileRunningCards(client);
-            } catch (err) {
-              console.error('[startup] session reconciliation failed:', err);
-            }
-
-            client.onReconnect(() => {
-              console.log('[orcd] orcd reconnected, reconciling running cards...');
-              reconcileRunningCards(client!).catch((err) =>
-                console.error('[orcd] reconnect reconciliation failed:', err),
-              );
-            });
 
             registerAutoStart();
             registerMemoryUpsertOnArchive();
             registerWorktreeCleanup();
-            console.log('[orcd] OrcdClient connected, router + listeners registered');
+            console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
             initState.markInitialized();
           },

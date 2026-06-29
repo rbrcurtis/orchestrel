@@ -38,17 +38,17 @@ function routeBgcEvent(sessionId: string, event: Record<string, unknown>): numbe
 
 // ── Global orcd message router ───────────────────────────────────────────────
 
-let routerInitialized = false;
+const routedClients = new WeakSet<OrcdClient>();
 
 export function initOrcdRouter(
   client: OrcdClient,
   bus: MessageBus = messageBus,
 ): void {
-  if (routerInitialized) {
-    console.log(`[orcd-router] initOrcdRouter: already initialized, skipping`);
+  if (routedClients.has(client)) {
+    console.log(`[orcd-router] initOrcdRouter: client already routed, skipping`);
     return;
   }
-  routerInitialized = true;
+  routedClients.add(client);
   const repo = () => AppDataSource.getRepository(Card);
 
   client.onMessage(async (msg: OrcdMessage) => {
