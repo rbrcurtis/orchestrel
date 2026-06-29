@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from 'net';
 import { upsertMemories } from '../lib/memory-upsert';
 import { applyCompaction, prepareCompaction, type PreparedCompaction } from '../lib/session-compactor';
-import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import type { CapabilitiesMessage, OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { OrcdConfig, ProviderConfig } from './config';
 
 export interface OrcdListenConfig {
@@ -15,6 +15,7 @@ import { SessionStore } from './session-store';
 interface ClientState {
   socket: Socket;
   subscriptions: Map<string, SessionEventCallback>;
+  authenticated: boolean;
 }
 
 export class OrcdServer {
@@ -56,7 +57,7 @@ export class OrcdServer {
   }
 
   private handleConnection(socket: Socket): void {
-    const client: ClientState = { socket, subscriptions: new Map() };
+    const client: ClientState = { socket, subscriptions: new Map(), authenticated: false };
     this.clients.add(client);
     console.log('[orcd] client connected');
 
@@ -98,6 +99,15 @@ export class OrcdServer {
   }
 
   private handleAction(client: ClientState, action: OrcdAction): void {
+    if (action.action === 'hello') {
+      console.log('[orcd] hello received');
+      this.handleHello(client, action);
+      return;
+    }
+    if (!client.authenticated) {
+      console.warn('[orcd] dropping action before hello:', action.action);
+      return;
+    }
     switch (action.action) {
       case 'create':
         this.handleCreate(client, action);
@@ -126,7 +136,32 @@ export class OrcdServer {
       case 'compact':
         this.handleCompact(client, action);
         break;
+      case 'capabilities':
+        this.send(client, this.buildCapabilities(action.requestId));
+        break;
     }
+  }
+
+  private buildCapabilities(requestId?: string): CapabilitiesMessage {
+    const providers = Object.entries(this.providers).map(([id, cfg]) => ({
+      id,
+      label: cfg.label ?? id,
+      models: Object.entries(cfg.modelLabels ?? {}).map(([, m]) => ({
+        alias: m.alias, label: m.label, contextWindow: m.contextWindow,
+      })),
+    }));
+    return { type: 'capabilities', requestId, name: this.opts.name, providers, defaults: this.defaults };
+  }
+
+  private handleHello(client: ClientState, action: OrcdAction & { action: 'hello' }): void {
+    if (action.token !== this.opts.authToken) {
+      console.warn('[orcd] hello: invalid token, closing connection');
+      this.send(client, { type: 'error', sessionId: '', error: 'invalid token', requestId: action.requestId });
+      client.socket.destroy();
+      return;
+    }
+    client.authenticated = true;
+    this.send(client, this.buildCapabilities(action.requestId));
   }
 
   private handleCreate(client: ClientState, action: OrcdAction & { action: 'create' }): void {
