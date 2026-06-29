@@ -8,6 +8,7 @@ export interface OrcdListenConfig {
   listen: { host: string; port: number };
   authToken: string;
   name: string;
+  ringBufferSize?: number;
 }
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
@@ -188,6 +189,7 @@ export class OrcdServer {
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
+      bufferSize: this.opts.ringBufferSize,
       onFork: (oldId, newId) => this.store.alias(oldId, newId),
     });
 
@@ -313,6 +315,7 @@ export class OrcdServer {
         sessionId: action.sessionId,
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,
+        bufferSize: this.opts.ringBufferSize,
       });
       session.state = 'completed';
       this.store.add(session);

@@ -5,7 +5,7 @@ async function main() {
   console.log('[orcd] starting...');
   const config = await loadOrcdConfig();
   const server = new OrcdServer(
-    { listen: config.listen, authToken: config.authToken, name: config.name },
+    { listen: config.listen, authToken: config.authToken, name: config.name, ringBufferSize: config.ringBufferSize },
     config.providers,
     { provider: config.defaultProvider, model: config.defaultModel },
     config.memoryUpsert,

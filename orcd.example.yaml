@@ -9,6 +9,7 @@ name: local
 defaultProvider: anthropic
 defaultModel: sonnet
 defaultCwd: ~/Code             # where new cards default their working directory
+ringBufferSize: 5000           # per-session event buffer; size to cover the max expected BE↔node outage
 
 providers:
   # Claude via Anthropic API.

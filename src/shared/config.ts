@@ -40,6 +40,7 @@ export interface OrchestrelConfig {
   defaultProvider: string;
   defaultModel: string;
   defaultCwd?: string;
+  ringBufferSize: number;
   providers: Record<string, ProviderDef>;
   memoryUpsert?: MemoryUpsertConfig;
 }
@@ -164,6 +165,7 @@ export function parseConfig(
     defaultProvider: String(raw.defaultProvider ?? 'anthropic'),
     defaultModel: String(raw.defaultModel ?? 'claude-sonnet-4-6'),
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
+    ringBufferSize: Number(raw.ringBufferSize ?? 5000),
     providers,
     memoryUpsert,
   };

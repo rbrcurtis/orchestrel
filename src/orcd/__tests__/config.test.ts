@@ -92,6 +92,22 @@ defaultModel: claude-sonnet-4-6
 `;
     expect(() => parseConfig(yaml, {})).toThrow();
   });
+
+  it('parses ringBufferSize with a default of 5000', () => {
+    const yaml = `
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
+defaultProvider: anthropic
+defaultModel: claude-sonnet-4-6
+providers:
+  anthropic:
+    label: Anthropic
+    models:
+      sonnet: { label: "Sonnet", modelID: claude-sonnet-4-6, contextWindow: 200000 }
+`;
+    expect(parseConfig(yaml, {}).ringBufferSize).toBe(5000);
+    expect(parseConfig(yaml.replace('authToken: tok', 'authToken: tok\nringBufferSize: 20000'), {}).ringBufferSize).toBe(20000);
+  });
 });
 
 describe('buildModelAliasEnv', () => {
