@@ -4,7 +4,7 @@ import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { OrcdServer } from '../socket-server';
 import { OrcdSession, type SessionEventCallback } from '../session';
-import type { ContextUsageMessage, SessionResultMessage, SessionExitMessage, CompactAction, StreamEventMessage } from '../../shared/orcd-protocol';
+import type { CompactAction, StreamEventMessage } from '../../shared/orcd-protocol';
 
 async function createSkillProject(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'orchestrel-skill-project-'));
@@ -79,30 +79,6 @@ async function collectPromptFromMessage(prompt: string): Promise<string> {
 }
 
 
-const compactDelegate = vi.fn(async () => ({
-  messagesBefore: 4,
-  messagesCovered: 2,
-  summaryTokens: 2,
-  summaryChars: 7,
-}));
-
-const applyResult = {
-  sessionId: 'session-1',
-  messagesBefore: 4,
-  messagesCovered: 2,
-  summaryTokens: 2,
-  summaryChars: 7,
-  durationMs: 3,
-};
-
-const compactorMocks = vi.hoisted(() => ({
-  applyCompaction: vi.fn(),
-}));
-
-vi.mock('../../lib/session-compactor', () => ({
-  applyCompaction: compactorMocks.applyCompaction,
-}));
-
 function createServer() {
   return new OrcdServer('/tmp/orcd-test.sock', {
     test: {
@@ -113,39 +89,6 @@ function createServer() {
       modelAliasEnv: {},
     },
   }, { provider: 'test', model: 'test-model' });
-}
-
-function createSession() {
-  let hook: SessionEventCallback | undefined;
-  let beforeExitHook: (() => Promise<void>) | undefined;
-  const emitCompactBoundary = vi.fn();
-  const emitBgcStarted = vi.fn();
-  return {
-    session: {
-      id: 'session-1',
-      cwd: '/tmp/project',
-      model: 'test-model',
-      provider: 'test',
-      summarizeThreshold: 0.6,
-      lastContextTokens: 80,
-      lastContextWindow: 100,
-      subscribe: vi.fn((cb: SessionEventCallback) => { hook = cb; }),
-      onBeforeExit: vi.fn((cb: () => Promise<void>) => { beforeExitHook = cb; }),
-      emitCompactBoundary,
-      emitBgcStarted,
-      compact: compactDelegate,
-    },
-    emitCompactBoundary,
-    emitBgcStarted,
-    getHook: () => {
-      if (!hook) throw new Error('hook not attached');
-      return hook;
-    },
-    runBeforeExit: async () => {
-      if (!beforeExitHook) throw new Error('before exit hook not attached');
-      await beforeExitHook();
-    },
-  };
 }
 
 describe('OrcdServer prompt passthrough', () => {
@@ -262,121 +205,83 @@ describe('OrcdServer provider env', () => {
 });
 
 describe('OrcdServer background compaction', () => {
-  it('does not apply background compaction until beforeExit even after result', async () => {
-    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
-    compactDelegate.mockClear();
+  function bgcSession(id: string) {
+    const session = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: id });
+    session.lastContextTokens = 130_000;
+    session.lastContextWindow = 200_000;
+    return session;
+  }
+
+  it('triggers parallel prepare at threshold and applies when idle', async () => {
     const server = createServer();
-    const { session, emitCompactBoundary, emitBgcStarted, getHook, runBeforeExit } = createSession();
+    const session = bgcSession('bgc-apply');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined };
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
+    await server['maybeStartBgc'](session);
+    expect(prepSpy).toHaveBeenCalledWith(0.5, expect.any(Object));
+    expect(applySpy).toHaveBeenCalledWith(result);
+  });
 
-    server['attachLifecycleHooks'](session as never);
-    const hook = getHook();
+  it('skips apply when a compaction already landed (staleness guard)', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-stale');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined } as never);
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(true);
+    await server['maybeStartBgc'](session);
+    expect(applySpy).not.toHaveBeenCalled();
+  });
 
-    hook({ type: 'stream_event', sessionId: 'session-1', eventIndex: 1, event: { type: 'message_start' } });
-    hook({ type: 'result', sessionId: 'session-1', eventIndex: 2, result: { subtype: 'success' } } satisfies SessionResultMessage);
-    hook({ type: 'context_usage', sessionId: 'session-1', contextTokens: 80, contextWindow: 100 } satisfies ContextUsageMessage);
-
-    await vi.waitFor(() => expect(emitBgcStarted).toHaveBeenCalledTimes(1));
-    expect(compactorMocks.applyCompaction).not.toHaveBeenCalled();
-    expect(emitCompactBoundary).not.toHaveBeenCalled();
-
-    await runBeforeExit();
-    expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
-    const preparedCall = compactorMocks.applyCompaction.mock.calls[0]?.[0];
-    expect(preparedCall).toEqual(expect.objectContaining({ sessionId: 'session-1' }));
-    expect(typeof preparedCall?.compact).toBe('function');
-    await preparedCall?.compact();
-    expect(compactDelegate).toHaveBeenCalledTimes(1);
-    expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
-
-    hook({ type: 'session_exit', sessionId: 'session-1', state: 'completed' } satisfies SessionExitMessage);
-    expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
+  it('does not start a second BGC while one is in flight', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-guard');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(null as never);
+    await Promise.all([server['maybeStartBgc'](session), server['maybeStartBgc'](session)]);
+    expect(prepSpy).toHaveBeenCalledTimes(1);
   });
 
   it('starts BGC from explicit compact action and emits bgc_started', async () => {
-    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
-    compactDelegate.mockClear();
     const server = createServer();
-    const { session, emitCompactBoundary, emitBgcStarted } = createSession();
-    server.store.add(session as never);
-    server['attachLifecycleHooks'](session as never);
-
-    server['handleAction']({ socket: null as never, subscriptions: new Map() }, {
-      action: 'compact',
-      sessionId: 'session-1',
-      cwd: '/tmp/project',
-      provider: 'test',
-      model: 'test-model',
-      contextWindow: 100,
-      summarizeThreshold: 0.6,
-    } satisfies CompactAction);
-
-    await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
-    const preparedCall = compactorMocks.applyCompaction.mock.calls[0]?.[0];
-    expect(preparedCall).toEqual(expect.objectContaining({ sessionId: 'session-1' }));
-    expect(typeof preparedCall?.compact).toBe('function');
-    await preparedCall?.compact();
-    expect(compactDelegate).toHaveBeenCalledTimes(1);
-    expect(emitBgcStarted).toHaveBeenCalledTimes(1);
-    expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
+    const client = createClient();
+    const session = bgcSession('bgc-manual');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
+    client.subscriptions.set(session.id, cb);
+    session.subscribe(cb);
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined } as never);
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
+    server['handleAction'](client as never, { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm' } as CompactAction);
+    await new Promise((r) => setTimeout(r, 0));
+    const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
+    expect(wrote.some((w) => w.includes('bgc_started'))).toBe(true);
   });
 
-  it('does not start a second BGC while the first compact apply is still running after session exit', async () => {
-    let resolveApply: ((value: typeof applyResult) => void) | undefined;
-    const applyPromise = new Promise<typeof applyResult>((resolve) => {
-      resolveApply = resolve;
-    });
-    compactorMocks.applyCompaction.mockReset().mockReturnValue(applyPromise);
+  it('defers the splice to run-end when the session is busy, then applies', async () => {
     const server = createServer();
-    const { session, emitCompactBoundary, emitBgcStarted, getHook, runBeforeExit } = createSession();
-
-    server['attachLifecycleHooks'](session as never);
-    const hook = getHook();
-
-    hook({ type: 'context_usage', sessionId: 'session-1', contextTokens: 80, contextWindow: 100 } satisfies ContextUsageMessage);
-    await vi.waitFor(() => expect(emitBgcStarted).toHaveBeenCalledTimes(1));
-
-    const beforeExit = runBeforeExit();
-    await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
-    hook({ type: 'session_exit', sessionId: 'session-1', state: 'completed' } satisfies SessionExitMessage);
-    hook({ type: 'context_usage', sessionId: 'session-1', contextTokens: 82, contextWindow: 100 } satisfies ContextUsageMessage);
-
-    expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
-    expect(emitBgcStarted).toHaveBeenCalledTimes(1);
-
-    resolveApply?.(applyResult);
-    await beforeExit;
-    expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
-  });
-
-  it('rehydrates inactive persisted sessions for explicit compact action', async () => {
-    const compactSpy = vi.spyOn(OrcdSession.prototype, 'compact').mockResolvedValue({
-      messagesBefore: 1,
-      messagesCovered: 1,
-      summaryChars: 1,
-    });
-    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
-    const server = createServer();
-    const client = {
-      socket: { writable: true, write: vi.fn() } as never,
-      subscriptions: new Map(),
-    };
-
-    try {
-      server['handleAction'](client as never, {
-        action: 'compact',
-        sessionId: 'session-1',
-        cwd: '/tmp/project',
-        provider: 'test',
-        model: 'test-model',
-        contextWindow: 100,
-        summarizeThreshold: 0.6,
-      } satisfies CompactAction);
-
-      await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
-      await vi.waitFor(() => expect(server.store.get('session-1')).toBeUndefined());
-      expect(client.subscriptions.has('session-1')).toBe(true);
-    } finally {
-      compactSpy.mockRestore();
-    }
+    const session = bgcSession('bgc-defer');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 7, details: undefined };
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(false);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
+    await server['maybeStartBgc'](session);
+    expect(applySpy).not.toHaveBeenCalled(); // deferred, not applied mid-run
+    await session['runBeforeExitHooks'](); // simulate run-end
+    expect(applySpy).toHaveBeenCalledWith(result);
   });
 });

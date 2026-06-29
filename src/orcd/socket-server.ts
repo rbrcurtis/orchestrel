@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { createServer, type Server, type Socket } from 'net';
 import { dirname } from 'path';
 import { upsertMemories } from '../lib/memory-upsert';
-import { applyCompaction, type PreparedCompaction } from '../lib/session-compactor';
 import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
 import type { OrcdConfig, ProviderConfig } from './config';
@@ -19,10 +18,7 @@ export class OrcdServer {
   private clients = new Set<ClientState>();
   readonly store = new SessionStore();
   private compacting = new Set<string>(); // session IDs currently compacting
-  private pendingSummaries = new Map<string, PreparedCompaction>();
-  private applyingSummaries = new Set<string>();
-  private exitedSessions = new Set<string>(); // sessions that reached beforeExit
-  private turnActive = new Set<string>(); // sessions with a turn in progress
+  private pendingApply = new Map<string, import('@earendil-works/pi-coding-agent').CompactionResult>();
   private upsertedSessions = new Set<string>(); // sessions that have had memory upsert run
   private memoryConfig?: OrcdConfig['memoryUpsert'];
 
@@ -197,7 +193,7 @@ export class OrcdServer {
     // text. Route the command to the real compaction signal instead.
     if (isCompactCommand(action.prompt)) {
       console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → triggering compaction`);
-      this.beginCompaction(session, false);
+      void this.maybeStartBgc(session);
       return;
     }
 
@@ -272,7 +268,6 @@ export class OrcdServer {
   private handleCompact(client: ClientState, action: OrcdAction & { action: 'compact' }): void {
     let session = this.store.get(action.sessionId);
     const hydrated = !session;
-
     if (!session) {
       session = new OrcdSession({
         cwd: action.cwd,
@@ -286,48 +281,16 @@ export class OrcdServer {
       session.state = 'completed';
       this.store.add(session);
       this.attachLifecycleHooks(session);
-      console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: rehydrated inactive session`);
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] rehydrated inactive session for manual compact`);
     }
-
     if (!client.subscriptions.has(session.id)) {
       const cb: SessionEventCallback = (msg) => this.send(client, msg);
       client.subscriptions.set(session.id, cb);
       session.subscribe(cb);
     }
-
-    this.beginCompaction(session, hydrated);
-  }
-
-  /**
-   * Run a compaction on a session already in the store. Guards against
-   * concurrent/duplicate compaction. A `hydrated` session — created only to
-   * compact an inactive session — is torn down from the store afterward.
-   */
-  private beginCompaction(session: OrcdSession, hydrated: boolean): void {
-    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id) || this.applyingSummaries.has(session.id)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}:compact] beginCompaction: already compacting or pending, ignoring`);
-      return;
-    }
-
-    this.compacting.add(session.id);
-    if (hydrated || session.state !== 'running') {
-      this.exitedSessions.add(session.id);
-    }
-    session.emitBgcStarted();
-    this.triggerCompaction(session)
-      .catch((err) => {
-        console.error(`[orcd:${session.id.slice(0, 8)}:compact] start failed:`, err);
-      })
-      .finally(() => {
-        this.compacting.delete(session.id);
-        if (hydrated) {
-          this.pendingSummaries.delete(session.id);
-          this.applyingSummaries.delete(session.id);
-          this.exitedSessions.delete(session.id);
-          this.turnActive.delete(session.id);
-          this.store.remove(session.id);
-        }
-      });
+    void this.maybeStartBgc(session).finally(() => {
+      if (hydrated) this.store.remove(session.id);
+    });
   }
 
   // ── Provider env helper ──────────────────────────────────────────────────
@@ -378,64 +341,53 @@ export class OrcdServer {
     log(`done: search=${search} store=${store} update=${update} delete=${del} (${result.durationMs}ms)`);
   }
 
-  // ── Compaction ──────────────────────────────────────────────────────────
+  // ── Background compaction ───────────────────────────────────────────────
 
-  private async triggerCompaction(session: OrcdSession): Promise<void> {
+  private readonly BGC_KEEP_FRACTION = 0.5;
+
+  /**
+   * Background compactor. Summarize the oldest ~50% off-band (parallel-safe).
+   * If the session is idle, splice the Pi-native compaction entry now; otherwise
+   * defer the splice to the next run-end (onBeforeExit) — never mutate the agent
+   * message array mid-run. Pi's own auto-compaction is the within-run safety net.
+   */
+  private async maybeStartBgc(session: OrcdSession): Promise<void> {
     const sid = session.id;
-    const log = (msg: string) => console.log(`[orcd:${sid.slice(0, 8)}:compact] ${msg}`);
-
-    // Memory upsert is NOT run here — it only runs on card finish
-    // (session_exit = move to review, or explicit archive action). Running
-    // it every compaction cycle produced redundant work against unchanged
-    // context and wasted tokens. See memory 'Auto-memory upsert architecture'.
-
-    const pct =
-      session.lastContextWindow > 0 ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0) : '?';
-    log(`preparing Pi compact delegate (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
-
-    const prepared: PreparedCompaction = {
-      sessionId: sid,
-      messagesBefore: 0,
-      messagesCovered: 0,
-      summaryChars: 0,
-      prepareDurationMs: 0,
-      compact: () => session.compact(),
-    };
-
-    this.pendingSummaries.set(sid, prepared);
-    if (this.exitedSessions.has(sid)) {
-      log('compact delegate ready — beforeExit already reached, applying now');
-      await this.applyPendingCompaction(session);
+    if (this.compacting.has(sid) || this.pendingApply.has(sid)) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] already in flight or pending, ignoring`);
       return;
     }
-    log('compact delegate ready — waiting for beforeExit');
+    this.compacting.add(sid);
+    // Cancellation is not wired yet; summarization is short-lived.
+    const signal = new AbortController().signal;
+    try {
+      session.emitBgcStarted();
+      const result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal);
+      if (!result) {
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] nothing to compact`);
+        return;
+      }
+      if (session.isIdle()) {
+        this.applyBgcResult(session, result);
+      } else {
+        this.pendingApply.set(sid, result);
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready; deferring splice to run-end`);
+      }
+    } catch (err) {
+      console.error(`[orcd:${sid.slice(0, 8)}:bgc] failed:`, err instanceof Error ? err.message : String(err));
+    } finally {
+      this.compacting.delete(sid);
+    }
   }
 
-  private async applyPendingCompaction(session: OrcdSession): Promise<void> {
-    const sid = session.id;
-    if (this.applyingSummaries.has(sid)) {
-      console.log(`[orcd:${sid.slice(0, 8)}:compact] summary apply already in progress`);
+  /** Splice a prepared compaction unless Pi's safety net already compacted. */
+  private applyBgcResult(session: OrcdSession, result: import('@earendil-works/pi-coding-agent').CompactionResult): void {
+    if (session.latestEntryIsCompaction()) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] stale — a compaction already landed, skipping apply`);
       return;
     }
-
-    const prepared = this.pendingSummaries.get(sid);
-    if (!prepared) {
-      console.log(`[orcd:${sid.slice(0, 8)}:compact] no pending summary at beforeExit`);
-      return;
-    }
-
-    this.applyingSummaries.add(sid);
-    this.pendingSummaries.delete(sid);
-    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying Pi-native compaction at beforeExit`);
-    try {
-      const result = await applyCompaction(prepared);
-      console.log(
-        `[orcd:${sid.slice(0, 8)}:compact] applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`,
-      );
-      session.emitCompactBoundary();
-    } finally {
-      this.applyingSummaries.delete(sid);
-    }
+    session.applyBgCompaction(result);
+    console.log(`[orcd:${session.id.slice(0, 8)}:bgc] applied (tokensBefore=${result.tokensBefore})`);
   }
 
   // ── Session lifecycle hooks (called from handleCreate) ──────────────────
@@ -443,59 +395,32 @@ export class OrcdServer {
   private attachLifecycleHooks(session: OrcdSession): void {
     const sid = session.id;
 
+    // onBeforeExit hooks are persistent (fire on every run-end), so register the
+    // deferred-splice apply once per session and make it one-shot via pendingApply.
     session.onBeforeExit(async () => {
-      this.exitedSessions.add(sid);
-      try {
-        await this.applyPendingCompaction(session);
-      } catch (err) {
-        console.error(`[orcd:${sid.slice(0, 8)}:compact] beforeExit apply failed:`, err);
-      }
+      const pending = this.pendingApply.get(sid);
+      // oxlint-disable-next-line orchestrel/log-before-early-return -- no pending splice is the common no-op case
+      if (!pending) return;
+      this.pendingApply.delete(sid);
+      this.applyBgcResult(session, pending);
     });
 
     const hook: SessionEventCallback = (msg) => {
-      if (msg.type === 'stream_event') {
-        const event = msg.event as Record<string, unknown>;
-        if (event.type === 'message_start') {
-          this.exitedSessions.delete(sid);
-          this.turnActive.add(sid);
-        }
-      }
-
-      if (msg.type === 'result') {
-        this.turnActive.delete(sid);
-      }
-
       if (msg.type === 'context_usage') {
-        // Check threshold for auto-compaction
         if (
           session.summarizeThreshold > 0 &&
           msg.contextWindow > 0 &&
           !this.compacting.has(sid) &&
-          !this.pendingSummaries.has(sid) &&
-          !this.applyingSummaries.has(sid) &&
+          !this.pendingApply.has(sid) &&
           msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
         ) {
-          this.compacting.add(sid);
           const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
-          console.log(`[orcd:${sid.slice(0, 8)}:compact] threshold hit (${pct}%), starting`);
-          session.emitBgcStarted();
-          this.triggerCompaction(session)
-            .catch((err) => {
-              console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err);
-            })
-            .finally(() => {
-              this.compacting.delete(sid);
-            });
+          console.log(`[orcd:${sid.slice(0, 8)}:bgc] threshold hit (${pct}%), starting`);
+          void this.maybeStartBgc(session);
         }
       }
 
       if (msg.type === 'session_exit') {
-        // Do not clear compacting/pending summary state here.
-        // A background compaction may still be preparing after the agent turn
-        // exits, and clearing the guard early allows a resumed session to start
-        // another compaction before the first one finishes.
-        this.turnActive.delete(sid);
-
         // Auto memory upsert on exit
         this.runMemoryUpsert(session).catch((err) => {
           console.error(`[orcd:${sid.slice(0, 8)}:mem] exit upsert failed:`, err);

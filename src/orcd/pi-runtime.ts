@@ -33,6 +33,8 @@ export interface PiRuntimeSession {
   prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal): Promise<CompactionResult | null>;
   /** Splice a prepared compaction into the session tree and rebuild context. Call only when idle. */
   applyBgCompaction(result: CompactionResult): void;
+  /** True when the newest entry on the branch is already a compaction. */
+  latestEntryIsCompaction(): boolean;
   setEffort(effort: string): Promise<void>;
   getMessages(): unknown[];
 }
@@ -213,6 +215,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       sm.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true);
       const agent = (session as unknown as { agent: { state: { messages: unknown[] } } }).agent;
       agent.state.messages = sm.buildSessionContext().messages;
+    },
+
+    latestEntryIsCompaction() {
+      const sm = session.sessionManager as unknown as { getBranch(): Array<{ type?: string }> };
+      const entries = sm.getBranch();
+      const last = entries[entries.length - 1];
+      return !!last && last.type === 'compaction';
     },
 
     async setEffort(effort) {

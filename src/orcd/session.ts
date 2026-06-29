@@ -466,6 +466,11 @@ export class OrcdSession {
     return !this.running;
   }
 
+  /** True when the newest branch entry is already a compaction (Pi safety net beat us). */
+  latestEntryIsCompaction(): boolean {
+    return this.piSession?.latestEntryIsCompaction() ?? false;
+  }
+
   /** Run an out-of-band BGC summary. Parallel-safe; null = nothing to compact. */
   async prepareBgCompaction(keepFraction: number, signal: AbortSignal): Promise<CompactionResult | null> {
     const session = await this.getOrCreatePiSession(undefined);
