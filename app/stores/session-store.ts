@@ -282,6 +282,12 @@ export class SessionStore {
   }
 
   async requestStatus(cardId: number): Promise<void> {
+    // requestStatus fires on every SessionView mount, including when history is
+    // served from cache and loadHistory short-circuits. Mark the card subscribed
+    // here so the "viewed card ⇒ subscribed" invariant holds regardless of the
+    // cache path — otherwise resubscribeAll() skips it after a reconnect and the
+    // socket silently stops receiving this card's live events.
+    this.subscribedCards.add(cardId);
     await this.ws().emit('agent:status', { cardId });
   }
 

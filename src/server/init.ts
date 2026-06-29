@@ -89,8 +89,9 @@ export async function initBackend(): Promise<{
       httpServer,
       {
         serveClient: false,
-        pingInterval: 10_000,
-        pingTimeout: 5_000,
+        // See server.ts: generous timeouts to survive Access-gated tunnel jitter.
+        pingInterval: 25_000,
+        pingTimeout: 30_000,
         cors: { origin: true, credentials: true },
       },
     );

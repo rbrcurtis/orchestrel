@@ -32,12 +32,9 @@ export async function handleSessionLoad(
       }
     }
 
-    // Join the card room for live events
-    if (!alreadyJoined) {
-      socket.join(room);
-      busRoomBridge.ensureCardListeners(cardId);
-      console.log(`[session:load] cardId=${cardId} joined room ${room}`);
-    }
+    // Join the card room for live events (idempotent)
+    busRoomBridge.joinCard(socket, cardId);
+    if (!alreadyJoined) console.log(`[session:load] cardId=${cardId} joined room ${room}`);
 
     // Subscribe to orcd for live events (if session is active)
     if (card?.sessionId) {

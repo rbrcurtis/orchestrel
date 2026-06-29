@@ -130,8 +130,13 @@ export function wsServerPlugin(): Plugin {
                 {
                   serveClient: false,
                   destroyUpgrade: false, // let Vite HMR handle non-socket.io upgrades
-                  pingInterval: 10_000,
-                  pingTimeout: 5_000,
+                  // Generous timeouts: the FE connects through an Access-gated
+                  // Cloudflare tunnel where short timeouts caused constant false
+                  // disconnect/reconnect churn (every few seconds), which is what
+                  // exposed the room-membership desync. Keep them well above tunnel
+                  // jitter so a healthy connection stays put.
+                  pingInterval: 25_000,
+                  pingTimeout: 30_000,
                   cors: { origin: true, credentials: true },
                 },
               );

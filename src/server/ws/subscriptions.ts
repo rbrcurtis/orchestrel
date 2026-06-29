@@ -1,5 +1,5 @@
 import { messageBus } from '../bus';
-import type { AppServer } from './types';
+import type { AppServer, AppSocket } from './types';
 import type { Card as CardEntity } from '../models/Card';
 import type { Card, AgentStatus } from '../../shared/ws-protocol';
 
@@ -62,6 +62,21 @@ export const busRoomBridge = {
     globalListeners.push({ event: 'system:error', handler: errorHandler });
 
     console.log('[bus-bridge] global listeners registered');
+  },
+
+  /**
+   * Join a socket to a card's room and ensure the bus→room bridge exists.
+   * Idempotent — safe to call on every session:load / agent:send / agent:status.
+   * This is the reconciliation point that keeps room membership (the receive
+   * path) from drifting out of sync with the send path: a socket that
+   * reconnected and silently lost its room rejoins the moment it interacts with
+   * the card, so streamed output can't go missing while the card stays
+   * interactive.
+   */
+  joinCard(socket: AppSocket, cardId: number) {
+    const room = `card:${cardId}`;
+    if (!socket.rooms.has(room)) socket.join(room);
+    this.ensureCardListeners(cardId);
   },
 
   /** Ensure bus→room listeners exist for a card. Called when a socket joins card:N. */
@@ -133,16 +148,24 @@ export const busRoomBridge = {
     console.log(`[bus-bridge] card:${cardId} listeners registered`);
   },
 
-  /** Clean up bus listeners for a card room if no sockets remain in it. */
-  cleanupCardIfEmpty(cardId: number) {
+  /**
+   * Clean up bus listeners for a card room if no sockets remain in it. Called
+   * from the `disconnecting` event (where `socket.rooms` is still populated), so
+   * the leaving socket is still counted in the adapter room — pass its id to
+   * exclude it when deciding whether the room is now empty.
+   */
+  cleanupCardIfEmpty(cardId: number, leavingSocketId?: string) {
     if (!_io) {
       console.log(`[bus-bridge] cleanupCardIfEmpty card:${cardId} skipped — io not initialized`);
       return;
     }
     const room = `card:${cardId}`;
     const roomSockets = _io.sockets.adapter.rooms.get(room);
-    if (roomSockets && roomSockets.size > 0) {
-      console.log(`[bus-bridge] cleanupCardIfEmpty card:${cardId} skipped — ${roomSockets.size} socket(s) still in room`);
+    const remaining = roomSockets
+      ? [...roomSockets].filter((id) => id !== leavingSocketId).length
+      : 0;
+    if (remaining > 0) {
+      console.log(`[bus-bridge] cleanupCardIfEmpty card:${cardId} skipped — ${remaining} socket(s) still in room`);
       return;
     }
 

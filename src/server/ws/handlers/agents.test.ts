@@ -6,6 +6,11 @@ const mockCancel = vi.fn();
 const mockFindOneBy = vi.fn();
 const mockEnsureWorktree = vi.fn();
 const mockTrackSession = vi.fn();
+const mockJoinCard = vi.fn();
+
+vi.mock('../subscriptions', () => ({
+  busRoomBridge: { joinCard: mockJoinCard },
+}));
 
 vi.mock('../../models/Card', () => ({
   Card: {
@@ -103,6 +108,25 @@ describe('handleAgentStatus', () => {
     mockFindOneBy.mockReset();
     mockEnsureWorktree.mockReset();
     mockTrackSession.mockReset();
+    mockJoinCard.mockReset();
+  });
+
+  // Regression guard for the silent BE→FE streaming drop: status polls (which
+  // fire on every SessionView mount and on reconnect) must rejoin the card room
+  // so a reconnected socket keeps receiving live events.
+  it('rejoins the card room so a reconnected socket keeps receiving events', async () => {
+    const { handleAgentStatus } = await import('./agents');
+    const callback = vi.fn();
+    const socket = { emit: vi.fn() };
+    mockFindOneBy.mockResolvedValue({
+      id: 42, column: 'review', sessionId: 'sess-abc', promptsSent: 1,
+      turnsCompleted: 1, contextTokens: 0, contextWindow: 200_000, save: vi.fn(),
+    });
+    mockIsActive.mockReturnValue(false);
+
+    await handleAgentStatus({ cardId: 42 }, callback, socket as never);
+
+    expect(mockJoinCard).toHaveBeenCalledWith(socket, 42);
   });
 
   it('keeps brand-new running cards in place while their first session is still starting', async () => {

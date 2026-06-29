@@ -117,7 +117,7 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   socket.on('project:mkdir', (data, cb) => void handleProjectMkdir(data, cb));
 
   // ── Agent ────────────────────────────────────────────────────────────────
-  socket.on('agent:send', (data, cb) => void handleAgentSend(data, cb));
+  socket.on('agent:send', (data, cb) => void handleAgentSend(data, cb, socket));
   socket.on('agent:compact', (data, cb) => void handleAgentCompact(data, cb));
   socket.on('agent:stop', (data, cb) => void handleAgentStop(data, cb));
   socket.on('agent:status', (data, cb) => void handleAgentStatus(data, cb, socket));
@@ -144,13 +144,17 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   });
 
   // ── Disconnect ───────────────────────────────────────────────────────────
-  socket.on('disconnect', () => {
+  // Use `disconnecting`, not `disconnect`: socket.io has already emptied
+  // `socket.rooms` by the time `disconnect` fires, so the old handler never saw
+  // any card rooms and leaked the bus listeners. In `disconnecting` the rooms
+  // are still populated; pass the leaving socket id so cleanup can tell whether
+  // it was the last viewer.
+  socket.on('disconnecting', () => {
     console.log(`[ws] disconnect: ${identity.email}`);
-    // Clean up card room bus listeners if rooms are now empty
     for (const room of socket.rooms) {
       const match = room.match(/^card:(\d+)$/);
       if (match) {
-        busRoomBridge.cleanupCardIfEmpty(Number(match[1]));
+        busRoomBridge.cleanupCardIfEmpty(Number(match[1]), socket.id);
       }
     }
   });

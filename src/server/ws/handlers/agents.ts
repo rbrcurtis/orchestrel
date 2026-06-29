@@ -4,16 +4,24 @@ import { buildPromptWithFiles } from '../../sessions/manager';
 import { trackSession } from '../../controllers/card-sessions';
 import { ensureWorktree } from '../../sessions/worktree';
 import { isCompactCommand } from '../../../shared/slash-commands';
+import { busRoomBridge } from '../subscriptions';
 
 export async function handleAgentSend(
   data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
   callback: (res: AckResponse) => void,
+  socket: import('../types').AppSocket,
 ): Promise<void> {
   const { cardId, message, files } = data;
   console.log(`[session:${cardId}] agent:send, len=${message.length}`);
 
   try {
     callback({});
+
+    // Sending a prompt must also (re)join this socket to the card room. The send
+    // path isn't room-gated but the receive path is, so without this a socket
+    // that reconnected and lost its room membership would prompt the agent yet
+    // never see the streamed reply — the card looks hung.
+    busRoomBridge.joinCard(socket, cardId);
 
     const initState = await import('../../init-state');
     const client = initState.getOrcdClient();
@@ -150,6 +158,11 @@ export async function handleAgentStatus(
 ): Promise<void> {
   const { cardId } = data;
   try {
+    // Status is polled on every SessionView mount and on reconnect, so it's the
+    // reliable reconciliation point: rejoin the card room here so a viewed card
+    // keeps receiving live events even after a silent socket reconnect.
+    busRoomBridge.joinCard(socket, cardId);
+
     const initState = await import('../../init-state');
     const client = initState.getOrcdClient();
     const card = await Card.findOneBy({ id: cardId });
