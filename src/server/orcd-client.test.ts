@@ -144,6 +144,14 @@ describe('OrcdClient dispatch ordering', () => {
     expect(res).toMatchObject({ exists: true, isGitRepo: true, defaultBranch: 'main' });
   });
 
+  it('schedules a reconnect when the initial dial fails', async () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 1, token: 't', name: 'local' });
+    await expect(client.connect()).rejects.toBeTruthy();
+    const internals = client as unknown as { reconnectTimer: unknown };
+    expect(internals.reconnectTimer).not.toBeNull();
+    client.disconnect();
+  });
+
   it('caches capabilities from a hello reply', async () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as {

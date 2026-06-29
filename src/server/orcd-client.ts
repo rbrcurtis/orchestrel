@@ -115,6 +115,12 @@ export class OrcdClient {
 
       sock.on('error', (err) => {
         if (!this.connected) {
+          if (!this.destroyed && !this.reconnectTimer) {
+            this.reconnectTimer = setTimeout(() => {
+              this.reconnectTimer = null;
+              this.connect().catch((e) => console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (e as Error).message));
+            }, 2000);
+          }
           reject(err);
         } else {
           console.error(`[orcd-client:${this.nodeName}] socket error:`, err.message);
