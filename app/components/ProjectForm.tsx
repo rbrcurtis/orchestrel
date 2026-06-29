@@ -23,6 +23,7 @@ interface Project {
   defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   providerID: string;
+  nodeName: string;
   archived: boolean;
   memoryBaseUrl?: string | null;
   memoryApiKey?: string | null;
@@ -46,6 +47,10 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(
     project?.defaultThinkingLevel ?? 'high',
   );
+  const config = useConfigStore();
+  const [nodeName, setNodeName] = useState(
+    project?.nodeName ?? config.connectedNodes[0]?.name ?? 'local',
+  );
   const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
   const [archived, setArchived] = useState(project?.archived ?? false);
   const [memoryBaseUrl, setMemoryBaseUrl] = useState(project?.memoryBaseUrl ?? '');
@@ -54,15 +59,22 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [error, setError] = useState<string | null>(null);
 
   const projects = useProjectStore();
-  const config = useConfigStore();
   const store = useStore();
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>(project?.userIds ?? []);
 
   const isValid = name.trim() && path.trim();
 
+  function handleNodeChange(newNode: string) {
+    setNodeName(newNode);
+    const providers = Object.keys(config.providersForNode(newNode));
+    const nextProvider = providers.includes(providerID) ? providerID : (providers[0] ?? 'anthropic');
+    setProviderID(nextProvider);
+    setDefaultModel(config.defaultModelForNode(newNode, nextProvider));
+  }
+
   function handleProviderChange(newProvider: string) {
     setProviderID(newProvider);
-    setDefaultModel(config.getDefaultModel(newProvider));
+    setDefaultModel(config.defaultModelForNode(nodeName, newProvider));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -82,6 +94,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       defaultModel,
       defaultThinkingLevel,
       providerID,
+      nodeName,
       archived,
       memoryBaseUrl: memoryBaseUrl || null,
       memoryApiKey: memoryApiKey || null,
@@ -183,15 +196,32 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 </label>
               </div>
 
+              {/* Node */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Node</label>
+                <Select value={nodeName} onValueChange={handleNodeChange}>
+                  <SelectTrigger className="w-full">
+                    <span data-slot="select-value">{nodeName}</span>
+                  </SelectTrigger>
+                  <SelectContent position="popper" sideOffset={4}>
+                    {config.connectedNodes.map((n) => (
+                      <SelectItem key={n.name} value={n.name}>
+                        {n.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Provider */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
                 <Select value={providerID} onValueChange={handleProviderChange}>
                   <SelectTrigger className="w-full">
-                    <span data-slot="select-value">{config.getProvider(providerID)?.label ?? providerID}</span>
+                    <span data-slot="select-value">{config.providersForNode(nodeName)[providerID]?.label ?? providerID}</span>
                   </SelectTrigger>
                   <SelectContent position="popper" sideOffset={4}>
-                    {config.allProviders.map(([id, p]) => (
+                    {Object.entries(config.providersForNode(nodeName)).map(([id, p]) => (
                       <SelectItem key={id} value={id}>
                         {p.label}
                       </SelectItem>
@@ -203,14 +233,14 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
               {/* Default Model */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Default Model</label>
-                <Select key={providerID} value={defaultModel} onValueChange={setDefaultModel}>
+                <Select key={`${nodeName}-${providerID}`} value={defaultModel} onValueChange={setDefaultModel}>
                   <SelectTrigger className="w-full">
                     <span data-slot="select-value">
-                      {config.getModel(providerID, defaultModel)?.label ?? defaultModel}
+                      {config.providersForNode(nodeName)[providerID]?.models[defaultModel]?.label ?? defaultModel}
                     </span>
                   </SelectTrigger>
                   <SelectContent position="popper" sideOffset={4}>
-                    {config.getModels(providerID).map(([alias, m]) => (
+                    {config.getModelsForNode(nodeName, providerID).map(([alias, m]) => (
                       <SelectItem key={alias} value={alias}>
                         {m.label}
                       </SelectItem>

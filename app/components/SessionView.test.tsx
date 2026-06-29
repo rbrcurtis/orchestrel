@@ -25,6 +25,7 @@ const cardStore = {
 const configStore = {
   allProviders: [['chatgpt', { label: 'ChatGPT' }]],
   getModels: vi.fn(() => [['gpt-5.5', { label: 'GPT 5.5' }]]),
+  nodeByName: vi.fn(() => ({ name: 'local', connected: true, providers: {} })),
 };
 
 const store = {

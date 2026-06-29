@@ -21,6 +21,7 @@ interface Project {
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
   color: string;
   providerID: string;
+  nodeName: string;
   archived: boolean;
   memoryBaseUrl?: string | null;
   memoryApiKey?: string | null;
