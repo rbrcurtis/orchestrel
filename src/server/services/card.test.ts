@@ -7,6 +7,7 @@ const mockCancel = vi.fn()
 const mockIsActive = vi.fn(() => true)
 vi.mock('../init-state', () => ({
   getOrcdClient: () => ({ isActive: mockIsActive, cancel: mockCancel }),
+  getClientByNode: () => ({ isActive: mockIsActive, cancel: mockCancel }),
 }))
 
 let ds: DataSource

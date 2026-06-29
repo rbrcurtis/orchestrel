@@ -14,11 +14,11 @@ export async function handleAgentSend(
   try {
     callback({});
 
-    const initState = await import('../../init-state');
-    const client = initState.getOrcdClient();
-    if (!client) throw new Error('OrcdClient not initialized');
-
     const card = await Card.findOneByOrFail({ id: cardId });
+    const initState = await import('../../init-state');
+    const client = initState.getClientByNode(card.nodeName);
+    if (!client) throw new Error(`node ${card.nodeName} has no client`);
+
     const prompt = buildPromptWithFiles(message, files);
 
     // Increment prompts sent
@@ -32,7 +32,7 @@ export async function handleAgentSend(
       await card.save();
     } else {
       // New session or resume
-      const cwd = await ensureWorktree(card);
+      const cwd = await ensureWorktree(card, client);
       const sessionId = await client.create({
         prompt,
         cwd,
@@ -65,17 +65,17 @@ export async function handleAgentCompact(
   console.log(`[session:${cardId}] agent:compact received`);
 
   try {
-    const initState = await import('../../init-state');
-    const client = initState.getOrcdClient();
-    if (!client) throw new Error('OrcdClient not initialized');
-
     const card = await Card.findOneBy({ id: cardId });
     if (!card?.sessionId) {
       callback({ error: 'No session to compact' });
       return;
     }
 
-    const cwd = await ensureWorktree(card);
+    const initState = await import('../../init-state');
+    const client = initState.getClientByNode(card.nodeName);
+    if (!client) throw new Error(`node ${card.nodeName} has no client`);
+
+    const cwd = await ensureWorktree(card, client);
     trackSession(cardId, card.sessionId);
 
     callback({});
@@ -100,9 +100,9 @@ export async function handleAgentStop(
   const { cardId } = data;
   console.log(`[session:${cardId}] agent:stop received`);
   callback({});
-  const initState = await import('../../init-state');
-  const client = initState.getOrcdClient();
   const card = await Card.findOneBy({ id: cardId });
+  const initState = await import('../../init-state');
+  const client = card ? initState.getClientByNode(card.nodeName) : null;
   if (client && card?.sessionId) {
     client.cancel(card.sessionId);
   }
@@ -115,9 +115,9 @@ export async function handleAgentStatus(
 ): Promise<void> {
   const { cardId } = data;
   try {
-    const initState = await import('../../init-state');
-    const client = initState.getOrcdClient();
     const card = await Card.findOneBy({ id: cardId });
+    const initState = await import('../../init-state');
+    const client = card ? initState.getClientByNode(card.nodeName) : null;
 
     const active = !!(card?.sessionId && client?.isActive(card.sessionId));
     const starting = !!card && card.column === 'running' && !card.sessionId;

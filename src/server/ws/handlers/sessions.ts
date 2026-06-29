@@ -49,7 +49,7 @@ export async function handleSessionLoad(
     // Subscribe to orcd for live events (if session is active)
     if (card?.sessionId) {
       const initState = await import('../../init-state');
-      const client = initState.getOrcdClient();
+      const client = initState.getClientByNode(card.nodeName);
       if (client?.isActive(card.sessionId)) {
         client.subscribe(card.sessionId);
       }

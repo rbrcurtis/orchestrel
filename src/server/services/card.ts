@@ -102,7 +102,7 @@ class CardService {
     const liveColumns = new Set<string>(['running', 'review']);
     if (data.column && data.column !== 'archive' && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
       const initState = await import('../init-state');
-      const client = initState.getOrcdClient();
+      const client = initState.getClientByNode(card.nodeName);
       if (card.sessionId && client?.isActive(card.sessionId)) {
         console.log(`[session:${id}] stopping: card moving ${card.column} → ${data.column}`);
         client.cancel(card.sessionId);
@@ -117,9 +117,9 @@ class CardService {
   }
 
   async deleteCard(id: number): Promise<void> {
-    const initState = await import('../init-state');
-    const client = initState.getOrcdClient();
     const card = await Card.findOneByOrFail({ id });
+    const initState = await import('../init-state');
+    const client = initState.getClientByNode(card.nodeName);
     if (card.sessionId && client?.isActive(card.sessionId)) {
       console.log(`[session:${id}] stopping: card deleted`);
       client.cancel(card.sessionId);

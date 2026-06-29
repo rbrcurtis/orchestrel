@@ -11,13 +11,14 @@ type MockCard = {
   turnsCompleted: number;
   provider: string;
   model: string;
+  nodeName: string;
   summarizeThreshold: number;
   updatedAt: string;
   save: ReturnType<typeof vi.fn>;
 };
 
 const mockCards: MockCard[] = [
-  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn() },
+  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', nodeName: 'local', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn() },
 ];
 const mockRepo = {
   findOneBy: vi.fn(async (where: { id?: number; sessionId?: string }) => {
@@ -30,6 +31,7 @@ const mockRepo = {
 };
 const mockEnsureWorktree = vi.fn(async () => '/tmp/project/.worktrees/card-42');
 const mockGetOrcdClient = vi.hoisted(() => vi.fn());
+const mockGetClientByNode = vi.hoisted(() => vi.fn());
 
 vi.mock('../models/index', () => ({
   AppDataSource: {
@@ -44,6 +46,7 @@ vi.mock('../sessions/worktree', () => ({
 }));
 vi.mock('../init-state', () => ({
   getOrcdClient: mockGetOrcdClient,
+  getClientByNode: mockGetClientByNode,
 }));
 
 // We test the routing concept: orcd messages for a tracked session
@@ -71,6 +74,7 @@ describe('orcd message router', () => {
       turnsCompleted: 0,
       provider: 'anthropic',
       model: 'sonnet',
+      nodeName: 'local',
       summarizeThreshold: 0.6,
       updatedAt: '',
       save: vi.fn(),
@@ -618,12 +622,16 @@ describe('registerAutoStart', () => {
     mockEnsureWorktree.mockReset();
     mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
     mockRepo.save.mockClear();
-    mockGetOrcdClient.mockReset();
-    mockGetOrcdClient.mockReturnValue({
+    const fakeClient = {
       cancel: mockCancel,
       isActive: mockIsActive,
       create: mockCreate,
-    });
+      isConnected: () => true,
+    };
+    mockGetOrcdClient.mockReset();
+    mockGetOrcdClient.mockReturnValue(fakeClient);
+    mockGetClientByNode.mockReset();
+    mockGetClientByNode.mockReturnValue(fakeClient);
     mockCards.splice(0, mockCards.length, {
       id: 42,
       sessionId: 'sess-abc',
@@ -634,6 +642,7 @@ describe('registerAutoStart', () => {
       turnsCompleted: 0,
       provider: 'anthropic',
       model: 'sonnet',
+      nodeName: 'local',
       summarizeThreshold: 0.6,
       updatedAt: '',
       save: vi.fn(),

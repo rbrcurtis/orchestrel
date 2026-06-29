@@ -21,6 +21,12 @@ export function untrackSession(sessionId: string): void {
   sessionCardMap.delete(sessionId);
 }
 
+/** Resolve the OrcdClient for a card's node. Returns null if the node has no client. */
+async function clientForCard(card: { nodeName: string }): Promise<OrcdClient | null> {
+  const initState = await import('../init-state');
+  return initState.getClientByNode(card.nodeName);
+}
+
 function isBgcSystemEvent(event: Record<string, unknown>): event is { type: 'system'; subtype?: string; session_id?: string } {
   return (
     event.type === 'system' &&
@@ -318,10 +324,13 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
 
     // Card entered running
     if (newColumn === 'running' && oldColumn !== 'running') {
-      const initState = await import('../init-state');
-      const client = initState.getOrcdClient();
+      const client = await clientForCard(card);
       if (!client) {
-        console.log(`[oc:auto-start] card #${card.id} entered running but no orcd client, skipping`);
+        console.log(`[oc:auto-start] card #${card.id} node ${card.nodeName} has no client, skipping`);
+        return;
+      }
+      if (!client.isConnected()) {
+        console.log(`[oc:auto-start] card #${card.id} node ${card.nodeName} offline, skipping`);
         return;
       }
 
@@ -362,13 +371,15 @@ async function cleanupWorktreeForCard(card: Card): Promise<void> {
       return;
     }
 
+    const client = await clientForCard(card);
+    if (!client || !client.isConnected()) {
+      console.log(`[oc:worktree] card ${card.id} node ${card.nodeName} offline, skipping cleanup (best-effort)`);
+      return;
+    }
     const { resolveWorkDir } = await import('../../shared/worktree');
     const wtPath = resolveWorkDir(card.worktreeBranch, proj.path);
-    const { removeWorktree, worktreeExists } = await import('../worktree');
-    if (worktreeExists(wtPath)) {
-      removeWorktree(proj.path, wtPath);
-      console.log(`[oc:worktree] removed ${wtPath}`);
-    }
+    await client.worktreeRemove(proj.path, wtPath);
+    console.log(`[oc:worktree] removed ${wtPath} on node ${card.nodeName}`);
   } catch (err) {
     console.error(`[oc:worktree] cleanup failed for card ${card.id}:`, err);
     // handled: cleanup failure is non-fatal
@@ -394,8 +405,7 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
     // Archiving no longer kills a live session — the agent may still be running
     // a final fire-and-forget command in its worktree. Removing it now would
     // break that session, so defer cleanup until session_exit fires.
-    const initState = await import('../init-state');
-    const client = initState.getOrcdClient();
+    const client = await clientForCard(card);
     if (card.sessionId && client?.isActive(card.sessionId)) {
       console.log(`[oc:worktree] card ${card.id} archived with live session ${card.sessionId.slice(0, 8)}, deferring worktree cleanup to session_exit`);
       return;
@@ -429,10 +439,9 @@ export function registerMemoryUpsertOnArchive(bus: MessageBus = messageBus): voi
       return;
     }
 
-    const initState = await import('../init-state');
-    const client = initState.getOrcdClient();
+    const client = await clientForCard(card);
     if (!client) {
-      console.log(`[oc:memory] card ${card.id} (session ${card.sessionId.slice(0, 8)}): no orcd client, skipping upsert`);
+      console.log(`[oc:memory] card ${card.id} (session ${card.sessionId.slice(0, 8)}): node ${card.nodeName} has no client, skipping upsert`);
       return;
     }
 
@@ -469,7 +478,7 @@ async function startCardSession(
 ): Promise<string | null> {
   try {
     const { ensureWorktree } = await import('../sessions/worktree');
-    const cwd = await ensureWorktree(card);
+    const cwd = await ensureWorktree(card, client);
     const prompt = card.sessionId ? '' : card.description ?? '';
 
     const sessionId = await client.create({

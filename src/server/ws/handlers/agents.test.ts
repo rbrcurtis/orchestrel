@@ -22,12 +22,14 @@ vi.mock('../../controllers/card-sessions', () => ({
   trackSession: mockTrackSession,
 }));
 
+const mockClient = {
+  compact: mockCompact,
+  isActive: mockIsActive,
+  cancel: mockCancel,
+};
 vi.mock('../../init-state', () => ({
-  getOrcdClient: () => ({
-    compact: mockCompact,
-    isActive: mockIsActive,
-    cancel: mockCancel,
-  }),
+  getOrcdClient: () => mockClient,
+  getClientByNode: () => mockClient,
 }));
 
 describe('handleAgentCompact', () => {
