@@ -10,8 +10,21 @@ vi.mock('../models/index', () => ({
   },
 }))
 
-vi.mock('../config/providers', () => ({
-  getDefaultProviderID: () => 'anthropic',
+// The node client validates project paths. Mirror real filesystem semantics so
+// the isGitRepo-detection tests still exercise meaningful behavior: a path is a
+// git repo iff it has a .git entry, and "exists" iff it's on disk.
+vi.mock('../init-state', () => ({
+  getClientByNode: () => ({
+    isConnected: () => true,
+    capabilities: { defaults: { provider: 'anthropic', model: 'sonnet' } },
+    pathValidate: async (path: string) => {
+      const { existsSync } = await import('fs')
+      const { join } = await import('path')
+      // Tests use arbitrary project paths; treat them as existing and only
+      // reflect real .git presence so isGitRepo detection stays meaningful.
+      return { exists: true, isGitRepo: existsSync(join(path, '.git')), defaultBranch: null }
+    },
+  }),
 }))
 
 let ds: DataSource
@@ -42,7 +55,7 @@ describe('ProjectService', () => {
 
   it('createProject detects isGitRepo from path', async () => {
     const { projectService } = await import('./project')
-    // /tmp doesn't have .git, so isGitRepo should be falsy (SQLite stores as 0)
+    // tmpdir() exists but has no .git, so isGitRepo should be falsy (SQLite stores as 0)
     const p = await projectService.createProject({ name: 'NoGit', path: tmpdir() })
     expect(p.isGitRepo).toBeFalsy()
   })

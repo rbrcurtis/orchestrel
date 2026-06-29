@@ -12,9 +12,16 @@ const mockCapabilities = {
   ],
   defaults: { provider: 'anthropic', model: 'sonnet' },
 }
+const mockNodeClient = {
+  isActive: mockIsActive,
+  cancel: mockCancel,
+  capabilities: mockCapabilities,
+  isConnected: () => true,
+  pathValidate: async () => ({ exists: true, isGitRepo: false, defaultBranch: null }),
+}
 vi.mock('../init-state', () => ({
-  getOrcdClient: () => ({ isActive: mockIsActive, cancel: mockCancel, capabilities: mockCapabilities }),
-  getClientByNode: () => ({ isActive: mockIsActive, cancel: mockCancel, capabilities: mockCapabilities }),
+  getOrcdClient: () => mockNodeClient,
+  getClientByNode: () => mockNodeClient,
 }))
 
 let ds: DataSource
