@@ -179,7 +179,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         getBranch(): Array<{ type: string; id: string; message?: unknown }>;
       };
       const entries = sm.getBranch();
-      const keepRecentTokens = Math.floor(currentTokens * keepFraction);
+      const keepRecentTokens = currentTokens > 0
+        ? Math.floor(currentTokens * keepFraction)
+        : DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
       const cut = findCutPoint(entries as never, 0, entries.length, keepRecentTokens);
       const firstKeptIdx = cut.firstKeptEntryIndex;
       if (firstKeptIdx <= 0) return null;

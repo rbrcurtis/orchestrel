@@ -69,6 +69,18 @@ describe('pi-runtime BGC', () => {
     expect(generateSummary.mock.calls[0][0]).toEqual([{ role: 'user', content: 'old' }]);
   });
 
+  it('falls back to default keepRecentTokens when currentTokens is 0 (cold session)', async () => {
+    getBranch.mockReturnValue([
+      { type: 'message', id: 'e0', message: { role: 'user', content: 'old' } },
+      { type: 'message', id: 'e1', message: { role: 'assistant', content: 'keep' } },
+    ]);
+    findCutPoint.mockReturnValue({ firstKeptEntryIndex: 1, turnStartIndex: -1, isSplitTurn: false });
+    generateSummary.mockResolvedValue('S');
+    const s = await makeSession();
+    await s.prepareBgCompaction(0.5, 0, new AbortController().signal);
+    expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 20_000); // DEFAULT_COMPACTION_SETTINGS.keepRecentTokens
+  });
+
   it('applyBgCompaction appends the entry and rebuilds messages', async () => {
     const s = await makeSession();
     await s.applyBgCompaction({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 42, details: undefined });
