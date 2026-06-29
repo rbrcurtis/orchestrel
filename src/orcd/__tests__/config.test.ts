@@ -22,7 +22,8 @@ describe('resolveEnvVars', () => {
 describe('parseConfig (orcd shape)', () => {
   it('parses minimal config and flattens models to modelID list', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 defaultCwd: ~/projects
@@ -40,11 +41,17 @@ providers:
     expect(cfg.providers.anthropic.baseUrl).toBe('https://api.anthropic.com');
     expect(cfg.providers.anthropic.apiKey).toBe('test-key');
     expect(cfg.providers.anthropic.models).toEqual(['claude-sonnet-4-6']);
+    expect(cfg.listen).toEqual({ host: '127.0.0.1', port: 7420 });
+    expect(cfg.providers.anthropic.modelLabels['claude-sonnet-4-6']).toEqual({
+      alias: 'sonnet', label: 'Sonnet 4.6', contextWindow: 200000,
+    });
+    expect(cfg.providers.anthropic.label).toBe('Anthropic');
   });
 
   it('resolves env vars in apiKey', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 providers:
@@ -61,7 +68,8 @@ providers:
 
   it('omits apiKey/baseUrl when absent (Max OAuth path)', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 providers:
@@ -77,7 +85,8 @@ providers:
 
   it('throws on missing providers', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 `;
