@@ -33,6 +33,7 @@ function makeCard(overrides?: Partial<Card>): Card {
     sourceBranch: null,
     model: 'sonnet',
     provider: 'anthropic',
+    nodeName: 'local',
     thinkingLevel: 'high',
     summarizeThreshold: 0.6,
     promptsSent: 0,

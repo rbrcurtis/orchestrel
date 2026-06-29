@@ -18,6 +18,7 @@ export const cardSchema = z.object({
   sourceBranch: z.enum(['main', 'dev']).nullable(),
   model: z.string(),
   provider: z.string(),
+  nodeName: z.string().default('local'),
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
   summarizeThreshold: z.number(),
   promptsSent: z.number(),
@@ -40,6 +41,7 @@ export const projectSchema = z.object({
   defaultModel: z.string(),
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']),
   providerID: z.string(),
+  nodeName: z.string().default('local'),
   color: z.string(),
   archived: sqliteBool,
   memoryBaseUrl: z.string().nullable().optional(),
@@ -94,6 +96,7 @@ export const projectCreateSchema = z.object({
   defaultModel: z.string().optional(),
   defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   providerID: z.string().optional(),
+  nodeName: z.string().optional(),
   color: z.string().optional(),
   archived: z.boolean().optional(),
   memoryBaseUrl: z.string().nullable().optional(),
@@ -162,10 +165,20 @@ export interface AckResponse<T = unknown> {
   error?: string;
 }
 
+/** A remote execution node and the provider/model capabilities it advertises. */
+export interface NodeInfo {
+  name: string;
+  connected: boolean;
+  providers: Record<string, ProviderConfig>; // empty when offline
+  defaults?: { provider: string; model: string };
+}
+
 /** Sync payload pushed after subscribe */
 export interface SyncPayload {
   cards: Card[];
   projects: Project[];
+  nodes: NodeInfo[];
+  /** Union of all connected nodes' providers — back-compat for provider/model selectors. */
   providers: Record<string, ProviderConfig>;
   user?: User;
   users?: User[];

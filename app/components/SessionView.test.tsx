@@ -87,6 +87,7 @@ function makeCard(contextTokens: number, contextWindow: number): Card {
     sourceBranch: null,
     model: 'gpt-5.5',
     provider: 'chatgpt',
+    nodeName: 'local',
     thinkingLevel: 'high',
     summarizeThreshold: 0.6,
     promptsSent: 1,
