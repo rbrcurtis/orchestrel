@@ -21,6 +21,7 @@ function createClient() {
   return {
     socket: { writable: true, write: vi.fn() } as never,
     subscriptions: new Map(),
+    authenticated: true,
   };
 }
 
@@ -198,7 +199,7 @@ describe('OrcdServer background compaction', () => {
     server.store.add(session as never);
     server['attachLifecycleHooks'](session as never);
 
-    server['handleAction']({ socket: null as never, subscriptions: new Map() }, {
+    server['handleAction']({ socket: null as never, subscriptions: new Map(), authenticated: true }, {
       action: 'compact',
       sessionId: 'session-1',
       cwd: '/tmp/project',
@@ -250,6 +251,7 @@ describe('OrcdServer background compaction', () => {
     const client = {
       socket: { writable: true, write: vi.fn() } as never,
       subscriptions: new Map(),
+      authenticated: true,
     };
 
     server['handleAction'](client, {
