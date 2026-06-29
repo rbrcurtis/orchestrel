@@ -147,14 +147,19 @@ Replaces `triggerCompaction`, `pendingSummaries`, `applyPendingCompaction`, and
 the `onBeforeExit` apply hook. On a `context_usage` event:
 
 - If `summarizeThreshold > 0` and `contextTokens / contextWindow >= threshold`
-  and no BGC already in flight for this session: emit `bgc_started`, call
-  `prepareBgCompaction(0.5, contextTokens, signal)` **in parallel**
-  (fire-and-forget; the live session keeps running). `null` ⇒ nothing to compact,
-  clear the guard.
-- When the summary resolves: wait for the session to be idle (`turnActive`
-  false); re-check that the latest branch entry is not already a compaction; then
-  call `applyBgCompaction(result)` and emit `compact_boundary`.
-- Reuse the existing `compacting` set as the single-in-flight guard.
+  and no BGC is already in flight or pending for this session: emit `bgc_started`,
+  call `prepareBgCompaction(0.5, signal)` **in parallel** (the live session keeps
+  running). `null` ⇒ nothing to compact, clear the guard.
+- When the summary resolves: if the session is **idle**, splice immediately;
+  otherwise stash the result in a `pendingApply` map and let a once-registered
+  `onBeforeExit` hook splice it at the next **run-end** (the natural idle point).
+  We never reassign `agent.state.messages` mid-run — Pi's own auto-compaction is
+  the within-run (~92%) safety net. The shared `applyBgcResult` re-checks the
+  staleness guard (`latestEntryIsCompaction()`) on both paths before applying.
+- Guards: the `compacting` set (in-flight) plus the `pendingApply` map
+  (summary-ready-awaiting-run-end) together prevent overlapping BGCs. This
+  replaced the original busy-poll-for-idle design, which could apply mid-run on a
+  turn longer than the poll timeout and desync live vs. persisted context.
 
 The existing `context_usage` *emission* (UI context wheel) is unchanged.
 
@@ -202,8 +207,9 @@ context_usage (>=60%) ──> BGC controller ──> emit bgc_started
   land after the cut point, so `firstKeptEntryId` stays valid and the post-apply
   `buildSessionContext` keeps them automatically.
 - **Apply only when idle:** never reassign `agent.state.messages` while a turn is
-  in flight. Use the existing `turnActive` tracking; if a turn is running when the
-  summary completes, wait for `turn_end`/idle before applying.
+  in flight. If the session is busy when the summary completes, the result waits
+  in `pendingApply` and is spliced by the `onBeforeExit` hook at the next run-end
+  (idle). No polling.
 - **Staleness guard:** if, at apply time, the latest branch entry is already a
   `compaction` (Pi's safety net fired in the interim), skip the apply — there is
   nothing left to compact and re-applying would error.

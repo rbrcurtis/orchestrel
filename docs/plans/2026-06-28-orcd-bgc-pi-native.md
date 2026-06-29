@@ -17,9 +17,11 @@
 - **orcd layers:** `OrcdServer` (`src/orcd/socket-server.ts`) holds sessions in a `SessionStore`; each `OrcdSession` (`src/orcd/session.ts`) wraps a `PiRuntimeSession` (`src/orcd/pi-runtime.ts`) which wraps Pi's `AgentSession`.
 - **Today's broken flow (being replaced):** `OrcdServer.triggerCompaction` builds a `PreparedCompaction` delegate and defers `session.compact()` to `beforeExit` via `pendingSummaries`/`applyPendingCompaction`. Pi's native compaction wins the race and orcd's deferred apply errors. We delete this machinery.
 - **Pi compaction format:** a top-level tree entry `{type:"compaction", parentId, summary, firstKeptEntryId, tokensBefore, fromHook}`. On load, `buildSessionContext` keeps `[summary] + entries from firstKeptEntryId onward`.
-- **Pi pure functions** (imported from the package root `@earendil-works/pi-coding-agent`):
-  - `prepareCompaction(pathEntries, settings): CompactionPreparation | undefined` — returns `undefined` when there is nothing left to compact (doubles as staleness check). `settings = {enabled, reserveTokens, keepRecentTokens}`; the cut is driven by `keepRecentTokens`.
-  - `compact(preparation, model, apiKey, headers, customInstructions, signal, thinkingLevel, streamFn): Promise<CompactionResult>` where `CompactionResult = {summary, firstKeptEntryId, tokensBefore, details}`. This is the model call.
+- **Pi pure functions** (only these are exported from the package root `@earendil-works/pi-coding-agent` — verified against `dist/index.js`; `prepareCompaction` is NOT exported and deep imports are blocked by the `exports` map, so do not use it):
+  - `findCutPoint(entries, startIndex, endIndex, keepRecentTokens): {firstKeptEntryIndex, turnStartIndex, isSplitTurn}` — walks backward over message entries accumulating `estimateTokens` until `>= keepRecentTokens`, then snaps to a valid cut (never on a tool_result). `firstKeptEntryIndex` indexes into the passed entries array.
+  - `generateSummary(currentMessages, model, reserveTokens, apiKey, headers, signal, customInstructions, previousSummary, thinkingLevel, streamFn): Promise<string>` — the model call; returns the summary text. Handles provider auth/stream when given the session's `streamFn`.
+  - `DEFAULT_COMPACTION_SETTINGS` — `{enabled, reserveTokens: 16384, keepRecentTokens: 20000}`; use `.reserveTokens` for `generateSummary`.
+  - `CompactionResult` (type) — `{summary, firstKeptEntryId, tokensBefore, details}` — the shape `prepareBgCompaction` returns (assembled by us).
 - **Auth / streamFn:** `modelRegistry.getApiKeyAndHeaders(model)` returns `{apiKey, headers}`. OAuth providers (claude-max) need the session's reshaping stream fn, available as `session.agent.streamFn`. The `AgentSession` exposes public `agent`, `sessionManager`, and `get messages`.
 - **Existing emit helpers** (`OrcdSession`): `emitBgcStarted()` and `emitCompactBoundary()` both call `emitSyntheticSystemEvent(...)` which pushes a `stream_event` to subscribers. `lastContextTokens`/`lastContextWindow` are public and updated on every `context_usage`.
 - **Run all commands from repo root.** Tests: `corepack pnpm vitest run <file>`. Typecheck: `corepack pnpm typecheck`. Lint: `corepack pnpm lint`. (`pnpm` is only available via `corepack` in this environment.)
@@ -49,26 +51,27 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `src/orcd/__tests__/pi-runtime-bgc.test.ts`. We mock the Pi SDK so the test exercises *our* wiring (parallel-safe prep, staleness null, apply splice) without a live model. Note the runtime imports `prepareCompaction`/`compact` from the package root.
+Create `src/orcd/__tests__/pi-runtime-bgc.test.ts`. Mock the Pi SDK so the test exercises *our* wiring without a live model. Runtime uses the root-exported `findCutPoint` + `generateSummary` + `DEFAULT_COMPACTION_SETTINGS`.
 
 ```ts
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const prepareCompaction = vi.fn();
-const compact = vi.fn();
+const findCutPoint = vi.fn();
+const generateSummary = vi.fn();
 const appendCompaction = vi.fn(() => 'comp-id');
 const buildSessionContext = vi.fn(() => ({ messages: ['m1', 'm2'] }));
-const getBranch = vi.fn(() => [{ type: 'message', id: 'e1' }]);
+const getBranch = vi.fn();
 const agentState = { messages: [] as unknown[] };
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
-  prepareCompaction: (...a: unknown[]) => prepareCompaction(...a),
-  compact: (...a: unknown[]) => compact(...a),
+  findCutPoint: (...a: unknown[]) => findCutPoint(...a),
+  generateSummary: (...a: unknown[]) => generateSummary(...a),
+  DEFAULT_COMPACTION_SETTINGS: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
   AuthStorage: { create: () => ({ setRuntimeApiKey: vi.fn() }) },
   ModelRegistry: { create: () => ({
     registerProvider: vi.fn(),
     find: () => ({ id: 'm', api: 'anthropic-messages' }),
-    getApiKeyAndHeaders: vi.fn(async () => ({ apiKey: 'k', headers: {} })),
+    getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} })),
   }) },
   SessionManager: { create: () => ({}), open: () => ({}), list: vi.fn(async () => []) },
   createAgentSession: vi.fn(async () => ({
@@ -92,31 +95,34 @@ async function makeSession() {
 
 describe('pi-runtime BGC', () => {
   beforeEach(() => {
-    prepareCompaction.mockReset();
-    compact.mockReset();
+    findCutPoint.mockReset();
+    generateSummary.mockReset();
     appendCompaction.mockReset();
+    getBranch.mockReset();
     agentState.messages = [];
   });
 
-  it('prepareBgCompaction returns null when nothing to compact', async () => {
-    prepareCompaction.mockReturnValue(undefined);
+  it('prepareBgCompaction returns null when there is no older half to summarize', async () => {
+    getBranch.mockReturnValue([{ type: 'message', id: 'e0', message: { role: 'user' } }]);
+    findCutPoint.mockReturnValue({ firstKeptEntryIndex: 0, turnStartIndex: -1, isSplitTurn: false });
     const s = await makeSession();
     const r = await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
     expect(r).toBeNull();
-    expect(compact).not.toHaveBeenCalled();
+    expect(generateSummary).not.toHaveBeenCalled();
   });
 
-  it('prepareBgCompaction returns the Pi compaction result', async () => {
-    prepareCompaction.mockReturnValue({ firstKeptEntryId: 'e1' });
-    compact.mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 42, details: undefined });
+  it('summarizes the oldest entries and returns firstKeptEntryId from the cut', async () => {
+    getBranch.mockReturnValue([
+      { type: 'message', id: 'e0', message: { role: 'user', content: 'old' } },
+      { type: 'message', id: 'e1', message: { role: 'assistant', content: 'keep' } },
+    ]);
+    findCutPoint.mockReturnValue({ firstKeptEntryIndex: 1, turnStartIndex: -1, isSplitTurn: false });
+    generateSummary.mockResolvedValue('S');
     const s = await makeSession();
     const r = await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
-    expect(r).toEqual({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 42, details: undefined });
-    // keepRecentTokens = floor(100000 * 0.5)
-    expect(prepareCompaction).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ keepRecentTokens: 50_000, enabled: true }),
-    );
+    expect(r).toEqual({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 100_000, details: undefined });
+    expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 50_000); // floor(100000*0.5)
+    expect(generateSummary.mock.calls[0][0]).toEqual([{ role: 'user', content: 'old' }]); // oldest only
   });
 
   it('applyBgCompaction appends the entry and rebuilds messages', async () => {
@@ -137,16 +143,17 @@ Expected: FAIL — `s.prepareBgCompaction is not a function`.
 
 In `src/orcd/pi-runtime.ts`:
 
-Add to the imports from the package root (line 2 currently imports `AuthStorage, ModelRegistry, SessionManager, createAgentSession, getAgentDir`):
+Add to the value import from the package root (line 2):
 ```ts
-import { AuthStorage, ModelRegistry, SessionManager, compact as piCompact, createAgentSession, getAgentDir, prepareCompaction } from '@earendil-works/pi-coding-agent';
+import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, ModelRegistry, SessionManager, createAgentSession, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
 ```
-Add to the type import (line 3) `CompactionResult`:
+Add `CompactionResult` to the type import (line 3):
 ```ts
 import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 ```
+> Do NOT import or `declare module` `prepareCompaction` — it is not a real export (verified against `dist/index.js`) and would be `undefined` at runtime.
 
-Extend the `PiRuntimeSession` interface (after `compact(...)` on line 31):
+Extend the `PiRuntimeSession` interface (after `compact(...)`):
 ```ts
   /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
   prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal): Promise<CompactionResult | null>;
@@ -154,25 +161,39 @@ Extend the `PiRuntimeSession` interface (after `compact(...)` on line 31):
   applyBgCompaction(result: CompactionResult): void;
 ```
 
-In `createPiRuntimeSession`, the closure already has `modelRegistry`, `model`, and `opts.effort`. Add these methods to the returned object (alongside `compact`):
+In `createPiRuntimeSession`, the closure already has `modelRegistry`, `model`, and `opts.effort`. Add these methods to the returned object:
 ```ts
     async prepareBgCompaction(keepFraction, currentTokens, signal) {
-      const entries = session.sessionManager.getBranch();
+      const sm = session.sessionManager as unknown as {
+        getBranch(): Array<{ type: string; id: string; message?: unknown }>;
+      };
+      const entries = sm.getBranch();
       const keepRecentTokens = Math.floor(currentTokens * keepFraction);
-      const prep = prepareCompaction(entries, { enabled: true, reserveTokens: 0, keepRecentTokens });
-      if (!prep) return null;
-      const { apiKey, headers } = await modelRegistry.getApiKeyAndHeaders(model as Model<Api>);
+      const cut = findCutPoint(entries as never, 0, entries.length, keepRecentTokens);
+      const firstKeptIdx = cut.firstKeptEntryIndex;
+      if (firstKeptIdx <= 0) return null; // nothing older to summarize
+      const toSummarize = entries
+        .slice(0, firstKeptIdx)
+        .filter((e) => e.type === 'message' && e.message !== undefined)
+        .map((e) => e.message);
+      if (toSummarize.length === 0) return null;
+      const auth = await modelRegistry.getApiKeyAndHeaders(model as Model<Api>);
+      const apiKey = 'apiKey' in auth ? (auth as { apiKey?: string }).apiKey : undefined;
+      const headers = 'headers' in auth ? (auth as { headers?: Record<string, string> }).headers : undefined;
       const agent = (session as unknown as { agent: { streamFn?: unknown } }).agent;
-      return piCompact(
-        prep,
+      const summary = await generateSummary(
+        toSummarize as never,
         model as Model<Api>,
+        DEFAULT_COMPACTION_SETTINGS.reserveTokens,
         apiKey,
         headers,
-        undefined,
         signal,
+        undefined,
+        undefined,
         effortToThinkingLevel(opts.effort),
         agent.streamFn as never,
       );
+      return { summary, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
     },
 
     applyBgCompaction(result) {
@@ -185,7 +206,7 @@ In `createPiRuntimeSession`, the closure already has `modelRegistry`, `model`, a
       agent.state.messages = sm.buildSessionContext().messages;
     },
 ```
-> Note: `session.sessionManager` is typed `ReadonlySessionManager` on `AgentSession`, which omits `appendCompaction`/`getBranch`; the narrow casts above reach the runtime methods. Keep the casts local and minimal (project rule: no blanket `any`).
+> `session.sessionManager` is typed `ReadonlySessionManager` (omits `getBranch`/`appendCompaction`/`buildSessionContext`); the narrow casts reach the runtime methods. `getApiKeyAndHeaders` returns a discriminated union, so read `apiKey`/`headers` defensively. Keep casts local; no blanket `any`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -425,7 +446,16 @@ In `src/orcd/session.ts`, add:
 
 Delete the `pendingSummaries` field (line ~21) and the `applyingSummaries` usage tied to the old defer (keep `compacting`, `exitedSessions`, `turnActive`). Remove `import { applyCompaction, type PreparedCompaction } from '../lib/session-compactor';` (line 5).
 
-Replace `handleCompact` (so manual `/compact` uses the new path — see Task 4), and replace `triggerCompaction`/`applyPendingCompaction` with:
+Replace `handleCompact` (so manual `/compact` uses the new path — see Task 4), and replace `triggerCompaction`/`applyPendingCompaction` with the controller below.
+
+> **Implementation note (as shipped, `27be7c8`):** the busy-poll-for-idle shown
+> below was replaced during review with an event-driven design — if the session
+> isn't idle when the summary is ready, the result is stashed in a `pendingApply`
+> map and spliced by a once-registered `onBeforeExit` hook at the next run-end.
+> This avoids a mid-run `agent.state.messages` reassignment (a turn longer than
+> the poll timeout would otherwise desync live vs. persisted context). The
+> staleness check lives in a shared `applyBgcResult`. See the spec for the final
+> mechanism.
 
 ```ts
   private readonly BGC_KEEP_FRACTION = 0.5;
