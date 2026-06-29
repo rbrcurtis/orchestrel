@@ -269,11 +269,11 @@ function CardFields({
               </SelectTrigger>
               <SelectContent position="popper" className="max-h-60">
                 <SelectItem value="0">Off</SelectItem>
+                <SelectItem value="0.1">10%</SelectItem>
+                <SelectItem value="0.2">20%</SelectItem>
+                <SelectItem value="0.3">30%</SelectItem>
+                <SelectItem value="0.4">40%</SelectItem>
                 <SelectItem value="0.5">50%</SelectItem>
-                <SelectItem value="0.6">60%</SelectItem>
-                <SelectItem value="0.7">70%</SelectItem>
-                <SelectItem value="0.8">80%</SelectItem>
-                <SelectItem value="0.9">90%</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -340,7 +340,7 @@ export const CardDetail = observer(function CardDetail({
     sourceBranch: null,
     provider: 'anthropic',
     model: 'sonnet',
-    summarizeThreshold: 0.6,
+    summarizeThreshold: 0.5,
   });
 
   const [formOpen, setFormOpen] = useState(true);
@@ -717,7 +717,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           sourceBranch: null,
           provider: prov,
           model: proj.defaultModel ?? config.getDefaultModel(prov),
-          summarizeThreshold: 0.6,
+          summarizeThreshold: 0.5,
         };
       }
     }
@@ -730,7 +730,7 @@ export const NewCardDetail = observer(function NewCardDetail({
       sourceBranch: null,
       provider: 'anthropic',
       model: 'sonnet',
-      summarizeThreshold: 0.6,
+      summarizeThreshold: 0.5,
     };
   });
   const [creating, setCreating] = useState(false);

@@ -60,7 +60,7 @@ export class Card extends BaseEntity {
   @Column({ name: 'thinking_level', type: 'text', default: 'high' })
   thinkingLevel!: string;
 
-  @Column({ name: 'summarize_threshold', type: 'real', default: 0.6 })
+  @Column({ name: 'summarize_threshold', type: 'real', default: 0.5 })
   summarizeThreshold!: number;
 
   @Column({ name: 'prompts_sent', type: 'integer', default: 0 })

@@ -63,7 +63,7 @@ class CardService {
       }
     }
     data.provider = data.provider ?? providerID;
-    data.summarizeThreshold = data.summarizeThreshold ?? 0.6;
+    data.summarizeThreshold = data.summarizeThreshold ?? 0.5;
 
     // Set contextWindow from provider config
     const modelCfg = getModelConfig(providerID, data.model ?? 'sonnet');
