@@ -269,6 +269,26 @@ describe('OrcdServer background compaction', () => {
     expect(wrote.some((w) => w.includes('bgc_started'))).toBe(true);
   });
 
+  it('runs Pi-native full compaction for mode:full and emits boundary markers', async () => {
+    const server = createServer();
+    const client = createClient();
+    const session = bgcSession('compact-full');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
+    client.subscriptions.set(session.id, cb);
+    session.subscribe(cb);
+    const compactSpy = vi.spyOn(session, 'compact').mockResolvedValue(undefined);
+    const bgcSpy = vi.spyOn(session, 'prepareBgCompaction');
+    server['handleAction'](client as never, { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm', mode: 'full' } as CompactAction);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(compactSpy).toHaveBeenCalled();
+    expect(bgcSpy).not.toHaveBeenCalled(); // full compaction, not background
+    const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
+    expect(wrote.some((w) => w.includes('bgc_started'))).toBe(true);
+    expect(wrote.some((w) => w.includes('compact_boundary'))).toBe(true);
+  });
+
   it('defers the splice to run-end when the session is busy, then applies', async () => {
     const server = createServer();
     const session = bgcSession('bgc-defer');

@@ -30,11 +30,11 @@ export async function handleAgentSend(
     const card = await Card.findOneByOrFail({ id: cardId });
 
     // `/compact` typed in the chat box is a Pi TUI command with no meaning on
-    // the SDK path. Route it to the real compaction signal instead of counting
-    // it as a prompt or moving the card to running. For a live session, forward
-    // it as a message so orcd detects + compacts; for an inactive session with
-    // history, rehydrate-and-compact directly (orcd can't intercept a message
-    // for a session it isn't running).
+    // the SDK path. Route it to Pi's full native compaction (NOT the background
+    // compactor, which is what the UI context wheel runs). For a live session,
+    // forward it as a message so orcd detects + compacts; for an inactive session
+    // with history, rehydrate-and-compact directly (orcd can't intercept a
+    // message for a session it isn't running).
     if (isCompactCommand(message)) {
       if (card.sessionId && client.isActive(card.sessionId)) {
         trackSession(cardId, card.sessionId);
@@ -49,6 +49,7 @@ export async function handleAgentSend(
           model: card.model,
           contextWindow: card.contextWindow,
           summarizeThreshold: card.summarizeThreshold,
+          mode: 'full',
         });
       } else {
         console.log(`[session:${cardId}] /compact ignored — no session to compact`);
@@ -121,6 +122,8 @@ export async function handleAgentCompact(
     const cwd = await ensureWorktree(card);
     trackSession(cardId, card.sessionId);
 
+    // The context wheel button runs Orchestrel's incremental background
+    // compaction, distinct from the chat `/compact` command (full Pi compaction).
     callback({});
     client.compact({
       sessionId: card.sessionId,
@@ -129,6 +132,7 @@ export async function handleAgentCompact(
       model: card.model,
       contextWindow: card.contextWindow,
       summarizeThreshold: card.summarizeThreshold,
+      mode: 'background',
     });
   } catch (err) {
     console.error(`[session:${cardId}] agent:compact error:`, err);

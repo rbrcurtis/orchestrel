@@ -190,10 +190,11 @@ export class OrcdServer {
 
     // `/compact` (and other Pi TUI slash commands) are not interpreted on the
     // headless SDK path — without this they reach the model as literal prompt
-    // text. Route the command to the real compaction signal instead.
+    // text. The chat command runs Pi's full native compaction (not the
+    // background compactor, which the UI context wheel drives separately).
     if (isCompactCommand(action.prompt)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → triggering compaction`);
-      void this.maybeStartBgc(session);
+      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → full compaction`);
+      void this.runFullCompaction(session);
       return;
     }
 
@@ -288,7 +289,8 @@ export class OrcdServer {
       client.subscriptions.set(session.id, cb);
       session.subscribe(cb);
     }
-    void this.maybeStartBgc(session).finally(() => {
+    const run = action.mode === 'full' ? this.runFullCompaction(session) : this.maybeStartBgc(session);
+    void run.finally(() => {
       if (hydrated) this.store.remove(session.id);
     });
   }
@@ -339,6 +341,34 @@ export class OrcdServer {
     this.upsertedSessions.add(session.id);
     const { search, store, update, delete: del } = result.toolCalls;
     log(`done: search=${search} store=${store} update=${update} delete=${del} (${result.durationMs}ms)`);
+  }
+
+  // ── Full compaction (chat `/compact`) ───────────────────────────────────
+
+  /**
+   * Pi's native blocking compaction — summarizes the whole conversation and
+   * rebuilds context in one shot, the same behavior as `/compact` in the Pi TUI.
+   * The Pi event subscription that maps compaction_start/end is only attached
+   * during a run(), so emit the bgc_started/compact_boundary markers explicitly
+   * here to drive the UI spinner + context-wheel reset regardless of run state.
+   */
+  private async runFullCompaction(session: OrcdSession): Promise<void> {
+    const sid = session.id;
+    if (this.compacting.has(sid) || this.pendingApply.has(sid)) {
+      console.log(`[orcd:${sid.slice(0, 8)}:compact] already in flight or pending, ignoring`);
+      return;
+    }
+    this.compacting.add(sid);
+    try {
+      session.emitBgcStarted();
+      await session.compact();
+      session.emitCompactBoundary();
+      console.log(`[orcd:${sid.slice(0, 8)}:compact] full compaction applied`);
+    } catch (err) {
+      console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err instanceof Error ? err.message : String(err));
+    } finally {
+      this.compacting.delete(sid);
+    }
   }
 
   // ── Background compaction ───────────────────────────────────────────────
