@@ -54,6 +54,29 @@ export class CardStore {
     this.cards.set(card.id, card);
   }
 
+  // ── Lazy column paging (archive is not bulk-loaded on subscribe) ─────────────
+
+  /** Fetch one page of a column and merge it into the store. */
+  async loadPage(column: Column, cursor?: number, limit = 20): Promise<{ nextCursor?: number; total: number }> {
+    const res = (await this.ws().emit('page', { column, cursor, limit })) as {
+      cards: Card[];
+      nextCursor?: number;
+      total: number;
+    };
+    runInAction(() => {
+      for (const c of res.cards) this.cards.set(c.id, c);
+    });
+    return { nextCursor: res.nextCursor, total: res.total };
+  }
+
+  /** Server-side search across all cards; merges matches into the store. */
+  async search(query: string): Promise<void> {
+    const res = (await this.ws().emit('search', { query })) as { cards: Card[]; total: number };
+    runInAction(() => {
+      for (const c of res.cards) this.cards.set(c.id, c);
+    });
+  }
+
   handleDeleted(id: number) {
     this.cards.delete(id);
   }

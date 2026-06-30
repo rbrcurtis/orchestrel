@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { observer } from 'mobx-react-lite';
 import { useOutletContext } from 'react-router';
+import { Button } from '~/components/ui/button';
 import {
   DndContext,
   DragOverlay,
@@ -53,6 +54,49 @@ const ArchiveBoard = observer(function ArchiveBoard() {
     }
     return map;
   }, [projectStore.all]);
+
+  // Archive is lazy-loaded (not part of the board subscribe). Page it in here.
+  const [nextCursor, setNextCursor] = useState<number | undefined>(undefined);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    cardStore
+      .loadPage('archive')
+      .then((r) => {
+        if (cancelled) return;
+        setNextCursor(r.nextCursor);
+        setTotal(r.total);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // With pagination only a slice of archive is loaded, so a typed query must hit
+  // the server to search the whole archive (debounced); results merge into the store.
+  useEffect(() => {
+    if (search.length === 0) return;
+    const t = setTimeout(() => void cardStore.search(search), 250);
+    return () => clearTimeout(t);
+  }, [search, cardStore]);
+
+  function loadMore() {
+    if (loading || nextCursor === undefined) return;
+    setLoading(true);
+    cardStore
+      .loadPage('archive', nextCursor)
+      .then((r) => {
+        setNextCursor(r.nextCursor);
+        setTotal(r.total);
+      })
+      .finally(() => setLoading(false));
+  }
 
   // Read archive cards from store (reactive)
   const storeCards = useMemo((): CardItem[] => {
@@ -146,6 +190,13 @@ const ArchiveBoard = observer(function ArchiveBoard() {
     >
       <div className="flex flex-col gap-2 p-4">
         <StatusRow id="archive" cards={filteredCards} onCardClick={selectCard} />
+        {search.length === 0 && nextCursor !== undefined && (
+          <div className="flex justify-center py-2">
+            <Button variant="outline" size="sm" onClick={loadMore} disabled={loading}>
+              {loading ? 'Loading…' : `Load more (${storeCards.length} of ${total})`}
+            </Button>
+          </div>
+        )}
       </div>
       {mounted &&
         createPortal(

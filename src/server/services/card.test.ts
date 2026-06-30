@@ -53,6 +53,23 @@ describe('CardService', () => {
     expect(page.nextCursor).toBeDefined()
   })
 
+  it('pageCards filters by visible project ids before slicing', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const vis = await projectService.createProject({ name: 'Vis', path: '/tmp/vis-proj' })
+    const hidden = await projectService.createProject({ name: 'Hidden', path: '/tmp/hidden-proj' })
+    await cardService.createCard({ title: 'V1', description: 'd', column: 'archive', projectId: vis.id })
+    await cardService.createCard({ title: 'V2', description: 'd', column: 'archive', projectId: vis.id })
+    await cardService.createCard({ title: 'H1', description: 'd', column: 'archive', projectId: hidden.id })
+
+    const all = await cardService.pageCards('archive', undefined, 50, 'all')
+    expect(all.cards.some((c) => c.projectId === hidden.id)).toBe(true)
+
+    const scoped = await cardService.pageCards('archive', undefined, 50, [vis.id])
+    expect(scoped.total).toBe(2)
+    expect(scoped.cards.every((c) => c.projectId === vis.id)).toBe(true)
+  })
+
   it('archiveOthers only archives active cards in the same project', async () => {
     const { cardService } = await import('./card')
     const { projectService } = await import('./project')

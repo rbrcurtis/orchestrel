@@ -76,7 +76,9 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   // ── Page ─────────────────────────────────────────────────────────────────
   socket.on('page', async (data, callback) => {
     try {
-      const result = await cardService.pageCards(data.column as Column, data.cursor, data.limit);
+      const { userService } = await import('../services/user');
+      const visible = await userService.visibleProjectIds(identity as import('../services/user').UserIdentity);
+      const result = await cardService.pageCards(data.column as Column, data.cursor, data.limit, visible);
       callback({
         data: {
           column: data.column as Column,
@@ -94,8 +96,14 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   // ── Search ───────────────────────────────────────────────────────────────
   socket.on('search', async (data, callback) => {
     try {
-      const { cards, total } = await cardService.searchCards(data.query);
-      callback({ data: { cards: cards as unknown as Card[], total } });
+      const { userService } = await import('../services/user');
+      const visible = await userService.visibleProjectIds(identity as import('../services/user').UserIdentity);
+      const { cards } = await cardService.searchCards(data.query);
+      const filtered =
+        visible === 'all'
+          ? cards
+          : cards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+      callback({ data: { cards: filtered as unknown as Card[], total: filtered.length } });
     } catch (err) {
       console.error('[ws] search error:', err);
       callback({ error: String(err instanceof Error ? err.message : err) });

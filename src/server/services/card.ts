@@ -136,12 +136,22 @@ class CardService {
     return { cards: results, total };
   }
 
-  async pageCards(column: Column, cursor?: number, limit = PAGE_SIZE): Promise<PageResult> {
+  async pageCards(
+    column: Column,
+    cursor?: number,
+    limit = PAGE_SIZE,
+    visible?: number[] | 'all',
+  ): Promise<PageResult> {
     const order = { updatedAt: 'DESC' as const };
-    const all = await Card.find({
+    const found = await Card.find({
       where: { column },
       order,
     });
+    // Filter by user visibility BEFORE slicing so page sizes stay correct.
+    const all =
+      !visible || visible === 'all'
+        ? found
+        : found.filter((c) => c.projectId != null && visible.includes(c.projectId));
     const startIdx = cursor !== undefined ? all.findIndex((c) => c.id === cursor) + 1 : 0;
     const slice = all.slice(startIdx, startIdx + limit);
     const nextCursor = startIdx + limit < all.length ? slice[slice.length - 1]?.id : undefined;
