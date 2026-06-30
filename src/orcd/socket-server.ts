@@ -348,9 +348,9 @@ export class OrcdServer {
   /**
    * Pi's native blocking compaction — summarizes the whole conversation and
    * rebuilds context in one shot, the same behavior as `/compact` in the Pi TUI.
-   * The Pi event subscription that maps compaction_start/end is only attached
-   * during a run(), so emit the bgc_started/compact_boundary markers explicitly
-   * here to drive the UI spinner + context-wheel reset regardless of run state.
+   * No synthetic bgc_started/compact_boundary markers: Pi ends the turn and the
+   * context gauge self-corrects from the next turn's usage event. (The UI's
+   * "Background compaction" markers are for the context-wheel BGC path only.)
    */
   private async runFullCompaction(session: OrcdSession): Promise<void> {
     const sid = session.id;
@@ -360,9 +360,7 @@ export class OrcdServer {
     }
     this.compacting.add(sid);
     try {
-      session.emitBgcStarted();
       await session.compact();
-      session.emitCompactBoundary();
       console.log(`[orcd:${sid.slice(0, 8)}:compact] full compaction applied`);
     } catch (err) {
       console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err instanceof Error ? err.message : String(err));
