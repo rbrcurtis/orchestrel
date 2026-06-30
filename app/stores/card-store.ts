@@ -39,9 +39,18 @@ export class CardStore {
 
   // ── Hydration ───────────────────────────────────────────────────────────────
 
-  hydrate(items: unknown[], replace = false) {
+  hydrate(items: unknown[], replace = false, columns?: string[]) {
     if (replace) {
-      this.cards.clear();
+      if (columns && columns.length > 0) {
+        // Scoped replace: only drop cards in the columns we're re-hydrating, so
+        // lazily-paged columns (e.g. archive) aren't wiped.
+        const set = new Set(columns);
+        for (const [id, c] of this.cards) {
+          if (set.has(c.column)) this.cards.delete(id);
+        }
+      } else {
+        this.cards.clear();
+      }
       this.hydrated = true;
     }
     for (const c of items) {

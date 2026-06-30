@@ -15,7 +15,14 @@ function cardHasVisibleProject(store: RootStore, projectId: number | null): bool
 function applySync(store: RootStore, data: SyncPayload): void {
   store.currentUser = data.user ?? null;
   store.projects.hydrate(data.projects, true, data.users);
-  store.cards.hydrate(data.cards.filter((c) => cardHasVisibleProject(store, c.projectId)), true);
+  // Replace only the columns we actually subscribed to. Archive (and any other
+  // unsubscribed column) is lazy-paged separately and must survive a sync that
+  // resolves after the archive page already merged its cards into the store.
+  store.cards.hydrate(
+    data.cards.filter((c) => cardHasVisibleProject(store, c.projectId)),
+    true,
+    store.ws.getSubscribedColumns(),
+  );
   store.config.hydrate(data.providers);
 }
 

@@ -142,7 +142,10 @@ class CardService {
     limit = PAGE_SIZE,
     visible?: number[] | 'all',
   ): Promise<PageResult> {
-    const order = { updatedAt: 'DESC' as const };
+    // id is a tiebreaker so the total order is stable across calls — without it,
+    // cards sharing an updatedAt (e.g. bulk-archived) can reorder between queries,
+    // making the id cursor land at a different index and skip/duplicate a page.
+    const order = { updatedAt: 'DESC' as const, id: 'DESC' as const };
     const found = await Card.find({
       where: { column },
       order,

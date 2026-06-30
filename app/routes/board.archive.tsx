@@ -56,26 +56,35 @@ const ArchiveBoard = observer(function ArchiveBoard() {
   }, [projectStore.all]);
 
   // Archive is lazy-loaded (not part of the board subscribe). Page it in here.
-  const [nextCursor, setNextCursor] = useState<number | undefined>(undefined);
   const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  // Derive the cursor from the OLDEST archive card already in the store (matching
+  // the server's updatedAt DESC, id DESC order) rather than tracking a page cursor.
+  // The store can be pre-filled from IndexedDB persistence or live-merged cards, so
+  // a fixed page-1 cursor would re-fetch already-loaded pages; the tail self-heals.
+  function loadNextPage() {
+    if (loading) return;
+    const loaded = cardStore.cardsByColumn('archive');
+    let tail: { id: number; updatedAt: string } | undefined;
+    for (const c of loaded) {
+      if (!tail || c.updatedAt < tail.updatedAt || (c.updatedAt === tail.updatedAt && c.id < tail.id)) {
+        tail = c;
+      }
+    }
     setLoading(true);
     cardStore
-      .loadPage('archive')
+      .loadPage('archive', tail?.id)
       .then((r) => {
-        if (cancelled) return;
-        setNextCursor(r.nextCursor);
         setTotal(r.total);
+        setHasMore(r.nextCursor !== undefined);
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadNextPage();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With pagination only a slice of archive is loaded, so a typed query must hit
@@ -86,25 +95,14 @@ const ArchiveBoard = observer(function ArchiveBoard() {
     return () => clearTimeout(t);
   }, [search, cardStore]);
 
-  function loadMore() {
-    if (loading || nextCursor === undefined) return;
-    setLoading(true);
-    cardStore
-      .loadPage('archive', nextCursor)
-      .then((r) => {
-        setNextCursor(r.nextCursor);
-        setTotal(r.total);
-      })
-      .finally(() => setLoading(false));
-  }
-
-  // Read archive cards from store (reactive)
-  const storeCards = useMemo((): CardItem[] => {
-    return cardStore.cardsByColumn('archive').map((c) => ({
-      ...c,
-      color: c.projectId ? (colorMap[c.projectId] ?? null) : null,
-    }));
-  }, [cardStore.cards, colorMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Read archive cards from store. Computed inline (not memoized) so the mobx
+  // observer tracks the map reads and re-renders when paged cards are merged in —
+  // cardStore.cards is a stable ObservableMap, so a useMemo keyed on it never
+  // recomputes and the list would freeze at the first page.
+  const storeCards: CardItem[] = cardStore.cardsByColumn('archive').map((c) => ({
+    ...c,
+    color: c.projectId ? (colorMap[c.projectId] ?? null) : null,
+  }));
 
   // Local override during drag only
   const [dragOverride, setDragOverride] = useState<CardItem[] | null>(null);
@@ -190,9 +188,9 @@ const ArchiveBoard = observer(function ArchiveBoard() {
     >
       <div className="flex flex-col gap-2 p-4">
         <StatusRow id="archive" cards={filteredCards} onCardClick={selectCard} />
-        {search.length === 0 && nextCursor !== undefined && (
+        {search.length === 0 && hasMore && (
           <div className="flex justify-center py-2">
-            <Button variant="outline" size="sm" onClick={loadMore} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={loadNextPage} disabled={loading}>
               {loading ? 'Loading…' : `Load more (${storeCards.length} of ${total})`}
             </Button>
           </div>
