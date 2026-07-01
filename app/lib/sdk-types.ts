@@ -33,7 +33,7 @@ export type StreamEvent =
 
 export interface SdkSystemMessage {
   type: 'system';
-  subtype: 'init' | 'compact_boundary' | 'bgc_started';
+  subtype: 'init' | 'compact_boundary' | 'bgc_started' | 'compact_started' | 'compact_done';
   session_id?: string;
   model?: string;
   source?: string;

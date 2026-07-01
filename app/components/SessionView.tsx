@@ -59,6 +59,7 @@ export const SessionView = observer(function SessionView({
   const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
   const subagents = session?.accumulator.subagents ?? new Map();
   const bgcInProgress = session?.bgcInProgress ?? false;
+  const compactInProgress = session?.compactInProgress ?? false;
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
 
@@ -302,7 +303,7 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting}
         onSend={handleSend}
         onStop={handleStop}
-        onCompact={!!sessionId || sessionActive ? (bgcInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
+        onCompact={!!sessionId || sessionActive ? (bgcInProgress || compactInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
         onPromptSent={onPromptSent}
         sendPending={false}
         contextPercent={contextPercent}

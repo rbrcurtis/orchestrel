@@ -169,6 +169,12 @@ export class MessageAccumulator {
         } else if (msg.subtype === 'bgc_started') {
           this.finalizeBlocks();
           this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: msg.timestamp });
+        } else if (msg.subtype === 'compact_started') {
+          this.finalizeBlocks();
+          this.conversation.push({ kind: 'compact', label: 'Compacting context…', timestamp: msg.timestamp });
+        } else if (msg.subtype === 'compact_done') {
+          this.finalizeBlocks();
+          this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: msg.timestamp });
         }
         break;
       case 'error':
@@ -262,6 +268,12 @@ export class MessageAccumulator {
         } else if (msg.subtype === 'bgc_started') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
           this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: normalizeTimestamp(msg.timestamp) });
+        } else if (msg.subtype === 'compact_started') {
+          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.conversation.push({ kind: 'compact', label: 'Compacting context…', timestamp: normalizeTimestamp(msg.timestamp) });
+        } else if (msg.subtype === 'compact_done') {
+          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: normalizeTimestamp(msg.timestamp) });
         }
         break;
     }

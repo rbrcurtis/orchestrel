@@ -22,6 +22,14 @@ describe('OrcdSession BGC event mapping', () => {
     expect(seen).toEqual(['bgc_started', 'compact_boundary']);
   });
 
+  it('maps a manual /compact to its own compact_started/compact_done lifecycle, not BGC', () => {
+    const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'manual' });
+    const seen = syntheticSubtypes(s);
+    s['emitMappedPiEvent']({ type: 'compaction_start', reason: 'manual' });
+    s['emitMappedPiEvent']({ type: 'compaction_end', reason: 'manual', result: { summary: 'x' } });
+    expect(seen).toEqual(['compact_started', 'compact_done']);
+  });
+
   it('isIdle reflects the running flag', () => {
     const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'idle' });
     expect(s.isIdle()).toBe(true);

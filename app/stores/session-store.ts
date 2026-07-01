@@ -17,6 +17,7 @@ export interface SessionState {
   contextTokens: number;
   contextWindow: number;
   bgcInProgress: boolean;
+  compactInProgress: boolean;
 }
 
 function defaultSession(): SessionState {
@@ -32,6 +33,7 @@ function defaultSession(): SessionState {
     contextTokens: 0,
     contextWindow: 200_000,
     bgcInProgress: false,
+    compactInProgress: false,
   };
 }
 
@@ -143,12 +145,25 @@ export class SessionStore {
           s.bgcInProgress = false;
           s.contextTokens = 1;
         }
+        // A manual `/compact` runs no normal turn, so it emits no result/session_exit
+        // to clear the optimistic "running" state. compact_done is its terminal
+        // signal: reset context and return the session to idle.
+        if (sdkMsg.subtype === 'compact_started') {
+          s.compactInProgress = true;
+        }
+        if (sdkMsg.subtype === 'compact_done') {
+          s.compactInProgress = false;
+          s.contextTokens = 1;
+          s.active = false;
+          if (s.status === 'running' || s.status === 'starting') s.status = 'completed';
+        }
       }
 
       if (sdkMsg.type === 'error') {
         s.active = false;
         s.status = 'errored';
         s.bgcInProgress = false;
+        s.compactInProgress = false;
       }
 
       if (sdkMsg.type === 'result') {
@@ -195,6 +210,7 @@ export class SessionStore {
 
       if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {
         s.bgcInProgress = false;
+        s.compactInProgress = false;
         s.accumulator.clearSubagents();
         const stopInterval = this.stopIntervals.get(data.cardId);
         if (stopInterval !== undefined) {
@@ -221,6 +237,7 @@ export class SessionStore {
       const s = this.getOrCreate(cardId);
       s.active = false;
       s.bgcInProgress = false;
+      s.compactInProgress = false;
       if (s.status === 'running' || s.status === 'starting') {
         s.status = 'completed';
       }
