@@ -1,18 +1,50 @@
-diff --git a/dist/models.js b/dist/models.js
-index 284a4c8c629add7f6a84f4e58b47afe717b133a6..7e949f6ad383dd711d2ed5df562bcec5d0cc0edd 100644
---- a/dist/models.js
-+++ b/dist/models.js
-@@ -1,7 +1,13 @@
- import { MODELS } from "./models.generated.js";
- const modelRegistry = new Map();
-+// orchestrel: the built-in third-party catalog (openai/openrouter/google/...) is
-+// just noise for our use. We drive everything through custom providers in
-+// models.json plus built-in anthropic (Claude Max OAuth). Keep only this allowlist.
-+const ORCHESTREL_BUILTIN_ALLOWLIST = new Set(["anthropic"]);
- // Initialize registry from MODELS on module load
- for (const [provider, models] of Object.entries(MODELS)) {
-+    if (!ORCHESTREL_BUILTIN_ALLOWLIST.has(provider))
-+        continue;
-     const providerModels = new Map();
-     for (const [id, model] of Object.entries(models)) {
-         providerModels.set(id, model);
+diff --git a/dist/providers/all.js b/dist/providers/all.js
+index 316b5811d214c34ef5e033e7ad603615e06be6ca..c54ce306d0c1e14ae09fc59c5def9d29bf0f3ee0 100644
+--- a/dist/providers/all.js
++++ b/dist/providers/all.js
+@@ -53,42 +53,11 @@ export function getBuiltinModels(provider) {
+ }
+ /** All built-in providers, freshly constructed. */
+ export function builtinProviders() {
++    // orchestrel: the built-in third-party catalog (openai/openrouter/google/...) is
++    // just noise for our use. We drive everything through custom providers in
++    // models.json plus built-in anthropic (Claude Max OAuth). Keep only anthropic.
+     return [
+-        amazonBedrockProvider(),
+-        antLingProvider(),
+         anthropicProvider(),
+-        azureOpenAIResponsesProvider(),
+-        cerebrasProvider(),
+-        cloudflareAIGatewayProvider(),
+-        cloudflareWorkersAIProvider(),
+-        deepseekProvider(),
+-        fireworksProvider(),
+-        githubCopilotProvider(),
+-        googleProvider(),
+-        googleVertexProvider(),
+-        groqProvider(),
+-        huggingfaceProvider(),
+-        kimiCodingProvider(),
+-        minimaxProvider(),
+-        minimaxCnProvider(),
+-        mistralProvider(),
+-        moonshotaiProvider(),
+-        moonshotaiCnProvider(),
+-        nvidiaProvider(),
+-        openaiProvider(),
+-        openaiCodexProvider(),
+-        opencodeProvider(),
+-        opencodeGoProvider(),
+-        openrouterProvider(),
+-        togetherProvider(),
+-        vercelAIGatewayProvider(),
+-        xaiProvider(),
+-        xiaomiProvider(),
+-        xiaomiTokenPlanAmsProvider(),
+-        xiaomiTokenPlanCnProvider(),
+-        xiaomiTokenPlanSgpProvider(),
+-        zaiProvider(),
+-        zaiCodingCnProvider(),
+     ];
+ }
+ /** A `Models` collection with every built-in provider registered. */
