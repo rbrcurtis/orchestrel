@@ -38,7 +38,8 @@ function usage() {
     '',
     'Examples:',
     '  orc trackable auto',
-    '  orc --resume abc123 trackable auto',
+    '  orc --resume abc123 trackable auto   # resume session abc123 directly',
+    '  orc --resume trackable auto          # open the session picker',
     '  orc -p "what time is it?" trackable auto',
     '  orc --print-env trackable auto',
     '',
@@ -65,6 +66,7 @@ function main() {
   const passthroughArgs = [...args._];
   stripSkipPermissionsFlag(passthroughArgs);
   const resumeTarget = extractResumeTarget(passthroughArgs);
+  rewriteResumeToSession(passthroughArgs, config);
 
   const prompt = args['--prompt'];
   const resolved = extractProviderAndModel(config, passthroughArgs, resumeTarget);
@@ -256,6 +258,34 @@ function extractResumeTarget(passthroughArgs) {
     }
   }
   return null;
+}
+
+// Pi's `--resume`/`-r` is a bare boolean that always opens the interactive
+// session picker — it never consumes the id after it. Resume-by-id in pi is a
+// separate flag, `--session <id>` (matches by exact id or id-prefix, opens
+// immediately). So when the user passes `--resume <id>`, rewrite it to
+// `--session <id>` before handing off. A bare `--resume` (no id, or followed by
+// a provider/flag) is left alone so the picker still works.
+function rewriteResumeToSession(passthroughArgs, config) {
+  for (let i = 0; i < passthroughArgs.length; i += 1) {
+    const token = passthroughArgs[i];
+    let id = null;
+    let pairLen = 0;
+    if (token === '--resume' || token === '-r') {
+      id = passthroughArgs[i + 1] ?? null;
+      pairLen = 2;
+    } else if (token?.startsWith('--resume=')) {
+      id = token.slice('--resume='.length);
+      pairLen = 1;
+    } else {
+      continue;
+    }
+    // Only a real session id gets rewritten; a flag or known provider means the
+    // user wants the picker (optionally scoped by a following provider arg).
+    if (!id || id.startsWith('-') || config.providers[id]) return;
+    passthroughArgs.splice(i, pairLen, '--session', id);
+    return;
+  }
 }
 
 function findCardBySessionId(sessionId) {
