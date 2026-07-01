@@ -647,6 +647,7 @@ async function startCardSession(
     const startedFromDescription = !card.sessionId;
     const prompt = card.sessionId ? '' : card.description ?? '';
 
+    const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
     const sessionId = await client.create({
       prompt,
       cwd,
@@ -655,6 +656,7 @@ async function startCardSession(
       sessionId: card.sessionId ?? undefined,
       contextWindow: card.contextWindow,
       summarizeThreshold: card.summarizeThreshold,
+      effort,
     });
 
     card.sessionId = sessionId;

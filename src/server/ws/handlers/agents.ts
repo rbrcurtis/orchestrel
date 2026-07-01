@@ -77,6 +77,7 @@ export async function handleAgentSend(
     } else {
       // New session or resume
       const cwd = await ensureWorktree(card);
+      const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
       const sessionId = await client.create({
         prompt,
         cwd,
@@ -85,6 +86,7 @@ export async function handleAgentSend(
         sessionId: card.sessionId ?? undefined,
         contextWindow: card.contextWindow,
         summarizeThreshold: card.summarizeThreshold,
+        effort,
       });
 
       card.sessionId = sessionId;
