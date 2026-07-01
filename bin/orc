@@ -2,10 +2,11 @@
 
 import arg from 'arg';
 import Database from 'better-sqlite3';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { buildModelAliasEnv, parseConfig } from '../src/shared/config.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -101,6 +102,12 @@ function main() {
     );
     return;
   }
+
+  // Pi (the binary) only knows its built-in providers plus whatever is in
+  // ~/.pi/agent/models.json. orcd registers custom providers programmatically
+  // via the SDK, but this standalone wrapper spawns the pi binary, so we must
+  // materialize custom providers to models.json or pi rejects the model ID.
+  syncModelsJson(config);
 
   const piPath = requirePiPath();
   const child = spawn(
@@ -342,24 +349,46 @@ function rejectConflictingArgs(passthroughArgs) {
   }
 }
 
-function buildPiEnv(provider) {
-  const env = {
-    PI_BASE_URL: '',
-    PI_API_KEY: '',
-    PI_AUTH_TOKEN: '',
-    ...buildModelAliasEnv(provider.models),
-  };
-
-  if (provider.baseUrl) env.PI_BASE_URL = provider.baseUrl;
-  if (provider.apiKey) {
-    env.PI_API_KEY = provider.apiKey;
-    const providerType = provider.type ? String(provider.type) : '';
-    if (providerType === 'anthropic') env.ANTHROPIC_API_KEY = provider.apiKey;
-    if (providerType === 'openai') env.OPENAI_API_KEY = provider.apiKey;
+// Mirror orcd's registerOrchestrelProvider: every config provider that isn't
+// pi's built-in anthropic (i.e. has a baseUrl) gets written to models.json so
+// the pi binary can resolve its model IDs. Built-in anthropic (Claude Max
+// OAuth, no baseUrl) is left untouched.
+function syncModelsJson(config) {
+  const providers = {};
+  for (const [id, provider] of Object.entries(config.providers)) {
+    if (!provider.baseUrl) continue;
+    const api = provider.type === 'bedrock' ? 'bedrock-converse-stream' : 'anthropic-messages';
+    const apiKey = provider.apiKey || provider.authToken;
+    providers[id] = {
+      name: provider.label ?? id,
+      api,
+      baseUrl: provider.baseUrl,
+      ...(apiKey ? { apiKey } : {}),
+      models: Object.entries(provider.models).map(([alias, model]) => ({
+        id: model.modelID,
+        name: model.label ?? alias,
+        api,
+        reasoning: provider.type === 'anthropic',
+        input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: model.contextWindow,
+        maxTokens: 64000,
+      })),
+    };
   }
-  if (provider.authToken) env.PI_AUTH_TOKEN = provider.authToken;
 
-  return env;
+  const modelsPath = resolve(getAgentDir(), 'models.json');
+  mkdirSync(dirname(modelsPath), { recursive: true });
+  const tmp = `${modelsPath}.orc-tmp`;
+  writeFileSync(tmp, JSON.stringify({ providers }, null, 2) + '\n');
+  renameSync(tmp, modelsPath);
+}
+
+function buildPiEnv(provider) {
+  // Provider baseUrl/auth reach pi via ~/.pi/agent/models.json (see syncModelsJson),
+  // not env — pi ignores PI_BASE_URL/PI_API_KEY/PI_AUTH_TOKEN. The only env pi
+  // consumes here is the ANTHROPIC_DEFAULT_*_MODEL alias map for subagent tiers.
+  return buildModelAliasEnv(provider.models);
 }
 
 function buildPiArgs(modelId, passthroughArgs, prompt) {
