@@ -108,7 +108,7 @@ Key patterns:
 ## Prerequisites
 
 - Node.js 22+
-- pnpm
+- bun
 - Pi CLI available at `/home/ryan/.local/bin/pi` for `bin/orc`
 - Pi user config/auth/model resources in the canonical Pi user config directory (`~/.pi`)
 - Optional Ollama on `localhost:11434` with `llama3.2:latest` for title suggestions
@@ -117,7 +117,7 @@ Key patterns:
 ## Setup
 
 ```bash
-pnpm install
+bun install
 cp config.example.yaml config.yaml
 cp .env.example .env
 ```
@@ -141,8 +141,8 @@ providers:
 Then run the daemon and web app in separate terminals:
 
 ```bash
-pnpm orcd
-pnpm dev
+bun run orcd
+bun run dev
 ```
 
 Development mode runs on `http://localhost:6195` by default. Production mode uses `http://localhost:6194`.
@@ -151,14 +151,14 @@ Development mode runs on `http://localhost:6195` by default. Production mode use
 
 | Command | Description |
 | --- | --- |
-| `pnpm dev` | Generate TSOA routes, start the Vite/Express development server |
-| `pnpm orcd` | Start the `orcd` session daemon |
-| `pnpm build` | Generate TSOA routes and build the React Router app |
-| `pnpm start` | Start the production Express server from the built app |
-| `pnpm test` | Run Vitest |
-| `pnpm typecheck` | Generate React Router types and run TypeScript build checks |
-| `pnpm lint` | Run oxlint over `app` and `src` |
-| `pnpm tsoa:generate` | Regenerate REST routes and OpenAPI spec |
+| `bun run dev` | Generate TSOA routes, start the Vite/Express development server |
+| `bun run orcd` | Start the `orcd` session daemon |
+| `bun run build` | Generate TSOA routes and build the React Router app |
+| `bun run start` | Start the production Express server from the built app |
+| `bun run test` | Run Vitest |
+| `bun run typecheck` | Generate React Router types and run TypeScript build checks |
+| `bun run lint` | Run oxlint over `app` and `src` |
+| `bun run tsoa:generate` | Regenerate REST routes and OpenAPI spec |
 
 ## Configuration
 
@@ -268,16 +268,16 @@ The app is Socket.IO-first, but it also exposes generated REST endpoints for car
 - Swagger UI: `http://localhost:6194/api/docs`
 - OpenAPI JSON: `http://localhost:6194/api/docs/swagger.json`
 
-Use the development port `6195` when running `pnpm dev`.
+Use the development port `6195` when running `bun run dev`.
 
 ## Deployment Notes
 
 For production, build the app, run `orcd`, then start the web server:
 
 ```bash
-pnpm build
-pnpm orcd
-pnpm start
+bun run build
+bun run orcd
+bun run start
 ```
 
 If exposing Orchestrel remotely, set `CF_TEAM_DOMAIN` and put it behind Cloudflare Access. Localhost and LAN hosts bypass Access and receive the local admin identity; remote clients require a valid `CF_Authorization` cookie. Set `ADMIN_EMAILS` to grant project/user administration to specific Access users.
