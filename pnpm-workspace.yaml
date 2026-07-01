@@ -9,4 +9,7 @@ onlyBuiltDependencies:
   - esbuild
 
 patchedDependencies:
-  '@earendil-works/pi-ai@0.78.0': patches/@earendil-works__pi-ai@0.78.0.patch
+  # Version-agnostic key (no @version) so the patch applies across pi upgrades.
+  # Patch drops pi's built-in third-party model catalog, keeping only anthropic.
+  # If pi refactors dist/models.js, `pnpm install` fails loudly — re-run `pnpm patch`.
+  '@earendil-works/pi-ai': patches/@earendil-works__pi-ai.patch

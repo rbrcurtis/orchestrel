@@ -5,9 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@earendil-works/pi-ai@0.78.0':
+  '@earendil-works/pi-ai':
     hash: 23d0c31f4229e7e30831a1b4de9dca8f4db1f71c871ffa84ffc8396ecf516912
-    path: patches/@earendil-works__pi-ai@0.78.0.patch
+    path: patches/@earendil-works__pi-ai.patch
 
 importers:
 
