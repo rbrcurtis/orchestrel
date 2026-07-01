@@ -16,6 +16,7 @@ type Props = {
   accentColor?: string | null;
   model: string;
   providerID: string;
+  thinkingLevel: string;
   summarizeThreshold: number;
   onPromptSent?: () => void;
   promptFocusSeq?: number | null;
@@ -28,6 +29,7 @@ export const SessionView = observer(function SessionView({
   accentColor,
   model,
   providerID,
+  thinkingLevel,
   summarizeThreshold,
   onPromptSent,
   promptFocusSeq,
@@ -172,7 +174,7 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: string; provider?: string; summarizeThreshold?: number }) {
+  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: string; summarizeThreshold?: number }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -233,7 +235,7 @@ export const SessionView = observer(function SessionView({
               const defaultModel = models.length > 0 ? models[0][0] : 'sonnet';
               handleUpdateCard({ provider: newProvider, model: defaultModel });
             }}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 truncate"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate"
           >
             {config.allProviders.map(([id, p]) => (
               <option key={id} value={id}>
@@ -244,7 +246,7 @@ export const SessionView = observer(function SessionView({
           <select
             value={model}
             onChange={(e) => handleUpdateCard({ model: e.target.value })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 truncate"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate"
           >
             {config.getModels(providerID).map(([alias, m]) => (
               <option key={alias} value={alias}>
@@ -263,6 +265,20 @@ export const SessionView = observer(function SessionView({
             <option value="0.3">30%</option>
             <option value="0.4">40%</option>
             <option value="0.5">50%</option>
+            <option value="0.6">60%</option>
+            <option value="0.7">70%</option>
+            <option value="0.8">80%</option>
+            <option value="0.9">90%</option>
+          </select>
+          <select
+            value={thinkingLevel}
+            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value })}
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto"
+          >
+            <option value="off">Off</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
           </select>
           {isStreaming ? (
             <Button

@@ -624,6 +624,7 @@ export const CardDetail = observer(function CardDetail({
             model={card.model ?? 'sonnet'}
             providerID={card.provider ?? cardProject?.providerID ?? 'anthropic'}
             summarizeThreshold={card.summarizeThreshold ?? 0}
+            thinkingLevel={card.thinkingLevel}
             onPromptSent={onPromptSent}
             promptFocusSeq={promptFocusSeq}
           />
