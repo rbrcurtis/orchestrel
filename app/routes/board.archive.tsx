@@ -35,6 +35,8 @@ interface CardItem extends Card {
   color?: string | null;
 }
 
+const ARCHIVE_PAGE_SIZE = 50;
+
 function calcPosition(items: { position: number }[], targetIndex: number): number {
   if (items.length === 0) return 1;
   if (targetIndex === 0) return items[0].position - 1;
@@ -75,7 +77,7 @@ const ArchiveBoard = observer(function ArchiveBoard() {
     }
     setLoading(true);
     cardStore
-      .loadPage('archive', tail?.id)
+      .loadPage('archive', tail?.id, ARCHIVE_PAGE_SIZE)
       .then((r) => {
         setTotal(r.total);
         setHasMore(r.nextCursor !== undefined);

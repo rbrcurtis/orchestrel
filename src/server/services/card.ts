@@ -142,10 +142,16 @@ class CardService {
     limit = PAGE_SIZE,
     visible?: number[] | 'all',
   ): Promise<PageResult> {
-    // id is a tiebreaker so the total order is stable across calls — without it,
-    // cards sharing an updatedAt (e.g. bulk-archived) can reorder between queries,
-    // making the id cursor land at a different index and skip/duplicate a page.
-    const order = { updatedAt: 'DESC' as const, id: 'DESC' as const };
+    // Order matches the client's column sort so paged slices stay contiguous with
+    // what the UI renders: archive is newest-updated first, active columns (backlog)
+    // are position ASC. id is a tiebreaker so the total order is stable across calls
+    // — without it, cards sharing the sort key (e.g. bulk-archived, equal position)
+    // can reorder between queries, making the id cursor land at a different index
+    // and skip/duplicate a page.
+    const order =
+      column === 'archive'
+        ? { updatedAt: 'DESC' as const, id: 'DESC' as const }
+        : { position: 'ASC' as const, id: 'ASC' as const };
     const found = await Card.find({
       where: { column },
       order,

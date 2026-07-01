@@ -78,7 +78,10 @@ let rootStore: RootStore | null = null;
 if (typeof window !== 'undefined') {
   if (!(globalThis as Record<string, unknown>).__rootStore) {
     rootStore = new RootStore();
-    persistStore(rootStore.cards, 'orchestrel:cards');
+    // v2: previous key persisted every card including archive/backlog, which
+    // re-hydrated the whole accumulated set on reload. Bumping the key drops that
+    // stale blob so lazy-paged columns start empty and page 50 at a time.
+    persistStore(rootStore.cards, 'orchestrel:cards:v2');
     persistStore(rootStore.projects, 'orchestrel:projects');
     (globalThis as Record<string, unknown>).__rootStore = rootStore;
   } else {

@@ -93,7 +93,12 @@ export class CardStore {
   // ── Persistence ─────────────────────────────────────────────────────────────
 
   serialize(): Card[] {
-    return Array.from(this.cards.values());
+    // Exclude lazy-paged columns (archive, backlog): they are not part of the
+    // board subscribe and are paged 50 at a time from their routes. Persisting
+    // them would restore the entire accumulated set on reload (e.g. every card
+    // ever pulled in via "Load more"), defeating pagination — the routes re-page
+    // from an empty store instead.
+    return Array.from(this.cards.values()).filter((c) => c.column !== 'archive' && c.column !== 'backlog');
   }
 
   // ── Optimistic mutations ────────────────────────────────────────────────────

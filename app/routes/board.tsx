@@ -104,12 +104,13 @@ const BoardLayout = observer(function BoardLayout() {
   const projectStore = useProjectStore();
 
   useEffect(() => {
-    // Archive is intentionally excluded: it can hold thousands of cards and
-    // bulk-loading it bloats the store and slows every live update. The archive
-    // route lazy-loads its cards via pagination (board.archive.tsx). A card that
-    // moves out of archive still arrives live because card:updated is emitted to
-    // its destination column room too.
-    store.subscribe(['backlog', 'ready', 'running', 'review', 'done']);
+    // Backlog and archive are intentionally excluded: both can grow long, and
+    // bulk-loading them bloats the store and slows every live update. Each is
+    // lazy-paged by its route (board.index.tsx pages backlog 50 at a time;
+    // board.archive.tsx pages archive). A card that moves into backlog/archive
+    // still arrives live because card:updated is emitted to its old column room
+    // too, and onCardUpdated merges it into the store regardless of subscription.
+    store.subscribe(['ready', 'running', 'review', 'done']);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
