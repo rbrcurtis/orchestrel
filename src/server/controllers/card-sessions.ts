@@ -25,7 +25,10 @@ export function untrackSession(sessionId: string): void {
 function isBgcSystemEvent(event: Record<string, unknown>): event is { type: 'system'; subtype?: string; session_id?: string } {
   return (
     event.type === 'system' &&
-    (event.subtype === 'bgc_started' || event.subtype === 'compact_boundary')
+    (event.subtype === 'bgc_started' ||
+      event.subtype === 'compact_boundary' ||
+      event.subtype === 'compact_started' ||
+      event.subtype === 'compact_done')
   );
 }
 
@@ -112,17 +115,17 @@ export function initOrcdRouter(
           }
         }
 
-        if (sys.subtype === 'bgc_started') {
+        if (sys.subtype === 'bgc_started' || sys.subtype === 'compact_started') {
           bgcMap.set(msg.sessionId, cardId);
         }
 
-        if (sys.subtype === 'compact_boundary') {
+        if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
             card.contextTokens = 1;
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
-            console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 1`);
+            console.log(`[oc:${cardId}] ${sys.subtype}: reset contextTokens to 1`);
           }
           bgcMap.delete(msg.sessionId);
         }
@@ -336,6 +339,48 @@ export async function reconcileRunningCards(
       status: 'stopped',
     });
   }
+}
+
+// Re-arm scheduled background agents after an orcd restart. The pi-subagents
+// scheduler's timers live only in orcd memory, so a restart drops them; the
+// enabled jobs persist on disk in each worktree. For every card whose worktree
+// still has an enabled scheduled job, ask orcd to warm (resume + hold) the
+// session so the scheduler re-arms and the job fires at its time. Column-
+// independent: a job fires whether the card sits in review, done, etc. Runs at
+// startup and on every orcd reconnect — warm() no-ops if already resident.
+export async function rearmScheduledSessions(client: OrcdClient): Promise<void> {
+  const r = AppDataSource.getRepository(Card);
+  const cards = await r.find();
+  const { Project } = await import('../models/Project');
+  const { resolveWorkDir } = await import('../../shared/worktree');
+  const { hasEnabledScheduledJobs } = await import('../../shared/scheduled-jobs');
+
+  let warmed = 0;
+  for (const card of cards) {
+    if (!card.sessionId || !card.worktreeBranch || !card.projectId) continue;
+    if (client.isActive(card.sessionId)) continue;
+    const proj = await Project.findOneBy({ id: card.projectId });
+    if (!proj) continue;
+    const wt = resolveWorkDir(card.worktreeBranch, proj.path);
+    if (!hasEnabledScheduledJobs(wt)) continue;
+
+    try {
+      console.log(`[rearm] card ${card.id} has scheduled jobs; warming session ${card.sessionId.slice(0, 8)}`);
+      await client.warm({
+        sessionId: card.sessionId,
+        cwd: wt,
+        provider: card.provider,
+        model: card.model,
+        contextWindow: card.contextWindow,
+        summarizeThreshold: card.summarizeThreshold,
+      });
+      trackSession(card.id, card.sessionId);
+      warmed++;
+    } catch (err) {
+      console.error(`[rearm] card ${card.id} warm failed:`, err instanceof Error ? err.message : String(err));
+    }
+  }
+  console.log(`[rearm] scanned ${cards.length} cards, warmed ${warmed} with scheduled jobs`);
 }
 
 // ── Board event listeners ────────────────────────────────────────────────────

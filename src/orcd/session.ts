@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
 import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload, mapSubagentExecEvent } from './pi-events';
 import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
+import { hasEnabledScheduledJobs } from '../shared/scheduled-jobs';
 import { RingBuffer } from './ring-buffer';
 import type { CompactionResult } from '@earendil-works/pi-coding-agent';
 import type { ProviderConfig } from './config';
@@ -42,6 +43,7 @@ export class OrcdSession {
   private readonly lastSubagentProgress = new Map<string, string>();
   private readonly beforeExitHooks: Array<() => Promise<void>> = [];
   private readonly asyncTaskPollMs: number;
+  private readonly scheduledJobPollMs: number;
 
   private piSession: PiRuntimeSession | null = null;
   private initEmitted = false;
@@ -69,6 +71,7 @@ export class OrcdSession {
     providerConfig?: ProviderConfig;
     onFork?: (oldId: string, newId: string) => void;
     asyncTaskPollMsForTesting?: number;
+    scheduledJobPollMsForTesting?: number;
     cancelGraceMsForTesting?: number;
   }) {
     this.id = opts.sessionId ?? randomUUID();
@@ -81,6 +84,8 @@ export class OrcdSession {
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
     this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
+    // Scheduled jobs wait minutes-to-hours; poll the store file slowly.
+    this.scheduledJobPollMs = opts.scheduledJobPollMsForTesting ?? 15_000;
     this.cancelGraceMs = opts.cancelGraceMsForTesting ?? 4000;
   }
 
@@ -188,6 +193,16 @@ export class OrcdSession {
     }
   }
 
+  // Hold the session open while its worktree has an enabled scheduled job. The
+  // pi-subagents scheduler's timer lives in this process; keeping the session
+  // alive keeps the card parked (reaper- and reconcile-exempt) and isActive
+  // true until the job fires (enabled flips false) or the session is cancelled.
+  private async waitForScheduledJobs(): Promise<void> {
+    while (this.state !== 'stopped' && hasEnabledScheduledJobs(this.cwd)) {
+      await new Promise((resolve) => setTimeout(resolve, this.scheduledJobPollMs));
+    }
+  }
+
   subscribe(cb: SessionEventCallback): void {
     this.subscribers.add(cb);
   }
@@ -248,13 +263,19 @@ export class OrcdSession {
 
   private emitMappedPiEvent(event: unknown): void {
     if (this.isRecord(event) && event.type === 'compaction_start') {
-      this.emitBgcStarted();
+      // A manual `/compact` (reason 'manual') is a distinct, foreground full
+      // compaction — NOT the background compactor. Keep its lifecycle separate so
+      // the UI labels it correctly and flips the session back to idle when done.
+      if (event.reason === 'manual') this.emitCompactStarted();
+      else this.emitBgcStarted();
       return;
     }
     if (this.isRecord(event) && event.type === 'compaction_end') {
-      // Pi's own auto-compaction (the ~92% safety net) finished — surface it so
-      // the UI context wheel resets even when orcd's BGC didn't drive it.
-      this.emitCompactBoundary();
+      // Manual `/compact` finished → terminal compact_done (UI returns to idle).
+      // Otherwise it's Pi's own auto-compaction (the ~92% safety net) — surface a
+      // compact_boundary so the UI context wheel resets even when BGC didn't drive it.
+      if (event.reason === 'manual') this.emitCompactDone();
+      else this.emitCompactBoundary();
       return;
     }
     const usage = getContextUsageFromPiEvent(event, this.resolveContextWindow());
@@ -361,6 +382,11 @@ export class OrcdSession {
         await this.waitForAsyncTasks();
       }
 
+      if (this.state !== 'stopped' && hasEnabledScheduledJobs(this.cwd)) {
+        log('enabled scheduled jobs present; staying alive until they fire');
+        await this.waitForScheduledJobs();
+      }
+
       if (this.state !== 'stopped') {
         this.state = 'completed';
       }
@@ -381,6 +407,52 @@ export class OrcdSession {
         };
         for (const cb of this.subscribers) cb(msg);
       }
+    } finally {
+      await this.finalizeExit(epoch);
+    }
+  }
+
+  /**
+   * Re-instantiate the session WITHOUT running a turn, purely to re-arm the
+   * in-process pi-subagents scheduler (its timer lives only in orcd memory and
+   * is lost on restart). Binding extensions arms enabled jobs; we then hold the
+   * session open via waitForScheduledJobs so the card stays parked and isActive
+   * stays true until the job fires. No prompt, no model call. No-op if a turn is
+   * already live (the scheduler is already armed).
+   */
+  async warm(): Promise<void> {
+    if (this.running) {
+      console.log(`[orcd:${this.id.slice(0, 8)}] warm: session already active, skipping`);
+      return;
+    }
+    this.running = true;
+    const epoch = ++this.runEpoch;
+    this.exitFinalized = false;
+    const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
+    try {
+      const session = await this.getOrCreatePiSession(undefined); // bindExtensions arms the scheduler
+      if (!this.initEmitted) {
+        this.initEmitted = true;
+        this.emitSessionInit();
+      }
+      const unsubscribe = session.subscribe((event) => {
+        if (this.state !== 'stopped') this.emitMappedPiEvent(event);
+      });
+      this.currentUnsubscribe = () => {
+        if (session === this.piSession) unsubscribe();
+      };
+
+      log(`warmed (model=${this.model}); holding for scheduled jobs`);
+      if (this.state !== 'stopped' && hasEnabledScheduledJobs(this.cwd)) {
+        await this.waitForScheduledJobs();
+      }
+      if (this.state !== 'stopped') this.state = 'completed';
+      log(`warm exited (state=${this.state})`);
+    } catch (err) {
+      log(`warm error: ${err instanceof Error ? err.message : String(err)}`);
+      this.state = 'errored';
+      const msg: SessionErrorMessage = { type: 'error', sessionId: this.id, error: String(err) };
+      for (const cb of this.subscribers) cb(msg);
     } finally {
       await this.finalizeExit(epoch);
     }
@@ -496,6 +568,16 @@ export class OrcdSession {
     this.emitSyntheticSystemEvent('bgc_started');
   }
 
+  /** Foreground full-compaction (`/compact`) lifecycle — distinct from BGC so the
+   *  UI shows a "Compacting" marker and returns the session to idle on done. */
+  emitCompactStarted(): void {
+    this.emitSyntheticSystemEvent('compact_started', 'orchestrel-compact');
+  }
+
+  emitCompactDone(): void {
+    this.emitSyntheticSystemEvent('compact_done', 'orchestrel-compact');
+  }
+
   /**
    * Emit a synthetic `system`/`init` event so the UI renders its "Session started
    * · <model>" line. The Claude Agent SDK emitted this natively; Pi does not, so
@@ -522,12 +604,15 @@ export class OrcdSession {
     for (const cb of this.subscribers) cb(msg);
   }
 
-  private emitSyntheticSystemEvent(subtype: 'compact_boundary' | 'bgc_started'): void {
+  private emitSyntheticSystemEvent(
+    subtype: 'compact_boundary' | 'bgc_started' | 'compact_started' | 'compact_done',
+    source = 'orchestrel-bgc',
+  ): void {
     const event = {
       type: 'system',
       subtype,
       session_id: this.id,
-      source: 'orchestrel-bgc',
+      source,
       timestamp: Date.now(),
     };
     const eventIndex = this.buffer.push(event);

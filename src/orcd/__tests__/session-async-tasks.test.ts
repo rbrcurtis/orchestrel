@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { OrcdSession } from '../session';
 import type { PiRuntimeSession } from '../pi-runtime';
 import type { SessionEventCallback } from '../session';
@@ -252,6 +255,44 @@ describe('OrcdSession Pi runtime loop', () => {
       contextTokens: 12345,
       contextWindow: 262144,
     }));
+  });
+
+  it('delays session_exit while the worktree has an enabled scheduled job, then exits once it fires', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'orc-sess-sched-'));
+    const storeDir = join(cwd, '.pi', 'subagent-schedules');
+    mkdirSync(storeDir, { recursive: true });
+    const storeFile = join(storeDir, 'job.json');
+    const writeStore = (enabled: boolean) =>
+      writeFileSync(storeFile, JSON.stringify({ version: 1, jobs: [{ id: 'j1', enabled }] }));
+    writeStore(true);
+
+    const runtime = createRuntimeSession([], 'session-sched');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd,
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-sched',
+      scheduledJobPollMsForTesting: 5,
+    });
+
+    const received: string[] = [];
+    session.subscribe((msg) => received.push(msg.type));
+
+    const run = session.run({ prompt: 'go' });
+
+    // Turn finished but the enabled job holds the session open — no exit yet.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(received).not.toContain('session_exit');
+
+    // The "once" job fires and disables itself → session is free to exit.
+    writeStore(false);
+    await run;
+
+    expect(received.at(-1)).toBe('session_exit');
+
+    rmSync(cwd, { recursive: true, force: true });
   });
 
   it('emits session_exit after completion', async () => {

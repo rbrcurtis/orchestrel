@@ -184,6 +184,49 @@ export class OrcdClient {
   }
 
   /**
+   * Re-arm an existing session's scheduled jobs without running a turn (see
+   * WarmAction). Resolves once orcd confirms the session is resident, marking it
+   * active so reconcile/auto-start treat it as live.
+   */
+  async warm(opts: {
+    sessionId: string;
+    cwd: string;
+    provider: string;
+    model: string;
+    contextWindow?: number;
+    summarizeThreshold?: number;
+  }): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket?.writable) {
+        console.error('[orcd-client] not connected, cannot warm session');
+        reject(new Error('OrcdClient not connected'));
+        return;
+      }
+
+      const pending = {
+        resolve,
+        reject,
+        timeout: setTimeout(() => {
+          const idx = this.pendingCreates.indexOf(pending);
+          if (idx !== -1) this.pendingCreates.splice(idx, 1);
+          reject(new Error('orcd warm timeout'));
+        }, 30_000),
+      };
+      this.pendingCreates.push(pending);
+
+      this.send({
+        action: 'warm',
+        sessionId: opts.sessionId,
+        cwd: opts.cwd,
+        provider: opts.provider,
+        model: opts.model,
+        contextWindow: opts.contextWindow,
+        summarizeThreshold: opts.summarizeThreshold,
+      });
+    });
+  }
+
+  /**
    * Send a follow-up message to an existing session.
    */
   message(sessionId: string, prompt: string): void {

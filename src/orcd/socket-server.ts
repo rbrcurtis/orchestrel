@@ -107,6 +107,9 @@ export class OrcdServer {
       case 'message':
         this.handleMessage(client, action);
         break;
+      case 'warm':
+        this.handleWarm(client, action);
+        break;
       case 'set_effort':
         this.handleSetEffort(action);
         break;
@@ -171,6 +174,50 @@ export class OrcdServer {
       .finally(() => {
         console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
       });
+  }
+
+  // Re-arm a session's scheduled jobs after an orcd restart without running a
+  // turn. If the session is already resident (and thus already armed), just
+  // re-confirm it to the caller. Otherwise resume it and hold it open via
+  // OrcdSession.warm() until its scheduled jobs fire.
+  private handleWarm(client: ClientState, action: OrcdAction & { action: 'warm' }): void {
+    const existing = this.store.get(action.sessionId);
+    if (existing) {
+      console.log(`[orcd:${existing.id.slice(0, 8)}] warm: session already resident, re-confirming`);
+      this.send(client, { type: 'session_created', sessionId: existing.id });
+      return;
+    }
+
+    const providerCfg = this.providers[action.provider];
+    if (!providerCfg) {
+      console.error(`[orcd] handleWarm: unknown provider ${action.provider}`);
+      this.send(client, { type: 'error', sessionId: '', error: `unknown provider: ${action.provider}` });
+      return;
+    }
+
+    const session = new OrcdSession({
+      cwd: action.cwd,
+      model: action.model,
+      provider: action.provider,
+      providerConfig: providerCfg,
+      sessionId: action.sessionId,
+      contextWindow: action.contextWindow,
+      summarizeThreshold: action.summarizeThreshold,
+      onFork: (oldId, newId) => this.store.alias(oldId, newId),
+    });
+
+    this.store.add(session);
+    this.attachLifecycleHooks(session);
+
+    const cb: SessionEventCallback = (msg) => this.send(client, msg);
+    client.subscriptions.set(session.id, cb);
+    session.subscribe(cb);
+
+    this.send(client, { type: 'session_created', sessionId: session.id });
+
+    session.warm().finally(() => {
+      console.log(`[orcd] warmed session ${session.id.slice(0, 8)} exited (state=${session.state})`);
+    });
   }
 
   private handleMessage(client: ClientState, action: OrcdAction & { action: 'message' }): void {

@@ -18,6 +18,21 @@ export interface MessageAction {
   prompt: string;
 }
 
+// Re-instantiate an existing session WITHOUT running a turn, purely to re-arm
+// its in-process pi-subagents scheduler (lives only in orcd memory and is lost
+// on restart). The session stays alive until its scheduled jobs fire — see
+// hasEnabledScheduledJobs. Used at orc-backend startup/reconnect to make
+// scheduled background agents survive orcd restarts.
+export interface WarmAction {
+  action: 'warm';
+  sessionId: string;
+  cwd: string;
+  provider: string;
+  model: string;
+  contextWindow?: number;
+  summarizeThreshold?: number;
+}
+
 export interface SetEffortAction {
   action: 'set_effort';
   sessionId: string;
@@ -65,6 +80,7 @@ export interface CompactAction {
 export type OrcdAction =
   | CreateAction
   | MessageAction
+  | WarmAction
   | SetEffortAction
   | SubscribeAction
   | UnsubscribeAction

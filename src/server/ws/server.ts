@@ -155,7 +155,7 @@ export function wsServerPlugin(): Plugin {
               import('../../shared/config'),
               import('os'),
             ]);
-            const { initOrcdRouter, reconcileRunningCards, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive, registerProcessReaper } =
+            const { initOrcdRouter, reconcileRunningCards, rearmScheduledSessions, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive, registerProcessReaper } =
               await import('../controllers/card-sessions');
 
             let client = initState.getOrcdClient();
@@ -175,10 +175,22 @@ export function wsServerPlugin(): Plugin {
               console.error('[startup] session reconciliation failed:', err);
             }
 
+            // Re-arm scheduled background agents whose orcd-memory timers were
+            // dropped by an orcd restart. Independent of reconcile; failures
+            // here don't block startup.
+            try {
+              await rearmScheduledSessions(client);
+            } catch (err) {
+              console.error('[startup] scheduled-job re-arm failed:', err);
+            }
+
             client.onReconnect(() => {
               console.log('[orcd] orcd reconnected, reconciling running cards...');
               reconcileRunningCards(client!).catch((err) =>
                 console.error('[orcd] reconnect reconciliation failed:', err),
+              );
+              rearmScheduledSessions(client!).catch((err) =>
+                console.error('[orcd] reconnect scheduled-job re-arm failed:', err),
               );
             });
 
