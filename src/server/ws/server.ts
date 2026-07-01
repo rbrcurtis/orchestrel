@@ -161,28 +161,19 @@ export function wsServerPlugin(): Plugin {
             let client = initState.getOrcdClient();
             if (!client) {
               client = new OrcdClient(loadConfig().socket.replace(/^~/, homedir()));
-              await client.connect();
+              // Store the client BEFORE connecting. If orcd's socket isn't bound
+              // yet at startup (systemd `After=orcd.service` orders start, not
+              // socket-readiness — orcd takes ~15s to bind), connect() rejects.
+              // The client auto-reconnects internally, so once it's stored + wired
+              // here, handlers (agent:send etc.) resolve it and it works as soon as
+              // orcd comes up. Previously a startup connect() rejection aborted this
+              // whole init via the outer .catch, leaving getOrcdClient() null forever
+              // (configureServer never re-runs), which bricked all prompt submission.
               initState.setOrcdClient(client);
             }
 
             // Register the single global orcd message router
             initOrcdRouter(client);
-
-            // Reconcile running cards at startup and on every orcd reconnect
-            try {
-              await reconcileRunningCards(client);
-            } catch (err) {
-              console.error('[startup] session reconciliation failed:', err);
-            }
-
-            // Re-arm scheduled background agents whose orcd-memory timers were
-            // dropped by an orcd restart. Independent of reconcile; failures
-            // here don't block startup.
-            try {
-              await rearmScheduledSessions(client);
-            } catch (err) {
-              console.error('[startup] scheduled-job re-arm failed:', err);
-            }
 
             client.onReconnect(() => {
               console.log('[orcd] orcd reconnected, reconciling running cards...');
@@ -194,11 +185,22 @@ export function wsServerPlugin(): Plugin {
               );
             });
 
+            // Best-effort initial connect + reconcile. A failure here (orcd not up
+            // yet) must NOT abort init — the client's reconnect loop handles it, and
+            // running-card reconcile re-runs via onReconnect once orcd is reachable.
+            try {
+              await client.connect();
+              await reconcileRunningCards(client);
+              await rearmScheduledSessions(client);
+            } catch (err) {
+              console.error('[startup] orcd not reachable at init; client will auto-reconnect:', err);
+            }
+
             registerAutoStart();
             registerMemoryUpsertOnArchive();
             registerWorktreeCleanup();
             registerProcessReaper();
-            console.log('[orcd] OrcdClient connected, router + listeners registered');
+            console.log('[orcd] OrcdClient wired (router + listeners registered)');
 
             initState.markInitialized();
           },
