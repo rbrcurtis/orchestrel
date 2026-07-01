@@ -178,9 +178,12 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
     }
 
     passthroughArgs.splice(i, 1);
+    // Explicit provider, no model: use the provider's first-listed model.
+    // ORC_MODEL is a global default paired with ORC_PROVIDER; it must not
+    // leak across to a provider the user named explicitly.
     return {
       providerId: maybeProvider,
-      modelAlias: resolveProviderDefaultModelAlias(provider),
+      modelAlias: firstModelAlias(provider),
     };
   }
 
@@ -223,17 +226,6 @@ function resolveDefaultProviderAndModel(config) {
     providerId,
     modelAlias: resolveModelAlias(provider, envDefault(ENV_DEFAULT_MODEL) ?? config.defaultModel),
   };
-}
-
-function resolveProviderDefaultModelAlias(provider) {
-  const modelRef = envDefault(ENV_DEFAULT_MODEL);
-  if (modelRef) {
-    const modelAlias = tryResolveModelAlias(provider, modelRef);
-    if (modelAlias) {
-      return modelAlias;
-    }
-  }
-  return firstModelAlias(provider);
 }
 
 function envDefault(name) {
