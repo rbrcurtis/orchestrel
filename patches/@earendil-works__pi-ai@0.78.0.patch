@@ -1,0 +1,18 @@
+diff --git a/dist/models.js b/dist/models.js
+index 284a4c8c629add7f6a84f4e58b47afe717b133a6..7e949f6ad383dd711d2ed5df562bcec5d0cc0edd 100644
+--- a/dist/models.js
++++ b/dist/models.js
+@@ -1,7 +1,13 @@
+ import { MODELS } from "./models.generated.js";
+ const modelRegistry = new Map();
++// orchestrel: the built-in third-party catalog (openai/openrouter/google/...) is
++// just noise for our use. We drive everything through custom providers in
++// models.json plus built-in anthropic (Claude Max OAuth). Keep only this allowlist.
++const ORCHESTREL_BUILTIN_ALLOWLIST = new Set(["anthropic"]);
+ // Initialize registry from MODELS on module load
+ for (const [provider, models] of Object.entries(MODELS)) {
++    if (!ORCHESTREL_BUILTIN_ALLOWLIST.has(provider))
++        continue;
+     const providerModels = new Map();
+     for (const [id, model] of Object.entries(models)) {
+         providerModels.set(id, model);

@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@earendil-works/pi-ai@0.78.0':
+    hash: 23d0c31f4229e7e30831a1b4de9dca8f4db1f71c871ffa84ffc8396ecf516912
+    path: patches/@earendil-works__pi-ai@0.78.0.patch
+
 importers:
 
   .:
@@ -25,7 +30,7 @@ importers:
         version: 3.2.2(react@19.2.4)
       '@earendil-works/pi-ai':
         specifier: 0.78.0
-        version: 0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
+        version: 0.78.0(patch_hash=23d0c31f4229e7e30831a1b4de9dca8f4db1f71c871ffa84ffc8396ecf516912)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
       '@earendil-works/pi-coding-agent':
         specifier: 0.78.0
         version: 0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
@@ -5298,7 +5303,7 @@ snapshots:
 
   '@earendil-works/pi-agent-core@0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)':
     dependencies:
-      '@earendil-works/pi-ai': 0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
+      '@earendil-works/pi-ai': 0.78.0(patch_hash=23d0c31f4229e7e30831a1b4de9dca8f4db1f71c871ffa84ffc8396ecf516912)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
       ignore: 7.0.5
       typebox: 1.1.38
       yaml: 2.9.0
@@ -5310,7 +5315,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)':
+  '@earendil-works/pi-ai@0.78.0(patch_hash=23d0c31f4229e7e30831a1b4de9dca8f4db1f71c871ffa84ffc8396ecf516912)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.91.1(zod@4.3.6)
       '@aws-sdk/client-bedrock-runtime': 3.1048.0
@@ -5333,7 +5338,7 @@ snapshots:
   '@earendil-works/pi-coding-agent@0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)':
     dependencies:
       '@earendil-works/pi-agent-core': 0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
-      '@earendil-works/pi-ai': 0.78.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
+      '@earendil-works/pi-ai': 0.78.0(patch_hash=23d0c31f4229e7e30831a1b4de9dca8f4db1f71c871ffa84ffc8396ecf516912)(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.18.3)(zod@4.3.6)
       '@earendil-works/pi-tui': 0.78.0
       '@silvia-odwyer/photon-node': 0.3.4
       chalk: 5.6.2
