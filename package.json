@@ -3,8 +3,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "pnpm tsoa:generate && react-router build",
-    "dev": "pnpm tsoa:generate && cross-env NODE_ENV=development node server.js",
+    "build": "bun run tsoa:generate && react-router build",
+    "dev": "bun run tsoa:generate && cross-env NODE_ENV=development node server.js",
     "start": "cross-env TSX_TSCONFIG_PATH=./tsconfig.node.json tsx server.js",
     "typecheck": "react-router typegen && tsc -b",
     "test": "cross-env NODE_ENV=test vitest run",
@@ -13,7 +13,7 @@
     "tsoa:generate": "tsoa spec-and-routes",
     "orcd": "tsx src/orcd/index.ts",
     "prepare": "husky",
-    "cap:sync": "pnpm build && cap sync",
+    "cap:sync": "bun run build && cap sync",
     "cap:open:ios": "cap open ios",
     "cap:open:android": "cap open android"
   },
@@ -89,5 +89,13 @@
     "vite": "^7.1.7",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^4.0.18"
+  },
+  "trustedDependencies": [
+    "@scarf/scarf",
+    "better-sqlite3",
+    "esbuild"
+  ],
+  "patchedDependencies": {
+    "@earendil-works/pi-ai@0.80.3": "patches/@earendil-works__pi-ai.patch"
   }
 }
