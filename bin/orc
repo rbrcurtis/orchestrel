@@ -79,7 +79,11 @@ function main() {
   }
 
   rejectConflictingArgs(passthroughArgs);
-  const piArgs = buildPiArgs(model.modelID, passthroughArgs, prompt);
+  // Qualify the model with its provider — a bare model id like "auto" is
+  // ambiguous (pi's built-in openrouter also has "auto") and pi rejects
+  // ambiguous bare ids. "provider/id" resolves to exactly our provider.
+  const modelSpec = `${resolved.providerId}/${model.modelID}`;
+  const piArgs = buildPiArgs(modelSpec, passthroughArgs, prompt);
 
   const env = buildPiEnv(provider);
   if (args['--print-env']) {
