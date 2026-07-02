@@ -654,7 +654,7 @@ async function startCardSession(
     const { ensureWorktree } = await import('../sessions/worktree');
     const cwd = await ensureWorktree(card, client);
     const startedFromDescription = !card.sessionId;
-    const prompt = card.sessionId ? '' : card.description ?? '';
+    const prompt = card.sessionId ? '' : (card.description || card.title);
 
     const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
     const sessionId = await client.create({
