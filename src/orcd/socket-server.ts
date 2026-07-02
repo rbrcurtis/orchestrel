@@ -149,6 +149,9 @@ export class OrcdServer {
       case 'path_validate':
         this.handlePathValidate(client, action);
         break;
+      case 'get_history':
+        this.handleGetHistory(client, action);
+        break;
     }
   }
 
@@ -416,6 +419,17 @@ export class OrcdServer {
     const { validatePath } = await import('./worktree-ops');
     const res = await validatePath(action.path);
     this.send(client, { type: 'path_validated', requestId: action.requestId, ...res });
+  }
+
+  private async handleGetHistory(client: ClientState, action: OrcdAction & { action: 'get_history' }): Promise<void> {
+    try {
+      const { getPiSessionMessages } = await import('../lib/pi-session-history');
+      const messages = await getPiSessionMessages(action.sessionId, action.cwd);
+      this.send(client, { type: 'history', requestId: action.requestId, messages });
+    } catch (err) {
+      console.error(`[orcd] get_history error:`, err);
+      this.send(client, { type: 'history', requestId: action.requestId, messages: [] });
+    }
   }
 
   // ── Provider env helper ──────────────────────────────────────────────────

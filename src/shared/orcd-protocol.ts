@@ -119,6 +119,13 @@ export interface PathValidateAction {
   path: string;
 }
 
+export interface GetHistoryAction {
+  action: 'get_history';
+  requestId?: string;
+  sessionId: string;
+  cwd: string;
+}
+
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -134,7 +141,8 @@ export type OrcdAction =
   | CapabilitiesAction
   | WorktreePrepareAction
   | WorktreeRemoveAction
-  | PathValidateAction;
+  | PathValidateAction
+  | GetHistoryAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -234,6 +242,12 @@ export interface PathValidatedMessage {
   defaultBranch: string | null;
 }
 
+export interface HistoryMessage {
+  type: 'history';
+  requestId?: string;
+  messages: unknown[];
+}
+
 export type OrcdMessage =
   | SessionCreatedMessage
   | StreamEventMessage
@@ -247,4 +261,5 @@ export type OrcdMessage =
   | CapabilitiesMessage
   | WorktreeReadyMessage
   | OkMessage
-  | PathValidatedMessage;
+  | PathValidatedMessage
+  | HistoryMessage;

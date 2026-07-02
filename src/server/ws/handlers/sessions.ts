@@ -27,8 +27,21 @@ export async function handleSessionLoad(
       const proj = await Project.findOneBy({ id: card.projectId });
       if (proj) {
         const cwd = resolveWorkDir(card.worktreeBranch ?? null, proj.path);
-        messages = await getPiSessionMessages(card.sessionId, cwd);
-        console.log(`[session:load] cardId=${cardId} loaded ${messages.length} messages from Pi session history`);
+        const initState = await import('../../init-state');
+        const client = initState.getClientByNode(card.nodeName);
+
+        if (client && card.nodeName !== 'local') {
+          // Remote node: fetch history over the wire
+          try {
+            messages = await client.getHistory(card.sessionId, cwd);
+          } catch (err) {
+            console.error(`[session:load] remote history fetch failed:`, err);
+          }
+        } else {
+          // Local node: read session files directly
+          messages = await getPiSessionMessages(card.sessionId, cwd);
+        }
+        console.log(`[session:load] cardId=${cardId} loaded ${messages.length} messages`);
       }
     }
 

@@ -388,6 +388,15 @@ export class OrcdClient {
     if (msg.type !== 'ok') throw new Error('expected ok reply');
   }
 
+  /**
+   * Get session history (conversation messages) from the remote node's local files.
+   */
+  async getHistory(sessionId: string, cwd: string): Promise<unknown[]> {
+    const msg = await this.request({ action: 'get_history', sessionId, cwd } as OrcdAction);
+    if (msg.type !== 'history') throw new Error('expected history reply');
+    return msg.messages;
+  }
+
   isConnected(): boolean {
     return this.connected;
   }
