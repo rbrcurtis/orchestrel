@@ -38,6 +38,7 @@ function makeProject(id: number, name: string): Project {
     isGitRepo: true,
     defaultBranch: 'main',
     defaultWorktree: false,
+    defaultSandbox: false,
     defaultModel: 'sonnet',
     defaultThinkingLevel: 'high',
     providerID: 'anthropic',

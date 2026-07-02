@@ -17,6 +17,7 @@ function makeProject(id: number, name: string, archived = false): Project {
     isGitRepo: true,
     defaultBranch: 'main',
     defaultWorktree: false,
+    defaultSandbox: false,
     defaultModel: 'sonnet',
     defaultThinkingLevel: 'high',
     providerID: 'anthropic',

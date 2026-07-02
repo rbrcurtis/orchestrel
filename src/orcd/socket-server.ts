@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from 'net';
 import { upsertMemories } from '../lib/memory-upsert';
-import { applyCompaction, prepareCompaction, type PreparedCompaction } from '../lib/session-compactor';
 import type { CapabilitiesMessage, OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import { isCompactCommand } from '../shared/slash-commands';
 import type { OrcdConfig, ProviderConfig } from './config';
 
 export interface OrcdListenConfig {
@@ -24,10 +24,7 @@ export class OrcdServer {
   private clients = new Set<ClientState>();
   readonly store = new SessionStore();
   private compacting = new Set<string>(); // session IDs currently compacting
-  private pendingSummaries = new Map<string, PreparedCompaction>();
-  private applyingSummaries = new Set<string>();
-  private exitedSessions = new Set<string>(); // sessions that reached beforeExit
-  private turnActive = new Set<string>(); // sessions with a turn in progress
+  private pendingApply = new Map<string, import('@earendil-works/pi-coding-agent').CompactionResult>();
   private upsertedSessions = new Set<string>(); // sessions that have had memory upsert run
   private memoryConfig?: OrcdConfig['memoryUpsert'];
 
@@ -116,6 +113,9 @@ export class OrcdServer {
       case 'message':
         this.handleMessage(client, action);
         break;
+      case 'warm':
+        this.handleWarm(client, action);
+        break;
       case 'set_effort':
         this.handleSetEffort(action);
         break;
@@ -186,6 +186,7 @@ export class OrcdServer {
       cwd: action.cwd,
       model: action.model,
       provider: action.provider,
+      providerConfig: providerCfg,
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
@@ -205,18 +206,59 @@ export class OrcdServer {
 
     const effort = action.effort ?? 'high';
 
-    const env = Object.assign(this.buildProviderEnv(action.provider), action.env) as Record<string, string>;
-
     session
       .run({
         prompt: action.prompt,
         resume: !!action.sessionId,
-        env,
         effort,
       })
       .finally(() => {
         console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
       });
+  }
+
+  // Re-arm a session's scheduled jobs after an orcd restart without running a
+  // turn. If the session is already resident (and thus already armed), just
+  // re-confirm it to the caller. Otherwise resume it and hold it open via
+  // OrcdSession.warm() until its scheduled jobs fire.
+  private handleWarm(client: ClientState, action: OrcdAction & { action: 'warm' }): void {
+    const existing = this.store.get(action.sessionId);
+    if (existing) {
+      console.log(`[orcd:${existing.id.slice(0, 8)}] warm: session already resident, re-confirming`);
+      this.send(client, { type: 'session_created', sessionId: existing.id });
+      return;
+    }
+
+    const providerCfg = this.providers[action.provider];
+    if (!providerCfg) {
+      console.error(`[orcd] handleWarm: unknown provider ${action.provider}`);
+      this.send(client, { type: 'error', sessionId: '', error: `unknown provider: ${action.provider}` });
+      return;
+    }
+
+    const session = new OrcdSession({
+      cwd: action.cwd,
+      model: action.model,
+      provider: action.provider,
+      providerConfig: providerCfg,
+      sessionId: action.sessionId,
+      contextWindow: action.contextWindow,
+      summarizeThreshold: action.summarizeThreshold,
+      onFork: (oldId, newId) => this.store.alias(oldId, newId),
+    });
+
+    this.store.add(session);
+    this.attachLifecycleHooks(session);
+
+    const cb: SessionEventCallback = (msg) => this.send(client, msg);
+    client.subscriptions.set(session.id, cb);
+    session.subscribe(cb);
+
+    this.send(client, { type: 'session_created', sessionId: session.id });
+
+    session.warm().finally(() => {
+      console.log(`[orcd] warmed session ${session.id.slice(0, 8)} exited (state=${session.state})`);
+    });
   }
 
   private handleMessage(client: ClientState, action: OrcdAction & { action: 'message' }): void {
@@ -234,7 +276,15 @@ export class OrcdServer {
       session.subscribe(cb);
     }
 
-    const env = this.buildProviderEnv(session.provider);
+    // `/compact` (and other Pi TUI slash commands) are not interpreted on the
+    // headless SDK path — without this they reach the model as literal prompt
+    // text. The chat command runs Pi's full native compaction (not the
+    // background compactor, which the UI context wheel drives separately).
+    if (isCompactCommand(action.prompt)) {
+      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → full compaction`);
+      void this.runFullCompaction(session);
+      return;
+    }
 
     if (!action.prompt.trim()) {
       console.warn(`[orcd:${action.sessionId.slice(0, 8)}] handleMessage: empty prompt, dropping`);
@@ -242,7 +292,7 @@ export class OrcdServer {
       return;
     }
 
-    session.sendMessage(action.prompt, env).finally(() => {
+    session.sendMessage(action.prompt).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }
@@ -265,8 +315,9 @@ export class OrcdServer {
       console.log(
         `[orcd:${session.id.slice(0, 8)}] handleSubscribe: client already subscribed, replaying from ${action.afterEventIndex}`,
       );
-      // Already subscribed — just replay from requested index
-      session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
+      if (action.afterEventIndex !== undefined) {
+        session.replay(action.afterEventIndex, (msg) => this.send(client, msg));
+      }
       return;
     }
 
@@ -306,12 +357,12 @@ export class OrcdServer {
   private handleCompact(client: ClientState, action: OrcdAction & { action: 'compact' }): void {
     let session = this.store.get(action.sessionId);
     const hydrated = !session;
-
     if (!session) {
       session = new OrcdSession({
         cwd: action.cwd,
         model: action.model,
         provider: action.provider,
+        providerConfig: this.providers[action.provider],
         sessionId: action.sessionId,
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,
@@ -320,39 +371,17 @@ export class OrcdServer {
       session.state = 'completed';
       this.store.add(session);
       this.attachLifecycleHooks(session);
-      console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: rehydrated inactive session`);
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] rehydrated inactive session for manual compact`);
     }
-
     if (!client.subscriptions.has(session.id)) {
       const cb: SessionEventCallback = (msg) => this.send(client, msg);
       client.subscriptions.set(session.id, cb);
       session.subscribe(cb);
     }
-
-    if (this.compacting.has(session.id) || this.pendingSummaries.has(session.id)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}:compact] handleCompact: already compacting or pending, ignoring`);
-      return;
-    }
-
-    this.compacting.add(session.id);
-    if (hydrated || session.state !== 'running') {
-      this.exitedSessions.add(session.id);
-    }
-    session.emitBgcStarted();
-    this.triggerCompaction(session)
-      .catch((err) => {
-        console.error(`[orcd:${session.id.slice(0, 8)}:compact] manual start failed:`, err);
-      })
-      .finally(() => {
-        this.compacting.delete(session.id);
-        if (hydrated) {
-          this.pendingSummaries.delete(session.id);
-          this.applyingSummaries.delete(session.id);
-          this.exitedSessions.delete(session.id);
-          this.turnActive.delete(session.id);
-          this.store.remove(session.id);
-        }
-      });
+    const run = action.mode === 'full' ? this.runFullCompaction(session) : this.maybeStartBgc(session);
+    void run.finally(() => {
+      if (hydrated) this.store.remove(session.id);
+    });
   }
 
   // ── Worktree / path actions ────────────────────────────────────────────────
@@ -398,29 +427,11 @@ export class OrcdServer {
       return { ...process.env } as Record<string, string>;
     }
 
-    const providerConfig: Record<string, string> = {};
-    if (cfg.type === 'bedrock') {
-      providerConfig.CLAUDE_CODE_USE_BEDROCK = '1';
-      if (cfg.region) providerConfig.AWS_REGION = cfg.region;
-      if (cfg.profile) providerConfig.AWS_PROFILE = cfg.profile;
-    } else {
-      if (cfg.baseUrl) providerConfig.ANTHROPIC_BASE_URL = cfg.baseUrl;
-      if (cfg.apiKey) providerConfig.ANTHROPIC_API_KEY = cfg.apiKey;
-      if (cfg.authToken) providerConfig.ANTHROPIC_AUTH_TOKEN = cfg.authToken;
-    }
-
-    // modelAliasEnv sets ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL so the SDK's
-    // internal subagent spawning (Explore agents, etc.) uses the provider's tiered
-    // model mapping. Configured via the provider's `aliases` section in config.yaml
-    // (or positional fallback if aliases absent). Single-model servers should set
-    // all aliases to the same key to prevent model thrashing.
-    return Object.assign(
-      {},
-      process.env,
-      { CC_BACKGROUND_COMPACTOR_DISABLE: '1' },
-      { ...providerConfig },
-      cfg.modelAliasEnv,
-    ) as Record<string, string>;
+    // Pi runtime injects provider baseUrl/apiKey via the Model object and
+    // AuthStorage.setRuntimeApiKey (see pi-runtime.ts) — not via process.env.
+    // modelAliasEnv sets ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL for tiered
+    // subagent model mapping, configured via the provider's `aliases` in config.yaml.
+    return Object.assign({}, process.env, cfg.modelAliasEnv) as Record<string, string>;
   }
 
   // ── Memory upsert ───────────────────────────────────────────────────────
@@ -455,69 +466,79 @@ export class OrcdServer {
     log(`done: search=${search} store=${store} update=${update} delete=${del} (${result.durationMs}ms)`);
   }
 
-  // ── Compaction ──────────────────────────────────────────────────────────
+  // ── Full compaction (chat `/compact`) ───────────────────────────────────
 
-  private async triggerCompaction(session: OrcdSession): Promise<void> {
+  /**
+   * Pi's native blocking compaction — summarizes the whole conversation and
+   * rebuilds context in one shot, the same behavior as `/compact` in the Pi TUI.
+   * No synthetic bgc_started/compact_boundary markers: Pi ends the turn and the
+   * context gauge self-corrects from the next turn's usage event. (The UI's
+   * "Background compaction" markers are for the context-wheel BGC path only.)
+   */
+  private async runFullCompaction(session: OrcdSession): Promise<void> {
     const sid = session.id;
-    const log = (msg: string) => console.log(`[orcd:${sid.slice(0, 8)}:compact] ${msg}`);
-    const env = this.buildProviderEnv(session.provider);
-
-    // Memory upsert is NOT run here — it only runs on card finish
-    // (session_exit = move to review, or explicit archive action). Running
-    // it every compaction cycle produced redundant work against unchanged
-    // context and wasted tokens. See memory 'Auto-memory upsert architecture'.
-
-    // Prepare summary (read-only, safe while session runs)
-    const pct =
-      session.lastContextWindow > 0 ? ((session.lastContextTokens / session.lastContextWindow) * 100).toFixed(0) : '?';
-    log(`preparing summary (${session.lastContextTokens}/${session.lastContextWindow} = ${pct}%)`);
-
-    const prepared = await prepareCompaction({
-      sessionId: sid,
-      projectPath: session.cwd,
-      model: session.model,
-      env,
-      contextWindow: session.contextWindow,
-    });
-
-    this.pendingSummaries.set(sid, prepared);
-    if (this.exitedSessions.has(sid)) {
-      log(
-        `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — beforeExit already reached, applying now`,
-      );
-      await this.applyPendingCompaction(session);
+    if (this.compacting.has(sid) || this.pendingApply.has(sid)) {
+      console.log(`[orcd:${sid.slice(0, 8)}:compact] already in flight or pending, ignoring`);
       return;
     }
-    log(
-      `summary ready (${prepared.messagesCovered}/${prepared.messagesBefore} msgs, ${prepared.summaryChars} chars, ${prepared.prepareDurationMs}ms) — waiting for beforeExit`,
-    );
+    this.compacting.add(sid);
+    try {
+      await session.compact();
+      console.log(`[orcd:${sid.slice(0, 8)}:compact] full compaction applied`);
+    } catch (err) {
+      console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err instanceof Error ? err.message : String(err));
+    } finally {
+      this.compacting.delete(sid);
+    }
   }
 
-  private async applyPendingCompaction(session: OrcdSession): Promise<void> {
+  // ── Background compaction ───────────────────────────────────────────────
+
+  private readonly BGC_KEEP_FRACTION = 0.5;
+
+  /**
+   * Background compactor. Summarize the oldest ~50% off-band (parallel-safe).
+   * If the session is idle, splice the Pi-native compaction entry now; otherwise
+   * defer the splice to the next run-end (onBeforeExit) — never mutate the agent
+   * message array mid-run. Pi's own auto-compaction is the within-run safety net.
+   */
+  private async maybeStartBgc(session: OrcdSession): Promise<void> {
     const sid = session.id;
-    if (this.applyingSummaries.has(sid)) {
-      console.log(`[orcd:${sid.slice(0, 8)}:compact] summary apply already in progress`);
+    if (this.compacting.has(sid) || this.pendingApply.has(sid)) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] already in flight or pending, ignoring`);
       return;
     }
-
-    const prepared = this.pendingSummaries.get(sid);
-    if (!prepared) {
-      console.log(`[orcd:${sid.slice(0, 8)}:compact] no pending summary at beforeExit`);
-      return;
-    }
-
-    this.applyingSummaries.add(sid);
-    this.pendingSummaries.delete(sid);
-    console.log(`[orcd:${sid.slice(0, 8)}:compact] applying pre-computed summary at beforeExit`);
+    this.compacting.add(sid);
+    // Cancellation is not wired yet; summarization is short-lived.
+    const signal = new AbortController().signal;
     try {
-      const result = await applyCompaction(prepared);
-      console.log(
-        `[orcd:${sid.slice(0, 8)}:compact] applied: ${result.messagesCovered}/${result.messagesBefore} msgs, ${result.summaryChars} chars`,
-      );
-      session.emitCompactBoundary();
+      session.emitBgcStarted();
+      const result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal);
+      if (!result) {
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] nothing to compact`);
+        return;
+      }
+      if (session.isIdle()) {
+        this.applyBgcResult(session, result);
+      } else {
+        this.pendingApply.set(sid, result);
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready; deferring splice to run-end`);
+      }
+    } catch (err) {
+      console.error(`[orcd:${sid.slice(0, 8)}:bgc] failed:`, err instanceof Error ? err.message : String(err));
     } finally {
-      this.applyingSummaries.delete(sid);
+      this.compacting.delete(sid);
     }
+  }
+
+  /** Splice a prepared compaction unless Pi's safety net already compacted. */
+  private applyBgcResult(session: OrcdSession, result: import('@earendil-works/pi-coding-agent').CompactionResult): void {
+    if (session.latestEntryIsCompaction()) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] stale — a compaction already landed, skipping apply`);
+      return;
+    }
+    session.applyBgCompaction(result);
+    console.log(`[orcd:${session.id.slice(0, 8)}:bgc] applied (tokensBefore=${result.tokensBefore})`);
   }
 
   // ── Session lifecycle hooks (called from handleCreate) ──────────────────
@@ -525,58 +546,32 @@ export class OrcdServer {
   private attachLifecycleHooks(session: OrcdSession): void {
     const sid = session.id;
 
+    // onBeforeExit hooks are persistent (fire on every run-end), so register the
+    // deferred-splice apply once per session and make it one-shot via pendingApply.
     session.onBeforeExit(async () => {
-      this.exitedSessions.add(sid);
-      try {
-        await this.applyPendingCompaction(session);
-      } catch (err) {
-        console.error(`[orcd:${sid.slice(0, 8)}:compact] beforeExit apply failed:`, err);
-      }
+      const pending = this.pendingApply.get(sid);
+      // oxlint-disable-next-line orchestrel/log-before-early-return -- no pending splice is the common no-op case
+      if (!pending) return;
+      this.pendingApply.delete(sid);
+      this.applyBgcResult(session, pending);
     });
 
     const hook: SessionEventCallback = (msg) => {
-      if (msg.type === 'stream_event') {
-        const event = msg.event as Record<string, unknown>;
-        if (event.type === 'message_start') {
-          this.exitedSessions.delete(sid);
-          this.turnActive.add(sid);
-        }
-      }
-
-      if (msg.type === 'result') {
-        this.turnActive.delete(sid);
-      }
-
       if (msg.type === 'context_usage') {
-        // Check threshold for auto-compaction
         if (
           session.summarizeThreshold > 0 &&
           msg.contextWindow > 0 &&
           !this.compacting.has(sid) &&
-          !this.pendingSummaries.has(sid) &&
+          !this.pendingApply.has(sid) &&
           msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
         ) {
-          this.compacting.add(sid);
           const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
-          console.log(`[orcd:${sid.slice(0, 8)}:compact] threshold hit (${pct}%), starting`);
-          session.emitBgcStarted();
-          this.triggerCompaction(session)
-            .catch((err) => {
-              console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err);
-            })
-            .finally(() => {
-              this.compacting.delete(sid);
-            });
+          console.log(`[orcd:${sid.slice(0, 8)}:bgc] threshold hit (${pct}%), starting`);
+          void this.maybeStartBgc(session);
         }
       }
 
       if (msg.type === 'session_exit') {
-        // Do not clear compacting/pending summary state here.
-        // A background compaction may still be preparing after the agent turn
-        // exits, and clearing the guard early allows a resumed session to start
-        // another compaction before the first one finishes.
-        this.turnActive.delete(sid);
-
         // Auto memory upsert on exit
         this.runMemoryUpsert(session).catch((err) => {
           console.error(`[orcd:${sid.slice(0, 8)}:mem] exit upsert failed:`, err);

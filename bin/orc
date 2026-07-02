@@ -2,20 +2,21 @@
 
 import arg from 'arg';
 import Database from 'better-sqlite3';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { buildModelAliasEnv, parseConfig } from '../src/shared/config.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
 const DEFAULT_CONFIG_PATH = resolve(REPO_ROOT, 'config.yaml');
-const DEFAULT_CCH_PATH = '/home/ryan/.local/bin/cch';
+const DEFAULT_PI_PATH = resolve(REPO_ROOT, 'node_modules', '.bin', 'pi');
 const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
-const CLAUDE_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 const ENV_DEFAULT_PROVIDER = 'ORC_PROVIDER';
 const ENV_DEFAULT_MODEL = 'ORC_MODEL';
+const LEGACY_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 
 const args = arg(
   {
@@ -23,6 +24,8 @@ const args = arg(
     '-h': '--help',
     '--config': String,
     '--print-env': Boolean,
+    '--prompt': String,
+    '-p': '--prompt',
   },
   {
     permissive: true,
@@ -31,17 +34,19 @@ const args = arg(
 
 function usage() {
   return [
-    'Usage: orc [options] [claude args...] [provider model]',
+    'Usage: orc [options] [pi args...] [provider model]',
     '',
     'Examples:',
     '  orc trackable auto',
-    '  orc --resume abc123 trackable auto',
-    '  orc trackable auto "what time is it?"',
+    '  orc --resume abc123 trackable auto   # resume session abc123 directly',
+    '  orc --resume trackable auto          # open the session picker',
+    '  orc -p "what time is it?" trackable auto',
     '  orc --print-env trackable auto',
     '',
     'Options:',
     '  --config <path>   Override config.yaml path',
     '  --print-env       Print resolved env/model and exit',
+    '  -p, --prompt      Run a one-shot prompt through Pi',
     '  -h, --help        Show help',
     '',
     'Environment:',
@@ -59,8 +64,11 @@ function main() {
   const configPath = resolveConfigPath(args['--config']);
   const config = loadWrapperConfig(configPath);
   const passthroughArgs = [...args._];
+  stripSkipPermissionsFlag(passthroughArgs);
   const resumeTarget = extractResumeTarget(passthroughArgs);
+  rewriteResumeToSession(passthroughArgs, config);
 
+  const prompt = args['--prompt'];
   const resolved = extractProviderAndModel(config, passthroughArgs, resumeTarget);
   const provider = config.providers[resolved.providerId];
   if (!provider) {
@@ -73,9 +81,13 @@ function main() {
   }
 
   rejectConflictingArgs(passthroughArgs);
-  const cchArgs = buildCchArgs(model.modelID, passthroughArgs);
+  // Qualify the model with its provider — a bare model id like "auto" is
+  // ambiguous (pi's built-in openrouter also has "auto") and pi rejects
+  // ambiguous bare ids. "provider/id" resolves to exactly our provider.
+  const modelSpec = `${resolved.providerId}/${model.modelID}`;
+  const piArgs = buildPiArgs(modelSpec, passthroughArgs, prompt);
 
-  const env = buildClaudeEnv(provider);
+  const env = buildPiEnv(provider);
   if (args['--print-env']) {
     process.stdout.write(
       JSON.stringify(
@@ -85,8 +97,9 @@ function main() {
           modelID: model.modelID,
           ...(resolved.card ? { card: resolved.card } : {}),
           env,
-          claudeArgs: passthroughArgs,
-          cchArgs,
+          passthroughArgs,
+          piArgs,
+          piPath: resolvePiPath(),
           configPath,
         },
         null,
@@ -96,10 +109,16 @@ function main() {
     return;
   }
 
-  const cchPath = resolveCchPath();
+  // Pi (the binary) only knows its built-in providers plus whatever is in
+  // ~/.pi/agent/models.json. orcd registers custom providers programmatically
+  // via the SDK, but this standalone wrapper spawns the pi binary, so we must
+  // materialize custom providers to models.json or pi rejects the model ID.
+  syncModelsJson(config);
+
+  const piPath = requirePiPath();
   const child = spawn(
-    cchPath,
-    cchArgs,
+    piPath,
+    piArgs,
     {
       stdio: 'inherit',
       env: {
@@ -118,7 +137,7 @@ function main() {
   });
 
   child.on('error', (err) => {
-    console.error(`orc: failed to launch cch: ${err.message}`);
+    console.error(`orc: failed to launch pi: ${err.message}`);
     process.exit(1);
   });
 }
@@ -156,10 +175,21 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
       }
     }
 
+    const trailingModel = args['--prompt'] ? findPromptTrailingModel(provider, passthroughArgs, i) : null;
+    if (trailingModel) {
+      return {
+        providerId: maybeProvider,
+        modelAlias: trailingModel,
+      };
+    }
+
     passthroughArgs.splice(i, 1);
+    // Explicit provider, no model: use the provider's first-listed model.
+    // ORC_MODEL is a global default paired with ORC_PROVIDER; it must not
+    // leak across to a provider the user named explicitly.
     return {
       providerId: maybeProvider,
-      modelAlias: resolveProviderDefaultModelAlias(provider),
+      modelAlias: firstModelAlias(provider),
     };
   }
 
@@ -181,6 +211,16 @@ function extractProviderAndModel(config, passthroughArgs, resumeTarget) {
   return resolveDefaultProviderAndModel(config);
 }
 
+function findPromptTrailingModel(provider, passthroughArgs, providerIndex) {
+  const lastIndex = passthroughArgs.length - 1;
+  if (lastIndex <= providerIndex) return null;
+  const modelAlias = tryResolveModelAlias(provider, passthroughArgs[lastIndex]);
+  if (!modelAlias) return null;
+  passthroughArgs.splice(lastIndex, 1);
+  passthroughArgs.splice(providerIndex, 1);
+  return modelAlias;
+}
+
 function resolveDefaultProviderAndModel(config) {
   const providerId = envDefault(ENV_DEFAULT_PROVIDER) ?? config.defaultProvider;
   const provider = config.providers[providerId];
@@ -192,17 +232,6 @@ function resolveDefaultProviderAndModel(config) {
     providerId,
     modelAlias: resolveModelAlias(provider, envDefault(ENV_DEFAULT_MODEL) ?? config.defaultModel),
   };
-}
-
-function resolveProviderDefaultModelAlias(provider) {
-  const modelRef = envDefault(ENV_DEFAULT_MODEL);
-  if (modelRef) {
-    const modelAlias = tryResolveModelAlias(provider, modelRef);
-    if (modelAlias) {
-      return modelAlias;
-    }
-  }
-  return firstModelAlias(provider);
 }
 
 function envDefault(name) {
@@ -229,6 +258,34 @@ function extractResumeTarget(passthroughArgs) {
     }
   }
   return null;
+}
+
+// Pi's `--resume`/`-r` is a bare boolean that always opens the interactive
+// session picker — it never consumes the id after it. Resume-by-id in pi is a
+// separate flag, `--session <id>` (matches by exact id or id-prefix, opens
+// immediately). So when the user passes `--resume <id>`, rewrite it to
+// `--session <id>` before handing off. A bare `--resume` (no id, or followed by
+// a provider/flag) is left alone so the picker still works.
+function rewriteResumeToSession(passthroughArgs, config) {
+  for (let i = 0; i < passthroughArgs.length; i += 1) {
+    const token = passthroughArgs[i];
+    let id = null;
+    let pairLen = 0;
+    if (token === '--resume' || token === '-r') {
+      id = passthroughArgs[i + 1] ?? null;
+      pairLen = 2;
+    } else if (token?.startsWith('--resume=')) {
+      id = token.slice('--resume='.length);
+      pairLen = 1;
+    } else {
+      continue;
+    }
+    // Only a real session id gets rewritten; a flag or known provider means the
+    // user wants the picker (optionally scoped by a following provider arg).
+    if (!id || id.startsWith('-') || config.providers[id]) return;
+    passthroughArgs.splice(i, pairLen, '--session', id);
+    return;
+  }
 }
 
 function findCardBySessionId(sessionId) {
@@ -302,6 +359,14 @@ function resolveDbPath() {
   return DEFAULT_DB_PATH;
 }
 
+function stripSkipPermissionsFlag(passthroughArgs) {
+  for (let i = passthroughArgs.length - 1; i >= 0; i -= 1) {
+    if (passthroughArgs[i] === LEGACY_SKIP_PERMISSIONS_FLAG) {
+      passthroughArgs.splice(i, 1);
+    }
+  }
+}
+
 function rejectConflictingArgs(passthroughArgs) {
   for (const token of passthroughArgs) {
     if (token === '--model' || token === '-m' || token.startsWith('--model=')) {
@@ -310,34 +375,66 @@ function rejectConflictingArgs(passthroughArgs) {
   }
 }
 
-function buildClaudeEnv(provider) {
-  const env = {
-    ANTHROPIC_BASE_URL: '',
-    ANTHROPIC_API_KEY: '',
-    ANTHROPIC_AUTH_TOKEN: '',
-    ...buildModelAliasEnv(provider.models),
-  };
-
-  if (provider.baseUrl) env.ANTHROPIC_BASE_URL = provider.baseUrl;
-  if (provider.apiKey) env.ANTHROPIC_API_KEY = provider.apiKey;
-  if (provider.authToken) env.ANTHROPIC_AUTH_TOKEN = provider.authToken;
-
-  return env;
-}
-
-function buildCchArgs(modelId, passthroughArgs) {
-  const args = ['--model', modelId, ...passthroughArgs];
-  if (!args.includes(CLAUDE_SKIP_PERMISSIONS_FLAG)) {
-    args.unshift(CLAUDE_SKIP_PERMISSIONS_FLAG);
+// Mirror orcd's registerOrchestrelProvider: every config provider that isn't
+// pi's built-in anthropic (i.e. has a baseUrl) gets written to models.json so
+// the pi binary can resolve its model IDs. Built-in anthropic (Claude Max
+// OAuth, no baseUrl) is left untouched.
+function syncModelsJson(config) {
+  const providers = {};
+  for (const [id, provider] of Object.entries(config.providers)) {
+    if (!provider.baseUrl) continue;
+    const api = provider.type === 'bedrock' ? 'bedrock-converse-stream' : 'anthropic-messages';
+    const apiKey = provider.apiKey || provider.authToken;
+    providers[id] = {
+      name: provider.label ?? id,
+      api,
+      baseUrl: provider.baseUrl,
+      ...(apiKey ? { apiKey } : {}),
+      models: Object.entries(provider.models).map(([alias, model]) => ({
+        id: model.modelID,
+        name: model.label ?? alias,
+        api,
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: model.contextWindow,
+        maxTokens: 64000,
+      })),
+    };
   }
-  return args;
+
+  // models.json holds provider apiKey/authToken, so keep it owner-only.
+  const modelsPath = resolve(getAgentDir(), 'models.json');
+  const dir = dirname(modelsPath);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+  const tmp = `${modelsPath}.orc-tmp`;
+  writeFileSync(tmp, JSON.stringify({ providers }, null, 2) + '\n', { mode: 0o600 });
+  renameSync(tmp, modelsPath);
 }
 
-function resolveCchPath() {
-  const override = process.env.ORC_CCH_PATH;
-  if (override && existsSync(override)) return override;
-  if (existsSync(DEFAULT_CCH_PATH)) return DEFAULT_CCH_PATH;
-  throw new Error(`cch not found at ${DEFAULT_CCH_PATH}`);
+function buildPiEnv(provider) {
+  // Provider baseUrl/auth reach pi via ~/.pi/agent/models.json (see syncModelsJson),
+  // not env — pi ignores PI_BASE_URL/PI_API_KEY/PI_AUTH_TOKEN. The only env pi
+  // consumes here is the ANTHROPIC_DEFAULT_*_MODEL alias map for subagent tiers.
+  return buildModelAliasEnv(provider.models);
+}
+
+function buildPiArgs(modelId, passthroughArgs, prompt) {
+  if (prompt !== undefined) return ['--model', modelId, '--mode', 'json', '-p', prompt, ...passthroughArgs];
+  return ['--model', modelId, ...passthroughArgs];
+}
+
+function resolvePiPath() {
+  const override = process.env.ORC_PI_PATH;
+  if (override) return override;
+  return DEFAULT_PI_PATH;
+}
+
+function requirePiPath() {
+  const p = resolvePiPath();
+  if (!existsSync(p)) throw new Error(`pi not found at ${p}`);
+  return p;
 }
 
 try {

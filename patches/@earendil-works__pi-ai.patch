@@ -1,0 +1,50 @@
+diff --git a/dist/providers/all.js b/dist/providers/all.js
+index 316b5811d214c34ef5e033e7ad603615e06be6ca..c54ce306d0c1e14ae09fc59c5def9d29bf0f3ee0 100644
+--- a/dist/providers/all.js
++++ b/dist/providers/all.js
+@@ -53,42 +53,11 @@ export function getBuiltinModels(provider) {
+ }
+ /** All built-in providers, freshly constructed. */
+ export function builtinProviders() {
++    // orchestrel: the built-in third-party catalog (openai/openrouter/google/...) is
++    // just noise for our use. We drive everything through custom providers in
++    // models.json plus built-in anthropic (Claude Max OAuth). Keep only anthropic.
+     return [
+-        amazonBedrockProvider(),
+-        antLingProvider(),
+         anthropicProvider(),
+-        azureOpenAIResponsesProvider(),
+-        cerebrasProvider(),
+-        cloudflareAIGatewayProvider(),
+-        cloudflareWorkersAIProvider(),
+-        deepseekProvider(),
+-        fireworksProvider(),
+-        githubCopilotProvider(),
+-        googleProvider(),
+-        googleVertexProvider(),
+-        groqProvider(),
+-        huggingfaceProvider(),
+-        kimiCodingProvider(),
+-        minimaxProvider(),
+-        minimaxCnProvider(),
+-        mistralProvider(),
+-        moonshotaiProvider(),
+-        moonshotaiCnProvider(),
+-        nvidiaProvider(),
+-        openaiProvider(),
+-        openaiCodexProvider(),
+-        opencodeProvider(),
+-        opencodeGoProvider(),
+-        openrouterProvider(),
+-        togetherProvider(),
+-        vercelAIGatewayProvider(),
+-        xaiProvider(),
+-        xiaomiProvider(),
+-        xiaomiTokenPlanAmsProvider(),
+-        xiaomiTokenPlanCnProvider(),
+-        xiaomiTokenPlanSgpProvider(),
+-        zaiProvider(),
+-        zaiCodingCnProvider(),
+     ];
+ }
+ /** A `Models` collection with every built-in provider registered. */

@@ -38,6 +38,7 @@ export class ContentBlock {
 
 export interface TurnResult {
   subtype: string;
+  errorMessage?: string;
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
@@ -168,6 +169,12 @@ export class MessageAccumulator {
         } else if (msg.subtype === 'bgc_started') {
           this.finalizeBlocks();
           this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: msg.timestamp });
+        } else if (msg.subtype === 'compact_started') {
+          this.finalizeBlocks();
+          this.conversation.push({ kind: 'compact', label: 'Compacting context…', timestamp: msg.timestamp });
+        } else if (msg.subtype === 'compact_done') {
+          this.finalizeBlocks();
+          this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: msg.timestamp });
         }
         break;
       case 'error':
@@ -261,6 +268,12 @@ export class MessageAccumulator {
         } else if (msg.subtype === 'bgc_started') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
           this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: normalizeTimestamp(msg.timestamp) });
+        } else if (msg.subtype === 'compact_started') {
+          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.conversation.push({ kind: 'compact', label: 'Compacting context…', timestamp: normalizeTimestamp(msg.timestamp) });
+        } else if (msg.subtype === 'compact_done') {
+          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: normalizeTimestamp(msg.timestamp) });
         }
         break;
     }
@@ -358,6 +371,7 @@ export class MessageAccumulator {
       timestamp: msg.timestamp ?? Date.now(),
       data: {
         subtype: msg.subtype,
+        ...(msg.errorMessage ? { errorMessage: msg.errorMessage } : {}),
         costUsd: msg.total_cost_usd,
         inputTokens: msg.usage?.input_tokens ?? 0,
         outputTokens: msg.usage?.output_tokens ?? 0,

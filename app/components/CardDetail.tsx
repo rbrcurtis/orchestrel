@@ -21,7 +21,7 @@ import {
 } from '~/components/ui/alert-dialog';
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
-import { cn } from '~/lib/utils';
+import { cn, copyText } from '~/lib/utils';
 import { slugify } from '../../src/shared/worktree';
 import type { Column, Project } from '../../src/shared/ws-protocol';
 
@@ -54,6 +54,7 @@ type Draft = {
   sourceBranch: string | null;
   provider: string;
   model: string;
+  thinkingLevel: string;
   summarizeThreshold: number;
 };
 
@@ -227,7 +228,7 @@ function CardFields({
       )}
 
       {!hasSession && selectedProject && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Provider</label>
             <Select
@@ -269,11 +270,29 @@ function CardFields({
               </SelectTrigger>
               <SelectContent position="popper" className="max-h-60">
                 <SelectItem value="0">Off</SelectItem>
+                <SelectItem value="0.1">10%</SelectItem>
+                <SelectItem value="0.2">20%</SelectItem>
+                <SelectItem value="0.3">30%</SelectItem>
+                <SelectItem value="0.4">40%</SelectItem>
                 <SelectItem value="0.5">50%</SelectItem>
                 <SelectItem value="0.6">60%</SelectItem>
                 <SelectItem value="0.7">70%</SelectItem>
                 <SelectItem value="0.8">80%</SelectItem>
                 <SelectItem value="0.9">90%</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Thinking</label>
+            <Select value={draft.thinkingLevel} onValueChange={(val) => patch({ thinkingLevel: val })}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="off">Off</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -340,7 +359,8 @@ export const CardDetail = observer(function CardDetail({
     sourceBranch: null,
     provider: 'anthropic',
     model: 'sonnet',
-    summarizeThreshold: 0.6,
+    thinkingLevel: 'high',
+    summarizeThreshold: 0.5,
   });
 
   const [formOpen, setFormOpen] = useState(true);
@@ -365,6 +385,7 @@ export const CardDetail = observer(function CardDetail({
       sourceBranch: card.sourceBranch,
       provider: card.provider ?? cardProject?.providerID ?? 'anthropic',
       model: card.model,
+      thinkingLevel: card.thinkingLevel,
       summarizeThreshold: card.summarizeThreshold ?? 0,
     });
     // Auto-collapse when session exists
@@ -396,6 +417,7 @@ export const CardDetail = observer(function CardDetail({
       sourceBranch: card.sourceBranch,
       provider: card.provider ?? d.provider,
       model: card.model,
+      thinkingLevel: card.thinkingLevel,
       summarizeThreshold: card.summarizeThreshold ?? 0,
     }));
   }, [card?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -420,6 +442,7 @@ export const CardDetail = observer(function CardDetail({
       draft.worktreeBranch !== card.worktreeBranch ||
       draft.sourceBranch !== card.sourceBranch ||
       draft.model !== card.model ||
+      draft.thinkingLevel !== card.thinkingLevel ||
       draft.summarizeThreshold !== (card.summarizeThreshold ?? 0)
     : false;
 
@@ -437,7 +460,7 @@ export const CardDetail = observer(function CardDetail({
       sourceBranch: merged.sourceBranch as 'main' | 'dev' | null | undefined,
       provider: merged.provider,
       model: merged.model,
-      thinkingLevel: 'high',
+      thinkingLevel: merged.thinkingLevel as 'off' | 'low' | 'medium' | 'high',
       summarizeThreshold: merged.summarizeThreshold,
     });
   }
@@ -601,6 +624,7 @@ export const CardDetail = observer(function CardDetail({
             model={card.model ?? 'sonnet'}
             providerID={card.provider ?? cardProject?.providerID ?? 'anthropic'}
             summarizeThreshold={card.summarizeThreshold ?? 0}
+            thinkingLevel={card.thinkingLevel}
             onPromptSent={onPromptSent}
             promptFocusSeq={promptFocusSeq}
           />
@@ -717,7 +741,8 @@ export const NewCardDetail = observer(function NewCardDetail({
           sourceBranch: null,
           provider: prov,
           model: proj.defaultModel ?? config.getDefaultModel(prov),
-          summarizeThreshold: 0.6,
+          thinkingLevel: proj.defaultThinkingLevel ?? 'high',
+          summarizeThreshold: 0.5,
         };
       }
     }
@@ -730,7 +755,8 @@ export const NewCardDetail = observer(function NewCardDetail({
       sourceBranch: null,
       provider: 'anthropic',
       model: 'sonnet',
-      summarizeThreshold: 0.6,
+      thinkingLevel: 'high',
+      summarizeThreshold: 0.5,
     };
   });
   const [creating, setCreating] = useState(false);
@@ -765,7 +791,7 @@ export const NewCardDetail = observer(function NewCardDetail({
         sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
         provider: draft.provider,
         model: draft.model,
-        thinkingLevel: 'high',
+        thinkingLevel: draft.thinkingLevel as 'off' | 'low' | 'medium' | 'high',
         summarizeThreshold: draft.summarizeThreshold,
       });
       writeNewCardDraftDescription('');
@@ -856,9 +882,9 @@ function CopyPathButton({
     ? `${projectPath}/.worktrees/${worktreeBranch}`
     : projectPath;
 
-  function handleCopy() {
+  async function handleCopy() {
     if (!path) return;
-    navigator.clipboard.writeText(path);
+    await copyText(path);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -890,8 +916,8 @@ function CopyPathButton({
 function CopyResumeButton({ sessionId, cardId }: { sessionId: string; cardId: number }) {
   const [copied, setCopied] = useState(false);
 
-  function handleCopy() {
-    navigator.clipboard.writeText(`${sessionId} # card ${cardId}`);
+  async function handleCopy() {
+    await copyText(`${sessionId} # card ${cardId}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }

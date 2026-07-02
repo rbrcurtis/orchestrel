@@ -10,6 +10,7 @@ const sessionStore = {
   loadHistory: vi.fn(),
   hydrateFromCache: vi.fn(() => Promise.resolve()),
   startPersisting: vi.fn(),
+  evictSession: vi.fn(() => Promise.resolve()),
   requestStatus: vi.fn(),
   sendMessage: vi.fn(),
   stopSession: vi.fn(),

@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { observer } from 'mobx-react-lite';
 import { useOutletContext } from 'react-router';
+import { Button } from '~/components/ui/button';
 import {
   DndContext,
   DragOverlay,
@@ -40,6 +41,7 @@ type BoardContext = {
 };
 
 const ACTIVE_COLUMNS: ColumnId[] = ['backlog', 'ready', 'running', 'review', 'done'];
+const BACKLOG_PAGE_SIZE = 50;
 
 interface CardItem {
   id: number;
@@ -113,6 +115,49 @@ const ActiveBoard = observer(function ActiveBoard() {
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const snapshotRef = useRef<ColumnCards | null>(null);
   const [mounted] = useState(true);
+
+  // Backlog is lazy-paged (not part of the board subscribe) — page it in here,
+  // 50 at a time, mirroring the archive route. Cards are ordered position ASC on
+  // both the server (pageCards) and the client (cardsByColumn), so each page is
+  // contiguous with what's already shown and "Load more" appends the next slice.
+  const [backlogTotal, setBacklogTotal] = useState(0);
+  const [backlogHasMore, setBacklogHasMore] = useState(true);
+  const [backlogLoading, setBacklogLoading] = useState(false);
+
+  function loadBacklogPage() {
+    if (backlogLoading) return;
+    // Derive the cursor from the LAST backlog card already loaded (max position,
+    // id as tiebreak) rather than tracking a page number — the store can be
+    // pre-filled from persistence or live-merged cards, so a fixed cursor would
+    // re-fetch loaded pages. The tail self-heals against whatever is in the store.
+    let tail: { id: number; position: number } | undefined;
+    for (const c of cardStore.cardsByColumn('backlog')) {
+      if (!tail || c.position > tail.position || (c.position === tail.position && c.id > tail.id)) {
+        tail = c;
+      }
+    }
+    setBacklogLoading(true);
+    cardStore
+      .loadPage('backlog', tail?.id, BACKLOG_PAGE_SIZE)
+      .then((r) => {
+        setBacklogTotal(r.total);
+        setBacklogHasMore(r.nextCursor !== undefined);
+      })
+      .finally(() => setBacklogLoading(false));
+  }
+
+  useEffect(() => {
+    loadBacklogPage();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Backlog is paged, so a typed query must hit the server to reach unloaded
+  // backlog cards (debounced); matches merge into the store and the client-side
+  // filter below then shows them alongside the other active columns.
+  useEffect(() => {
+    if (search.length === 0) return;
+    const t = setTimeout(() => void cardStore.search(search), 250);
+    return () => clearTimeout(t);
+  }, [search, cardStore]);
 
   // Active columns data: override during drag, store otherwise
   const columns = dragOverride ?? storeColumns;
@@ -333,13 +378,21 @@ const ActiveBoard = observer(function ActiveBoard() {
     >
       <div className="flex flex-col gap-2 p-4">
         {ACTIVE_COLUMNS.map((col) => (
-          <StatusRow
-            key={col}
-            id={col}
-            cards={filteredColumns[col]}
-            onCardClick={selectCard}
-            onAddCard={col !== 'review' && col !== 'done' ? (column) => startNewCard(column) : undefined}
-          />
+          <Fragment key={col}>
+            <StatusRow
+              id={col}
+              cards={filteredColumns[col]}
+              onCardClick={selectCard}
+              onAddCard={col !== 'review' && col !== 'done' ? (column) => startNewCard(column) : undefined}
+            />
+            {col === 'backlog' && search.length === 0 && backlogHasMore && (
+              <div className="flex justify-center py-1">
+                <Button variant="outline" size="sm" onClick={loadBacklogPage} disabled={backlogLoading}>
+                  {backlogLoading ? 'Loading…' : `Load more (${storeColumns.backlog.length} of ${backlogTotal})`}
+                </Button>
+              </div>
+            )}
+          </Fragment>
         ))}
       </div>
       {mounted &&

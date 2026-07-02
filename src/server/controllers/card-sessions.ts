@@ -1,3 +1,4 @@
+import { readdirSync, readlinkSync } from 'fs';
 import { Card } from '../models/Card';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
@@ -30,7 +31,10 @@ async function clientForCard(card: { nodeName: string }): Promise<OrcdClient | n
 function isBgcSystemEvent(event: Record<string, unknown>): event is { type: 'system'; subtype?: string; session_id?: string } {
   return (
     event.type === 'system' &&
-    (event.subtype === 'bgc_started' || event.subtype === 'compact_boundary')
+    (event.subtype === 'bgc_started' ||
+      event.subtype === 'compact_boundary' ||
+      event.subtype === 'compact_started' ||
+      event.subtype === 'compact_done')
   );
 }
 
@@ -81,7 +85,28 @@ export function initOrcdRouter(
 
     if (msg.type === 'stream_event') {
       const sdkEvent = msg.event as Record<string, unknown>;
-      bus.publish(`card:${cardId}:sdk`, sdkEvent);
+      if (
+        sdkEvent.type === 'message_start' ||
+        sdkEvent.type === 'content_block_start' ||
+        sdkEvent.type === 'content_block_delta' ||
+        sdkEvent.type === 'content_block_stop' ||
+        sdkEvent.type === 'message_stop' ||
+        sdkEvent.type === 'message_delta'
+      ) {
+        bus.publish(`card:${cardId}:sdk`, { type: 'stream_event', event: sdkEvent });
+      } else {
+        bus.publish(`card:${cardId}:sdk`, sdkEvent);
+      }
+
+      // An assistant turn beginning means the agent is actively working again.
+      // Card→review now fires only on agent_end (end of the whole run), so this
+      // no longer fights per-turn flicker; it remains as a guard to pull a card
+      // back to running if the agent resumes work while it sits in review
+      // (e.g. a queued follow-up), so its state tracks the agent.
+      const startMsg = sdkEvent.message as { role?: string } | undefined;
+      if (sdkEvent.type === 'message_start' && startMsg?.role === 'assistant') {
+        await handleTurnStart(cardId);
+      }
 
       if (sdkEvent.type === 'system') {
         const sys = sdkEvent as { subtype?: string; session_id?: string };
@@ -96,17 +121,17 @@ export function initOrcdRouter(
           }
         }
 
-        if (sys.subtype === 'bgc_started') {
+        if (sys.subtype === 'bgc_started' || sys.subtype === 'compact_started') {
           bgcMap.set(msg.sessionId, cardId);
         }
 
-        if (sys.subtype === 'compact_boundary') {
+        if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
             card.contextTokens = 1;
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
-            console.log(`[oc:${cardId}] compact_boundary: reset contextTokens to 1`);
+            console.log(`[oc:${cardId}] ${sys.subtype}: reset contextTokens to 1`);
           }
           bgcMap.delete(msg.sessionId);
         }
@@ -179,7 +204,21 @@ export function initOrcdRouter(
   console.log('[orcd-router] global handler registered');
 }
 
-// ── Turn complete / Session exit ─────────────────────────────────────────────
+// ── Turn start / complete / Session exit ─────────────────────────────────────
+
+async function handleTurnStart(cardId: number): Promise<void> {
+  const repo = AppDataSource.getRepository(Card);
+  const card = await repo.findOneBy({ id: cardId });
+  // Move to running only from a non-running, non-archive column: already-running
+  // is a no-op, and archive means the card was intentionally pulled off the board.
+  if (card && card.column !== 'running' && card.column !== 'archive') {
+    const from = card.column;
+    card.column = 'running';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
+    console.log(`[oc:${cardId}] agent turn started → running (was ${from})`);
+  }
+}
 
 async function handleTurnComplete(
   cardId: number,
@@ -308,6 +347,48 @@ export async function reconcileRunningCards(
   }
 }
 
+// Re-arm scheduled background agents after an orcd restart. The pi-subagents
+// scheduler's timers live only in orcd memory, so a restart drops them; the
+// enabled jobs persist on disk in each worktree. For every card whose worktree
+// still has an enabled scheduled job, ask orcd to warm (resume + hold) the
+// session so the scheduler re-arms and the job fires at its time. Column-
+// independent: a job fires whether the card sits in review, done, etc. Runs at
+// startup and on every orcd reconnect — warm() no-ops if already resident.
+export async function rearmScheduledSessions(client: OrcdClient): Promise<void> {
+  const r = AppDataSource.getRepository(Card);
+  const cards = await r.find();
+  const { Project } = await import('../models/Project');
+  const { resolveWorkDir } = await import('../../shared/worktree');
+  const { hasEnabledScheduledJobs } = await import('../../shared/scheduled-jobs');
+
+  let warmed = 0;
+  for (const card of cards) {
+    if (!card.sessionId || !card.worktreeBranch || !card.projectId) continue;
+    if (client.isActive(card.sessionId)) continue;
+    const proj = await Project.findOneBy({ id: card.projectId });
+    if (!proj) continue;
+    const wt = resolveWorkDir(card.worktreeBranch, proj.path);
+    if (!hasEnabledScheduledJobs(wt)) continue;
+
+    try {
+      console.log(`[rearm] card ${card.id} has scheduled jobs; warming session ${card.sessionId.slice(0, 8)}`);
+      await client.warm({
+        sessionId: card.sessionId,
+        cwd: wt,
+        provider: card.provider,
+        model: card.model,
+        contextWindow: card.contextWindow,
+        summarizeThreshold: card.summarizeThreshold,
+      });
+      trackSession(card.id, card.sessionId);
+      warmed++;
+    } catch (err) {
+      console.error(`[rearm] card ${card.id} warm failed:`, err instanceof Error ? err.message : String(err));
+    }
+  }
+  console.log(`[rearm] scanned ${cards.length} cards, warmed ${warmed} with scheduled jobs`);
+}
+
 // ── Board event listeners ────────────────────────────────────────────────────
 
 export function registerAutoStart(bus: MessageBus = messageBus): void {
@@ -415,6 +496,99 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
   });
 }
 
+// Kill stray processes a session left running in its worktree — e.g. the
+// `sleep 900` background poll loops Pi spawns but never reaps when the agent
+// session exits (they orphan onto the orcd process and pile up, holding GBs of
+// RAM). Attribution is by working directory, so it only touches processes that
+// belong to THIS card's worktree and never another live session's. Once the
+// worktree dir has been removed (archive cleanup) the kernel appends a
+// " (deleted)" suffix to the cwd symlink target — strip it before comparing.
+// The trailing-slash guard prevents a prefix collision between sibling
+// worktrees (e.g. `neural-engine` vs `neural-engine-optimization`).
+// True when a process working directory belongs to `worktree`. Strips the
+// kernel's " (deleted)" suffix (present after the worktree dir is removed) and
+// uses a trailing-slash guard so a sibling worktree whose path is a string
+// prefix (e.g. `neural-engine` vs `neural-engine-optimization`) is NOT matched.
+export function cwdMatchesWorktree(rawCwd: string, worktree: string): boolean {
+  const cwd = rawCwd.replace(/ \(deleted\)$/, '');
+  return cwd === worktree || cwd.startsWith(`${worktree}/`);
+}
+
+/* oxlint-disable orchestrel/log-in-catch, orchestrel/log-before-early-return --
+   per-pid /proc scan: catches fire for every process that exits mid-scan or
+   isn't readable; logging each one would be pure noise. The caller logs the
+   total reaped count. */
+function reapWorktreeProcesses(worktree: string): number {
+  let pids: string[];
+  try {
+    pids = readdirSync('/proc');
+  } catch {
+    return 0;
+  }
+  const self = process.pid;
+  let killed = 0;
+  for (const name of pids) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
+    if (pid === self) continue;
+    let cwd: string;
+    try {
+      cwd = readlinkSync(`/proc/${pid}/cwd`);
+    } catch {
+      continue; // process gone or not ours
+    }
+    if (!cwdMatchesWorktree(cwd, worktree)) continue;
+    try {
+      process.kill(pid, 'SIGKILL');
+      killed++;
+    } catch {
+      // already gone — fine
+    }
+  }
+  return killed;
+}
+/* oxlint-enable orchestrel/log-in-catch, orchestrel/log-before-early-return */
+
+// Reap a card's leftover worktree processes whenever it lands in a column that
+// isn't active work. running/review may legitimately have live background
+// tasks; done/ready/archive/backlog must not, so anything still running in the
+// worktree is an orphan and gets killed. Independent board:changed listener:
+// order-independent (strips " (deleted)" so it composes with worktree cleanup
+// regardless of which fires first) and assumes nothing about prior steps.
+export function registerProcessReaper(bus: MessageBus = messageBus): void {
+  bus.subscribe('board:changed', async (payload) => {
+    const { card, newColumn } = payload as {
+      card: Card | null;
+      oldColumn: string | null;
+      newColumn: string | null;
+    };
+    if (!card) {
+      console.log(`[reaper] board:changed with null card, skipping`);
+      return;
+    }
+    // running/review may have live background work — leave it alone. (High
+    // frequency; intentionally silent.)
+    // oxlint-disable-next-line orchestrel/log-before-early-return
+    if (newColumn === 'running' || newColumn === 'review') return;
+    if (!card.worktreeBranch || !card.projectId) {
+      console.log(`[reaper] card ${card.id} → ${newColumn}: no worktree, skipping`);
+      return;
+    }
+
+    const { Project } = await import('../models/Project');
+    const proj = await Project.findOneBy({ id: card.projectId });
+    if (!proj) {
+      console.log(`[reaper] card ${card.id} → ${newColumn}: project ${card.projectId} not found, skipping`);
+      return;
+    }
+
+    const { resolveWorkDir } = await import('../../shared/worktree');
+    const wt = resolveWorkDir(card.worktreeBranch, proj.path);
+    const n = reapWorktreeProcesses(wt);
+    console.log(`[reaper] card ${card.id} → ${newColumn}: reaped ${n} process(es) under ${wt}`);
+  });
+}
+
 export function registerMemoryUpsertOnArchive(bus: MessageBus = messageBus): void {
   bus.subscribe('board:changed', async (payload) => {
     const { card, oldColumn, newColumn } = payload as {
@@ -479,8 +653,10 @@ async function startCardSession(
   try {
     const { ensureWorktree } = await import('../sessions/worktree');
     const cwd = await ensureWorktree(card, client);
+    const startedFromDescription = !card.sessionId;
     const prompt = card.sessionId ? '' : card.description ?? '';
 
+    const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
     const sessionId = await client.create({
       prompt,
       cwd,
@@ -489,9 +665,13 @@ async function startCardSession(
       sessionId: card.sessionId ?? undefined,
       contextWindow: card.contextWindow,
       summarizeThreshold: card.summarizeThreshold,
+      effort,
     });
 
     card.sessionId = sessionId;
+    // The card description is the first prompt sent. Follow-up prompts increment
+    // promptsSent in the ws message handler; this covers the initial start.
+    if (startedFromDescription) card.promptsSent = (card.promptsSent ?? 0) + 1;
     trackSession(card.id, sessionId);
     card.updatedAt = new Date().toISOString();
     await repo().save(card);

@@ -17,6 +17,7 @@ export interface SessionState {
   contextTokens: number;
   contextWindow: number;
   bgcInProgress: boolean;
+  compactInProgress: boolean;
 }
 
 function defaultSession(): SessionState {
@@ -32,6 +33,7 @@ function defaultSession(): SessionState {
     contextTokens: 0,
     contextWindow: 200_000,
     bgcInProgress: false,
+    compactInProgress: false,
   };
 }
 
@@ -97,6 +99,31 @@ export class SessionStore {
     this.persistDisposers.set(cardId, dispose);
   }
 
+  // Release a card's in-memory conversation when its view unmounts. The full
+  // transcript lives in IndexedDB (writeConversation), so dropping it from RAM is
+  // safe — hydrateFromCache repopulates it instantly on reopen. Without this the
+  // sessions map grows unbounded as the user browses cards. Active (running)
+  // sessions are never evicted: they keep accumulating streamed messages off-screen.
+  async evictSession(cardId: number): Promise<void> {
+    const s = this.sessions.get(cardId);
+    if (!s) return;
+    if (s.active) return;
+
+    // Snapshot before dropping, then do all synchronous store mutations inside the
+    // auto-action (before the first await) so MobX sees them as a single action.
+    const entries = s.accumulator.serialize();
+    const dispose = this.persistDisposers.get(cardId);
+    if (dispose) {
+      dispose();
+      this.persistDisposers.delete(cardId);
+    }
+    this.sessions.delete(cardId);
+    this.subscribedCards.delete(cardId);
+
+    // Final flush so the latest state is in IndexedDB before the RAM copy is gone.
+    if (entries.length > 0) await writeConversation(cardId, entries).catch(() => {});
+  }
+
   // ── Incoming server messages ────────────────────────────────────────────────
 
   ingestSdkMessage(cardId: number, msg: unknown): void {
@@ -118,12 +145,25 @@ export class SessionStore {
           s.bgcInProgress = false;
           s.contextTokens = 1;
         }
+        // A manual `/compact` runs no normal turn, so it emits no result/session_exit
+        // to clear the optimistic "running" state. compact_done is its terminal
+        // signal: reset context and return the session to idle.
+        if (sdkMsg.subtype === 'compact_started') {
+          s.compactInProgress = true;
+        }
+        if (sdkMsg.subtype === 'compact_done') {
+          s.compactInProgress = false;
+          s.contextTokens = 1;
+          s.active = false;
+          if (s.status === 'running' || s.status === 'starting') s.status = 'completed';
+        }
       }
 
       if (sdkMsg.type === 'error') {
         s.active = false;
         s.status = 'errored';
         s.bgcInProgress = false;
+        s.compactInProgress = false;
       }
 
       if (sdkMsg.type === 'result') {
@@ -156,8 +196,10 @@ export class SessionStore {
   }
 
   handleAgentStatus(data: AgentStatus) {
+    let justEnded = false;
     runInAction(() => {
       const s = this.getOrCreate(data.cardId);
+      const wasActive = s.active;
       s.active = data.active;
       s.status = data.status;
       s.sessionId = data.sessionId;
@@ -168,6 +210,7 @@ export class SessionStore {
 
       if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {
         s.bgcInProgress = false;
+        s.compactInProgress = false;
         s.accumulator.clearSubagents();
         const stopInterval = this.stopIntervals.get(data.cardId);
         if (stopInterval !== undefined) {
@@ -175,8 +218,18 @@ export class SessionStore {
           this.stopIntervals.delete(data.cardId);
         }
         this.stoppingCards.delete(data.cardId);
+        // Pi appends the final assistant message to the session .jsonl only as the
+        // run resolves — the same moment orcd emits session_exit. A session:load
+        // during the finishing window therefore reads a transcript missing that
+        // last message (the agent's closing summary). Now that the session has
+        // ended the file is flushed, so reload once on the active→terminal edge to
+        // backfill it. Gated to open cards; idempotent for already-complete ones.
+        if (wasActive && this.subscribedCards.has(data.cardId)) justEnded = true;
       }
     });
+    if (justEnded) {
+      this.loadHistory(data.cardId, data.sessionId).catch(() => {});
+    }
   }
 
   handleSessionExit(cardId: number): void {
@@ -184,6 +237,7 @@ export class SessionStore {
       const s = this.getOrCreate(cardId);
       s.active = false;
       s.bgcInProgress = false;
+      s.compactInProgress = false;
       if (s.status === 'running' || s.status === 'starting') {
         s.status = 'completed';
       }
@@ -245,6 +299,12 @@ export class SessionStore {
   }
 
   async requestStatus(cardId: number): Promise<void> {
+    // requestStatus fires on every SessionView mount, including when history is
+    // served from cache and loadHistory short-circuits. Mark the card subscribed
+    // here so the "viewed card ⇒ subscribed" invariant holds regardless of the
+    // cache path — otherwise resubscribeAll() skips it after a reconnect and the
+    // socket silently stops receiving this card's live events.
+    this.subscribedCards.add(cardId);
     await this.ws().emit('agent:status', { cardId });
   }
 

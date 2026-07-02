@@ -39,9 +39,18 @@ export class CardStore {
 
   // ── Hydration ───────────────────────────────────────────────────────────────
 
-  hydrate(items: unknown[], replace = false) {
+  hydrate(items: unknown[], replace = false, columns?: string[]) {
     if (replace) {
-      this.cards.clear();
+      if (columns && columns.length > 0) {
+        // Scoped replace: only drop cards in the columns we're re-hydrating, so
+        // lazily-paged columns (e.g. archive) aren't wiped.
+        const set = new Set(columns);
+        for (const [id, c] of this.cards) {
+          if (set.has(c.column)) this.cards.delete(id);
+        }
+      } else {
+        this.cards.clear();
+      }
       this.hydrated = true;
     }
     for (const c of items) {
@@ -54,6 +63,29 @@ export class CardStore {
     this.cards.set(card.id, card);
   }
 
+  // ── Lazy column paging (archive is not bulk-loaded on subscribe) ─────────────
+
+  /** Fetch one page of a column and merge it into the store. */
+  async loadPage(column: Column, cursor?: number, limit = 20): Promise<{ nextCursor?: number; total: number }> {
+    const res = (await this.ws().emit('page', { column, cursor, limit })) as {
+      cards: Card[];
+      nextCursor?: number;
+      total: number;
+    };
+    runInAction(() => {
+      for (const c of res.cards) this.cards.set(c.id, c);
+    });
+    return { nextCursor: res.nextCursor, total: res.total };
+  }
+
+  /** Server-side search across all cards; merges matches into the store. */
+  async search(query: string): Promise<void> {
+    const res = (await this.ws().emit('search', { query })) as { cards: Card[]; total: number };
+    runInAction(() => {
+      for (const c of res.cards) this.cards.set(c.id, c);
+    });
+  }
+
   handleDeleted(id: number) {
     this.cards.delete(id);
   }
@@ -61,7 +93,12 @@ export class CardStore {
   // ── Persistence ─────────────────────────────────────────────────────────────
 
   serialize(): Card[] {
-    return Array.from(this.cards.values());
+    // Exclude lazy-paged columns (archive, backlog): they are not part of the
+    // board subscribe and are paged 50 at a time from their routes. Persisting
+    // them would restore the entire accumulated set on reload (e.g. every card
+    // ever pulled in via "Load more"), defeating pagination — the routes re-page
+    // from an empty store instead.
+    return Array.from(this.cards.values()).filter((c) => c.column !== 'archive' && c.column !== 'backlog');
   }
 
   // ── Optimistic mutations ────────────────────────────────────────────────────

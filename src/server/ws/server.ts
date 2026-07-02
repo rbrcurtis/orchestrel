@@ -130,8 +130,13 @@ export function wsServerPlugin(): Plugin {
                 {
                   serveClient: false,
                   destroyUpgrade: false, // let Vite HMR handle non-socket.io upgrades
-                  pingInterval: 10_000,
-                  pingTimeout: 5_000,
+                  // Generous timeouts: the FE connects through an Access-gated
+                  // Cloudflare tunnel where short timeouts caused constant false
+                  // disconnect/reconnect churn (every few seconds), which is what
+                  // exposed the room-membership desync. Keep them well above tunnel
+                  // jitter so a healthy connection stays put.
+                  pingInterval: 25_000,
+                  pingTimeout: 30_000,
                   cors: { origin: true, credentials: true },
                 },
               );
@@ -147,7 +152,7 @@ export function wsServerPlugin(): Plugin {
 
             const { OrcdClient } = await import('../orcd-client');
             const { loadNodeRegistry } = await import('../config/nodes');
-            const { initOrcdRouter, reconcileRunningCards, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive } =
+            const { initOrcdRouter, reconcileRunningCards, rearmScheduledSessions, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive, registerProcessReaper } =
               await import('../controllers/card-sessions');
 
             const nodes = loadNodeRegistry();
@@ -156,6 +161,10 @@ export function wsServerPlugin(): Plugin {
               if (!client) {
                 client = new OrcdClient({ host: node.host, port: node.port, token: node.authToken, name: node.name });
                 initState.setClientForNode(node.name, client);
+                // Store the client BEFORE connecting. If a node's orcd isn't bound
+                // yet at startup, connect() rejects; the client auto-reconnects, so
+                // once it's stored + wired here, handlers resolve it and it works as
+                // soon as that orcd comes up.
                 try {
                   await client.connect();
                 } catch (err) {
@@ -165,6 +174,7 @@ export function wsServerPlugin(): Plugin {
               initOrcdRouter(client);
               try {
                 await reconcileRunningCards(client);
+                await rearmScheduledSessions(client);
               } catch (err) {
                 console.error(`[startup] reconcile failed for ${node.name}:`, err);
               }
@@ -172,12 +182,14 @@ export function wsServerPlugin(): Plugin {
               nodeClient.onReconnect(() => {
                 console.log(`[orcd] node ${node.name} reconnected, reconciling...`);
                 reconcileRunningCards(nodeClient).catch((e) => console.error(`[orcd] reconnect reconcile ${node.name}:`, e));
+                rearmScheduledSessions(nodeClient).catch((e) => console.error(`[orcd] reconnect re-arm ${node.name}:`, e));
               });
             }
 
             registerAutoStart();
             registerMemoryUpsertOnArchive();
             registerWorktreeCleanup();
+            registerProcessReaper();
             console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
             initState.markInitialized();

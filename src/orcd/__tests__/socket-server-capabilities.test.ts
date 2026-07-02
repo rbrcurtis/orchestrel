@@ -8,7 +8,7 @@ describe('buildCapabilities', () => {
       {
         anthropic: {
           type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '', modelAliasEnv: {},
-          models: ['claude-sonnet-4-6'],
+          models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet-4-6', contextWindow: 1000000 } },
           modelLabels: { 'claude-sonnet-4-6': { alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 } },
         },
       },

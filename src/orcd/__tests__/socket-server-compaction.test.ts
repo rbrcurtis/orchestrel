@@ -4,8 +4,7 @@ import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { OrcdServer } from '../socket-server';
 import { OrcdSession, type SessionEventCallback } from '../session';
-import type { PreparedCompaction } from '../../lib/session-compactor';
-import type { ContextUsageMessage, SessionResultMessage, SessionExitMessage, CompactAction } from '../../shared/orcd-protocol';
+import type { CompactAction, StreamEventMessage } from '../../shared/orcd-protocol';
 
 async function createSkillProject(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'orchestrel-skill-project-'));
@@ -19,8 +18,8 @@ async function createSkillProject(): Promise<string> {
 
 function createClient() {
   return {
-    socket: { writable: true, write: vi.fn() } as never,
-    subscriptions: new Map(),
+    socket: { writable: true, write: vi.fn() },
+    subscriptions: new Map<string, SessionEventCallback>(),
     authenticated: true,
   };
 }
@@ -31,7 +30,7 @@ async function collectPromptFromCreate(prompt: string): Promise<string> {
   try {
     const server = createServer();
     const client = createClient();
-    server['handleAction'](client, {
+    server['handleAction'](client as never, {
       action: 'create',
       prompt,
       cwd: dir,
@@ -64,7 +63,7 @@ async function collectPromptFromMessage(prompt: string): Promise<string> {
     server.store.add(session);
     server['attachLifecycleHooks'](session);
 
-    server['handleAction'](client, {
+    server['handleAction'](client as never, {
       action: 'message',
       sessionId: session.id,
       prompt,
@@ -81,76 +80,21 @@ async function collectPromptFromMessage(prompt: string): Promise<string> {
 }
 
 
-const prepared: PreparedCompaction = {
-  sessionId: 'session-1',
-  jsonlPath: '/tmp/session.jsonl',
-  summary: 'summary',
-  lastOldLineIdx: 1,
-  messagesBefore: 4,
-  messagesCovered: 2,
-  summaryChars: 7,
-  prepareDurationMs: 12,
-};
-
-const applyResult = {
-  sessionId: 'session-1',
-  jsonlPath: '/tmp/session.jsonl',
-  messagesBefore: 4,
-  messagesCovered: 2,
-  summaryTokens: 2,
-  summaryChars: 7,
-  durationMs: 3,
-};
-
-const compactorMocks = vi.hoisted(() => ({
-  prepareCompaction: vi.fn(),
-  applyCompaction: vi.fn(),
-}));
-
-vi.mock('../../lib/session-compactor', () => ({
-  prepareCompaction: compactorMocks.prepareCompaction,
-  applyCompaction: compactorMocks.applyCompaction,
-  resolveJsonlPath: vi.fn(),
-}));
-
 function createServer() {
   return new OrcdServer(
     { listen: { host: '127.0.0.1', port: 0 }, authToken: 'tok', name: 'local' },
-    { test: { type: 'anthropic', baseUrl: '', apiKey: '', models: ['test-model'], modelLabels: {}, modelAliasEnv: {} } },
+    {
+      test: {
+        type: 'anthropic',
+        baseUrl: '',
+        apiKey: '',
+        models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
+        modelLabels: {},
+        modelAliasEnv: {},
+      },
+    },
     { provider: 'test', model: 'test-model' },
   );
-}
-
-function createSession() {
-  let hook: SessionEventCallback | undefined;
-  let beforeExitHook: (() => Promise<void>) | undefined;
-  const emitCompactBoundary = vi.fn();
-  const emitBgcStarted = vi.fn();
-  return {
-    session: {
-      id: 'session-1',
-      cwd: '/tmp/project',
-      model: 'test-model',
-      provider: 'test',
-      summarizeThreshold: 0.6,
-      lastContextTokens: 80,
-      lastContextWindow: 100,
-      subscribe: vi.fn((cb: SessionEventCallback) => { hook = cb; }),
-      onBeforeExit: vi.fn((cb: () => Promise<void>) => { beforeExitHook = cb; }),
-      emitCompactBoundary,
-      emitBgcStarted,
-    },
-    emitCompactBoundary,
-    emitBgcStarted,
-    getHook: () => {
-      if (!hook) throw new Error('hook not attached');
-      return hook;
-    },
-    runBeforeExit: async () => {
-      if (!beforeExitHook) throw new Error('before exit hook not attached');
-      await beforeExitHook();
-    },
-  };
 }
 
 describe('OrcdServer prompt passthrough', () => {
@@ -163,110 +107,213 @@ describe('OrcdServer prompt passthrough', () => {
   });
 });
 
-describe('OrcdServer background compaction', () => {
-  it('does not apply background compaction until beforeExit even after result', async () => {
-    compactorMocks.prepareCompaction.mockReset().mockResolvedValue(prepared);
-    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
+describe('OrcdServer subscriptions', () => {
+  it('does not replay the full buffer on duplicate live subscribes without a cursor', () => {
     const server = createServer();
-    const { session, emitCompactBoundary, emitBgcStarted, getHook, runBeforeExit } = createSession();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'session-subscribe',
+    });
+    server.store.add(session);
+    session['emitSyntheticSystemEvent']('compact_boundary');
 
-    server['attachLifecycleHooks'](session as never);
-    const hook = getHook();
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id });
+    const writesAfterFirst = client.socket.write.mock.calls.length;
+    expect(writesAfterFirst).toBe(1);
 
-    hook({ type: 'stream_event', sessionId: 'session-1', eventIndex: 1, event: { type: 'message_start' } });
-    hook({ type: 'result', sessionId: 'session-1', eventIndex: 2, result: { subtype: 'success' } } satisfies SessionResultMessage);
-    hook({ type: 'context_usage', sessionId: 'session-1', contextTokens: 80, contextWindow: 100 } satisfies ContextUsageMessage);
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id });
+    expect(client.socket.write).toHaveBeenCalledTimes(writesAfterFirst);
+  });
 
-    await vi.waitFor(() => expect(compactorMocks.prepareCompaction).toHaveBeenCalledTimes(1));
-    expect(emitBgcStarted).toHaveBeenCalledTimes(1);
-    expect(compactorMocks.applyCompaction).not.toHaveBeenCalled();
-    expect(emitCompactBoundary).not.toHaveBeenCalled();
+  it('replays only events after the requested cursor for duplicate subscribes', () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'session-subscribe-cursor',
+    });
+    server.store.add(session);
+    session['emitSyntheticSystemEvent']('compact_boundary');
+    session['emitSyntheticSystemEvent']('bgc_started');
 
-    await runBeforeExit();
-    expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
-    expect(compactorMocks.applyCompaction).toHaveBeenCalledWith(prepared);
-    expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id });
+    client.socket.write.mockClear();
 
-    hook({ type: 'session_exit', sessionId: 'session-1', state: 'completed' } satisfies SessionExitMessage);
-    expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1);
+    server['handleAction'](client as never, { action: 'subscribe', sessionId: session.id, afterEventIndex: 0 });
+
+    expect(client.socket.write).toHaveBeenCalledTimes(1);
+    const line = client.socket.write.mock.calls[0]?.[0];
+    expect(typeof line).toBe('string');
+    const msg = JSON.parse(line as string) as StreamEventMessage;
+    expect(msg.eventIndex).toBe(1);
+    expect(msg.event).toEqual(expect.objectContaining({ subtype: 'bgc_started' }));
+  });
+});
+
+describe('OrcdServer provider env', () => {
+  it('merges process env and model alias env without injecting provider runtime env', () => {
+    const saved = {
+      ORC_TEST_PROVIDER_ENV: process.env.ORC_TEST_PROVIDER_ENV,
+      ORC_PROVIDER_RUNTIME_URL: process.env.ORC_PROVIDER_RUNTIME_URL,
+      ORC_PROVIDER_RUNTIME_KEY: process.env.ORC_PROVIDER_RUNTIME_KEY,
+      ORC_PROVIDER_RUNTIME_TOKEN: process.env.ORC_PROVIDER_RUNTIME_TOKEN,
+      ORC_PROVIDER_RUNTIME_REGION: process.env.ORC_PROVIDER_RUNTIME_REGION,
+      ORC_PROVIDER_RUNTIME_PROFILE: process.env.ORC_PROVIDER_RUNTIME_PROFILE,
+    };
+
+    try {
+      delete process.env.ORC_PROVIDER_RUNTIME_URL;
+      delete process.env.ORC_PROVIDER_RUNTIME_KEY;
+      delete process.env.ORC_PROVIDER_RUNTIME_TOKEN;
+      delete process.env.ORC_PROVIDER_RUNTIME_REGION;
+      delete process.env.ORC_PROVIDER_RUNTIME_PROFILE;
+      process.env.ORC_TEST_PROVIDER_ENV = 'from-process';
+
+      const server = new OrcdServer(
+        { listen: { host: '127.0.0.1', port: 0 }, authToken: 'tok', name: 'local' },
+        {
+          test: {
+            type: 'bedrock',
+            baseUrl: 'https://provider.test',
+            apiKey: 'provider-api-key',
+            authToken: 'provider-auth-token',
+            region: 'us-east-1',
+            profile: 'provider-profile',
+            models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
+            modelLabels: {},
+            modelAliasEnv: {
+              ORC_DEFAULT_MODEL: 'test-model',
+            },
+          },
+        },
+        { provider: 'test', model: 'test-model' },
+      );
+
+      const env = server['buildProviderEnv']('test');
+
+      expect(env.ORC_TEST_PROVIDER_ENV).toBe('from-process');
+      expect(env.ORC_DEFAULT_MODEL).toBe('test-model');
+      expect(env.ORC_PROVIDER_RUNTIME_URL).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_KEY).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_TOKEN).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_REGION).toBeUndefined();
+      expect(env.ORC_PROVIDER_RUNTIME_PROFILE).toBeUndefined();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+});
+
+describe('OrcdServer background compaction', () => {
+  function bgcSession(id: string) {
+    const session = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: id });
+    session.lastContextTokens = 130_000;
+    session.lastContextWindow = 200_000;
+    return session;
+  }
+
+  it('triggers parallel prepare at threshold and applies when idle', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-apply');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined };
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
+    await server['maybeStartBgc'](session);
+    expect(prepSpy).toHaveBeenCalledWith(0.5, expect.any(Object));
+    expect(applySpy).toHaveBeenCalledWith(result);
+  });
+
+  it('skips apply when a compaction already landed (staleness guard)', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-stale');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined } as never);
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(true);
+    await server['maybeStartBgc'](session);
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
+  it('does not start a second BGC while one is in flight', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-guard');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(null as never);
+    await Promise.all([server['maybeStartBgc'](session), server['maybeStartBgc'](session)]);
+    expect(prepSpy).toHaveBeenCalledTimes(1);
   });
 
   it('starts BGC from explicit compact action and emits bgc_started', async () => {
-    compactorMocks.prepareCompaction.mockReset().mockResolvedValue(prepared);
-    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
     const server = createServer();
-    const { session, emitCompactBoundary, emitBgcStarted } = createSession();
-    server.store.add(session as never);
-    server['attachLifecycleHooks'](session as never);
-
-    server['handleAction']({ socket: null as never, subscriptions: new Map(), authenticated: true }, {
-      action: 'compact',
-      sessionId: 'session-1',
-      cwd: '/tmp/project',
-      provider: 'test',
-      model: 'test-model',
-      contextWindow: 100,
-      summarizeThreshold: 0.6,
-    } satisfies CompactAction);
-
-    await vi.waitFor(() => expect(compactorMocks.prepareCompaction).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
-    expect(emitBgcStarted).toHaveBeenCalledTimes(1);
-    expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
+    const client = createClient();
+    const session = bgcSession('bgc-manual');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
+    client.subscriptions.set(session.id, cb);
+    session.subscribe(cb);
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined } as never);
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
+    server['handleAction'](client as never, { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm' } as CompactAction);
+    await new Promise((r) => setTimeout(r, 0));
+    const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
+    expect(wrote.some((w) => w.includes('bgc_started'))).toBe(true);
   });
 
-  it('does not start a second BGC while the first summary is still preparing after session exit', async () => {
-    let resolvePrepare: ((value: PreparedCompaction) => void) | undefined;
-    const preparePromise = new Promise<PreparedCompaction>((resolve) => {
-      resolvePrepare = resolve;
-    });
-    compactorMocks.prepareCompaction.mockReset().mockReturnValue(preparePromise);
-    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
+  it('runs Pi-native full compaction for mode:full without synthetic bgc markers', async () => {
     const server = createServer();
-    const { session, emitCompactBoundary, emitBgcStarted, getHook, runBeforeExit } = createSession();
-
-    server['attachLifecycleHooks'](session as never);
-    const hook = getHook();
-
-    hook({ type: 'context_usage', sessionId: 'session-1', contextTokens: 80, contextWindow: 100 } satisfies ContextUsageMessage);
-    await vi.waitFor(() => expect(compactorMocks.prepareCompaction).toHaveBeenCalledTimes(1));
-    expect(emitBgcStarted).toHaveBeenCalledTimes(1);
-
-    await runBeforeExit();
-    hook({ type: 'session_exit', sessionId: 'session-1', state: 'completed' } satisfies SessionExitMessage);
-    hook({ type: 'context_usage', sessionId: 'session-1', contextTokens: 82, contextWindow: 100 } satisfies ContextUsageMessage);
-
-    expect(compactorMocks.prepareCompaction).toHaveBeenCalledTimes(1);
-    expect(emitBgcStarted).toHaveBeenCalledTimes(1);
-
-    resolvePrepare?.(prepared);
-    await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
-    expect(emitCompactBoundary).toHaveBeenCalledTimes(1);
+    const client = createClient();
+    const session = bgcSession('compact-full');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
+    client.subscriptions.set(session.id, cb);
+    session.subscribe(cb);
+    const compactSpy = vi.spyOn(session, 'compact').mockResolvedValue(undefined);
+    const bgcSpy = vi.spyOn(session, 'prepareBgCompaction');
+    server['handleAction'](client as never, { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm', mode: 'full' } as CompactAction);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(compactSpy).toHaveBeenCalled();
+    expect(bgcSpy).not.toHaveBeenCalled(); // full compaction, not background
+    // Pi ends the turn itself; orcd must not inject "Background compaction" markers.
+    const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
+    expect(wrote.some((w) => w.includes('bgc_started'))).toBe(false);
+    expect(wrote.some((w) => w.includes('compact_boundary'))).toBe(false);
   });
 
-  it('rehydrates inactive persisted sessions for explicit compact action', async () => {
-    compactorMocks.prepareCompaction.mockReset().mockResolvedValue(prepared);
-    compactorMocks.applyCompaction.mockReset().mockResolvedValue(applyResult);
+  it('defers the splice to run-end when the session is busy, then applies', async () => {
     const server = createServer();
-    const client = {
-      socket: { writable: true, write: vi.fn() } as never,
-      subscriptions: new Map(),
-      authenticated: true,
-    };
-
-    server['handleAction'](client, {
-      action: 'compact',
-      sessionId: 'session-1',
-      cwd: '/tmp/project',
-      provider: 'test',
-      model: 'test-model',
-      contextWindow: 100,
-      summarizeThreshold: 0.6,
-    } satisfies CompactAction);
-
-    await vi.waitFor(() => expect(compactorMocks.prepareCompaction).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(compactorMocks.applyCompaction).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(server.store.get('session-1')).toBeUndefined());
-    expect(client.subscriptions.has('session-1')).toBe(true);
+    const session = bgcSession('bgc-defer');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 7, details: undefined };
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'isIdle').mockReturnValue(false);
+    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
+    await server['maybeStartBgc'](session);
+    expect(applySpy).not.toHaveBeenCalled(); // deferred, not applied mid-run
+    await session['runBeforeExitHooks'](); // simulate run-end
+    expect(applySpy).toHaveBeenCalledWith(result);
   });
 });

@@ -16,6 +16,7 @@ type Props = {
   accentColor?: string | null;
   model: string;
   providerID: string;
+  thinkingLevel?: string;
   summarizeThreshold: number;
   onPromptSent?: () => void;
   promptFocusSeq?: number | null;
@@ -28,6 +29,7 @@ export const SessionView = observer(function SessionView({
   accentColor,
   model,
   providerID,
+  thinkingLevel = 'high',
   summarizeThreshold,
   onPromptSent,
   promptFocusSeq,
@@ -59,6 +61,7 @@ export const SessionView = observer(function SessionView({
   const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
   const subagents = session?.accumulator.subagents ?? new Map();
   const bgcInProgress = session?.bgcInProgress ?? false;
+  const compactInProgress = session?.compactInProgress ?? false;
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
 
@@ -92,6 +95,16 @@ export const SessionView = observer(function SessionView({
   // Request status on mount
   useEffect(() => {
     sessionStore.requestStatus(cardId);
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Release this card's in-memory conversation when the view unmounts / switches
+  // away. The transcript is persisted to IndexedDB, so this only frees RAM; the
+  // store rehydrates from cache on reopen. Keyed on cardId alone so it fires only
+  // on a real card change, not when sessionId resolves mid-session.
+  useEffect(() => {
+    return () => {
+      sessionStore.evictSession(cardId).catch(() => {});
+    };
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Card switch reset
@@ -166,7 +179,7 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: string; provider?: string; summarizeThreshold?: number }) {
+  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high'; summarizeThreshold?: number }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -233,7 +246,7 @@ export const SessionView = observer(function SessionView({
               const defaultModel = models.length > 0 ? models[0][0] : 'sonnet';
               handleUpdateCard({ provider: newProvider, model: defaultModel });
             }}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 truncate disabled:cursor-not-allowed disabled:opacity-50"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
             {config.allProviders.map(([id, p]) => (
               <option key={id} value={id}>
@@ -245,7 +258,7 @@ export const SessionView = observer(function SessionView({
             value={model}
             disabled={nodeOffline}
             onChange={(e) => handleUpdateCard({ model: e.target.value })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 truncate disabled:cursor-not-allowed disabled:opacity-50"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
             {config.getModels(providerID).map(([alias, m]) => (
               <option key={alias} value={alias}>
@@ -260,11 +273,25 @@ export const SessionView = observer(function SessionView({
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="0">Off</option>
+            <option value="0.1">10%</option>
+            <option value="0.2">20%</option>
+            <option value="0.3">30%</option>
+            <option value="0.4">40%</option>
             <option value="0.5">50%</option>
             <option value="0.6">60%</option>
             <option value="0.7">70%</option>
             <option value="0.8">80%</option>
             <option value="0.9">90%</option>
+          </select>
+          <select
+            value={thinkingLevel}
+            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto"
+          >
+            <option value="off">Off</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
           </select>
           {isStreaming ? (
             <Button
@@ -306,7 +333,7 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting || nodeOffline}
         onSend={handleSend}
         onStop={handleStop}
-        onCompact={!!sessionId || sessionActive ? (bgcInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
+        onCompact={!!sessionId || sessionActive ? (bgcInProgress || compactInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
         onPromptSent={onPromptSent}
         sendPending={false}
         contextPercent={contextPercent}
@@ -591,7 +618,7 @@ function PromptInput({
         <div className="text-xs text-destructive mb-1 text-right pr-[46px] sm:pr-[38px]">{uploadError}</div>
       )}
       <div className={`flex gap-2 ${dragging ? 'ring-2 ring-neon-cyan/50 rounded-md' : ''}`}>
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Textarea
             ref={ref}
             value={text}
@@ -601,7 +628,6 @@ function PromptInput({
             onFocus={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-focus', { detail: { cardId } }))}
             onBlur={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-blur'))}
             placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
-            maxLength={10000}
             rows={3}
             // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
             className="resize-none min-h-full max-h-40 overflow-y-auto pr-10 focus-ring"

@@ -8,7 +8,6 @@ export interface CreateAction {
   model: string;
   effort?: string;       // 'high' | 'medium' | 'low' | 'disabled'
   sessionId?: string;    // Resume existing session
-  env?: Record<string, string>;  // ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY
   contextWindow?: number;
   summarizeThreshold?: number;  // 0-1, fraction of context window to trigger compaction
   requestId?: string;
@@ -19,6 +18,21 @@ export interface MessageAction {
   sessionId: string;
   prompt: string;
   requestId?: string;
+}
+
+// Re-instantiate an existing session WITHOUT running a turn, purely to re-arm
+// its in-process pi-subagents scheduler (lives only in orcd memory and is lost
+// on restart). The session stays alive until its scheduled jobs fire — see
+// hasEnabledScheduledJobs. Used at orc-backend startup/reconnect to make
+// scheduled background agents survive orcd restarts.
+export interface WarmAction {
+  action: 'warm';
+  sessionId: string;
+  cwd: string;
+  provider: string;
+  model: string;
+  contextWindow?: number;
+  summarizeThreshold?: number;
 }
 
 export interface SetEffortAction {
@@ -67,6 +81,9 @@ export interface CompactAction {
   contextWindow?: number;
   summarizeThreshold?: number;
   requestId?: string;
+  // 'full' = Pi-native blocking compaction (the chat `/compact` command).
+  // 'background' (default) = Orchestrel incremental BGC (the UI context wheel).
+  mode?: 'full' | 'background';
 }
 
 export interface HelloAction {
@@ -105,6 +122,7 @@ export interface PathValidateAction {
 export type OrcdAction =
   | CreateAction
   | MessageAction
+  | WarmAction
   | SetEffortAction
   | SubscribeAction
   | UnsubscribeAction
@@ -129,14 +147,14 @@ export interface StreamEventMessage {
   type: 'stream_event';
   sessionId: string;
   eventIndex: number;
-  event: unknown;        // SDKMessage from Agent SDK
+  event: unknown;        // Runtime stream event
 }
 
 export interface SessionResultMessage {
   type: 'result';
   sessionId: string;
   eventIndex: number;
-  result: unknown;       // SDKResultMessage from Agent SDK
+  result: unknown;       // Runtime turn result
 }
 
 export interface TurnCompleteMessage {
@@ -169,7 +187,7 @@ export interface ContextUsageMessage {
 export interface SessionIdUpdateMessage {
   type: 'session_id_update';
   sessionId: string;       // orcd-level session id (unchanged, for routing)
-  newSessionId: string;    // CC's new session_id after a fork
+  newSessionId: string;    // Runtime session id after a fork
 }
 
 export interface SessionListMessage {

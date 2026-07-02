@@ -1,4 +1,4 @@
-import type { MemoryUpsertConfig, OrchestrelConfig, ProviderType } from '../shared/config';
+import type { MemoryUpsertConfig, ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
 import { buildModelAliasEnv, loadConfig, parseConfig as parseSharedConfig, resolveEnvVars } from '../shared/config';
 
 export interface ProviderConfig {
@@ -7,10 +7,11 @@ export interface ProviderConfig {
   baseUrl: string;
   apiKey: string;
   authToken?: string;
+  oauth?: string;
   region?: string;
   profile?: string;
-  models: string[];
-  modelLabels: Record<string, { alias: string; label: string; contextWindow: number }>;
+  models: Record<string, ModelDef>;
+  modelLabels?: Record<string, { alias: string; label: string; contextWindow: number }>;
   modelAliasEnv: Record<string, string>;
 }
 
@@ -42,9 +43,10 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
       baseUrl: p.baseUrl ?? '',
       apiKey: p.apiKey ?? '',
       ...(p.authToken ? { authToken: p.authToken } : {}),
+      ...(p.oauth ? { oauth: p.oauth } : {}),
       ...(p.region ? { region: p.region } : {}),
       ...(p.profile ? { profile: p.profile } : {}),
-      models: Object.values(p.models).map((m) => m.modelID),
+      models: p.models,
       modelLabels,
       modelAliasEnv: buildModelAliasEnv(p.models, p.aliases),
     };

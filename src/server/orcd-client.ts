@@ -178,7 +178,7 @@ export class OrcdClient {
         reject(new Error(`request timeout: ${action.action}`));
       }, 130_000);
       this.pending.set(requestId, { resolve, reject, timeout });
-      this.send({ ...action, requestId });
+      this.send({ ...action, requestId } as OrcdAction);
     });
   }
 
@@ -192,7 +192,6 @@ export class OrcdClient {
     model: string;
     effort?: string;
     sessionId?: string;
-    env?: Record<string, string>;
     contextWindow?: number;
     summarizeThreshold?: number;
   }): Promise<string> {
@@ -222,7 +221,49 @@ export class OrcdClient {
         model: opts.model,
         effort: opts.effort,
         sessionId: opts.sessionId,
-        env: opts.env,
+        contextWindow: opts.contextWindow,
+        summarizeThreshold: opts.summarizeThreshold,
+      });
+    });
+  }
+
+  /**
+   * Re-arm an existing session's scheduled jobs without running a turn (see
+   * WarmAction). Resolves once orcd confirms the session is resident, marking it
+   * active so reconcile/auto-start treat it as live.
+   */
+  async warm(opts: {
+    sessionId: string;
+    cwd: string;
+    provider: string;
+    model: string;
+    contextWindow?: number;
+    summarizeThreshold?: number;
+  }): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket?.writable) {
+        console.error('[orcd-client] not connected, cannot warm session');
+        reject(new Error('OrcdClient not connected'));
+        return;
+      }
+
+      const pending = {
+        resolve,
+        reject,
+        timeout: setTimeout(() => {
+          const idx = this.pendingCreates.indexOf(pending);
+          if (idx !== -1) this.pendingCreates.splice(idx, 1);
+          reject(new Error('orcd warm timeout'));
+        }, 30_000),
+      };
+      this.pendingCreates.push(pending);
+
+      this.send({
+        action: 'warm',
+        sessionId: opts.sessionId,
+        cwd: opts.cwd,
+        provider: opts.provider,
+        model: opts.model,
         contextWindow: opts.contextWindow,
         summarizeThreshold: opts.summarizeThreshold,
       });
@@ -273,7 +314,9 @@ export class OrcdClient {
   }
 
   /**
-   * Start Orchestrel background compaction for a session.
+   * Compact a session. `mode: 'full'` runs Pi's native blocking compaction (the
+   * chat `/compact` command); omitting it (or 'background') runs Orchestrel's
+   * incremental background compaction (the UI context wheel).
    */
   compact(opts: {
     sessionId: string;
@@ -282,6 +325,7 @@ export class OrcdClient {
     model: string;
     contextWindow?: number;
     summarizeThreshold?: number;
+    mode?: 'full' | 'background';
   }): void {
     this.send({ action: 'compact', ...opts });
   }

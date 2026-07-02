@@ -77,7 +77,9 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   // ── Page ─────────────────────────────────────────────────────────────────
   socket.on('page', async (data, callback) => {
     try {
-      const result = await cardService.pageCards(data.column as Column, data.cursor, data.limit);
+      const { userService } = await import('../services/user');
+      const visible = await userService.visibleProjectIds(identity as import('../services/user').UserIdentity);
+      const result = await cardService.pageCards(data.column as Column, data.cursor, data.limit, visible);
       callback({
         data: {
           column: data.column as Column,
@@ -95,8 +97,14 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   // ── Search ───────────────────────────────────────────────────────────────
   socket.on('search', async (data, callback) => {
     try {
-      const { cards, total } = await cardService.searchCards(data.query);
-      callback({ data: { cards: cards as unknown as Card[], total } });
+      const { userService } = await import('../services/user');
+      const visible = await userService.visibleProjectIds(identity as import('../services/user').UserIdentity);
+      const { cards } = await cardService.searchCards(data.query);
+      const filtered =
+        visible === 'all'
+          ? cards
+          : cards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+      callback({ data: { cards: filtered as unknown as Card[], total: filtered.length } });
     } catch (err) {
       console.error('[ws] search error:', err);
       callback({ error: String(err instanceof Error ? err.message : err) });
@@ -118,7 +126,7 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   socket.on('project:mkdir', (data, cb) => void handleProjectMkdir(data, cb));
 
   // ── Agent ────────────────────────────────────────────────────────────────
-  socket.on('agent:send', (data, cb) => void handleAgentSend(data, cb));
+  socket.on('agent:send', (data, cb) => void handleAgentSend(data, cb, socket));
   socket.on('agent:compact', (data, cb) => void handleAgentCompact(data, cb));
   socket.on('agent:stop', (data, cb) => void handleAgentStop(data, cb));
   socket.on('agent:status', (data, cb) => void handleAgentStatus(data, cb, socket));
@@ -145,13 +153,17 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   });
 
   // ── Disconnect ───────────────────────────────────────────────────────────
-  socket.on('disconnect', () => {
+  // Use `disconnecting`, not `disconnect`: socket.io has already emptied
+  // `socket.rooms` by the time `disconnect` fires, so the old handler never saw
+  // any card rooms and leaked the bus listeners. In `disconnecting` the rooms
+  // are still populated; pass the leaving socket id so cleanup can tell whether
+  // it was the last viewer.
+  socket.on('disconnecting', () => {
     console.log(`[ws] disconnect: ${identity.email}`);
-    // Clean up card room bus listeners if rooms are now empty
     for (const room of socket.rooms) {
       const match = room.match(/^card:(\d+)$/);
       if (match) {
-        busRoomBridge.cleanupCardIfEmpty(Number(match[1]));
+        busRoomBridge.cleanupCardIfEmpty(Number(match[1]), socket.id);
       }
     }
   });

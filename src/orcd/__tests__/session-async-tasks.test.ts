@@ -1,28 +1,51 @@
-import { appendFile, mkdtemp, rm, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { join } from 'path';
 import { OrcdSession } from '../session';
+import type { PiRuntimeSession } from '../pi-runtime';
 import type { SessionEventCallback } from '../session';
 
-const events: unknown[] = [];
-const sdkControls = vi.hoisted(() => ({
-  close: vi.fn(),
-  interrupt: vi.fn(),
-  setMaxThinkingTokens: vi.fn(),
+const pi = vi.hoisted(() => ({
+  createPiRuntimeSession: vi.fn(),
 }));
-const sdkQuery = vi.hoisted(() => vi.fn(() => ({
-  async *[Symbol.asyncIterator]() {
-    for (const event of events) yield event;
-  },
-  close: sdkControls.close,
-  interrupt: sdkControls.interrupt,
-  setMaxThinkingTokens: sdkControls.setMaxThinkingTokens,
-})));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: sdkQuery,
+vi.mock('../pi-runtime', () => ({
+  createPiRuntimeSession: pi.createPiRuntimeSession,
 }));
+
+interface TestRuntimeSession extends PiRuntimeSession {
+  emit(event: unknown): void;
+  resolvePrompt(): void;
+}
+
+function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRuntimeSession {
+  const subscribers = new Set<(event: unknown) => void>();
+  const session: TestRuntimeSession = {
+    id,
+    prompt: vi.fn(async () => {
+      for (const event of events) session.emit(event);
+    }),
+    subscribe: vi.fn((cb: (event: unknown) => void) => {
+      subscribers.add(cb);
+      return () => subscribers.delete(cb);
+    }),
+    abort: vi.fn(async () => undefined),
+    compact: vi.fn(async () => ({ ok: true })),
+    prepareBgCompaction: vi.fn(async () => null),
+    applyBgCompaction: vi.fn(() => undefined),
+    latestEntryIsCompaction: vi.fn(() => false),
+    setEffort: vi.fn(async () => undefined),
+    getMessages: vi.fn(() => []),
+    emit(event: unknown) {
+      for (const cb of subscribers) cb(event);
+    },
+    resolvePrompt() {
+      return undefined;
+    },
+  };
+  return session;
+}
 
 function toolUseEvent(id: string, description: string): unknown {
   return {
@@ -34,22 +57,6 @@ function toolUseEvent(id: string, description: string): unknown {
           id,
           name: 'Agent',
           input: { description, run_in_background: true },
-        },
-      ],
-    },
-  };
-}
-
-function genericToolUseEvent(id: string, name: string, description: string): unknown {
-  return {
-    type: 'assistant',
-    message: {
-      content: [
-        {
-          type: 'tool_use',
-          id,
-          name,
-          input: { description },
         },
       ],
     },
@@ -70,7 +77,7 @@ function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
               text: [
                 'Async agent launched successfully.',
                 `agentId: ${taskId} (internal ID - do not mention to user.)`,
-                `output_file: /tmp/claude/tasks/${taskId}.output`,
+                `output_file: /tmp/pi/tasks/${taskId}.output`,
               ].join('\n'),
             },
           ],
@@ -80,177 +87,65 @@ function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
   };
 }
 
-function genericLaunchResult(toolUseId: string, taskId: string): unknown {
+function taskNotification(taskId: string, toolUseId: string, status: 'completed' | 'failed' = 'completed'): unknown {
   return {
-    type: 'user',
-    toolUseResult: { taskId },
+    type: 'message_update',
     message: {
       content: [
         {
-          type: 'tool_result',
-          tool_use_id: toolUseId,
-          content: `Monitor started (task ${taskId}, timeout 900000ms).`,
+          type: 'text',
+          text: [
+            '<task-notification>',
+            `<task-id>${taskId}</task-id>`,
+            `<tool-use-id>${toolUseId}</tool-use-id>`,
+            `<status>${status}</status>`,
+            '<result>DONE</result>',
+            '</task-notification>',
+          ].join('\n'),
         },
       ],
     },
   };
 }
 
-describe('OrcdSession async Agent lifecycle', () => {
+describe('OrcdSession Pi runtime loop', () => {
   beforeEach(() => {
-    events.length = 0;
-    sdkQuery.mockClear();
-    sdkControls.close.mockClear();
-    sdkControls.interrupt.mockClear();
-    sdkControls.setMaxThinkingTokens.mockClear();
-    vi.restoreAllMocks();
+    pi.createPiRuntimeSession.mockReset();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('disables broken skills in Agent SDK options', async () => {
-    events.push({ type: 'result', subtype: 'success', stop_reason: 'end_turn' });
-
-    const session = new OrcdSession({
-      cwd: '/tmp',
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: 'session-skills',
-    });
-
-    await session.run({ prompt: 'go' });
-
-    expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
-      options: expect.objectContaining({
-        disallowedTools: expect.arrayContaining([
-          'AskUserQuestion',
-          'CronCreate',
-          'CronDelete',
-          'CronList',
-          'ScheduleWakeup',
-          'WebFetch',
-          'WebSearch',
-          'Workflow',
-        ]),
-        settings: expect.objectContaining({
-          skillOverrides: expect.objectContaining({
-            'claude-api': 'off',
-          }),
-        }),
-      }),
-    }));
-  });
-
-  it('emits turn_complete with no pending async tasks for an ordinary foreground turn', async () => {
-    events.push({
-      type: 'result',
-      subtype: 'success',
-      stop_reason: 'end_turn',
-      modelUsage: { test: { contextWindow: 200000 } },
-    });
-
-    const session = new OrcdSession({
-      cwd: '/tmp',
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: 'session-foreground-turn',
-    });
-
-    const payloads: unknown[] = [];
-    session.subscribe((msg) => payloads.push(msg));
-
-    await session.run({ prompt: 'go' });
-
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'result',
-      sessionId: 'session-foreground-turn',
-    }));
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'turn_complete',
-      sessionId: 'session-foreground-turn',
-      hasPendingAsyncTasks: false,
-    }));
-  });
-
-  it('logs retry details and lets the Agent SDK retry HTTP 500+ provider errors', async () => {
-    events.push({
-      type: 'system',
-      subtype: 'api_retry',
-      attempt: 1,
-      max_retries: 2,
-      retry_delay_ms: 1000,
-      error_status: 500,
-      error: {
-        message: 'server_error',
-        authToken: 'do-not-log',
-      },
-    });
+  it('creates a Pi runtime session and forwards the initial prompt', async () => {
+    const runtime = createRuntimeSession([], 'session-prompt');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
       cwd: '/tmp/project',
       model: 'test-model',
       provider: 'test-provider',
-      sessionId: 'session-no-retry',
+      sessionId: 'session-prompt',
     });
 
-    const logs: string[] = [];
-    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
-      logs.push(args.map(String).join(' '));
+    await session.run({ prompt: 'go', effort: 'high' });
+
+    expect(pi.createPiRuntimeSession).toHaveBeenCalledWith({
+      cwd: '/tmp/project',
+      providerId: 'test-provider',
+      modelId: 'test-model',
+      sessionId: 'session-prompt',
+      effort: 'high',
     });
-
-    const payloads: unknown[] = [];
-    session.subscribe((msg) => payloads.push(msg));
-
-    await session.run({
-      prompt: 'go',
-      env: {
-        ANTHROPIC_BASE_URL: 'http://provider.local:8000',
-        ANTHROPIC_AUTH_TOKEN: 'secret-token',
-      },
-    });
-
-    expect(sdkControls.close).not.toHaveBeenCalled();
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      event: expect.objectContaining({ subtype: 'api_retry' }),
-    }));
-    expect(payloads).not.toContainEqual(expect.objectContaining({
-      type: 'error',
-    }));
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'session_exit',
-      state: 'completed',
-    }));
-
-    const retryLog = logs.find((line) => line.includes('api_retry'));
-    expect(retryLog).toEqual(expect.stringContaining('session-no-retry'));
-    expect(retryLog).toEqual(expect.stringContaining('test-provider'));
-    expect(retryLog).toEqual(expect.stringContaining('test-model'));
-    expect(retryLog).toEqual(expect.stringContaining('http://provider.local:8000'));
-    expect(retryLog).toEqual(expect.stringContaining('server_error'));
-    expect(retryLog).toEqual(expect.stringContaining('[REDACTED]'));
-    expect(retryLog).not.toContain('secret-token');
-    expect(retryLog).not.toContain('do-not-log');
+    expect(runtime.prompt).toHaveBeenCalledWith('go', undefined);
   });
 
-  it('closes the Agent SDK query on non-500 provider retry events', async () => {
-    events.push({
-      type: 'system',
-      subtype: 'api_retry',
-      attempt: 1,
-      max_retries: 2,
-      retry_delay_ms: 1000,
-      error_status: 429,
-      error: 'rate_limit',
-    });
+  it('emits stream_event for ordinary Pi events', async () => {
+    const event = { type: 'message_update', message: { text: 'hello' } };
+    const runtime = createRuntimeSession([event], 'session-stream');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
-      cwd: '/tmp/project',
+      cwd: '/tmp',
       model: 'test-model',
       provider: 'test-provider',
-      sessionId: 'session-no-retry',
+      sessionId: 'session-stream',
     });
 
     const payloads: unknown[] = [];
@@ -258,45 +153,92 @@ describe('OrcdSession async Agent lifecycle', () => {
 
     await session.run({ prompt: 'go' });
 
-    expect(sdkControls.close).toHaveBeenCalledTimes(1);
-    expect(payloads).not.toContainEqual(expect.objectContaining({
+    expect(payloads).toContainEqual(expect.objectContaining({
       type: 'stream_event',
-      event: expect.objectContaining({ subtype: 'api_retry' }),
-    }));
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'error',
-      error: expect.stringContaining('HTTP 429: rate_limit'),
-    }));
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'session_exit',
-      state: 'errored',
+      sessionId: 'session-stream',
+      event,
     }));
   });
 
-  it('prefers configured contextWindow over SDK modelUsage metadata', async () => {
-    events.push(
+  it('emits result on agent_end (once per run), not on intermediate turn_end', async () => {
+    const assistant = { role: 'assistant', stopReason: 'end_turn', text: 'done' };
+    const runtime = createRuntimeSession(
+      [
+        // An intermediate tool round must NOT produce a result (would flip the card).
+        { type: 'turn_end', message: { id: 'msg-mid', text: 'thinking' }, toolResults: [] },
+        { type: 'agent_end', willRetry: false, messages: [{ role: 'user', text: 'go' }, assistant] },
+      ],
+      'session-result',
+    );
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-result',
+    });
+
+    const results: unknown[] = [];
+    session.subscribe((msg) => {
+      if (msg.type === 'result') results.push(msg.result);
+    });
+
+    await session.run({ prompt: 'go' });
+
+    expect(results).toEqual([
+      { type: 'result', subtype: 'success', message: assistant, toolResults: [] },
+    ]);
+  });
+
+  it('emits a system/init event on first run so the UI shows "Session started"', async () => {
+    const runtime = createRuntimeSession([], 'session-init');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-init',
+    });
+
+    const initEvents: Array<Record<string, unknown>> = [];
+    session.subscribe((msg) => {
+      if (msg.type !== 'stream_event') return;
+      const evt = msg.event as Record<string, unknown>;
+      if (evt.type === 'system' && evt.subtype === 'init') initEvents.push(evt);
+    });
+
+    await session.run({ prompt: 'go' });
+
+    expect(initEvents).toHaveLength(1);
+    expect(initEvents[0]).toMatchObject({ type: 'system', subtype: 'init', session_id: 'session-init', model: 'test-model' });
+  });
+
+  it('emits context_usage for usage events', async () => {
+    const runtime = createRuntimeSession([
       {
-        type: 'stream_event',
-        event: {
-          type: 'message_start',
-          message: {
-            usage: { input_tokens: 12345 },
+        type: 'message_update',
+        message: {
+          // Pi's Usage shape: components + totalTokens, no context window.
+          usage: {
+            input: 12000,
+            output: 300,
+            cacheRead: 45,
+            cacheWrite: 0,
+            totalTokens: 12345,
           },
         },
       },
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+    ], 'session-usage');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
       cwd: '/tmp',
-      model: 'qwen3-coder-next',
-      provider: 'max',
-      sessionId: 'session-context-window',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-usage',
+      // Window comes from session config, not the usage event.
       contextWindow: 262144,
     });
 
@@ -305,356 +247,63 @@ describe('OrcdSession async Agent lifecycle', () => {
 
     await session.run({ prompt: 'go' });
 
+    expect(session.lastContextTokens).toBe(12345);
+    expect(session.lastContextWindow).toBe(262144);
     expect(payloads).toContainEqual(expect.objectContaining({
       type: 'context_usage',
+      sessionId: 'session-usage',
       contextTokens: 12345,
       contextWindow: 262144,
     }));
   });
 
-  it('delays session_exit until async task notification appears in JSONL', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
+  it('delays session_exit while the worktree has an enabled scheduled job, then exits once it fires', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'orc-sess-sched-'));
+    const storeDir = join(cwd, '.pi', 'subagent-schedules');
+    mkdirSync(storeDir, { recursive: true });
+    const storeFile = join(storeDir, 'job.json');
+    const writeStore = (enabled: boolean) =>
+      writeFileSync(storeFile, JSON.stringify({ version: 1, jobs: [{ id: 'j1', enabled }] }));
+    writeStore(true);
 
-    events.push(
-      toolUseEvent('call_abc', 'Implement remaining tasks'),
-      asyncLaunchResult('call_abc', 'agent-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+    const runtime = createRuntimeSession([], 'session-sched');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
-      cwd: dir,
+      cwd,
       model: 'test-model',
       provider: 'test-provider',
-      sessionId: 'session',
-      jsonlPathForTesting: jsonlPath,
-      asyncTaskPollMsForTesting: 10,
+      sessionId: 'session-sched',
+      scheduledJobPollMsForTesting: 5,
     });
 
     const received: string[] = [];
-    const payloads: unknown[] = [];
-    const cb: SessionEventCallback = (msg) => {
-      received.push(msg.type);
-      payloads.push(msg);
-    };
-    session.subscribe(cb);
+    session.subscribe((msg) => received.push(msg.type));
 
     const run = session.run({ prompt: 'go' });
 
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'turn_complete',
-        sessionId: 'session',
-        hasPendingAsyncTasks: true,
-      }));
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_started',
-          task_id: 'agent-123',
-          description: 'Implement remaining tasks',
-        }),
-      }));
+    // Turn finished but the enabled job holds the session open — no exit yet.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(received).not.toContain('session_exit');
 
-      expect(received.indexOf('turn_complete')).toBeGreaterThan(received.indexOf('result'));
+    // The "once" job fires and disables itself → session is free to exit.
+    writeStore(false);
+    await run;
 
-      await appendFile(jsonlPath, JSON.stringify({
-        type: 'queue-operation',
-        operation: 'enqueue',
-        content: [
-          '<task-notification>',
-          '<task-id>agent-123</task-id>',
-          '<tool-use-id>call_abc</tool-use-id>',
-          '<status>completed</status>',
-          '<result>DONE</result>',
-          '</task-notification>',
-        ].join('\n'),
-      }) + '\n');
-      await run;
+    expect(received.at(-1)).toBe('session_exit');
 
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_notification',
-          task_id: 'agent-123',
-          status: 'completed',
-          result: 'DONE',
-        }),
-      }));
-      expect(received.indexOf('turn_complete')).toBeGreaterThan(received.indexOf('result'));
-      expect(received.indexOf('turn_complete')).toBeLessThan(received.indexOf('session_exit'));
-      expect(received.at(-1)).toBe('session_exit');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    rmSync(cwd, { recursive: true, force: true });
   });
 
-  it('delays session_exit until generic background task notification appears in JSONL', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
-      genericToolUseEvent('call_monitor', 'Monitor', 'Jenkins build completion'),
-      genericLaunchResult('call_monitor', 'monitor-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
-
-    const session = new OrcdSession({
-      cwd: dir,
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: 'session-monitor',
-      jsonlPathForTesting: jsonlPath,
-      asyncTaskPollMsForTesting: 10,
-    });
-
-    const received: string[] = [];
-    const payloads: unknown[] = [];
-    const cb: SessionEventCallback = (msg) => {
-      received.push(msg.type);
-      payloads.push(msg);
-    };
-    session.subscribe(cb);
-
-    const run = session.run({ prompt: 'go' });
-
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_started',
-          task_id: 'monitor-123',
-          description: 'Jenkins build completion',
-        }),
-      }));
-
-      await appendFile(jsonlPath, JSON.stringify({
-        type: 'queue-operation',
-        operation: 'enqueue',
-        content: [
-          '<task-notification>',
-          '<task-id>monitor-123</task-id>',
-          '<tool-use-id>call_monitor</tool-use-id>',
-          '<status>completed</status>',
-          '<result>Build finished: SUCCESS</result>',
-          '</task-notification>',
-        ].join('\n'),
-      }) + '\n');
-
-      await run;
-
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_notification',
-          task_id: 'monitor-123',
-          status: 'completed',
-          result: 'Build finished: SUCCESS',
-        }),
-      }));
-      expect(received.at(-1)).toBe('session_exit');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('emits failed task_notification and still exits the session', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
-      toolUseEvent('call_failed', 'Run async work that fails'),
-      asyncLaunchResult('call_failed', 'agent-failed-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
-
-    const session = new OrcdSession({
-      cwd: dir,
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: 'session-failed',
-      jsonlPathForTesting: jsonlPath,
-      asyncTaskPollMsForTesting: 10,
-    });
-
-    const received: string[] = [];
-    const payloads: unknown[] = [];
-    const cb: SessionEventCallback = (msg) => {
-      received.push(msg.type);
-      payloads.push(msg);
-    };
-    session.subscribe(cb);
-
-    const run = session.run({ prompt: 'go' });
-
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
-
-      await appendFile(jsonlPath, JSON.stringify({
-        type: 'queue-operation',
-        operation: 'enqueue',
-        content: [
-          '<task-notification>',
-          '<task-id>agent-failed-123</task-id>',
-          '<tool-use-id>call_failed</tool-use-id>',
-          '<status>failed</status>',
-          '<result>BLOCKED</result>',
-          '</task-notification>',
-        ].join('\n'),
-      }) + '\n');
-
-      await run;
-
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_notification',
-          task_id: 'agent-failed-123',
-          status: 'failed',
-          result: 'BLOCKED',
-        }),
-      }));
-      expect(payloads.at(-1)).toEqual(expect.objectContaining({
-        type: 'session_exit',
-        state: 'completed',
-      }));
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('surfaces immediate Monitor script failure and exits errored', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
-      genericToolUseEvent('tooluse_2h0xHHy7KYUWwBlJ6iCkMS', 'Monitor', 'Jenkins dev-build-image deploy for main'),
-      genericLaunchResult('tooluse_2h0xHHy7KYUWwBlJ6iCkMS', 'b4ssomoaz'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
-
-    const session = new OrcdSession({
-      cwd: dir,
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: '94bf0aba-c5f3-4cf4-ab01-afa34ce4c58a',
-      jsonlPathForTesting: jsonlPath,
-      asyncTaskPollMsForTesting: 10,
-    });
-
-    const received: string[] = [];
-    const payloads: unknown[] = [];
-    session.subscribe((msg) => {
-      received.push(msg.type);
-      payloads.push(msg);
-    });
-
-    const run = session.run({ prompt: 'go' });
-
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
-
-      await appendFile(jsonlPath, JSON.stringify({
-        type: 'queue-operation',
-        operation: 'enqueue',
-        content: [
-          '<task-notification>',
-          '<task-id>b4ssomoaz</task-id>',
-          '<tool-use-id>tooluse_2h0xHHy7KYUWwBlJ6iCkMS</tool-use-id>',
-          '<output-file>/tmp/claude/tasks/b4ssomoaz.output</output-file>',
-          '<status>failed</status>',
-          '<summary>Monitor "Jenkins dev-build-image deploy for main" script failed (exit 1)</summary>',
-          '</task-notification>',
-        ].join('\n'),
-      }) + '\n');
-
-      await run;
-
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_notification',
-          task_id: 'b4ssomoaz',
-          status: 'failed',
-          result: 'Monitor "Jenkins dev-build-image deploy for main" script failed (exit 1)',
-        }),
-      }));
-      expect(payloads.at(-1)).toEqual(expect.objectContaining({
-        type: 'session_exit',
-        state: 'errored',
-      }));
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('treats stopped Monitor SDK task notification as errored session exit', async () => {
-    events.push(
-      genericToolUseEvent('tooluse_AP4AYp7XO6OzJSixgNTeJ8', 'Monitor', 'Jenkins deploy for commit 24b151f'),
-      genericLaunchResult('tooluse_AP4AYp7XO6OzJSixgNTeJ8', 'bbqs4eouz'),
-      {
-        type: 'system',
-        subtype: 'task_started',
-        task_id: 'bbqs4eouz',
-        description: 'Jenkins deploy for commit 24b151f',
-      },
-      {
-        type: 'system',
-        subtype: 'task_updated',
-        task_id: 'bbqs4eouz',
-        status: 'killed',
-      },
-      {
-        type: 'system',
-        subtype: 'task_notification',
-        task_id: 'bbqs4eouz',
-        tool_use_id: 'tooluse_AP4AYp7XO6OzJSixgNTeJ8',
-        status: 'stopped',
-        summary: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
-      },
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+  it('emits session_exit after completion', async () => {
+    const runtime = createRuntimeSession([], 'session-exit');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
       cwd: '/tmp',
       model: 'test-model',
       provider: 'test-provider',
-      sessionId: '94bf0aba-c5f3-4cf4-ab01-afa34ce4c58a',
+      sessionId: 'session-exit',
     });
 
     const payloads: unknown[] = [];
@@ -662,168 +311,294 @@ describe('OrcdSession async Agent lifecycle', () => {
 
     await session.run({ prompt: 'go' });
 
+    expect(payloads.at(-1)).toEqual({
+      type: 'session_exit',
+      sessionId: 'session-exit',
+      state: 'completed',
+    });
+  });
+
+  it('sends follow-up prompts with followUp streaming behavior', async () => {
+    const runtime = createRuntimeSession([], 'session-follow-up');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-follow-up',
+    });
+
+    await session.sendMessage('continue');
+
+    expect(runtime.prompt).toHaveBeenCalledWith('continue', { streamingBehavior: 'followUp' });
+  });
+
+  it('delegates setEffort, cancel, and compact to the active Pi runtime session', async () => {
+    const runtime = createRuntimeSession([], 'session-delegate');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-delegate',
+    });
+
+    await session.run({ prompt: 'go' });
+    await session.setEffort('max');
+    await session.cancel();
+    await expect(session.compact()).resolves.toEqual({ ok: true });
+
+    expect(runtime.setEffort).toHaveBeenCalledWith('max');
+    expect(runtime.abort).toHaveBeenCalledTimes(1);
+    expect(runtime.compact).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a Pi runtime session when compacting an inactive session', async () => {
+    const runtime = createRuntimeSession([], 'session-inactive-compact');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp/project',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-inactive-compact',
+    });
+
+    await expect(session.compact()).resolves.toEqual({ ok: true });
+
+    expect(pi.createPiRuntimeSession).toHaveBeenCalledWith({
+      cwd: '/tmp/project',
+      providerId: 'test-provider',
+      modelId: 'test-model',
+      sessionId: 'session-inactive-compact',
+      effort: undefined,
+    });
+    expect(runtime.compact).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits task_started for async agent launches seen in live Pi events', async () => {
+    const runtime = createRuntimeSession([
+      toolUseEvent('call_abc', 'Implement remaining tasks'),
+      asyncLaunchResult('call_abc', 'agent-123'),
+    ], 'session-task');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-task',
+      asyncTaskPollMsForTesting: 10,
+    });
+
+    const payloads: unknown[] = [];
+    const cb: SessionEventCallback = (msg) => payloads.push(msg);
+    session.subscribe(cb);
+
+    const run = session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({
+        type: 'task_started',
+        task_id: 'agent-123',
+        description: 'Implement remaining tasks',
+      }),
+    })));
+    runtime.emit(taskNotification('agent-123', 'call_abc'));
+    await run;
+  });
+
+  it('delays session_exit until pending async task notification arrives from Pi events', async () => {
+    const runtime = createRuntimeSession([
+      toolUseEvent('call_delay', 'Wait for async work'),
+      asyncLaunchResult('call_delay', 'agent-delay-123'),
+    ], 'session-delay');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-delay',
+      asyncTaskPollMsForTesting: 10,
+    });
+
+    const payloads: unknown[] = [];
+    const received: string[] = [];
+    session.subscribe((msg) => {
+      payloads.push(msg);
+      received.push(msg.type);
+    });
+
+    const run = session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({ type: 'task_started', task_id: 'agent-delay-123' }),
+    })));
+    expect(received).not.toContain('session_exit');
+
+    runtime.emit(taskNotification('agent-delay-123', 'call_delay'));
+    await run;
+
     expect(payloads).toContainEqual(expect.objectContaining({
       type: 'stream_event',
       event: expect.objectContaining({
         type: 'task_notification',
-        task_id: 'bbqs4eouz',
-        status: 'failed',
-        result: 'Monitor "Jenkins deploy for commit 24b151f" stopped',
+        task_id: 'agent-delay-123',
+        status: 'completed',
+        result: 'DONE',
       }),
     }));
-    expect(payloads.at(-1)).toEqual(expect.objectContaining({
+    expect(payloads.at(-1)).toEqual({
       type: 'session_exit',
-      state: 'errored',
-    }));
-  });
-
-  it('delays session_exit for live Monitor SDK launch shape until terminal notification', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
-      genericToolUseEvent('tooluse_v7bAp3zxeGI01dUjXZ18RJ', 'Monitor', 'Atlas deploy #197 completion'),
-      {
-        type: 'system',
-        subtype: 'task_started',
-        task_id: 'bi71yw4dn',
-        tool_use_id: 'tooluse_v7bAp3zxeGI01dUjXZ18RJ',
-        description: 'Atlas deploy #197 completion',
-        task_type: 'local_bash',
-      },
-      {
-        type: 'user',
-        tool_use_result: { taskId: 'bi71yw4dn', timeoutMs: 600000, persistent: false },
-        message: {
-          content: [
-            {
-              type: 'tool_result',
-              tool_use_id: 'tooluse_v7bAp3zxeGI01dUjXZ18RJ',
-              content: 'Monitor started (task bi71yw4dn, timeout 600000ms).',
-            },
-          ],
-        },
-      },
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
-
-    const session = new OrcdSession({
-      cwd: dir,
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: '94bf0aba-c5f3-4cf4-ab01-afa34ce4c58a',
-      jsonlPathForTesting: jsonlPath,
-      asyncTaskPollMsForTesting: 10,
+      sessionId: 'session-delay',
+      state: 'completed',
     });
-
-    const received: string[] = [];
-    const payloads: unknown[] = [];
-    session.subscribe((msg) => {
-      received.push(msg.type);
-      payloads.push(msg);
-    });
-
-    const run = session.run({ prompt: 'go' });
-
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_started',
-          task_id: 'bi71yw4dn',
-          description: 'Atlas deploy #197 completion',
-        }),
-      }));
-
-      await appendFile(jsonlPath, JSON.stringify({
-        type: 'queue-operation',
-        operation: 'enqueue',
-        content: [
-          '<task-notification>',
-          '<task-id>bi71yw4dn</task-id>',
-          '<tool-use-id>tooluse_v7bAp3zxeGI01dUjXZ18RJ</tool-use-id>',
-          '<status>completed</status>',
-          '<result>prod-deploy-atlas #197 finished: SUCCESS</result>',
-          '</task-notification>',
-        ].join('\n'),
-      }) + '\n');
-
-      await run;
-
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'stream_event',
-        event: expect.objectContaining({
-          type: 'task_notification',
-          task_id: 'bi71yw4dn',
-          status: 'completed',
-          result: 'prod-deploy-atlas #197 finished: SUCCESS',
-        }),
-      }));
-      expect(payloads.at(-1)).toEqual(expect.objectContaining({
-        type: 'session_exit',
-        state: 'completed',
-      }));
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
   });
 
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
-
-    events.push(
+    const runtime = createRuntimeSession([
       toolUseEvent('call_cancel', 'Run follow-up async work'),
       asyncLaunchResult('call_cancel', 'agent-cancel-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+    ], 'session-cancel');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
-      cwd: dir,
+      cwd: '/tmp',
       model: 'test-model',
       provider: 'test-provider',
       sessionId: 'session-cancel',
-      jsonlPathForTesting: jsonlPath,
       asyncTaskPollMsForTesting: 10,
     });
 
-    const received: string[] = [];
     const payloads: unknown[] = [];
-    const cb: SessionEventCallback = (msg) => {
-      received.push(msg.type);
+    const received: string[] = [];
+    session.subscribe((msg) => {
       payloads.push(msg);
-    };
-    session.subscribe(cb);
+      received.push(msg.type);
+    });
 
     const run = session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({ type: 'task_started', task_id: 'agent-cancel-123' }),
+    })));
+    expect(received).not.toContain('session_exit');
 
-    try {
-      await vi.waitFor(() => expect(received).toContain('result'));
-      expect(received).not.toContain('session_exit');
+    await session.cancel();
+    await run;
 
-      await session.cancel();
-      await run;
+    expect(runtime.abort).toHaveBeenCalledTimes(1);
+    expect(payloads.at(-1)).toEqual({
+      type: 'session_exit',
+      sessionId: 'session-cancel',
+      state: 'stopped',
+    });
+  });
 
-      expect(payloads.at(-1)).toEqual(expect.objectContaining({
-        type: 'session_exit',
-        state: 'stopped',
-      }));
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+  it('forces session_exit on cancel when the run loop is wedged after abort', async () => {
+    // Models the real lockup: a bash tool blocked on a native pipe read (a wedged
+    // ssh whose ControlMaster holds stdout open) means prompt() never resolves and
+    // abort() can't interrupt it. cancel() must still reconcile the card.
+    const runtime = createRuntimeSession([], 'session-wedged');
+    runtime.prompt = vi.fn(() => new Promise<void>(() => undefined));
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-wedged',
+      cancelGraceMsForTesting: 20,
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    // run() never resolves because prompt() is wedged — don't await it.
+    void session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(runtime.prompt).toHaveBeenCalledTimes(1));
+    expect(payloads.some((m) => (m as { type: string }).type === 'session_exit')).toBe(false);
+
+    await session.cancel();
+
+    expect(runtime.abort).toHaveBeenCalledTimes(1);
+    expect(payloads.at(-1)).toEqual({
+      type: 'session_exit',
+      sessionId: 'session-wedged',
+      state: 'stopped',
+    });
+  });
+
+  it('maps Pi subagent tool_execution events to the subagent line-item feed, deduping unchanged progress', async () => {
+    const runtime = createRuntimeSession([
+      { type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'sub-1', args: { description: 'Explore repo' } },
+      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'finding files', status: 'running' } },
+      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'finding files', status: 'running' } },
+      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'editing', status: 'running' } },
+      { type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'sub-1', isError: false },
+    ], 'session-subagent');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-subagent',
+    });
+
+    const taskEvents: Array<Record<string, unknown>> = [];
+    session.subscribe((msg) => {
+      if (msg.type !== 'stream_event') return;
+      const evt = msg.event as Record<string, unknown>;
+      if (typeof evt.type === 'string' && evt.type.startsWith('task_')) taskEvents.push(evt);
+    });
+
+    await session.run({ prompt: 'go' });
+
+    expect(taskEvents).toEqual([
+      { type: 'task_started', task_id: 'sub-1', description: 'Explore repo' },
+      { type: 'task_progress', task_id: 'sub-1', data: 'finding files' },
+      { type: 'task_progress', task_id: 'sub-1', data: 'editing' },
+      { type: 'task_notification', task_id: 'sub-1', status: 'completed' },
+    ]);
+  });
+
+  it('queues an overlapping prompt into Pi instead of dropping it', async () => {
+    let releaseFirst: (() => void) | undefined;
+    const runtime = createRuntimeSession([], 'session-overlap');
+    // The follow-up enqueue returns immediately (Pi accepts it into its queue);
+    // the initial run blocks so the session stays "running" while the overlap arrives.
+    runtime.prompt = vi.fn(async (_text: string, opts?: { streamingBehavior?: string }) => {
+      if (opts?.streamingBehavior === 'followUp') return;
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+    });
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-overlap',
+    });
+
+    const payloads: unknown[] = [];
+    session.subscribe((msg) => payloads.push(msg));
+
+    const first = session.run({ prompt: 'first' });
+    await vi.waitFor(() => expect(runtime.prompt).toHaveBeenCalledTimes(1));
+    await session.sendMessage('second');
+
+    // The overlapping prompt was handed to Pi's queue as a follow-up, not dropped.
+    expect(runtime.prompt).toHaveBeenCalledTimes(2);
+    expect(runtime.prompt).toHaveBeenLastCalledWith('second', { streamingBehavior: 'followUp' });
+    expect(payloads).not.toContainEqual(expect.objectContaining({ type: 'error' }));
+
+    releaseFirst?.();
+    await first;
   });
 });

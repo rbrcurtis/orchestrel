@@ -4,6 +4,7 @@ import { busRoomBridge } from '../subscriptions';
 import { Card } from '../../models/Card';
 import { Project } from '../../models/Project';
 import { resolveWorkDir } from '../../../shared/worktree';
+import { getPiSessionMessages } from '../../../lib/pi-session-history';
 
 export async function handleSessionLoad(
   data: { cardId: number; sessionId?: string },
@@ -26,25 +27,14 @@ export async function handleSessionLoad(
       const proj = await Project.findOneBy({ id: card.projectId });
       if (proj) {
         const cwd = resolveWorkDir(card.worktreeBranch ?? null, proj.path);
-        try {
-          const { getSessionMessages } = await import('@anthropic-ai/claude-agent-sdk');
-          const sessionMsgs = await getSessionMessages(card.sessionId, {
-            dir: cwd,
-          });
-          messages = sessionMsgs;
-          console.log(`[session:load] cardId=${cardId} loaded ${messages.length} messages via SDK`);
-        } catch (err) {
-          console.warn(`[session:load] cardId=${cardId} SDK getSessionMessages failed:`, err);
-        }
+        messages = await getPiSessionMessages(card.sessionId, cwd);
+        console.log(`[session:load] cardId=${cardId} loaded ${messages.length} messages from Pi session history`);
       }
     }
 
-    // Join the card room for live events
-    if (!alreadyJoined) {
-      socket.join(room);
-      busRoomBridge.ensureCardListeners(cardId);
-      console.log(`[session:load] cardId=${cardId} joined room ${room}`);
-    }
+    // Join the card room for live events (idempotent)
+    busRoomBridge.joinCard(socket, cardId);
+    if (!alreadyJoined) console.log(`[session:load] cardId=${cardId} joined room ${room}`);
 
     // Subscribe to orcd for live events (if session is active)
     if (card?.sessionId) {

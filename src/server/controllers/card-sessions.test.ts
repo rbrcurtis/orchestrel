@@ -15,10 +15,11 @@ type MockCard = {
   summarizeThreshold: number;
   updatedAt: string;
   save: ReturnType<typeof vi.fn>;
+  description: string;
 };
 
 const mockCards: MockCard[] = [
-  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', nodeName: 'local', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn() },
+  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', nodeName: 'local', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn(), description: '' },
 ];
 const mockRepo = {
   findOneBy: vi.fn(async (where: { id?: number; sessionId?: string }) => {
@@ -78,6 +79,7 @@ describe('orcd message router', () => {
       summarizeThreshold: 0.6,
       updatedAt: '',
       save: vi.fn(),
+      description: '',
     });
     mockRepo.findOneBy.mockClear();
     mockRepo.find.mockClear();
@@ -107,6 +109,28 @@ describe('orcd message router', () => {
 
     await new Promise((r) => setTimeout(r, 10));
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'hello' });
+  });
+
+  it('wraps Claude-shaped stream events before publishing to the SDK bus topic', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+
+    handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hello' } },
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sdkSpy).toHaveBeenCalledWith({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hello' } },
+    });
   });
 
   it('ignores messages for untracked sessions', async () => {
@@ -203,6 +227,59 @@ describe('orcd message router', () => {
     });
 
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
+  });
+
+  it('moves a review card back to running when the agent starts another turn', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].column = 'review';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'message_start', message: { role: 'assistant' } },
+    });
+
+    expect(mockCards[0].column).toBe('running');
+    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+  });
+
+  it('does not resurrect an archived card when an assistant turn starts', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].column = 'archive';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'message_start', message: { role: 'assistant' } },
+    });
+
+    expect(mockCards[0].column).toBe('archive');
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('ignores a user message_start (only assistant turns flip to running)', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].column = 'review';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'message_start', message: { role: 'user' } },
+    });
+
+    expect(mockCards[0].column).toBe('review');
   });
 
   it('surfaces non-archive cards in review on session_exit after a pending-background turn completed', async () => {
@@ -535,6 +612,7 @@ describe('reconcileRunningCards', () => {
       contextWindow: 200000,
       summarizeThreshold: 0.6,
     });
+    expect(mockCards[0].promptsSent).toBe(1);
     expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
   });
@@ -646,6 +724,7 @@ describe('registerAutoStart', () => {
       summarizeThreshold: 0.6,
       updatedAt: '',
       save: vi.fn(),
+      description: '',
     });
   });
 
@@ -696,5 +775,28 @@ describe('registerAutoStart', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(mockCreate).toHaveBeenCalled();
     expect(mockCards[0].sessionId).toBe('sess-new');
+  });
+});
+
+describe('cwdMatchesWorktree', () => {
+  const wt = '/home/ryan/Code/transcription/.worktrees/neural-engine';
+
+  it('matches the worktree root and nested paths', async () => {
+    const { cwdMatchesWorktree } = await import('./card-sessions');
+    expect(cwdMatchesWorktree(wt, wt)).toBe(true);
+    expect(cwdMatchesWorktree(`${wt}/src/bin`, wt)).toBe(true);
+  });
+
+  it('matches even after the worktree dir was deleted', async () => {
+    const { cwdMatchesWorktree } = await import('./card-sessions');
+    // The kernel appends " (deleted)" to /proc/<pid>/cwd once the dir is removed.
+    expect(cwdMatchesWorktree(`${wt} (deleted)`, wt)).toBe(true);
+  });
+
+  it('does not match a sibling worktree that shares a path prefix', async () => {
+    const { cwdMatchesWorktree } = await import('./card-sessions');
+    // Without the trailing-slash guard this would reap the wrong session.
+    expect(cwdMatchesWorktree(`${wt}-optimization`, wt)).toBe(false);
+    expect(cwdMatchesWorktree(`${wt}-optimization/src`, wt)).toBe(false);
   });
 });

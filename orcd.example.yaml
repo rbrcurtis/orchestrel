@@ -1,5 +1,10 @@
 # orcd.yaml — per-box orcd daemon config.
 # Copy to orcd.yaml (gitignored) and fill in your providers.
+#
+# This file keeps Orchestrel's provider/model routing shape plus the per-box
+# listen address + auth token. Pi runtime resources such as auth, model registry
+# data, prompt templates/commands, and skills live in Pi's canonical user config
+# directory (~/.pi).
 
 listen:
   host: 0.0.0.0
@@ -12,8 +17,8 @@ defaultCwd: ~/Code             # where new cards default their working directory
 ringBufferSize: 5000           # per-session event buffer; size to cover the max expected BE↔node outage
 
 providers:
-  # Claude via Anthropic API.
-  # Omit baseUrl + apiKey to fall through to Claude Max OAuth (claude-agent-sdk default).
+  # Pi provider routing for Anthropic models.
+  # The provider id and modelID values must match models known to Pi's model registry.
   anthropic:
     label: Anthropic
     # aliases: maps semantic roles to model keys for SDK subagent spawning.
@@ -32,7 +37,21 @@ providers:
       sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6,            contextWindow: 1000000 }
       haiku:  { label: "Haiku 4.5",  modelID: claude-haiku-4-5-20251001,    contextWindow: 200000 }
 
-  # Example: a local proxy (like a Claude-compatible pool proxy).
+  # Example: Claude Max subscription auth (OAuth) instead of an API key.
+  # claude-max:
+  #   label: Claude Max
+  #   baseUrl: https://api.anthropic.com
+  #   oauth: claude-max
+  #   models:
+  #     opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,   contextWindow: 1000000 }
+  #     sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 1000000 }
+  #
+  # oauth: claude-max requires the `claude-max` Pi extension installed at
+  # ~/.pi/agent/extensions/claude-max (run scripts/install-claude-max-extension.sh).
+  # orcd itself contains no provider-specific code; the extension self-registers
+  # auth + Claude Code request reshaping for this provider.
+
+  # Example: a local Pi-compatible provider/proxy route.
   # proxy:
   #   label: My Proxy
   #   baseUrl: http://127.0.0.1:3457
@@ -53,7 +72,7 @@ providers:
   #     opus:   { label: "Opus 4.6",   modelID: us.anthropic.claude-opus-4-6-20250514-v1:0,   contextWindow: 200000 }
   #     sonnet: { label: "Sonnet 4.6", modelID: us.anthropic.claude-sonnet-4-6-20250514-v1:0, contextWindow: 200000 }
 
-  # Example: a non-Anthropic provider using authToken instead of apiKey.
+  # Example: a non-Anthropic Pi provider using authToken instead of apiKey.
   # deepseek:
   #   label: DeepSeek
   #   baseUrl: http://127.0.0.1:3458

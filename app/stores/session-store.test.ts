@@ -8,7 +8,7 @@ vi.mock('../lib/conversation-cache', () => ({
   writeConversation: vi.fn(() => Promise.resolve()),
 }));
 
-import { readConversation } from '../lib/conversation-cache';
+import { readConversation, writeConversation } from '../lib/conversation-cache';
 
 function startBlockingSubagent(store: SessionStore, cardId: number): void {
   store.ingestSdkMessage(cardId, {
@@ -165,6 +165,70 @@ describe('SessionStore subagent lifecycle', () => {
     expect(store.getSession(1011)?.accumulator.subagents.size).toBe(0);
   });
 
+  it('reloads history once when a subscribed session transitions active→terminal', async () => {
+    // Pi flushes the final assistant message to the session file only as the run
+    // resolves (≈ session_exit), so a load during the finishing window misses it.
+    // The store must reload on the active→terminal edge to backfill that message.
+    const emit = vi.fn().mockResolvedValue({ messages: [] });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+
+    await store.loadHistory(1011, 'sess-abc'); // subscribes the card
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: true,
+      status: 'running',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
+    });
+
+    emit.mockClear();
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: false,
+      status: 'completed',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
+    });
+
+    expect(emit).toHaveBeenCalledWith('session:load', { cardId: 1011, sessionId: 'sess-abc' });
+  });
+
+  it('does not reload history for an unsubscribed card on terminal status', () => {
+    const emit = vi.fn().mockResolvedValue({ messages: [] });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: true,
+      status: 'running',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
+    });
+    store.handleAgentStatus({
+      cardId: 1011,
+      active: false,
+      status: 'completed',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
+    });
+
+    expect(emit).not.toHaveBeenCalledWith('session:load', expect.anything());
+  });
+
   it('clears subagents when session exits', () => {
     const store = new SessionStore();
     startBlockingSubagent(store, 1011);
@@ -227,5 +291,32 @@ describe('SessionStore hydrateFromCache', () => {
     expect(store.getSession(1)?.accumulator.conversation).toEqual([
       expect.objectContaining({ kind: 'user', content: 'live' }),
     ]);
+  });
+});
+
+describe('SessionStore evictSession', () => {
+  it('drops an inactive session from memory and flushes it to the cache', async () => {
+    vi.mocked(writeConversation).mockClear();
+    const store = new SessionStore();
+    store.ingestHistory(7, []);
+    store.getSession(7)!.accumulator.addUserMessage('keep me');
+
+    await store.evictSession(7);
+
+    // RAM copy is gone, but the transcript was written to IndexedDB on the way out.
+    expect(store.getSession(7)).toBeUndefined();
+    expect(writeConversation).toHaveBeenCalledWith(7, [
+      expect.objectContaining({ kind: 'user', content: 'keep me' }),
+    ]);
+  });
+
+  it('never evicts an active (running) session', async () => {
+    const store = new SessionStore();
+    store.ingestSdkMessage(9, { type: 'assistant' } as SdkMessage); // flips session active
+    expect(store.getSession(9)?.active).toBe(true);
+
+    await store.evictSession(9);
+
+    expect(store.getSession(9)?.active).toBe(true);
   });
 });
