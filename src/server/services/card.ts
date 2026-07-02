@@ -57,10 +57,6 @@ class CardService {
         providerID = proj.providerID ?? undefined;
         data.model = data.model ?? proj.defaultModel;
         data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
-        if (proj.defaultWorktree && !data.worktreeBranch && data.title) {
-          const { slugify } = await import('../../shared/worktree');
-          data.worktreeBranch = slugify(data.title);
-        }
         data.sourceBranch = data.sourceBranch ?? proj.defaultBranch;
       }
     }
