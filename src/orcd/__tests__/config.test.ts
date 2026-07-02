@@ -22,7 +22,8 @@ describe('resolveEnvVars', () => {
 describe('parseConfig (orcd shape)', () => {
   it('parses minimal config and flattens models to modelID list', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 defaultCwd: ~/projects
@@ -42,11 +43,17 @@ providers:
     expect(cfg.providers.anthropic.models).toEqual({
       sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
     });
+    expect(cfg.listen).toEqual({ host: '127.0.0.1', port: 7420 });
+    expect(cfg.providers.anthropic.modelLabels?.['claude-sonnet-4-6']).toEqual({
+      alias: 'sonnet', label: 'Sonnet 4.6', contextWindow: 200000,
+    });
+    expect(cfg.providers.anthropic.label).toBe('Anthropic');
   });
 
   it('resolves env vars in apiKey', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 providers:
@@ -63,7 +70,8 @@ providers:
 
   it('omits apiKey/baseUrl when absent (Max OAuth path)', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 providers:
@@ -79,11 +87,28 @@ providers:
 
   it('throws on missing providers', () => {
     const yaml = `
-socket: ~/.orc/orcd.sock
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
 defaultProvider: anthropic
 defaultModel: claude-sonnet-4-6
 `;
     expect(() => parseConfig(yaml, {})).toThrow();
+  });
+
+  it('parses ringBufferSize with a default of 5000', () => {
+    const yaml = `
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
+defaultProvider: anthropic
+defaultModel: claude-sonnet-4-6
+providers:
+  anthropic:
+    label: Anthropic
+    models:
+      sonnet: { label: "Sonnet", modelID: claude-sonnet-4-6, contextWindow: 200000 }
+`;
+    expect(parseConfig(yaml, {}).ringBufferSize).toBe(5000);
+    expect(parseConfig(yaml.replace('authToken: tok', 'authToken: tok\nringBufferSize: 20000'), {}).ringBufferSize).toBe(20000);
   });
 });
 

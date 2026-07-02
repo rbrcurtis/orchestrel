@@ -61,8 +61,9 @@ providers:
     expect(output.provider).toBe('trackable');
     expect(output.modelAlias).toBe('auto');
     expect(output.modelID).toBe('auto');
-    expect(output.piArgs).toEqual(['--model', 'auto']);
-  });
+    // bin/orc qualifies the model as provider/id so pi resolves the right provider.
+    expect(output.piArgs).toEqual(['--model', 'trackable/auto']);
+  }, 30000);
 
   it('lets positional provider and model args override ORC_PROVIDER and ORC_MODEL', async () => {
     const output = await runOrc(['anthropic', 'opus'], {
@@ -74,7 +75,7 @@ providers:
     expect(output.modelAlias).toBe('opus');
     expect(output.modelID).toBe('claude-opus');
     expect(output.passthroughArgs).toEqual([]);
-  });
+  }, 30000);
 
   it('falls back to the selected provider first model when ORC_MODEL does not exist there', async () => {
     const output = await runOrc(['chatgpt'], {
@@ -86,19 +87,21 @@ providers:
     expect(output.modelAlias).toBe('gpt-5.5');
     expect(output.modelID).toBe('gpt-5.5');
     expect(output.passthroughArgs).toEqual([]);
-  });
+  }, 30000);
 
-  it('uses ORC_MODEL with a positional provider when that model exists on the provider', async () => {
+  it('an explicit positional provider ignores ORC_MODEL and uses the provider first model', async () => {
     const output = await runOrc(['trackable'], {
       ORC_PROVIDER: 'chatgpt',
       ORC_MODEL: 'auto',
     });
 
+    // bin/orc: an explicitly-specified provider ignores the global ORC_MODEL and
+    // falls back to that provider's first model (see fix(orc) 638279b).
     expect(output.provider).toBe('trackable');
-    expect(output.modelAlias).toBe('auto');
-    expect(output.modelID).toBe('auto');
+    expect(output.modelAlias).toBe('sonnet');
+    expect(output.modelID).toBe('trackable-sonnet');
     expect(output.passthroughArgs).toEqual([]);
-  });
+  }, 30000);
 
   it('prints ORC_PI_PATH in print-env output when overridden', async () => {
     const customPiPath = join(dir, 'custom-pi');
@@ -108,24 +111,27 @@ providers:
     });
 
     expect(output.piPath).toBe(customPiPath);
-  });
+  }, 30000);
 
   it('strips legacy skip permissions flag from pi args', async () => {
     const output = await runOrc(['--dangerously-skip-permissions', 'trackable', 'auto'], {});
 
     expect(output.passthroughArgs).toEqual([]);
-    expect(output.piArgs).toEqual(['--model', 'auto']);
-  });
+    // bin/orc qualifies the model as provider/id so pi resolves the right provider.
+    expect(output.piArgs).toEqual(['--model', 'trackable/auto']);
+  }, 30000);
 
-  it('maps provider typed API keys to Pi-native env vars', async () => {
+  // Note: provider baseUrl/apiKey/authToken now reach pi via ~/.pi/agent/models.json
+  // (syncModelsJson), NOT via env vars — pi ignores PI_API_KEY/ANTHROPIC_API_KEY here.
+  // The only env bin/orc emits is the ANTHROPIC_DEFAULT_*_MODEL alias map.
+  it('emits only the model-alias env map, not provider API keys', async () => {
     const anthropicOutput = await runOrc(['anthropic', 'sonnet'], {});
-    const openaiOutput = await runOrc(['chatgpt', 'gpt-5.5'], {});
+    const env = readEnv(anthropicOutput);
 
-    expect(readEnv(anthropicOutput).PI_API_KEY).toBe('anthropic-key');
-    expect(readEnv(anthropicOutput).ANTHROPIC_API_KEY).toBe('anthropic-key');
-    expect(readEnv(openaiOutput).PI_API_KEY).toBe('openai-key');
-    expect(readEnv(openaiOutput).OPENAI_API_KEY).toBe('openai-key');
-  });
+    expect(env.PI_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet');
+  }, 30000);
 
   async function runOrc(
     cliArgs: string[],

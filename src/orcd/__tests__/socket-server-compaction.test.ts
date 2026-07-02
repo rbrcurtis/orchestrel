@@ -20,6 +20,7 @@ function createClient() {
   return {
     socket: { writable: true, write: vi.fn() },
     subscriptions: new Map<string, SessionEventCallback>(),
+    authenticated: true,
   };
 }
 
@@ -80,15 +81,20 @@ async function collectPromptFromMessage(prompt: string): Promise<string> {
 
 
 function createServer() {
-  return new OrcdServer('/tmp/orcd-test.sock', {
-    test: {
-      type: 'anthropic',
-      baseUrl: '',
-      apiKey: '',
-      models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
-      modelAliasEnv: {},
+  return new OrcdServer(
+    { listen: { host: '127.0.0.1', port: 0 }, authToken: 'tok', name: 'local' },
+    {
+      test: {
+        type: 'anthropic',
+        baseUrl: '',
+        apiKey: '',
+        models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
+        modelLabels: {},
+        modelAliasEnv: {},
+      },
     },
-  }, { provider: 'test', model: 'test-model' });
+    { provider: 'test', model: 'test-model' },
+  );
 }
 
 describe('OrcdServer prompt passthrough', () => {
@@ -168,20 +174,25 @@ describe('OrcdServer provider env', () => {
       delete process.env.ORC_PROVIDER_RUNTIME_PROFILE;
       process.env.ORC_TEST_PROVIDER_ENV = 'from-process';
 
-      const server = new OrcdServer('/tmp/orcd-test.sock', {
-        test: {
-          type: 'bedrock',
-          baseUrl: 'https://provider.test',
-          apiKey: 'provider-api-key',
-          authToken: 'provider-auth-token',
-          region: 'us-east-1',
-          profile: 'provider-profile',
-          models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
-          modelAliasEnv: {
-            ORC_DEFAULT_MODEL: 'test-model',
+      const server = new OrcdServer(
+        { listen: { host: '127.0.0.1', port: 0 }, authToken: 'tok', name: 'local' },
+        {
+          test: {
+            type: 'bedrock',
+            baseUrl: 'https://provider.test',
+            apiKey: 'provider-api-key',
+            authToken: 'provider-auth-token',
+            region: 'us-east-1',
+            profile: 'provider-profile',
+            models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
+            modelLabels: {},
+            modelAliasEnv: {
+              ORC_DEFAULT_MODEL: 'test-model',
+            },
           },
         },
-      }, { provider: 'test', model: 'test-model' });
+        { provider: 'test', model: 'test-model' },
+      );
 
       const env = server['buildProviderEnv']('test');
 

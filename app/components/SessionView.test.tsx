@@ -26,6 +26,7 @@ const cardStore = {
 const configStore = {
   allProviders: [['chatgpt', { label: 'ChatGPT' }]],
   getModels: vi.fn(() => [['gpt-5.5', { label: 'GPT 5.5' }]]),
+  nodeByName: vi.fn(() => ({ name: 'local', connected: true, providers: {} })),
 };
 
 const store = {
@@ -88,6 +89,7 @@ function makeCard(contextTokens: number, contextWindow: number): Card {
     sourceBranch: null,
     model: 'gpt-5.5',
     provider: 'chatgpt',
+    nodeName: 'local',
     thinkingLevel: 'high',
     summarizeThreshold: 0.6,
     promptsSent: 1,

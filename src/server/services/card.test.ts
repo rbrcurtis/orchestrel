@@ -5,8 +5,23 @@ import { Project, ProjectSubscriber } from '../models/Project'
 
 const mockCancel = vi.fn()
 const mockIsActive = vi.fn(() => true)
+const mockCapabilities = {
+  name: 'local',
+  providers: [
+    { id: 'anthropic', label: 'Anthropic', models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1_000_000 }] },
+  ],
+  defaults: { provider: 'anthropic', model: 'sonnet' },
+}
+const mockNodeClient = {
+  isActive: mockIsActive,
+  cancel: mockCancel,
+  capabilities: mockCapabilities,
+  isConnected: () => true,
+  pathValidate: async () => ({ exists: true, isGitRepo: false, defaultBranch: null }),
+}
 vi.mock('../init-state', () => ({
-  getOrcdClient: () => ({ isActive: mockIsActive, cancel: mockCancel }),
+  getOrcdClient: () => mockNodeClient,
+  getClientByNode: () => mockNodeClient,
 }))
 
 let ds: DataSource
@@ -101,6 +116,15 @@ describe('CardService', () => {
     await cardService.deleteCard(c.id)
     const found = await Card.findOneBy({ id: c.id })
     expect(found).toBeNull()
+  })
+
+  it('derives contextWindow from the node capabilities for the project node', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const proj = await projectService.createProject({ name: 'Cap project', path: '/tmp/cap-project' })
+    const card = await cardService.createCard({ title: 'Cap card', description: 'd', column: 'backlog', projectId: proj.id, model: 'sonnet' })
+    expect(card.nodeName).toBe('local')
+    expect(card.contextWindow).toBe(1_000_000)
   })
 
   it('does not cancel a live session when archiving a running card, but does when moving back to backlog', async () => {

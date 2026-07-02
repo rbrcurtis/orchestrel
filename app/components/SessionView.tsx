@@ -16,7 +16,7 @@ type Props = {
   accentColor?: string | null;
   model: string;
   providerID: string;
-  thinkingLevel: string;
+  thinkingLevel?: string;
   summarizeThreshold: number;
   onPromptSent?: () => void;
   promptFocusSeq?: number | null;
@@ -29,7 +29,7 @@ export const SessionView = observer(function SessionView({
   accentColor,
   model,
   providerID,
-  thinkingLevel,
+  thinkingLevel = 'high',
   summarizeThreshold,
   onPromptSent,
   promptFocusSeq,
@@ -64,6 +64,11 @@ export const SessionView = observer(function SessionView({
   const compactInProgress = session?.compactInProgress ?? false;
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
+
+  // The agent runs on the card's node. When that node is offline the session
+  // can't be driven — render the transcript read-only (it still paints from the
+  // conversation cache) and disable all action affordances.
+  const nodeOffline = !!card && !config.nodeByName(card.nodeName)?.connected;
 
   const [notification, setNotification] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -174,7 +179,7 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: string; summarizeThreshold?: number }) {
+  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high'; summarizeThreshold?: number }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -222,6 +227,11 @@ export const SessionView = observer(function SessionView({
           <StatusBadge
             status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
           />
+          {nodeOffline && (
+            <span className="text-[11px] text-amber-500 shrink-0" title={`Node ${card?.nodeName} is offline`}>
+              node offline / reconnecting
+            </span>
+          )}
           {showCounters && (
             <span className="text-[11px] text-muted-foreground shrink-0">
               {turnsCompleted}/{promptsSent} turns
@@ -229,13 +239,14 @@ export const SessionView = observer(function SessionView({
           )}
           <select
             value={providerID}
+            disabled={nodeOffline}
             onChange={(e) => {
               const newProvider = e.target.value;
               const models = config.getModels(newProvider);
               const defaultModel = models.length > 0 ? models[0][0] : 'sonnet';
               handleUpdateCard({ provider: newProvider, model: defaultModel });
             }}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
             {config.allProviders.map(([id, p]) => (
               <option key={id} value={id}>
@@ -245,8 +256,9 @@ export const SessionView = observer(function SessionView({
           </select>
           <select
             value={model}
+            disabled={nodeOffline}
             onChange={(e) => handleUpdateCard({ model: e.target.value })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
             {config.getModels(providerID).map(([alias, m]) => (
               <option key={alias} value={alias}>
@@ -256,8 +268,9 @@ export const SessionView = observer(function SessionView({
           </select>
           <select
             value={String(summarizeThreshold)}
+            disabled={nodeOffline}
             onChange={(e) => handleUpdateCard({ summarizeThreshold: parseFloat(e.target.value) })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0"
+            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="0">Off</option>
             <option value="0.1">10%</option>
@@ -272,7 +285,7 @@ export const SessionView = observer(function SessionView({
           </select>
           <select
             value={thinkingLevel}
-            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value })}
+            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto"
           >
             <option value="off">Off</option>
@@ -286,7 +299,7 @@ export const SessionView = observer(function SessionView({
               size="sm"
               className="ml-auto h-6 px-2 text-xs text-muted-foreground"
               onClick={handleStop}
-              disabled={isStopping}
+              disabled={isStopping || nodeOffline}
             >
               <Square className="size-3 fill-current" />
               {isStopping ? 'Stopping...' : 'Stop'}
@@ -297,6 +310,7 @@ export const SessionView = observer(function SessionView({
               size="sm"
               className="ml-auto h-6 px-2 text-xs text-muted-foreground"
               onClick={() => handleSend('Continue')}
+              disabled={nodeOffline}
             >
               <Play className="size-3 fill-current" />
               Continue
@@ -316,7 +330,7 @@ export const SessionView = observer(function SessionView({
         cardId={cardId}
         isRunning={isStreaming}
         hasSession={!!sessionId || sessionActive}
-        isPending={isStarting}
+        isPending={isStarting || nodeOffline}
         onSend={handleSend}
         onStop={handleStop}
         onCompact={!!sessionId || sessionActive ? (bgcInProgress || compactInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}

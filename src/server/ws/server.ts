@@ -150,57 +150,47 @@ export function wsServerPlugin(): Plugin {
             // --- One-time init: OrcdClient + controller listeners ---
             if (initState.initialized) return;
 
-            const [{ OrcdClient }, { loadConfig }, { homedir }] = await Promise.all([
-              import('../orcd-client'),
-              import('../../shared/config'),
-              import('os'),
-            ]);
+            const { OrcdClient } = await import('../orcd-client');
+            const { loadNodeRegistry } = await import('../config/nodes');
             const { initOrcdRouter, reconcileRunningCards, rearmScheduledSessions, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive, registerProcessReaper } =
               await import('../controllers/card-sessions');
 
-            let client = initState.getOrcdClient();
-            if (!client) {
-              client = new OrcdClient(loadConfig().socket.replace(/^~/, homedir()));
-              // Store the client BEFORE connecting. If orcd's socket isn't bound
-              // yet at startup (systemd `After=orcd.service` orders start, not
-              // socket-readiness — orcd takes ~15s to bind), connect() rejects.
-              // The client auto-reconnects internally, so once it's stored + wired
-              // here, handlers (agent:send etc.) resolve it and it works as soon as
-              // orcd comes up. Previously a startup connect() rejection aborted this
-              // whole init via the outer .catch, leaving getOrcdClient() null forever
-              // (configureServer never re-runs), which bricked all prompt submission.
-              initState.setOrcdClient(client);
-            }
-
-            // Register the single global orcd message router
-            initOrcdRouter(client);
-
-            client.onReconnect(() => {
-              console.log('[orcd] orcd reconnected, reconciling running cards...');
-              reconcileRunningCards(client!).catch((err) =>
-                console.error('[orcd] reconnect reconciliation failed:', err),
-              );
-              rearmScheduledSessions(client!).catch((err) =>
-                console.error('[orcd] reconnect scheduled-job re-arm failed:', err),
-              );
-            });
-
-            // Best-effort initial connect + reconcile. A failure here (orcd not up
-            // yet) must NOT abort init — the client's reconnect loop handles it, and
-            // running-card reconcile re-runs via onReconnect once orcd is reachable.
-            try {
-              await client.connect();
-              await reconcileRunningCards(client);
-              await rearmScheduledSessions(client);
-            } catch (err) {
-              console.error('[startup] orcd not reachable at init; client will auto-reconnect:', err);
+            const nodes = loadNodeRegistry();
+            for (const node of nodes) {
+              let client = initState.getClientByNode(node.name);
+              if (!client) {
+                client = new OrcdClient({ host: node.host, port: node.port, token: node.authToken, name: node.name });
+                initState.setClientForNode(node.name, client);
+                // Store the client BEFORE connecting. If a node's orcd isn't bound
+                // yet at startup, connect() rejects; the client auto-reconnects, so
+                // once it's stored + wired here, handlers resolve it and it works as
+                // soon as that orcd comes up.
+                try {
+                  await client.connect();
+                } catch (err) {
+                  console.error(`[orcd] node ${node.name} initial connect failed (will retry):`, (err as Error).message);
+                }
+              }
+              initOrcdRouter(client);
+              try {
+                await reconcileRunningCards(client);
+                await rearmScheduledSessions(client);
+              } catch (err) {
+                console.error(`[startup] reconcile failed for ${node.name}:`, err);
+              }
+              const nodeClient = client;
+              nodeClient.onReconnect(() => {
+                console.log(`[orcd] node ${node.name} reconnected, reconciling...`);
+                reconcileRunningCards(nodeClient).catch((e) => console.error(`[orcd] reconnect reconcile ${node.name}:`, e));
+                rearmScheduledSessions(nodeClient).catch((e) => console.error(`[orcd] reconnect re-arm ${node.name}:`, e));
+              });
             }
 
             registerAutoStart();
             registerMemoryUpsertOnArchive();
             registerWorktreeCleanup();
             registerProcessReaper();
-            console.log('[orcd] OrcdClient wired (router + listeners registered)');
+            console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
             initState.markInitialized();
           },

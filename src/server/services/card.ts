@@ -2,7 +2,7 @@ import { ILike, IsNull } from 'typeorm';
 import { Card } from '../models/Card';
 import type { Column } from '../../shared/ws-protocol';
 import { Project } from '../models/Project';
-import { getDefaultProviderID, getModelConfig } from '../config/providers';
+import { contextWindowFor, defaultProviderFor } from '../config/capabilities';
 
 export interface PageResult {
   cards: Card[];
@@ -48,11 +48,13 @@ class CardService {
     const position = (maxCard?.position ?? -1) + 1;
 
     // Inherit defaults from project if projectId set
-    let providerID = getDefaultProviderID();
+    let providerID: string | undefined;
+    let nodeName = 'local';
     if (data.projectId) {
       const proj = await Project.findOneBy({ id: data.projectId });
       if (proj) {
-        providerID = proj.providerID ?? getDefaultProviderID();
+        nodeName = proj.nodeName ?? 'local';
+        providerID = proj.providerID ?? undefined;
         data.model = data.model ?? proj.defaultModel;
         data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
         if (proj.defaultWorktree && !data.worktreeBranch && data.title) {
@@ -62,12 +64,14 @@ class CardService {
         data.sourceBranch = data.sourceBranch ?? proj.defaultBranch;
       }
     }
+    providerID = providerID ?? defaultProviderFor(nodeName) ?? 'anthropic';
     data.provider = data.provider ?? providerID;
+    data.nodeName = nodeName;
     data.summarizeThreshold = data.summarizeThreshold ?? 0.5;
 
-    // Set contextWindow from provider config
-    const modelCfg = getModelConfig(providerID, data.model ?? 'sonnet');
-    if (modelCfg) data.contextWindow = modelCfg.contextWindow;
+    // Set contextWindow from the node's advertised capabilities
+    const cw = contextWindowFor(nodeName, providerID, data.model ?? 'sonnet');
+    if (cw) data.contextWindow = cw;
 
     const now = new Date().toISOString();
     const card = Card.create({
@@ -91,9 +95,9 @@ class CardService {
 
     // Update contextWindow when provider/model changes
     if (data.provider || data.model) {
-      const providerID = data.provider ?? card.provider ?? getDefaultProviderID();
-      const modelCfg = getModelConfig(providerID, data.model ?? card.model);
-      if (modelCfg) data.contextWindow = modelCfg.contextWindow;
+      const providerID = data.provider ?? card.provider ?? 'anthropic';
+      const cw = contextWindowFor(card.nodeName, providerID, data.model ?? card.model);
+      if (cw) data.contextWindow = cw;
     }
 
     // Kill session when card leaves running/review — but NOT when archiving.
@@ -102,7 +106,7 @@ class CardService {
     const liveColumns = new Set<string>(['running', 'review']);
     if (data.column && data.column !== 'archive' && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
       const initState = await import('../init-state');
-      const client = initState.getOrcdClient();
+      const client = initState.getClientByNode(card.nodeName);
       if (card.sessionId && client?.isActive(card.sessionId)) {
         console.log(`[session:${id}] stopping: card moving ${card.column} → ${data.column}`);
         client.cancel(card.sessionId);
@@ -117,9 +121,9 @@ class CardService {
   }
 
   async deleteCard(id: number): Promise<void> {
-    const initState = await import('../init-state');
-    const client = initState.getOrcdClient();
     const card = await Card.findOneByOrFail({ id });
+    const initState = await import('../init-state');
+    const client = initState.getClientByNode(card.nodeName);
     if (card.sessionId && client?.isActive(card.sessionId)) {
       console.log(`[session:${id}] stopping: card deleted`);
       client.cancel(card.sessionId);

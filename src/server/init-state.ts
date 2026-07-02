@@ -5,11 +5,15 @@ import type { AppServer } from './ws/types'
 
 type AnyHttpServer = HttpServer | Http2SecureServer
 
-/** OrcdClient — survives Vite restarts. */
+/** Per-node OrcdClient registry — survives Vite restarts. */
 import type { OrcdClient } from './orcd-client'
-let _orcdClient: OrcdClient | null = null
-export function getOrcdClient(): OrcdClient | null { return _orcdClient }
-export function setOrcdClient(client: OrcdClient): void { _orcdClient = client }
+const _nodeClients = new Map<string, OrcdClient>()
+export function setClientForNode(name: string, client: OrcdClient): void { _nodeClients.set(name, client) }
+export function getClientByNode(name: string): OrcdClient | null { return _nodeClients.get(name) ?? null }
+export function listNodeClients(): OrcdClient[] { return [..._nodeClients.values()] }
+export function clearNodeClients(): void { _nodeClients.clear() }
+/** Back-compat: callers that predate multi-node default to the 'local' node. */
+export function getOrcdClient(): OrcdClient | null { return _nodeClients.get('local') ?? null }
 
 /** True after IO server, bus listeners, and OrcdClient are initialized. */
 export let initialized = false

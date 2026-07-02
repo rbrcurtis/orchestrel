@@ -1,9 +1,25 @@
-import { existsSync } from 'fs';
 import { readdir, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { Project, DEFAULT_COLORS } from '../models/Project';
 import { AppDataSource } from '../models/index';
-import { getDefaultProviderID } from '../config/providers';
+import { defaultProviderFor } from '../config/capabilities';
+
+// Project path validation runs on the project's node — orcd owns the node
+// filesystem. The BE asks the node's client whether the path exists and is a
+// git repo, rather than checking its own local filesystem.
+async function validateOnNode(
+  nodeName: string,
+  path: string,
+): Promise<{ isGitRepo: boolean; defaultBranch: string | null }> {
+  const initState = await import('../init-state');
+  const client = initState.getClientByNode(nodeName);
+  if (!client || !client.isConnected()) {
+    throw new Error(`node ${nodeName} is offline; cannot validate project path`);
+  }
+  const v = await client.pathValidate(path);
+  if (!v.exists) throw new Error(`path does not exist on node ${nodeName}: ${path}`);
+  return { isGitRepo: v.isGitRepo, defaultBranch: v.defaultBranch };
+}
 
 export interface DirEntry {
   name: string;
@@ -17,9 +33,14 @@ class ProjectService {
   }
 
   async createProject(data: Partial<Project>): Promise<Project> {
-    // Auto-detect isGitRepo from path
+    const nodeName = data.nodeName ?? 'local';
+    data.nodeName = nodeName;
+
+    // Validate the path on the project's node
     if (data.path) {
-      data.isGitRepo = existsSync(join(data.path, '.git'));
+      const v = await validateOnNode(nodeName, data.path);
+      data.isGitRepo = v.isGitRepo;
+      if (v.isGitRepo && !data.defaultBranch && v.defaultBranch) data.defaultBranch = v.defaultBranch;
     }
 
     if (!data.isGitRepo) {
@@ -35,9 +56,9 @@ class ProjectService {
       data.color = DEFAULT_COLORS.find((c) => !used.includes(c)) ?? DEFAULT_COLORS[0];
     }
 
-    // Default providerID to config-driven default
+    // Default providerID to the node's advertised default
     if (!data.providerID) {
-      data.providerID = getDefaultProviderID();
+      data.providerID = defaultProviderFor(nodeName) ?? 'anthropic';
     }
 
     const proj = Project.create({
@@ -52,9 +73,11 @@ class ProjectService {
     const repo = AppDataSource.getRepository(Project);
     const proj = await repo.findOneByOrFail({ id });
 
-    // Re-detect isGitRepo if path changes
+    // Re-validate on the node if path changes
     if (data.path) {
-      data.isGitRepo = existsSync(join(data.path, '.git'));
+      const v = await validateOnNode(data.nodeName ?? proj.nodeName, data.path);
+      data.isGitRepo = v.isGitRepo;
+      if (v.isGitRepo && data.defaultBranch == null && v.defaultBranch) data.defaultBranch = v.defaultBranch;
     }
 
     const nextIsGitRepo = data.isGitRepo ?? proj.isGitRepo;

@@ -1,16 +1,22 @@
-import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { createServer, type Server, type Socket } from 'net';
-import { dirname } from 'path';
 import { upsertMemories } from '../lib/memory-upsert';
-import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import type { CapabilitiesMessage, OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
 import type { OrcdConfig, ProviderConfig } from './config';
+
+export interface OrcdListenConfig {
+  listen: { host: string; port: number };
+  authToken: string;
+  name: string;
+  ringBufferSize?: number;
+}
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
 
 interface ClientState {
   socket: Socket;
   subscriptions: Map<string, SessionEventCallback>;
+  authenticated: boolean;
 }
 
 export class OrcdServer {
@@ -23,7 +29,7 @@ export class OrcdServer {
   private memoryConfig?: OrcdConfig['memoryUpsert'];
 
   constructor(
-    private socketPath: string,
+    private opts: OrcdListenConfig,
     private providers: Record<string, ProviderConfig>,
     private defaults: { provider: string; model: string },
     memoryConfig?: OrcdConfig['memoryUpsert'],
@@ -33,32 +39,23 @@ export class OrcdServer {
 
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const dir = dirname(this.socketPath);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-      // Remove stale socket file
-      if (existsSync(this.socketPath)) unlinkSync(this.socketPath);
-
       this.server = createServer((socket) => this.handleConnection(socket));
       this.server.on('error', reject);
-      this.server.listen(this.socketPath, () => {
-        console.log(`[orcd] listening on ${this.socketPath}`);
+      this.server.listen(this.opts.listen.port, this.opts.listen.host, () => {
+        console.log(`[orcd] listening on ${this.opts.listen.host}:${this.opts.listen.port}`);
         resolve();
       });
     });
   }
 
   stop(): void {
-    for (const client of this.clients) {
-      client.socket.destroy();
-    }
+    for (const client of this.clients) client.socket.destroy();
     this.server?.close();
-    if (existsSync(this.socketPath)) unlinkSync(this.socketPath);
     console.log('[orcd] stopped');
   }
 
   private handleConnection(socket: Socket): void {
-    const client: ClientState = { socket, subscriptions: new Map() };
+    const client: ClientState = { socket, subscriptions: new Map(), authenticated: false };
     this.clients.add(client);
     console.log('[orcd] client connected');
 
@@ -100,6 +97,15 @@ export class OrcdServer {
   }
 
   private handleAction(client: ClientState, action: OrcdAction): void {
+    if (action.action === 'hello') {
+      console.log('[orcd] hello received');
+      this.handleHello(client, action);
+      return;
+    }
+    if (!client.authenticated) {
+      console.warn('[orcd] dropping action before hello:', action.action);
+      return;
+    }
     switch (action.action) {
       case 'create':
         this.handleCreate(client, action);
@@ -131,7 +137,41 @@ export class OrcdServer {
       case 'compact':
         this.handleCompact(client, action);
         break;
+      case 'capabilities':
+        this.send(client, this.buildCapabilities(action.requestId));
+        break;
+      case 'worktree_prepare':
+        this.handleWorktreePrepare(client, action);
+        break;
+      case 'worktree_remove':
+        this.handleWorktreeRemove(client, action);
+        break;
+      case 'path_validate':
+        this.handlePathValidate(client, action);
+        break;
     }
+  }
+
+  private buildCapabilities(requestId?: string): CapabilitiesMessage {
+    const providers = Object.entries(this.providers).map(([id, cfg]) => ({
+      id,
+      label: cfg.label ?? id,
+      models: Object.entries(cfg.modelLabels ?? {}).map(([, m]) => ({
+        alias: m.alias, label: m.label, contextWindow: m.contextWindow,
+      })),
+    }));
+    return { type: 'capabilities', requestId, name: this.opts.name, providers, defaults: this.defaults };
+  }
+
+  private handleHello(client: ClientState, action: OrcdAction & { action: 'hello' }): void {
+    if (action.token !== this.opts.authToken) {
+      console.warn('[orcd] hello: invalid token, closing connection');
+      this.send(client, { type: 'error', sessionId: '', error: 'invalid token', requestId: action.requestId });
+      client.socket.destroy();
+      return;
+    }
+    client.authenticated = true;
+    this.send(client, this.buildCapabilities(action.requestId));
   }
 
   private handleCreate(client: ClientState, action: OrcdAction & { action: 'create' }): void {
@@ -150,6 +190,7 @@ export class OrcdServer {
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
+      bufferSize: this.opts.ringBufferSize,
       onFork: (oldId, newId) => this.store.alias(oldId, newId),
     });
 
@@ -325,6 +366,7 @@ export class OrcdServer {
         sessionId: action.sessionId,
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,
+        bufferSize: this.opts.ringBufferSize,
       });
       session.state = 'completed';
       this.store.add(session);
@@ -340,6 +382,40 @@ export class OrcdServer {
     void run.finally(() => {
       if (hydrated) this.store.remove(session.id);
     });
+  }
+
+  // ── Worktree / path actions ────────────────────────────────────────────────
+
+  private async handleWorktreePrepare(client: ClientState, action: OrcdAction & { action: 'worktree_prepare' }): Promise<void> {
+    try {
+      const { prepareWorktree } = await import('./worktree-ops');
+      const res = await prepareWorktree({
+        projectPath: action.projectPath, branch: action.branch,
+        sourceBranch: action.sourceBranch, setupCommands: action.setupCommands,
+      });
+      this.send(client, { type: 'worktree_ready', requestId: action.requestId, path: res.path, branch: res.branch });
+    } catch (err) {
+      console.error(`[orcd] worktree_prepare failed (${action.branch}):`, err instanceof Error ? err.message : err);
+      this.send(client, { type: 'error', sessionId: '', requestId: action.requestId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async handleWorktreeRemove(client: ClientState, action: OrcdAction & { action: 'worktree_remove' }): Promise<void> {
+    try {
+      const { existsSync } = await import('fs');
+      const { removeWorktree } = await import('./worktree-ops');
+      if (existsSync(action.path)) removeWorktree(action.projectPath, action.path);
+      this.send(client, { type: 'ok', requestId: action.requestId });
+    } catch (err) {
+      console.error(`[orcd] worktree_remove failed (${action.path}):`, err instanceof Error ? err.message : err);
+      this.send(client, { type: 'error', sessionId: '', requestId: action.requestId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async handlePathValidate(client: ClientState, action: OrcdAction & { action: 'path_validate' }): Promise<void> {
+    const { validatePath } = await import('./worktree-ops');
+    const res = await validatePath(action.path);
+    this.send(client, { type: 'path_validated', requestId: action.requestId, ...res });
   }
 
   // ── Provider env helper ──────────────────────────────────────────────────

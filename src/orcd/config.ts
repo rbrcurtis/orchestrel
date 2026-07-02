@@ -11,14 +11,18 @@ export interface ProviderConfig {
   region?: string;
   profile?: string;
   models: Record<string, ModelDef>;
+  modelLabels?: Record<string, { alias: string; label: string; contextWindow: number }>;
   modelAliasEnv: Record<string, string>;
 }
 
 export interface OrcdConfig {
-  socket: string;
+  listen: { host: string; port: number };
+  authToken: string;
+  name: string;
   defaultProvider: string;
   defaultModel: string;
   defaultCwd?: string;
+  ringBufferSize: number;
   providers: Record<string, ProviderConfig>;
   memoryUpsert?: MemoryUpsertConfig;
 }
@@ -29,6 +33,10 @@ export { buildModelAliasEnv, resolveEnvVars };
 function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
   const providers: Record<string, ProviderConfig> = {};
   for (const [id, p] of Object.entries(cfg.providers)) {
+    const modelLabels: Record<string, { alias: string; label: string; contextWindow: number }> = {};
+    for (const [alias, m] of Object.entries(p.models)) {
+      modelLabels[m.modelID] = { alias, label: m.label, contextWindow: m.contextWindow };
+    }
     providers[id] = {
       type: p.type ?? 'anthropic',
       ...(p.label ? { label: p.label } : {}),
@@ -39,14 +47,18 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
       ...(p.region ? { region: p.region } : {}),
       ...(p.profile ? { profile: p.profile } : {}),
       models: p.models,
+      modelLabels,
       modelAliasEnv: buildModelAliasEnv(p.models, p.aliases),
     };
   }
   return {
-    socket: cfg.socket,
+    listen: cfg.listen,
+    authToken: cfg.authToken,
+    name: cfg.name,
     defaultProvider: cfg.defaultProvider,
     defaultModel: cfg.defaultModel,
     defaultCwd: cfg.defaultCwd,
+    ringBufferSize: cfg.ringBufferSize,
     providers,
     memoryUpsert: cfg.memoryUpsert,
   };

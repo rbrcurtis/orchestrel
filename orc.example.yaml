@@ -1,0 +1,10 @@
+# orc.yaml — node registry, owned by the BE. Copy to orc.yaml (gitignored).
+servers:
+  - name: local
+    host: 127.0.0.1
+    port: 7420
+    authToken: ${LOCAL_ORCD_TOKEN}
+  # - name: gpubox
+  #   host: 10.8.0.3
+  #   port: 7420
+  #   authToken: ${GPUBOX_ORCD_TOKEN}

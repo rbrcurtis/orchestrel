@@ -23,11 +23,10 @@ export async function handleAgentSend(
     // never see the streamed reply — the card looks hung.
     busRoomBridge.joinCard(socket, cardId);
 
-    const initState = await import('../../init-state');
-    const client = initState.getOrcdClient();
-    if (!client) throw new Error('OrcdClient not initialized');
-
     const card = await Card.findOneByOrFail({ id: cardId });
+    const initState = await import('../../init-state');
+    const client = initState.getClientByNode(card.nodeName);
+    if (!client) throw new Error(`node ${card.nodeName} has no client`);
 
     // `/compact` typed in the chat box is a Pi TUI command with no meaning on
     // the SDK path. Route it to Pi's full native compaction (NOT the background
@@ -40,7 +39,7 @@ export async function handleAgentSend(
         trackSession(cardId, card.sessionId);
         client.message(card.sessionId, message);
       } else if (card.sessionId) {
-        const cwd = await ensureWorktree(card);
+        const cwd = await ensureWorktree(card, client);
         trackSession(cardId, card.sessionId);
         client.compact({
           sessionId: card.sessionId,
@@ -76,7 +75,7 @@ export async function handleAgentSend(
       await card.save();
     } else {
       // New session or resume
-      const cwd = await ensureWorktree(card);
+      const cwd = await ensureWorktree(card, client);
       const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
       const sessionId = await client.create({
         prompt,
@@ -111,17 +110,17 @@ export async function handleAgentCompact(
   console.log(`[session:${cardId}] agent:compact received`);
 
   try {
-    const initState = await import('../../init-state');
-    const client = initState.getOrcdClient();
-    if (!client) throw new Error('OrcdClient not initialized');
-
     const card = await Card.findOneBy({ id: cardId });
     if (!card?.sessionId) {
       callback({ error: 'No session to compact' });
       return;
     }
 
-    const cwd = await ensureWorktree(card);
+    const initState = await import('../../init-state');
+    const client = initState.getClientByNode(card.nodeName);
+    if (!client) throw new Error(`node ${card.nodeName} has no client`);
+
+    const cwd = await ensureWorktree(card, client);
     trackSession(cardId, card.sessionId);
 
     // The context wheel button runs Orchestrel's incremental background
@@ -149,9 +148,9 @@ export async function handleAgentStop(
   const { cardId } = data;
   console.log(`[session:${cardId}] agent:stop received`);
   callback({});
-  const initState = await import('../../init-state');
-  const client = initState.getOrcdClient();
   const card = await Card.findOneBy({ id: cardId });
+  const initState = await import('../../init-state');
+  const client = card ? initState.getClientByNode(card.nodeName) : null;
   if (client && card?.sessionId) {
     client.cancel(card.sessionId);
   }
@@ -169,9 +168,9 @@ export async function handleAgentStatus(
     // keeps receiving live events even after a silent socket reconnect.
     busRoomBridge.joinCard(socket, cardId);
 
-    const initState = await import('../../init-state');
-    const client = initState.getOrcdClient();
     const card = await Card.findOneBy({ id: cardId });
+    const initState = await import('../../init-state');
+    const client = card ? initState.getClientByNode(card.nodeName) : null;
 
     const active = !!(card?.sessionId && client?.isActive(card.sessionId));
     const starting = !!card && card.column === 'running' && !card.sessionId;

@@ -10,12 +10,14 @@ export interface CreateAction {
   sessionId?: string;    // Resume existing session
   contextWindow?: number;
   summarizeThreshold?: number;  // 0-1, fraction of context window to trigger compaction
+  requestId?: string;
 }
 
 export interface MessageAction {
   action: 'message';
   sessionId: string;
   prompt: string;
+  requestId?: string;
 }
 
 // Re-instantiate an existing session WITHOUT running a turn, purely to re-arm
@@ -37,31 +39,37 @@ export interface SetEffortAction {
   action: 'set_effort';
   sessionId: string;
   effort: string;
+  requestId?: string;
 }
 
 export interface SubscribeAction {
   action: 'subscribe';
   sessionId: string;
   afterEventIndex?: number;
+  requestId?: string;
 }
 
 export interface UnsubscribeAction {
   action: 'unsubscribe';
   sessionId: string;
+  requestId?: string;
 }
 
 export interface ListAction {
   action: 'list';
+  requestId?: string;
 }
 
 export interface CancelAction {
   action: 'cancel';
   sessionId: string;
+  requestId?: string;
 }
 
 export interface MemoryUpsertAction {
   action: 'memory_upsert';
   sessionId: string;
+  requestId?: string;
 }
 
 export interface CompactAction {
@@ -72,9 +80,43 @@ export interface CompactAction {
   model: string;
   contextWindow?: number;
   summarizeThreshold?: number;
+  requestId?: string;
   // 'full' = Pi-native blocking compaction (the chat `/compact` command).
   // 'background' (default) = Orchestrel incremental BGC (the UI context wheel).
   mode?: 'full' | 'background';
+}
+
+export interface HelloAction {
+  action: 'hello';
+  token: string;
+  requestId?: string;
+}
+
+export interface CapabilitiesAction {
+  action: 'capabilities';
+  requestId?: string;
+}
+
+export interface WorktreePrepareAction {
+  action: 'worktree_prepare';
+  requestId?: string;
+  projectPath: string;
+  branch: string;
+  sourceBranch?: string;
+  setupCommands?: string;
+}
+
+export interface WorktreeRemoveAction {
+  action: 'worktree_remove';
+  requestId?: string;
+  projectPath: string;
+  path: string;
+}
+
+export interface PathValidateAction {
+  action: 'path_validate';
+  requestId?: string;
+  path: string;
 }
 
 export type OrcdAction =
@@ -87,7 +129,12 @@ export type OrcdAction =
   | ListAction
   | CancelAction
   | MemoryUpsertAction
-  | CompactAction;
+  | CompactAction
+  | HelloAction
+  | CapabilitiesAction
+  | WorktreePrepareAction
+  | WorktreeRemoveAction
+  | PathValidateAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -121,6 +168,7 @@ export interface SessionErrorMessage {
   type: 'error';
   sessionId: string;
   error: string;
+  requestId?: string;
 }
 
 export interface SessionExitMessage {
@@ -149,6 +197,41 @@ export interface SessionListMessage {
     state: 'running' | 'completed' | 'errored' | 'stopped';
     cwd: string;
   }>;
+  requestId?: string;
+}
+
+export interface CapabilityProvider {
+  id: string;
+  label: string;
+  models: Array<{ alias: string; label: string; contextWindow: number }>;
+}
+
+export interface CapabilitiesMessage {
+  type: 'capabilities';
+  requestId?: string;
+  name: string;
+  providers: CapabilityProvider[];
+  defaults: { provider: string; model: string };
+}
+
+export interface WorktreeReadyMessage {
+  type: 'worktree_ready';
+  requestId?: string;
+  path: string;
+  branch: string;
+}
+
+export interface OkMessage {
+  type: 'ok';
+  requestId?: string;
+}
+
+export interface PathValidatedMessage {
+  type: 'path_validated';
+  requestId?: string;
+  exists: boolean;
+  isGitRepo: boolean;
+  defaultBranch: string | null;
 }
 
 export type OrcdMessage =
@@ -160,4 +243,8 @@ export type OrcdMessage =
   | SessionExitMessage
   | ContextUsageMessage
   | SessionIdUpdateMessage
-  | SessionListMessage;
+  | SessionListMessage
+  | CapabilitiesMessage
+  | WorktreeReadyMessage
+  | OkMessage
+  | PathValidatedMessage;

@@ -57,6 +57,9 @@ export class Card extends BaseEntity {
   @Column({ type: 'text', default: 'anthropic' })
   provider!: string;
 
+  @Column({ name: 'node_name', type: 'text', default: 'local' })
+  nodeName!: string;
+
   @Column({ name: 'thinking_level', type: 'text', default: 'high' })
   thinkingLevel!: string;
 

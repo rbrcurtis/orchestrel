@@ -24,6 +24,7 @@ function applySync(store: RootStore, data: SyncPayload): void {
     store.ws.getSubscribedColumns(),
   );
   store.config.hydrate(data.providers);
+  store.config.hydrateNodes(data.nodes);
 }
 
 async function resubscribeAll(store: RootStore): Promise<void> {

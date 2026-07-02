@@ -88,6 +88,7 @@ export class ProjectStore {
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     color?: string | null;
     providerID?: string;
+    nodeName?: string;
     memoryBaseUrl?: string | null;
     memoryApiKey?: string | null;
     archived?: boolean;
@@ -112,6 +113,7 @@ export class ProjectStore {
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high';
     color?: string | null;
     providerID?: string;
+    nodeName?: string;
     memoryBaseUrl?: string | null;
     memoryApiKey?: string | null;
     archived?: boolean;
