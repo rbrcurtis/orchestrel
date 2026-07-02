@@ -27,9 +27,19 @@ Personal kanban board + Claude Code orchestration app.
 - Orc backend reacts to `session_exit` to move cards to review
 - `result` is just another SDK event — used for turn counting and forwarding to the UI
 
+### Multi-Node Architecture
+
+Orchestrel supports multiple orcd nodes (remote execution boxes). The BE connects to each node over authenticated TCP and routes card sessions to the appropriate node based on the project's `node_name`.
+
+- **`orc.yaml`** (gitignored; see `orc.example.yaml`) — node registry on the BE. Lists all orcd nodes with `name`, `host`, `port`, `authToken`.
+- **`orcd.yaml`** (gitignored; see `orcd.example.yaml`) — per-box daemon config. Defines `listen`, `authToken`, `name`, `providers`, `defaultProvider`, `defaultModel`, `ringBufferSize`.
+- **`config.yaml`** — symlink to `orcd.yaml` (backward compat for `src/shared/config.ts`).
+- Each project has a `node_name` field binding it to a specific node. Cards inherit the project's node.
+- Agents run on the node holding the project files (native edit tools work locally); orchestration stays central.
+
 ### Provider Routing
 
-Provider config lives in `./config.yaml` at the repo root (gitignored; see `config.example.yaml`). Both orcd and the orc backend read it via `src/shared/config.ts`. Each provider has `label`, optional `baseUrl`/`apiKey`/`authToken`/`oauth`, and a `models` map of `alias → { label, modelID, contextWindow }`. orcd registers every provider generically from config with no provider-specific branches — all providers work identically, no special cases.
+Provider config lives in each node's `orcd.yaml`. Each provider has `label`, optional `baseUrl`/`apiKey`/`authToken`/`oauth`, and a `models` map of `alias → { label, modelID, contextWindow }`. orcd registers every provider generically with no provider-specific branches — all providers work identically, no special cases.
 
 **Provider-specific behavior lives outside orcd, in Pi extensions (layer 5).** Claude Max OAuth and its Claude Code request reshaping are NOT in orcd's application code. A standalone Pi extension at `extensions/claude-max/` (symlinked to `~/.pi/agent/extensions/claude-max` via `scripts/install-claude-max-extension.sh`) is auto-discovered by Pi and self-registers the `oauth` block + `streamSimple` reshaper that augments the `anthropic` provider. orcd imports nothing from it. Setting `oauth: claude-max` on a provider in `config.yaml` depends on that extension being installed; without it the provider has no working auth.
 
@@ -96,7 +106,10 @@ CREATE TABLE projects (
   created_at text DEFAULT (datetime('now')) NOT NULL,
   default_model text DEFAULT 'sonnet' NOT NULL,
   default_thinking_level text DEFAULT 'high' NOT NULL,
-  provider_id text DEFAULT 'anthropic' NOT NULL
+  provider_id text DEFAULT 'anthropic' NOT NULL,
+  node_name TEXT NOT NULL DEFAULT 'local',
+  archived INTEGER NOT NULL DEFAULT 0,
+  default_sandbox INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE cards (
@@ -118,7 +131,13 @@ CREATE TABLE cards (
   thinking_level text DEFAULT 'high' NOT NULL,
   context_tokens INTEGER NOT NULL DEFAULT 0,
   context_window INTEGER NOT NULL DEFAULT 200000,
-  provider TEXT NOT NULL DEFAULT 'anthropic'
+  provider TEXT NOT NULL DEFAULT 'anthropic',
+  node_name TEXT NOT NULL DEFAULT 'local',
+  queue_position INTEGER DEFAULT NULL,
+  pending_prompt TEXT DEFAULT NULL,
+  pending_files TEXT DEFAULT NULL,
+  summarize_threshold REAL NOT NULL DEFAULT 0,
+  sandbox INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE users (
