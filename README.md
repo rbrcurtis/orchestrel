@@ -2,9 +2,69 @@
 
 ![Orchestrel board with multiple agent sessions open](docs/assets/orchestrel.jpg)
 
-Orchestrel is a local-first control room for AI coding work. It combines a project-aware kanban board, a chat-style session view, git worktree automation, and a long-running `orcd` daemon built on the Pi TypeScript SDK so multiple coding tasks can run and resume independently.
+Orchestrel is a local-first control room for AI coding work. It combines a project-aware kanban board, a chat-style session view, git worktree automation, and a fleet of long-running `orcd` daemons built on the Pi TypeScript SDK, so multiple coding tasks can run and resume independently — on one box or across several.
 
-The core workflow is simple: create a card, attach it to a local project, move it to **Running**, and Orchestrel starts or resumes an agent session in the right working directory. Output streams back live, context usage is tracked, background compaction keeps long sessions usable, and completed sessions move to **Review** automatically.
+The core workflow: create a card, attach it to a project, move it to **Running**, and Orchestrel starts or resumes an agent session in the right working directory on the right node. Output streams back live, context usage is tracked, background compaction keeps long sessions usable, and completed sessions move to **Review** automatically.
+
+## Architecture
+
+Five layers, from browser to model provider:
+
+| # | Layer | Description | Location |
+|---|-------|-------------|----------|
+| 1 | **Orc UI** | React frontend, runs in browser | `app/` |
+| 2 | **Orc Backend** | Web server: Socket.IO, REST, controllers, event bus | `src/server/` |
+| 3 | **orcd** | Standalone daemon, one per node, manages Pi agent sessions | `src/orcd/` |
+| 4 | **Agent sessions** | Pi SDK sessions with native tools, extensions, MCP | managed by Pi |
+| 5 | **Providers / proxies** | Anthropic, Bedrock, local proxies, OAuth extensions | per-node config |
+
+```text
+┌────────────────────────────────────────────────────────────┐
+│ Browser SPA                                                │
+│ React components ←→ MobX stores ←→ Socket.IO client        │
+│ Board view, Chat view, SessionView, project settings       │
+└──────────────────────────┬─────────────────────────────────┘
+                           │ Socket.IO + REST
+┌──────────────────────────┴─────────────────────────────────┐
+│ Orchestrel web server (BE)                                 │
+│ Express, generated REST API, uploads, Socket.IO handlers   │
+│ TypeORM models, services, message bus, subscriptions       │
+│ OrcdClient per node — reconnect/reconcile layer            │
+└───────────┬──────────────────────────────┬─────────────────┘
+            │ authenticated TCP (orc.yaml) │
+┌───────────┴────────────┐    ┌────────────┴────────────────┐
+│ orcd — node "local"    │    │ orcd — node "max" (remote)  │
+│ Session registry,      │    │ Same daemon on another box, │
+│ event ring buffer,     │    │ runs agents next to that    │
+│ Pi SDK sessions,       │    │ box's project checkouts     │
+│ worktrees, compaction  │    │                             │
+└───────────┬────────────┘    └────────────┬────────────────┘
+            │ Pi runtime/session APIs      │
+┌───────────┴────────────┐    ┌────────────┴────────────────┐
+│ Local projects,        │    │ Remote projects, worktrees, │
+│ worktrees, ~/.pi       │    │ that box's ~/.pi resources  │
+└────────────────────────┘    └─────────────────────────────┘
+```
+
+### Multi-node
+
+Orchestrel supports multiple orcd nodes (remote execution boxes). The BE connects to each node over authenticated TCP and routes card sessions to the node named by the project's `node_name`. Cards inherit the project's node. Agents run on the node holding the project files — native edit tools work locally — while orchestration stays central.
+
+- **`orc.yaml`** (gitignored; see `orc.example.yaml`) — node registry on the BE: `name`, `host`, `port`, `authToken` per node.
+- **`orcd.yaml`** (gitignored; see `orcd.example.yaml`) — per-box daemon config: `listen`, `authToken`, `name`, `providers`, `defaultProvider`, `defaultModel`, `defaultCwd`, `ringBufferSize`.
+- **`config.yaml`** — symlink to `orcd.yaml` (backward compat for `src/shared/config.ts`).
+
+### Session lifecycle ownership
+
+orcd owns session lifecycle. The BE never infers session state from SDK events like `result` — a `result` means one agent turn completed, not that the session is done (background tasks and subagents may still be running). orcd emits `session_exit` when the session actually closes; the BE reacts to that to move cards to Review. Each node keeps a per-session event ring buffer so the BE can replay missed events after an outage.
+
+### Event-driven design
+
+The backend is purely event-driven: every handler reacts to a single event plus current observable state, in isolation. No handler assumes a prior step occurred or encodes a workflow sequence — behavior emerges from independent, composable listeners, and the system tolerates events arriving out of order or replayed.
+
+### Provider routing
+
+Provider config lives in each node's `orcd.yaml`. orcd registers every provider generically — no provider-specific branches. Provider-specific behavior lives outside orcd in Pi extensions: e.g. Claude Max OAuth and its request reshaping ship as the standalone `extensions/claude-max/` extension, which Pi auto-discovers from `~/.pi/agent/extensions/`. Setting `oauth: claude-max` on a provider requires that extension to be installed on that node.
 
 ## Features
 
@@ -16,36 +76,28 @@ The core workflow is simple: create a card, attach it to a local project, move i
 - Inline card editing, autosaved prompt drafts, copyable session IDs, and copyable worktree paths.
 
 **Agent Sessions**
-- Long-running `orcd` daemon embeds the Pi TypeScript SDK and manages Pi agent sessions over a UNIX socket.
+- `orcd` daemons embed the Pi TypeScript SDK and manage sessions over authenticated TCP.
 - `bin/orc` wraps the `pi` CLI, applying Orchestrel provider/model defaults before handing off to Pi.
-- Server-owned lifecycle: cards entering **Running** create or resume sessions; session exit moves running cards to **Review**.
+- Server-owned lifecycle: cards entering **Running** create or resume sessions; `session_exit` moves running cards to **Review**.
 - Live streaming of assistant text, thinking, tool calls, tool results, errors, status, and context usage.
 - Follow-up prompts, Continue, Stop, reconnect, and manual compaction controls.
 - File attachments up to 25 MB per file through `/api/upload`.
-- Session transcript reload from Pi session history through Pi session-manager APIs plus live replay from the daemon event buffer.
+- Session transcript reload from Pi session history (including remote nodes via `get_history`) plus live replay from the daemon event buffer.
 - Synthetic subagent activity feed from Agent/Task launches and async task notifications.
 
 **Context and Memory**
 - Per-card context gauge backed by provider/model context window metadata.
-- Configurable summarize threshold per card, including Off and 50-90% presets.
+- Configurable summarize threshold per card, including Off and 50–90% presets.
 - Background compaction is Pi-native and applies through the active Pi session at safe lifecycle boundaries.
 - Optional memory upsert at session exit and terminal card transitions, backed by a configured memory API.
 
 **Projects and Worktrees**
-- Project registry for local repositories and non-repo working directories.
+- Project registry binding each project to a path and an orcd node.
 - Auto-detects git repositories and default branch metadata.
 - Optional per-card worktree branch creation, with project setup commands after worktree creation.
 - Worktree cleanup when a worktree-backed card is archived.
-- Per-project defaults for provider, model, thinking level, worktree usage, branch, color, and memory endpoint overrides.
+- Per-project defaults for provider, model, thinking level, worktree usage, branch, color, and sandbox.
 - Project archiving and Cloudflare Access user/project visibility controls.
-
-**Pi Resources and Provider Configuration**
-- `config.yaml` drives Orchestrel provider/model routing and context-window metadata while Pi owns its canonical runtime resources.
-- User-level Pi resources live under the Pi canonical user config directory returned by the Pi SDK (`~/.pi`, commonly with agent data under `~/.pi/agent`).
-- Project instructions are resolved by Pi from project instruction files such as `AGENTS.md`, not Claude-specific instruction files.
-- Slash commands are Pi prompt templates / commands.
-- Skills are Pi skills and remain distinct from commands.
-- Model labels and context windows are exposed to the UI and used for context tracking.
 
 **API and Auth**
 - Socket.IO is the primary app transport with typed, Zod-validated events.
@@ -60,57 +112,19 @@ The core workflow is simple: create a card, attach it to a local project, move i
 | Styling | Tailwind CSS 4, shadcn/ui-style Radix components, lucide-react |
 | Realtime | Socket.IO |
 | Server | Express 5, TSOA REST routes, Swagger UI |
-| Daemon | `orcd` UNIX-socket service |
+| Daemon | `orcd` TCP service (token-authenticated, one per node) |
 | Agent runtime | Pi TypeScript SDK (`@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`) |
 | CLI wrapper | `bin/orc` wrapping the `pi` CLI |
 | Database | SQLite via TypeORM and better-sqlite3 |
 | Local cache | IndexedDB via idb-keyval |
 | Drag and drop | dnd-kit |
-| Build and test | Vite 7, TypeScript 5.9, Vitest, oxlint |
-
-## Architecture
-
-```text
-┌────────────────────────────────────────────────────────────┐
-│ Browser SPA                                                │
-│ React components ←→ MobX stores ←→ Socket.IO client        │
-│ Board view, Chat view, SessionView, project settings       │
-└──────────────────────────┬─────────────────────────────────┘
-                           │ Socket.IO + REST
-┌──────────────────────────┴─────────────────────────────────┐
-│ Orchestrel web server                                      │
-│ Express, generated REST API, uploads, Socket.IO handlers   │
-│ TypeORM models, services, message bus, subscriptions       │
-│ OrcdClient reconnect/reconcile layer                       │
-└──────────────────────────┬─────────────────────────────────┘
-                           │ JSON lines over UNIX socket
-┌──────────────────────────┴─────────────────────────────────┐
-│ orcd daemon                                                │
-│ Session registry, event replay buffer, lifecycle hooks     │
-│ Pi TypeScript SDK sessions, compaction, memory upsert      │
-└──────────────────────────┬─────────────────────────────────┘
-                           │ Pi runtime/session APIs
-┌──────────────────────────┴─────────────────────────────────┐
-│ Local projects, worktrees, and Pi resources                │
-│ Pi instruction files + canonical Pi config/session storage │
-└────────────────────────────────────────────────────────────┘
-```
-
-Key patterns:
-
-- **Daemon-owned agent runtime**: `orcd` keeps active Pi sessions alive independently of the web server and exposes create, message, subscribe, cancel, compact, list, and memory-upsert actions.
-- **Pi-native resource model**: Orchestrel delegates user resources, project instructions, prompt templates/commands, skills, auth, model registry, and session storage to Pi's canonical locations and APIs.
-- **Server-owned card lifecycle**: the browser mutates cards; backend listeners start, cancel, reconcile, and route sessions.
-- **Event fanout**: TypeORM subscribers publish card/project changes to an internal bus, and Socket.IO subscriptions fan those changes to clients.
-- **Session reconciliation**: on web-server startup or `orcd` reconnect, running cards are compared with daemon session state and moved to Review if their session is no longer alive.
-- **Config-driven providers**: model aliases and context windows come from `config.yaml`, not hard-coded UI choices.
+| Build and test | Vite 7, TypeScript 5.9, Vitest, oxlint, bun |
 
 ## Prerequisites
 
-- Node.js 22+
-- bun
-- Pi CLI available at `/home/ryan/.local/bin/pi` for `bin/orc`
-- Pi user config/auth/model resources in the canonical Pi user config directory (`~/.pi`)
+- Node.js 22+ and bun
+- Pi CLI on the PATH (for `bin/orc`)
+- Pi user config/auth/model resources under `~/.pi` on every node that runs agents
 - Optional Ollama on `localhost:11434` with `llama3.2:latest` for title suggestions
 - Optional memory API for session memory upsert
 
@@ -118,27 +132,13 @@ Key patterns:
 
 ```bash
 bun install
-cp config.example.yaml config.yaml
+cp orcd.example.yaml orcd.yaml    # per-box daemon config
+ln -sf orcd.yaml config.yaml      # legacy path some modules still read
+cp orc.example.yaml orc.yaml      # node registry for the BE
 cp .env.example .env
 ```
 
-Edit `config.yaml` first. It is required by both `orcd` and the web app.
-
-```yaml
-socket: ~/.orc/orcd.sock
-defaultProvider: anthropic
-defaultModel: sonnet
-defaultCwd: ~/Code
-
-providers:
-  anthropic:
-    label: Anthropic
-    models:
-      opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,   contextWindow: 1000000 }
-      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 1000000 }
-```
-
-Then run the daemon and web app in separate terminals:
+Edit `orcd.yaml` (providers, listen address, auth token, node name) and `orc.yaml` (one entry per node; a single `local` entry pointing at `127.0.0.1:7420` is the minimal setup). Then run the daemon and web app in separate terminals:
 
 ```bash
 bun run orcd
@@ -162,44 +162,53 @@ Development mode runs on `http://localhost:6195` by default. Production mode use
 
 ## Configuration
 
-`config.yaml` is resolved from `ORC_CONFIG` when set, otherwise `./config.yaml`.
+### `orc.yaml` — node registry (BE only)
 
-The `orc` wrapper also honors `ORC_PROVIDER` and `ORC_MODEL` as CLI defaults when provider/model args are omitted. Positional args still win:
-
-```bash
-ORC_PROVIDER=trackable ORC_MODEL=auto orc "summarize this repo"
-orc anthropic sonnet "use the normal config instead"
+```yaml
+servers:
+  - name: local
+    host: 127.0.0.1
+    port: 7420
+    authToken: <token>
+  - name: max
+    host: max.local
+    port: 7420
+    authToken: <token>
 ```
+
+Each project in the UI selects one of these node names; its cards run there.
+
+### `orcd.yaml` — per-node daemon config
+
+Resolved from `ORC_CONFIG` when set, otherwise `./config.yaml` (the symlink).
 
 | Key | Description |
 | --- | --- |
-| `socket` | UNIX socket path used by the web server to reach `orcd` |
-| `defaultProvider` | Provider ID used by `orcd` when no card/project override applies |
-| `defaultModel` | Model alias used by `orcd` when no card/project override applies |
+| `listen` | `host`/`port` the daemon binds (default port 7420) |
+| `authToken` | Shared secret the BE must present; must match the node's `orc.yaml` entry |
+| `name` | Node name, must match the `orc.yaml` entry |
+| `defaultProvider` / `defaultModel` | Used when no card/project override applies |
 | `defaultCwd` | Default base directory for new work |
-| `providers` | Provider map exposed to the UI, used by `bin/orc`, and used by `orcd` for Pi model routing |
-| `memoryUpsert` | Optional memory API settings used by `orcd` |
+| `ringBufferSize` | Per-session event buffer; size to cover the max expected BE↔node outage |
+| `providers` | Provider map exposed to the UI and used for Pi model routing |
+| `memoryUpsert` | Optional memory API settings used by orcd at session end |
 
-Provider entries keep the current Orchestrel schema and can use:
+Provider entries:
 
 | Field | Description |
 | --- | --- |
 | `label` | UI label |
-| `type` | Omit for default Pi/Anthropic-format routing; use `bedrock` for AWS Bedrock |
+| `type` | Omit for Anthropic-format routing; `bedrock` for AWS Bedrock |
 | `baseUrl` | Optional provider/proxy API base URL |
-| `apiKey` | Optional API key passed through to the runtime environment |
-| `authToken` | Optional bearer-style token passed through to the runtime environment |
+| `apiKey` / `authToken` | Credentials; `${VAR}` values resolve against the daemon's environment |
+| `oauth` | Names a Pi extension that provides OAuth (e.g. `claude-max`); requires that extension installed on the node |
 | `region` / `profile` | AWS Bedrock settings |
+| `aliases` | Maps `primary`/`subagent`/`lightweight` roles to model keys for SDK subagent spawning |
 | `models` | Alias map with `label`, `modelID`, and `contextWindow` |
 
-Pi runtime resources are intentionally separate from Orchestrel's `config.yaml`:
+Pi runtime resources are intentionally separate from Orchestrel config: auth, model registry, prompt templates/commands, skills, and session storage live in Pi's canonical user config directory (`~/.pi`, agent data under `~/.pi/agent`). Project instructions are resolved by Pi from files such as `AGENTS.md` in the project tree.
 
-- User-level auth, model registry, prompt templates/commands, and skills belong in Pi's canonical user config directory (`~/.pi`).
-- Project instructions are resolved by Pi from project instruction files such as `AGENTS.md` in the project tree.
-- Slash commands are Pi prompt templates / commands.
-- Skills are Pi skills and are not treated as slash commands.
-
-`.env` controls the web server:
+### `.env` — web server
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -210,12 +219,48 @@ Pi runtime resources are intentionally separate from Orchestrel's `config.yaml`:
 | `CF_TEAM_DOMAIN` | unset | Enables Cloudflare Access JWT verification |
 | `ADMIN_EMAILS` | unset | Comma-separated Cloudflare Access emails with admin role |
 
-Runtime data is stored in:
+Runtime data:
 
-- `data/orchestrel.db` for cards, projects, users, and project visibility.
-- `~/.orc/orcd.sock` by default for the daemon socket.
-- Pi's canonical user config/session storage under `~/.pi` for agent auth, model registry, resources, and session history.
-- `/tmp/orchestrel-uploads/<session>` for uploaded prompt files.
+- `data/orchestrel.db` — cards, projects, users, project visibility.
+- `~/.pi` — Pi auth, model registry, extensions, session history (per node).
+- `/tmp/orchestrel-uploads/<session>` — uploaded prompt files.
+
+## Remote Node Setup
+
+Adding an execution box (checklist — every step is required; the Pi extension step is the one most easily missed):
+
+1. **Checkout + deps**: clone Orchestrel on the node (e.g. `~/Code/orchestrel`), `bun install`. Node.js and npm must be present.
+2. **`orcd.yaml`**: set `listen`, a unique `name`, an `authToken`, and the node's providers. Symlink `config.yaml → orcd.yaml`.
+3. **Service**: run `bun run orcd` under launchd (macOS, e.g. `com.orchestrel.orcd` LaunchAgent) or systemd (Linux), enabled at boot.
+4. **Register on the BE**: add the node to `orc.yaml` with matching name/host/port/token. Point projects at it via their `node_name`.
+5. **Pi runtime dir** (`~/.pi/agent` on the node): `auth.json`, `mcp.json`, `AGENTS.md` (symlink to your global instructions), `skills` symlink.
+6. **Pi extensions** — not deployed by anything automatic, and without them agent capabilities silently degrade:
+   - **`pi-mcp-adapter`** — required for MCP. Without it, no MCP servers connect for any session on the node, even when `mcp.json` / project `.mcp.json` exist. Install via npm so its dependencies resolve:
+
+     ```bash
+     mkdir -p ~/.pi/ext-packages && cd ~/.pi/ext-packages
+     npm install pi-mcp-adapter
+     ln -sfn ~/.pi/ext-packages/node_modules/pi-mcp-adapter ~/.pi/agent/extensions/pi-mcp-adapter
+     ```
+
+   - **`shared-memory-reinforce.ts`** — copy from an existing node's `~/.pi/agent/extensions/`; injects the shared-memory usage reminder at new-session start (Pi does not run Claude Code hooks).
+   - **`claude-max`** — only if a provider on the node sets `oauth: claude-max`; install with `scripts/install-claude-max-extension.sh`.
+7. **Project checkouts**: the node needs the actual project files at the paths registered in the UI.
+
+Extensions load per session (at `createAgentSession`), so installing them does not require an orcd restart — but already-running sessions won't gain tools until they exit and are resumed.
+
+## MCP in Agent Sessions
+
+orcd contains no MCP code. The `pi-mcp-adapter` extension connects servers at `session_start`, merging configs in increasing precedence (same-named servers override):
+
+1. `~/.config/mcp/mcp.json` (generic global)
+2. `~/.pi/agent/mcp.json` (Pi global)
+3. `<cwd>/.mcp.json` (project — shared with Claude Code)
+4. `<cwd>/.pi/mcp.json` (project Pi override)
+
+Per-project MCP therefore works by committing a `.mcp.json` to the repo; it overrides the global entry of the same name.
+
+**Worktree caveat**: worktree-backed cards run with `cwd` set to the worktree, and new worktree branches are created from `origin/<source_branch>`. A project `.mcp.json` only reaches those sessions if it is committed **and pushed** to origin on the source branch.
 
 ## Card Lifecycle
 
@@ -230,9 +275,9 @@ Backlog → Ready → Running → Review → Done → Archive
 1. Create a card on the board or start a session from `/chat`.
 2. Select a project, provider/model, optional worktree branch, source branch, and summarize threshold.
 3. Move the card to **Running** or create it directly as running.
-4. Backend listeners create the worktree if needed, run setup commands, and ask `orcd` to create or resume the Pi session.
+4. Backend listeners route the request to the project's node; orcd creates the worktree if needed, runs setup commands, and creates or resumes the Pi session.
 5. Streamed Pi SDK events update the transcript, counters, context gauge, subagent feed, and status.
-6. On session exit, running cards move to **Review**.
+6. On `session_exit`, running cards move to **Review**.
 7. Follow up from Review or Running, stop active sessions, compact long sessions manually, or move cards to Done/Archive.
 8. Archiving a worktree-backed card removes its worktree.
 
@@ -240,16 +285,20 @@ Backlog → Ready → Running → Review → Done → Archive
 
 ```text
 server.js                         Express entry point, Vite middleware, prod static server
-config.example.yaml               Provider, model, socket, and memory config template
+orc.example.yaml                  Node registry template (BE)
+orcd.example.yaml                 Per-node daemon config template
 bin/
   orc                             Wrapper around the pi CLI with Orchestrel provider/model routing
+extensions/
+  claude-max/                     Pi extension: Claude Max OAuth + request reshaping
+scripts/                          DB backup, claude-max extension install, migrations
 app/
   routes/                         Board and chat React Router routes
   components/                     CardDetail, SessionView, transcript, settings, UI primitives
   stores/                         MobX stores for root, cards, projects, sessions, config
   lib/                            Socket.IO client, persistence, slot resolution, utilities
 src/
-  orcd/                           UNIX-socket daemon, session registry, Pi SDK runtime
+  orcd/                           TCP daemon, session registry, worktree ops, Pi SDK runtime
   lib/                            Pi history, compaction, summarization, memory upsert
   server/
     api/                          TSOA controllers and generated OpenAPI routes
