@@ -163,4 +163,85 @@ describe('LazyTranscript auto-scroll', () => {
 
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 1400, behavior: 'auto' });
   });
+
+  it('stays pinned when fast-growing content widens the gap past the threshold without user scrolling', () => {
+    const props = {
+      cardId: 1,
+      currentBlocks: [],
+      accentColor: null,
+      historyLoaded: true,
+      isStreaming: true,
+      showScrollButton: false,
+      onShowScrollButtonChange: vi.fn(),
+    };
+
+    const { container, rerender } = render(
+      <LazyTranscript {...props} conversation={conversation(3)} />,
+    );
+    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
+      if (typeof options === 'object') viewport.scrollTop = Number(options.top);
+    });
+    viewport.scrollTo = scrollTo as HTMLDivElement['scrollTo'];
+
+    // At the bottom.
+    setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 600 });
+    act(() => viewport.dispatchEvent(new Event('scroll')));
+
+    // Bash output explodes: height jumps 500px before the scroll handler runs,
+    // so the gap (500) is now past BOTTOM_GAP_PX — but the user did not scroll up.
+    setViewportMetrics(viewport, { scrollHeight: 1500, clientHeight: 400, scrollTop: 600 });
+    act(() => viewport.dispatchEvent(new Event('scroll')));
+    scrollTo.mockClear();
+
+    // Next committed entry must still pin to bottom.
+    setViewportMetrics(viewport, { scrollHeight: 1600, clientHeight: 400, scrollTop: 600 });
+    rerender(<LazyTranscript {...props} conversation={conversation(4)} />);
+    act(flushAnimationFrames);
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1600, behavior: 'auto' });
+  });
+
+  it('scrolls to bottom for late content growth right after streaming ends', () => {
+    const props = {
+      cardId: 1,
+      currentBlocks: [],
+      accentColor: null,
+      historyLoaded: true,
+      showScrollButton: false,
+      onShowScrollButtonChange: vi.fn(),
+    };
+
+    const { container, rerender } = render(
+      <LazyTranscript {...props} isStreaming conversation={conversation(3)} />,
+    );
+    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
+      if (typeof options === 'object') viewport.scrollTop = Number(options.top);
+    });
+    viewport.scrollTo = scrollTo as HTMLDivElement['scrollTo'];
+
+    // At the bottom while streaming.
+    setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 600 });
+    act(() => viewport.dispatchEvent(new Event('scroll')));
+    act(flushAnimationFrames);
+    scrollTo.mockClear();
+
+    // Move past the 500ms initial bottom lock so it can't mask the stream-end lock.
+    const realNow = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(realNow + 600);
+
+    // Turn ends: isStreaming flips false.
+    rerender(<LazyTranscript {...props} isStreaming={false} conversation={conversation(3)} />);
+    act(flushAnimationFrames);
+    scrollTo.mockClear();
+
+    // Late bash output finishes painting after the turn ended.
+    setViewportMetrics(viewport, { scrollHeight: 1500, clientHeight: 400, scrollTop: 600 });
+    act(triggerResizeObservers);
+    act(flushAnimationFrames);
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1500, behavior: 'auto' });
+    vi.restoreAllMocks();
+  });
 });

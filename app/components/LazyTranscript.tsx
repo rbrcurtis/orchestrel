@@ -51,6 +51,8 @@ export function LazyTranscript({
   const itemsLenRef = useRef(0);
   const prevHistoryLoadedRef = useRef(false);
   const initialBottomLockUntilRef = useRef(0);
+  const streamEndLockUntilRef = useRef(0);
+  const prevIsStreamingRef = useRef(isStreaming);
   const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS);
 
   const items = useMemo<ConversationEntry[]>(() => {
@@ -103,10 +105,20 @@ export function LazyTranscript({
       scrollTop: el.scrollTop,
       clientHeight: el.clientHeight,
     };
-    scrollMetricsRef.current = metrics;
 
     const gap = metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight;
-    const nearBottom = gap < BOTTOM_GAP_PX;
+    let nearBottom = gap < BOTTOM_GAP_PX;
+    // Fast-growing content (e.g. bash output) can widen the gap past the
+    // threshold between our programmatic scrollTo and this handler running.
+    // Only unstick when the user actually scrolled up — content growth alone
+    // must not cancel bottom-following.
+    const prev = scrollMetricsRef.current;
+    if (!nearBottom && nearBottomRef.current && prev) {
+      const heightGrew = metrics.scrollHeight > prev.scrollHeight;
+      const scrolledUp = metrics.scrollTop < prev.scrollTop;
+      if (heightGrew && !scrolledUp) nearBottom = true;
+    }
+    scrollMetricsRef.current = metrics;
     nearBottomRef.current = nearBottom;
     onNearBottomChange?.(nearBottom);
     onShowScrollButtonChange(gap >= SCROLL_BUTTON_GAP_PX);
@@ -158,19 +170,29 @@ export function LazyTranscript({
     });
   }, [visibleCount, updateScrollState]);
 
+  // When a turn ends, isStreaming flips false while late content (final bash
+  // output, markdown paint) may still grow the transcript. Hold a short bottom
+  // lock so those late resizes still land at the bottom.
+  useEffect(() => {
+    const wasStreaming = prevIsStreamingRef.current;
+    prevIsStreamingRef.current = isStreaming;
+    if (!wasStreaming || isStreaming) return;
+    if (!nearBottomRef.current) return;
+    streamEndLockUntilRef.current = Date.now() + 800;
+    scheduleScrollToBottom();
+  }, [isStreaming, scheduleScrollToBottom]);
+
   useEffect(() => {
     const previousLen = prevItemsLenRef.current;
     const nextLen = items.length;
     prevItemsLenRef.current = nextLen;
     if (nextLen <= previousLen) return;
 
-    const metrics = scrollMetricsRef.current;
-    const wasNearBottom = metrics
-      ? metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight < BOTTOM_GAP_PX
-      : nearBottomRef.current;
+    const wasNearBottom = nearBottomRef.current;
 
     setVisibleCount((count) => Math.min(nextLen, count + nextLen - previousLen));
-    if (isStreaming && wasNearBottom) scheduleScrollToBottom();
+    const withinStreamEndLock = Date.now() < streamEndLockUntilRef.current;
+    if ((isStreaming || withinStreamEndLock) && wasNearBottom) scheduleScrollToBottom();
   }, [items.length, isStreaming, scheduleScrollToBottom]);
 
   useEffect(() => {
@@ -185,6 +207,11 @@ export function LazyTranscript({
       if (items.length === 0) return;
       const withinInitialBottomLock = Date.now() < initialBottomLockUntilRef.current;
       if (withinInitialBottomLock) {
+        scheduleScrollToBottom();
+        return;
+      }
+      const withinStreamEndLock = Date.now() < streamEndLockUntilRef.current;
+      if (withinStreamEndLock && nearBottomRef.current) {
         scheduleScrollToBottom();
         return;
       }
