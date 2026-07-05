@@ -5,6 +5,7 @@ import { trackSession } from '../../controllers/card-sessions';
 import { ensureWorktree } from '../../sessions/worktree';
 import { isCompactCommand } from '../../../shared/slash-commands';
 import { busRoomBridge } from '../subscriptions';
+import { windowForCard } from '../../config/capabilities';
 
 export async function handleAgentSend(
   data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
@@ -46,7 +47,7 @@ export async function handleAgentSend(
           cwd,
           provider: card.provider,
           model: card.model,
-          contextWindow: card.contextWindow,
+          contextWindow: windowForCard(card),
           summarizeThreshold: card.summarizeThreshold,
           mode: 'full',
         });
@@ -77,18 +78,23 @@ export async function handleAgentSend(
       // New session or resume
       const cwd = await ensureWorktree(card, client);
       const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
+      // Node is connected here, so windowForCard resolves the live window. Heal
+      // the persisted cache back to the DB (it drifts to 200k when a card is
+      // created while the node's capabilities aren't yet available).
+      const window = windowForCard(card);
       const sessionId = await client.create({
         prompt,
         cwd,
         provider: card.provider,
         model: card.model,
         sessionId: card.sessionId ?? undefined,
-        contextWindow: card.contextWindow,
+        contextWindow: window,
         summarizeThreshold: card.summarizeThreshold,
         effort,
       });
 
       card.sessionId = sessionId;
+      card.contextWindow = window;
       trackSession(cardId, sessionId);
 
       if (card.column !== 'running') {
@@ -131,7 +137,7 @@ export async function handleAgentCompact(
       cwd,
       provider: card.provider,
       model: card.model,
-      contextWindow: card.contextWindow,
+      contextWindow: windowForCard(card),
       summarizeThreshold: card.summarizeThreshold,
       mode: 'background',
     });
@@ -189,7 +195,7 @@ export async function handleAgentStatus(
       promptsSent: card?.promptsSent ?? 0,
       turnsCompleted: card?.turnsCompleted ?? 0,
       contextTokens: card?.contextTokens ?? 0,
-      contextWindow: card?.contextWindow ?? 200_000,
+      contextWindow: card ? windowForCard(card) : 200_000,
     });
     callback({});
   } catch (err) {

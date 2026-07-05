@@ -12,6 +12,19 @@ export function contextWindowFor(nodeName: string, provider: string, modelAlias:
   return p?.models.find((m) => m.alias === modelAlias)?.contextWindow;
 }
 
+// Live-derived context window for a card. The persisted card.context_window is a
+// cache that silently drifts: contextWindowFor() returns undefined when the node
+// is disconnected or hasn't pushed capabilities yet (e.g. a card created during a
+// BE restart / node reconnect), so the DB column keeps its 200k schema default
+// regardless of model. Always prefer the node's live advertised window; fall back
+// to the (possibly stale) persisted value, then a hard 200k floor. This makes the
+// window self-heal the moment the node's capabilities are available.
+export function windowForCard(card: { nodeName: string; provider: string; model: string; contextWindow?: number }): number {
+  const live = contextWindowFor(card.nodeName, card.provider, card.model);
+  const persisted = card.contextWindow && card.contextWindow > 0 ? card.contextWindow : 0;
+  return (live && live > 0 ? live : 0) || persisted || 200_000;
+}
+
 export function defaultProviderFor(nodeName: string): string | undefined {
   return getClientByNode(nodeName)?.capabilities?.defaults.provider;
 }

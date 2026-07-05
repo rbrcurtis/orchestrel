@@ -35,6 +35,24 @@ describe('OrcdSession BGC event mapping', () => {
     expect(s.isIdle()).toBe(true);
   });
 
+  it('context_usage window prefers node config over a stale BE-passed value', () => {
+    // Card 1875 regression: a fable (1M) card persisted contextWindow=200000 from
+    // when the model was 200k. orcd must divide by config's live 1M window, else
+    // BGC fires at ~90% mid-turn. Config wins; the stale BE value is only a fallback.
+    const s = new OrcdSession({
+      cwd: '/tmp',
+      model: 'fable',
+      provider: 'anthropic',
+      sessionId: 'window',
+      contextWindow: 200000, // stale card value
+      providerConfig: { type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '', modelAliasEnv: {}, models: { fable: { label: 'Fable 5', modelID: 'claude-fable-5', contextWindow: 1000000 } } },
+    });
+    let win = 0;
+    s.subscribe((m) => { if (m.type === 'context_usage') win = m.contextWindow; });
+    s['emitMappedPiEvent']({ type: 'turn_end', message: { role: 'assistant', usage: { totalTokens: 186825 } } });
+    expect(win).toBe(1000000);
+  });
+
   it('does not swallow non-compaction events', () => {
     const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'passthru' });
     const events: unknown[] = [];

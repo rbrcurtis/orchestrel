@@ -256,9 +256,14 @@ export class OrcdSession {
 
   /** Context window for the active model — Pi usage events don't carry one. */
   private resolveContextWindow(): number | undefined {
-    if (this.contextWindow && this.contextWindow > 0) return this.contextWindow;
+    // orcd's own config is the live source of truth for a model's window on this
+    // node; the BE-passed value can be a stale card.contextWindow (persisted
+    // before the model's window changed, e.g. fable 200k → 1M). Trusting the
+    // stale card value made BGC divide by 200k for a 1M model and fire at ~90%
+    // mid-turn. Prefer config, fall back to the BE value only if config lacks it.
     const fromConfig = this.providerConfig?.models[this.model]?.contextWindow;
-    return fromConfig && fromConfig > 0 ? fromConfig : undefined;
+    if (fromConfig && fromConfig > 0) return fromConfig;
+    return this.contextWindow && this.contextWindow > 0 ? this.contextWindow : undefined;
   }
 
   private emitMappedPiEvent(event: unknown): void {

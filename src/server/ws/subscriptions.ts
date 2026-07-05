@@ -1,4 +1,5 @@
 import { messageBus } from '../bus';
+import { windowForCard } from '../config/capabilities';
 import type { AppServer, AppSocket } from './types';
 import type { Card as CardEntity } from '../models/Card';
 import type { Card, AgentStatus } from '../../shared/ws-protocol';
@@ -132,7 +133,7 @@ export const busRoomBridge = {
         promptsSent: card?.promptsSent ?? 0,
         turnsCompleted: card?.turnsCompleted ?? 0,
         contextTokens: card?.contextTokens ?? 0,
-        contextWindow: card?.contextWindow ?? 200_000,
+        contextWindow: card ? windowForCard(card) : 200_000,
       });
     };
     messageBus.on(`card:${cardId}:exit`, exitHandler);

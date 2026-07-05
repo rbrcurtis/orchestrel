@@ -4,6 +4,7 @@ import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
 import type { OrcdMessage } from '../../shared/orcd-protocol';
 import type { OrcdClient } from '../orcd-client';
+import { windowForCard } from '../config/capabilities';
 
 // ── Session → Card routing map ───────────────────────────────────────────────
 
@@ -377,7 +378,7 @@ export async function rearmScheduledSessions(client: OrcdClient): Promise<void> 
         cwd: wt,
         provider: card.provider,
         model: card.model,
-        contextWindow: card.contextWindow,
+        contextWindow: windowForCard(card),
         summarizeThreshold: card.summarizeThreshold,
       });
       trackSession(card.id, card.sessionId);
@@ -657,18 +658,22 @@ async function startCardSession(
     const prompt = card.sessionId ? '' : (card.description || card.title);
 
     const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
+    // Heal the persisted context window from the node's live capabilities (the
+    // node is connected here). See windowForCard for why the cache drifts.
+    const window = windowForCard(card);
     const sessionId = await client.create({
       prompt,
       cwd,
       provider: card.provider,
       model: card.model,
       sessionId: card.sessionId ?? undefined,
-      contextWindow: card.contextWindow,
+      contextWindow: window,
       summarizeThreshold: card.summarizeThreshold,
       effort,
     });
 
     card.sessionId = sessionId;
+    card.contextWindow = window;
     // The card description is the first prompt sent. Follow-up prompts increment
     // promptsSent in the ws message handler; this covers the initial start.
     if (startedFromDescription) card.promptsSent = (card.promptsSent ?? 0) + 1;

@@ -65,7 +65,11 @@ class CardService {
     data.nodeName = nodeName;
     data.summarizeThreshold = data.summarizeThreshold ?? 0.5;
 
-    // Set contextWindow from the node's advertised capabilities
+    // Best-effort initial context window from the node's advertised capabilities.
+    // May be undefined if the node isn't connected yet, leaving the 200k schema
+    // default; that's fine — it's a cache, self-healed from live caps at session
+    // start (see windowForCard / card-sessions startSession). Runtime uses derive
+    // the window live regardless of this value.
     const cw = contextWindowFor(nodeName, providerID, data.model ?? 'sonnet');
     if (cw) data.contextWindow = cw;
 
