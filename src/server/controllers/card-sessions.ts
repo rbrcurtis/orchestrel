@@ -124,12 +124,19 @@ export function initOrcdRouter(
 
         if (sys.subtype === 'bgc_started' || sys.subtype === 'compact_started') {
           bgcMap.set(msg.sessionId, cardId);
+          // A foreground `/compact` runs no assistant turn, so message_start never
+          // fires — move the card to running here so it shows "turn started" while
+          // the compaction runs.
+          if (sys.subtype === 'compact_started') await handleTurnStart(cardId);
         }
 
         if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
             card.contextTokens = 1;
+            // `/compact` emits no turn_complete/session_exit, so return the card
+            // to review here the same way a finished turn would.
+            if (sys.subtype === 'compact_done' && card.column === 'running') card.column = 'review';
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
             console.log(`[oc:${cardId}] ${sys.subtype}: reset contextTokens to 1`);

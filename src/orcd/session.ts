@@ -353,7 +353,9 @@ export class OrcdSession {
       // only resolves once Pi drains the queue, so session_exit still fires at
       // the right time and events keep flowing through the existing
       // subscription — this branch starts no second run loop.
-      if (this.piSession) {
+      if (!opts.prompt.trim()) {
+        log('session running; ignoring empty overlapping prompt');
+      } else if (this.piSession) {
         log('session running; queueing overlapping prompt as followUp');
         await this.piSession.prompt(opts.prompt, { streamingBehavior: 'followUp' });
       } else {
@@ -380,7 +382,15 @@ export class OrcdSession {
       };
 
       log(`started (resume=${!!opts.resume}, model=${this.model})`);
-      await session.prompt(opts.prompt, opts.resume ? { streamingBehavior: 'followUp' } : undefined);
+      // An empty prompt happens when the BE re-attaches to an existing session
+      // (card moved to running with a sessionId but no new instruction). Pi
+      // would persist an empty user message and Anthropic rejects requests with
+      // cache_control on empty text blocks, so resume without running a turn.
+      if (opts.prompt.trim()) {
+        await session.prompt(opts.prompt, opts.resume ? { streamingBehavior: 'followUp' } : undefined);
+      } else {
+        log('empty prompt; session resumed without running a turn');
+      }
 
       if (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
         log('waiting for async task notifications before session_exit');

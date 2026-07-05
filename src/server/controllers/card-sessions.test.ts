@@ -247,6 +247,30 @@ describe('orcd message router', () => {
     expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
   });
 
+  it('moves a card to running on compact_started and back to review on compact_done', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].column = 'review';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'system', subtype: 'compact_started', session_id: 'sess-abc' },
+    });
+    expect(mockCards[0].column).toBe('running');
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 1,
+      event: { type: 'system', subtype: 'compact_done', session_id: 'sess-abc' },
+    });
+    expect(mockCards[0].column).toBe('review');
+  });
+
   it('does not resurrect an archived card when an assistant turn starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
