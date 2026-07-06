@@ -54,8 +54,6 @@ export const SessionView = observer(function SessionView({
   const currentBlocks = session?.accumulator.currentBlocks ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
-  const promptsSent = session?.promptsSent ?? 0;
-  const turnsCompleted = session?.turnsCompleted ?? 0;
   const sessionStoreId = session?.sessionId ?? null;
   const contextTokens = session?.contextTokens ?? card?.contextTokens ?? 0;
   const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
@@ -161,7 +159,6 @@ export const SessionView = observer(function SessionView({
   // historyLoaded transitions false→true when resubscribeAll clears + reloads.
   const historyLoaded = session?.historyLoaded ?? false;
 
-  const showCounters = promptsSent > 0 || turnsCompleted > 0;
   const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
 
   async function handleSend(message: string, files?: FileRef[]) {
@@ -232,11 +229,7 @@ export const SessionView = observer(function SessionView({
               node offline / reconnecting
             </span>
           )}
-          {showCounters && (
-            <span className="text-[11px] text-muted-foreground shrink-0">
-              {turnsCompleted}/{promptsSent} turns
-            </span>
-          )}
+
           <select
             value={providerID}
             disabled={nodeOffline}
