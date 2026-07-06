@@ -1,4 +1,4 @@
-import { readdirSync, readlinkSync } from 'fs';
+import { readdirSync, readFileSync, readlinkSync } from 'fs';
 import { Card } from '../models/Card';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
@@ -522,6 +522,17 @@ export function cwdMatchesWorktree(rawCwd: string, worktree: string): boolean {
   return cwd === worktree || cwd.startsWith(`${worktree}/`);
 }
 
+// True when the process has a controlling TTY (tty_nr, field 7 of
+// /proc/pid/stat, is nonzero). Interactive shells and anything Ryan runs in a
+// terminal have one; agent-spawned orphans run under orcd with no TTY. The
+// comm field (parenthesized, may contain spaces/parens) is skipped by parsing
+// after the LAST ')'; tty_nr is then the 5th space-separated field.
+export function statHasControllingTty(stat: string): boolean {
+  const rest = stat.slice(stat.lastIndexOf(')') + 1).trim();
+  const ttyNr = rest.split(' ')[4];
+  return ttyNr !== undefined && ttyNr !== '0';
+}
+
 /* oxlint-disable orchestrel/log-in-catch, orchestrel/log-before-early-return --
    per-pid /proc scan: catches fire for every process that exits mid-scan or
    isn't readable; logging each one would be pure noise. The caller logs the
@@ -546,6 +557,13 @@ function reapWorktreeProcesses(worktree: string): number {
       continue; // process gone or not ours
     }
     if (!cwdMatchesWorktree(cwd, worktree)) continue;
+    // Never kill interactive processes — a terminal cd'd into the worktree is
+    // Ryan's, not an orphaned agent task.
+    try {
+      if (statHasControllingTty(readFileSync(`/proc/${pid}/stat`, 'utf8'))) continue;
+    } catch {
+      continue; // process gone mid-scan
+    }
     try {
       process.kill(pid, 'SIGKILL');
       killed++;

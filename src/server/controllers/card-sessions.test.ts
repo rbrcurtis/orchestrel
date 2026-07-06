@@ -824,3 +824,23 @@ describe('cwdMatchesWorktree', () => {
     expect(cwdMatchesWorktree(`${wt}-optimization/src`, wt)).toBe(false);
   });
 });
+
+describe('statHasControllingTty', () => {
+  it('detects a controlling TTY (interactive shell)', async () => {
+    const { statHasControllingTty } = await import('./card-sessions');
+    // tty_nr is field 7 (34816 = pts/0)
+    expect(statHasControllingTty('1234 (bash) S 1 1234 1234 34816 1234 4194304 0 0')).toBe(true);
+  });
+
+  it('detects no controlling TTY (daemon-spawned orphan)', async () => {
+    const { statHasControllingTty } = await import('./card-sessions');
+    expect(statHasControllingTty('5678 (sleep) S 1 5678 5678 0 -1 4194304 0 0')).toBe(false);
+  });
+
+  it('handles comm names containing spaces and parens', async () => {
+    const { statHasControllingTty } = await import('./card-sessions');
+    // comm is parenthesized and may itself contain ') ' — must split after the LAST ')'
+    expect(statHasControllingTty('999 (weird) name (x) S 1 999 999 0 -1 4194304 0 0')).toBe(false);
+    expect(statHasControllingTty('999 (weird) name (x) S 1 999 999 34816 999 4194304 0 0')).toBe(true);
+  });
+});
