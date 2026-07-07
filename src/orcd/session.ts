@@ -57,6 +57,10 @@ export class OrcdSession {
   // forcing session_exit itself (handles tools wedged on an un-abortable read).
   private readonly cancelGraceMs: number;
   private subscribers = new Set<SessionEventCallback>();
+  // Guards the foreground `/compact` marker pair (compact_started/compact_done)
+  // so it emits exactly once whether driven explicitly by runFullCompaction or
+  // mapped from Pi's own compaction_start/end during an active run.
+  private fullCompacting = false;
   private onFork: ((oldId: string, newId: string) => void) | undefined;
   private forkedTo: string | undefined;
 
@@ -584,12 +588,20 @@ export class OrcdSession {
   }
 
   /** Foreground full-compaction (`/compact`) lifecycle — distinct from BGC so the
-   *  UI shows a "Compacting" marker and returns the session to idle on done. */
+   *  UI shows a "Compacting" marker and returns the session to idle on done.
+   *  Idempotent: runFullCompaction emits these explicitly (a manual `/compact`
+   *  runs session.compact() outside a run(), so no Pi event subscription is
+   *  attached to map compaction_start/end), but an active-run subscription may
+   *  ALSO map Pi's manual compaction events — dedup so the UI sees one pair. */
   emitCompactStarted(): void {
+    if (this.fullCompacting) return;
+    this.fullCompacting = true;
     this.emitSyntheticSystemEvent('compact_started', 'orchestrel-compact');
   }
 
   emitCompactDone(): void {
+    if (!this.fullCompacting) return;
+    this.fullCompacting = false;
     this.emitSyntheticSystemEvent('compact_done', 'orchestrel-compact');
   }
 

@@ -124,6 +124,32 @@ describe('OrcdClient dispatch ordering', () => {
     errSpy.mockRestore();
   });
 
+  it('marks a foreground /compact active for its duration then evicts an activated session', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void };
+
+    // Session was inactive (rehydrated for /compact). compact_started should
+    // make isActive() true so auto-start doesn't spawn a throwaway turn.
+    expect(client.isActive('sess-c')).toBe(false);
+    internals.dispatch({ type: 'stream_event', sessionId: 'sess-c', event: { type: 'system', subtype: 'compact_started' } });
+    expect(client.isActive('sess-c')).toBe(true);
+    internals.dispatch({ type: 'stream_event', sessionId: 'sess-c', event: { type: 'system', subtype: 'compact_done' } });
+    expect(client.isActive('sess-c')).toBe(false);
+  });
+
+  it('leaves a genuinely-active session active after /compact completes', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void };
+
+    internals.dispatch({ type: 'session_created', sessionId: 'sess-live' });
+    expect(client.isActive('sess-live')).toBe(true);
+    // compact_started must NOT re-flag it as compact-activated, so compact_done
+    // must not evict a session that was already running.
+    internals.dispatch({ type: 'stream_event', sessionId: 'sess-live', event: { type: 'system', subtype: 'compact_started' } });
+    internals.dispatch({ type: 'stream_event', sessionId: 'sess-live', event: { type: 'system', subtype: 'compact_done' } });
+    expect(client.isActive('sess-live')).toBe(true);
+  });
+
   it('constructs with host/port/token options', () => {
     const client = new OrcdClient({ host: '10.0.0.1', port: 7420, token: 'tok', name: 'gpubox' });
     expect(client.nodeName).toBe('gpubox');

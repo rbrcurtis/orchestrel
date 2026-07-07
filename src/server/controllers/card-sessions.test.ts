@@ -628,13 +628,14 @@ describe('reconcileRunningCards', () => {
     expect(mockCards[0].column).toBe('running');
     expect(mockCards[0].sessionId).toBe('sess-new');
     expect(client.create).toHaveBeenCalledWith({
-      prompt: '',
+      prompt: undefined,
       cwd: '/tmp/project/.worktrees/card-42',
       provider: 'anthropic',
       model: 'sonnet',
       sessionId: undefined,
       contextWindow: 200000,
       summarizeThreshold: 0.6,
+      effort: undefined,
     });
     expect(mockCards[0].promptsSent).toBe(1);
     expect(mockRepo.save).toHaveBeenCalled();

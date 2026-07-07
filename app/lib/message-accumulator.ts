@@ -171,7 +171,7 @@ export class MessageAccumulator {
           this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: msg.timestamp });
         } else if (msg.subtype === 'compact_started') {
           this.finalizeBlocks();
-          this.conversation.push({ kind: 'compact', label: 'Compacting context…', timestamp: msg.timestamp });
+          this.conversation.push({ kind: 'compact', label: 'Context compacting', timestamp: msg.timestamp });
         } else if (msg.subtype === 'compact_done') {
           this.finalizeBlocks();
           this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: msg.timestamp });
@@ -270,7 +270,7 @@ export class MessageAccumulator {
           this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: normalizeTimestamp(msg.timestamp) });
         } else if (msg.subtype === 'compact_started') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
-          this.conversation.push({ kind: 'compact', label: 'Compacting context…', timestamp: normalizeTimestamp(msg.timestamp) });
+          this.conversation.push({ kind: 'compact', label: 'Context compacting', timestamp: normalizeTimestamp(msg.timestamp) });
         } else if (msg.subtype === 'compact_done') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
           this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: normalizeTimestamp(msg.timestamp) });

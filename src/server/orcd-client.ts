@@ -47,6 +47,11 @@ export class OrcdClient {
   /** Track which sessions we consider active (running in orcd) */
   private activeSessions = new Set<string>();
 
+  /** Sessions we marked active only for the duration of a foreground `/compact`
+   *  (they were inactive before). Used to know whether compact_done should evict
+   *  them — an already-active session must stay active after compaction. */
+  private compactActivated = new Set<string>();
+
   /** Callback invoked when OrcdClient reconnects (orcd restarted) */
   private reconnectCallback: (() => void) | null = null;
 
@@ -452,6 +457,28 @@ export class OrcdClient {
     // Track session lifecycle — only on actual exit, not on result
     if (msg.type === 'session_exit') {
       this.activeSessions.delete(msg.sessionId);
+    }
+
+    // A foreground `/compact` runs session.compact() OUTSIDE a run loop, so orcd
+    // emits no session_created/session_exit for it — isActive() would report the
+    // session inactive for the whole compaction. Moving the card to running then
+    // fires auto-start, which sees "inactive" and spawns a throwaway empty-prompt
+    // turn that instantly exits, flickering the card back to review. Treat the
+    // compaction window as active so auto-start + agent:status leave the card
+    // running for its full duration.
+    if (msg.type === 'stream_event') {
+      const ev = msg.event as { type?: string; subtype?: string } | undefined;
+      if (ev?.type === 'system') {
+        if (ev.subtype === 'compact_started' && !this.activeSessions.has(msg.sessionId)) {
+          this.activeSessions.add(msg.sessionId);
+          this.compactActivated.add(msg.sessionId);
+        }
+        // Only evict if THIS compaction is what marked the session active. A
+        // /compact on a genuinely-running session must stay active afterward.
+        if (ev.subtype === 'compact_done' && this.compactActivated.delete(msg.sessionId)) {
+          this.activeSessions.delete(msg.sessionId);
+        }
+      }
     }
 
     // On CC session fork, also track the new id so isActive()/subscribe() work
