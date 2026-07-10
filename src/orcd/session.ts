@@ -64,6 +64,11 @@ export class OrcdSession {
   private onFork: ((oldId: string, newId: string) => void) | undefined;
   private forkedTo: string | undefined;
 
+  // TEMP diagnostic: last leaf id observed by the leaf-probe, used to detect the
+  // session-tree fork that orphans interleaved user chat when a background
+  // subagent completes. Remove once the fork's origin is confirmed from logs.
+  private probePrevLeafId: string | null = null;
+
   constructor(opts: {
     cwd: string;
     model: string;
@@ -270,7 +275,31 @@ export class OrcdSession {
     return this.contextWindow && this.contextWindow > 0 ? this.contextWindow : undefined;
   }
 
+  /**
+   * TEMP diagnostic probe for the "interleaved chat disappears when a background
+   * subagent finishes" bug. Logs the SessionManager instance tag + current leaf,
+   * and loudly flags when the previously-observed leaf is no longer an ancestor
+   * of the active leaf (the fork that orphans the chat). Compare `tag` across
+   * `where=` sites: a tag change between the chat prompt and the subagent
+   * notification proves a desynced/duplicate manager; a same-tag fork points at
+   * a leaf reset inside Pi. Remove once the origin is confirmed.
+   */
+  private probeLeaf(where: string): void {
+    if (!this.piSession) return;
+    const s = this.piSession.debugLeafState(this.probePrevLeafId);
+    const tag = `[orcd:${this.id.slice(0, 8)}][leaf-probe] where=${where} mgr=${s.tag} leaf=${s.leafId ?? 'null'} count=${s.count} last=${s.lastId ?? 'null'}<-${s.lastParentId ?? 'null'} prevLeaf=${this.probePrevLeafId ?? 'null'}`;
+    if (!s.prevIsAncestor) {
+      console.log(`${tag} *** LEAF-FORK: prevLeaf orphaned — interleaved entries after it are off the active branch ***`);
+    } else {
+      console.log(tag);
+    }
+    this.probePrevLeafId = s.leafId;
+  }
+
   private emitMappedPiEvent(event: unknown): void {
+    // TEMP: catch the tree fork the instant it becomes observable.
+    this.probeLeaf('event');
+
     if (this.isRecord(event) && event.type === 'compaction_start') {
       // A manual `/compact` (reason 'manual') is a distinct, foreground full
       // compaction — NOT the background compactor. Keep its lifecycle separate so
@@ -361,7 +390,9 @@ export class OrcdSession {
         log('session running; ignoring empty overlapping prompt');
       } else if (this.piSession) {
         log('session running; queueing overlapping prompt as followUp');
+        this.probeLeaf('overlap-prompt:before'); // TEMP diagnostic (interleaved chat)
         await this.piSession.prompt(opts.prompt, { streamingBehavior: 'followUp' });
+        this.probeLeaf('overlap-prompt:after'); // TEMP diagnostic
       } else {
         log('session running but no pi session yet; dropping overlapping prompt');
       }
@@ -391,7 +422,9 @@ export class OrcdSession {
       // would persist an empty user message and Anthropic rejects requests with
       // cache_control on empty text blocks, so resume without running a turn.
       if (opts.prompt.trim()) {
+        this.probeLeaf('run-prompt:before'); // TEMP diagnostic
         await session.prompt(opts.prompt, opts.resume ? { streamingBehavior: 'followUp' } : undefined);
+        this.probeLeaf('run-prompt:after'); // TEMP diagnostic
       } else {
         log('empty prompt; session resumed without running a turn');
       }

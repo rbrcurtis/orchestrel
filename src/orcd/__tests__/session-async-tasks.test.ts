@@ -37,6 +37,14 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
     latestEntryIsCompaction: vi.fn(() => false),
     setEffort: vi.fn(async () => undefined),
     getMessages: vi.fn(() => []),
+    debugLeafState: vi.fn(() => ({
+      tag: 'test',
+      leafId: null,
+      count: 0,
+      lastId: null,
+      lastParentId: null,
+      prevIsAncestor: true,
+    })),
     emit(event: unknown) {
       for (const cb of subscribers) cb(event);
     },

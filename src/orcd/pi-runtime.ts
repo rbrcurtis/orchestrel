@@ -6,6 +6,20 @@ import type { ModelDef, ProviderType } from '../shared/config';
 
 const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
 
+// Pi only injects a skill's full body when the prompt uses the exact `/skill:<name>`
+// syntax (see AgentSession._expandSkillCommand). Users type bare `/merge` in the UI,
+// which otherwise reaches the model as plain text — leaving skill invocation to the
+// model's discretion. Rewrite a leading bare slash-command to `/skill:<name>` when it
+// matches a loaded skill so injection is deterministic. Gate on a known skill so we
+// never turn genuine non-skill input into a dead `/skill:unknown` literal.
+function rewriteSkillCommand(session: AgentSession, text: string): string {
+  if (!text.startsWith('/') || text.startsWith('/skill:')) return text;
+  const sp = text.indexOf(' ');
+  const name = sp === -1 ? text.slice(1) : text.slice(1, sp);
+  const known = session.resourceLoader.getSkills().skills.some((s) => s.name === name);
+  return known ? `/skill:${text.slice(1)}` : text;
+}
+
 export interface CreatePiRuntimeSessionOpts {
   cwd: string;
   providerId: string;
@@ -37,7 +51,29 @@ export interface PiRuntimeSession {
   latestEntryIsCompaction(): boolean;
   setEffort(effort: string): Promise<void>;
   getMessages(): unknown[];
+  /**
+   * Temporary diagnostic probe for the "chat lost when a background subagent
+   * finishes" bug: reports the SessionManager instance tag + current leaf so we
+   * can catch the tree fork (notification appended off a stale leaf, orphaning
+   * interleaved user turns). Remove once the fork's origin is confirmed.
+   */
+  debugLeafState(prevLeafId?: string | null): {
+    tag: string;
+    leafId: string | null;
+    count: number;
+    lastId: string | null;
+    lastParentId: string | null;
+    // False when prevLeafId is set but is NOT an ancestor of the current leaf —
+    // i.e. the active branch diverged and everything appended after prevLeafId on
+    // the old branch is now orphaned. This is the fork we're hunting.
+    prevIsAncestor: boolean;
+  };
 }
+
+// Monotonic tag so we can tell distinct SessionManager instances apart in logs
+// (a tag change between the interleaved chat prompt and the subagent-completion
+// append would prove a desynced/duplicate manager is the fork's origin).
+let managerTagSeq = 0;
 
 type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -144,6 +180,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   });
   const session = result.session;
 
+  // Tag the live SessionManager so leaf-probe logs can distinguish instances.
+  const taggedManager = session.sessionManager as unknown as { __orcdTag?: string };
+  if (!taggedManager.__orcdTag) taggedManager.__orcdTag = `m${++managerTagSeq}`;
+
   // Bind extensions to emit the `session_start` event. Extensions that only
   // register providers/tools at load (e.g. claude-max) work without this, but
   // any extension that initializes on session_start (e.g. the MCP adapter that
@@ -157,7 +197,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     id: session.sessionId,
 
     async prompt(text, promptOpts) {
-      await session.prompt(text, promptOpts);
+      await session.prompt(rewriteSkillCommand(session, text), promptOpts);
     },
 
     subscribe(cb) {
@@ -234,6 +274,38 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     getMessages() {
       const messages = session.messages;
       return Array.isArray(messages) ? [...messages] : [];
+    },
+
+    debugLeafState(prevLeafId?: string | null) {
+      const sm = session.sessionManager as unknown as {
+        __orcdTag?: string;
+        getLeafId(): string | null;
+        getEntry(id: string): { id: string; parentId: string | null } | undefined;
+        getEntries(): Array<{ id: string; parentId: string | null }>;
+      };
+      const entries = sm.getEntries();
+      const last = entries[entries.length - 1];
+      const leafId = sm.getLeafId();
+
+      let prevIsAncestor = true;
+      if (prevLeafId) {
+        prevIsAncestor = false;
+        let cur = leafId ? sm.getEntry(leafId) : undefined;
+        // Bounded walk up the parent chain from the current leaf to the root.
+        for (let i = 0; cur && i <= entries.length; i++) {
+          if (cur.id === prevLeafId) { prevIsAncestor = true; break; }
+          cur = cur.parentId ? sm.getEntry(cur.parentId) : undefined;
+        }
+      }
+
+      return {
+        tag: sm.__orcdTag ?? '?',
+        leafId,
+        count: entries.length,
+        lastId: last?.id ?? null,
+        lastParentId: last?.parentId ?? null,
+        prevIsAncestor,
+      };
     },
   };
 }
