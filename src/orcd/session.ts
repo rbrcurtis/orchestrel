@@ -1,6 +1,6 @@
 /* oxlint-disable orchestrel/log-before-early-return -- session lifecycle guards intentionally return existing state without noisy per-event logs */
 import { randomUUID } from 'crypto';
-import { AsyncTaskTracker, extractAsyncAgentLaunches, parseTaskNotification } from './async-task-tracker';
+import { AsyncTaskTracker, extractSubagentCompletions, extractSubagentLaunches } from './async-task-tracker';
 import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload, mapSubagentExecEvent } from './pi-events';
 import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
 import { hasEnabledScheduledJobs } from '../shared/scheduled-jobs';
@@ -39,7 +39,6 @@ export class OrcdSession {
   lastContextWindow = 0;
 
   private readonly asyncTasks = new AsyncTaskTracker();
-  private readonly agentToolDescriptions = new Map<string, string>();
   private readonly lastSubagentProgress = new Map<string, string>();
   private readonly beforeExitHooks: Array<() => Promise<void>> = [];
   private readonly asyncTaskPollMs: number;
@@ -110,29 +109,6 @@ export class OrcdSession {
     return typeof value === 'object' && value !== null;
   }
 
-  private rememberAgentToolDescriptions(event: unknown): void {
-    if (this.isRecord(event) && event.type === 'assistant') {
-      const message = event.message;
-      if (this.isRecord(message) && Array.isArray(message.content)) {
-        for (const block of message.content) {
-          if (!this.isRecord(block) || block.type !== 'tool_use') continue;
-
-          const toolUseId = block.id;
-          if (typeof toolUseId !== 'string') continue;
-
-          const name = block.name;
-          const input = block.input;
-          if (!this.isRecord(input)) continue;
-          const description = input.description;
-          if (name !== 'Agent' && name !== 'Task') continue;
-          if (typeof description !== 'string' || !description.trim()) continue;
-
-          this.agentToolDescriptions.set(toolUseId, description.trim());
-        }
-      }
-    }
-  }
-
   private emitSyntheticTaskEvent(event: TaskStartedEvent | TaskProgressEvent | TaskNotificationEvent): void {
     const msg: StreamEventMessage = {
       type: 'stream_event',
@@ -144,28 +120,10 @@ export class OrcdSession {
   }
 
   private recordAsyncAgentLaunches(event: unknown): void {
-    for (const launch of extractAsyncAgentLaunches(event, this.agentToolDescriptions)) {
+    for (const launch of extractSubagentLaunches(event)) {
       const started = this.asyncTasks.recordLaunch(launch);
       if (started) this.emitSyntheticTaskEvent(started);
     }
-  }
-
-  private textFromPiEvent(event: unknown): string {
-    if (typeof event === 'string') return event;
-    if (Array.isArray(event)) return event.map((item) => this.textFromPiEvent(item)).filter(Boolean).join('\n');
-    if (!this.isRecord(event)) return '';
-
-    const text = event.text;
-    if (typeof text === 'string') return text;
-
-    const content = event.content;
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) return content.map((item) => this.textFromPiEvent(item)).filter(Boolean).join('\n');
-
-    const message = event.message;
-    if (this.isRecord(message) || Array.isArray(message)) return this.textFromPiEvent(message);
-
-    return '';
   }
 
   /**
@@ -189,11 +147,10 @@ export class OrcdSession {
   }
 
   private recordAsyncTaskNotification(event: unknown): void {
-    const notification = parseTaskNotification(this.textFromPiEvent(event));
-    if (!notification) return;
-
-    const taskEvent = this.asyncTasks.recordNotification(notification);
-    if (taskEvent) this.emitSyntheticTaskEvent(taskEvent);
+    for (const completion of extractSubagentCompletions(event)) {
+      const taskEvent = this.asyncTasks.recordNotification(completion);
+      if (taskEvent) this.emitSyntheticTaskEvent(taskEvent);
+    }
   }
 
   private async waitForAsyncTasks(): Promise<void> {
@@ -321,9 +278,11 @@ export class OrcdSession {
     const eventIndex = this.buffer.push(payload);
 
     console.log(`[orcd:${this.id.slice(0, 8)}] ${JSON.stringify(payload)}`);
-    this.rememberAgentToolDescriptions(payload);
-    this.recordAsyncAgentLaunches(payload);
-    this.recordAsyncTaskNotification(payload);
+    // Launch/completion tracking keys off the RAW Pi event's structured details
+    // (tool_execution_end + subagent-notification custom messages), not the
+    // mapped payload — see async-task-tracker.ts.
+    this.recordAsyncAgentLaunches(event);
+    this.recordAsyncTaskNotification(event);
     this.recordPiSubagentEvent(event);
 
     if (this.isRecord(payload) && payload.type === 'result') {

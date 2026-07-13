@@ -1,71 +1,148 @@
 import { describe, expect, it } from 'vitest';
 import {
   AsyncTaskTracker,
-  extractAsyncAgentLaunches,
-  parseAsyncAgentLaunch,
-  parseTaskNotification,
+  extractSubagentCompletions,
+  extractSubagentLaunches,
 } from '../async-task-tracker';
 
-describe('parseAsyncAgentLaunch', () => {
-  it('extracts async Agent launch details from tool result text', () => {
-    const text = [
-      'Async agent launched successfully.',
-      'agentId: agent-123 (internal ID - do not mention to user. Use SendMessage with to: \'agent-123\' to continue this agent.)',
-      'The agent is working in the background. You will be notified automatically when it completes.',
-      'output_file: /tmp/claude/tasks/agent-123.output',
-    ].join('\n');
+// Fixtures mirror pi-subagents' actual structured events: the Agent tool's
+// tool_execution_end details (AgentDetails) and the subagent-notification
+// custom message details (NotificationDetails).
 
-    expect(parseAsyncAgentLaunch(text, 'call_abc', 'Implement remaining tasks')).toEqual({
-      taskId: 'agent-123',
-      toolUseId: 'call_abc',
-      description: 'Implement remaining tasks',
-      outputFile: '/tmp/claude/tasks/agent-123.output',
-    });
+function launchToolEnd(agentId: string, description: string, status: 'background' | 'queued' = 'background'): unknown {
+  return {
+    type: 'tool_execution_end',
+    toolCallId: 'call_abc',
+    toolName: 'Agent',
+    result: {
+      content: [{ type: 'text', text: `Agent started in background.\nAgent ID: ${agentId}\n…` }],
+      details: {
+        displayName: 'Explore',
+        description,
+        subagentType: 'Explore',
+        toolUses: 0,
+        tokens: '',
+        durationMs: 0,
+        status,
+        agentId,
+      },
+    },
+  };
+}
+
+function notificationMessage(
+  entries: Array<{ id: string; status: string; resultPreview?: string }>,
+  type: 'message_start' | 'message_end' = 'message_start',
+): unknown {
+  const [first, ...others] = entries;
+  return {
+    type,
+    message: {
+      role: 'custom',
+      customType: 'subagent-notification',
+      content: '<task-notification>…</task-notification>',
+      display: true,
+      details: {
+        ...first,
+        description: 'desc',
+        toolUses: 3,
+        turnCount: 1,
+        totalTokens: 100,
+        durationMs: 5000,
+        ...(others.length ? { others: others.map((o) => ({ ...o, description: 'desc', toolUses: 0, turnCount: 0, totalTokens: 0, durationMs: 0 })) } : {}),
+      },
+    },
+  };
+}
+
+describe('extractSubagentLaunches', () => {
+  it('extracts a background launch from Agent tool_execution_end details', () => {
+    expect(extractSubagentLaunches(launchToolEnd('agent-123', 'Explore repo'))).toEqual([
+      { taskId: 'agent-123', description: 'Explore repo' },
+    ]);
   });
 
-  it('returns null for foreground Agent tool results', () => {
-    expect(parseAsyncAgentLaunch('DONE\nTests passed', 'call_abc', 'Review')).toBeNull();
+  it('extracts a queued launch', () => {
+    expect(extractSubagentLaunches(launchToolEnd('agent-q', 'Queued work', 'queued'))).toEqual([
+      { taskId: 'agent-q', description: 'Queued work' },
+    ]);
+  });
+
+  it('ignores foreground Agent completions (terminal status, no background)', () => {
+    const event = {
+      type: 'tool_execution_end',
+      toolCallId: 'call_fg',
+      toolName: 'Agent',
+      result: {
+        content: [{ type: 'text', text: 'DONE' }],
+        details: { displayName: 'Explore', description: 'fg', subagentType: 'Explore', toolUses: 4, tokens: '1k', durationMs: 100, status: 'completed', agentId: 'agent-fg' },
+      },
+    };
+    expect(extractSubagentLaunches(event)).toEqual([]);
+  });
+
+  it('ignores tool results without structured details (plain text tools)', () => {
+    const event = {
+      type: 'tool_execution_end',
+      toolCallId: 'call_bash',
+      toolName: 'bash',
+      result: { content: [{ type: 'text', text: 'Agent started in background.\nAgent ID: fake' }] },
+    };
+    expect(extractSubagentLaunches(event)).toEqual([]);
   });
 });
 
-describe('parseTaskNotification', () => {
-  it('extracts completed notification from queue-operation content', () => {
-    const content = [
-      '<task-notification>',
-      '<task-id>agent-123</task-id>',
-      '<tool-use-id>call_abc</tool-use-id>',
-      '<output-file>/tmp/claude/tasks/agent-123.output</output-file>',
-      '<status>completed</status>',
-      '<summary>Agent "Implement remaining tasks" completed</summary>',
-      '<result>DONE_WITH_CONCERNS\nTests passed</result>',
-      '</task-notification>',
-    ].join('\n');
-
-    expect(parseTaskNotification(content)).toEqual({
-      taskId: 'agent-123',
-      toolUseId: 'call_abc',
-      outputFile: '/tmp/claude/tasks/agent-123.output',
-      status: 'completed',
-      summary: 'Agent "Implement remaining tasks" completed',
-      result: 'DONE_WITH_CONCERNS\nTests passed',
-    });
+describe('extractSubagentCompletions', () => {
+  it('extracts completion from a subagent-notification custom message', () => {
+    expect(extractSubagentCompletions(notificationMessage([{ id: 'agent-123', status: 'completed', resultPreview: 'DONE' }]))).toEqual([
+      { taskId: 'agent-123', status: 'completed', result: 'DONE' },
+    ]);
   });
 
-  it('extracts failed notification', () => {
-    const content = [
-      '<task-notification>',
-      '<task-id>agent-123</task-id>',
-      '<tool-use-id>call_abc</tool-use-id>',
-      '<status>failed</status>',
-      '<summary>Agent failed</summary>',
-      '</task-notification>',
-    ].join('\n');
-
-    expect(parseTaskNotification(content)?.status).toBe('failed');
+  it('extracts every agent in a grouped notification via others[]', () => {
+    expect(extractSubagentCompletions(notificationMessage([
+      { id: 'agent-1', status: 'completed' },
+      { id: 'agent-2', status: 'error' },
+    ]))).toEqual([
+      { taskId: 'agent-1', status: 'completed' },
+      { taskId: 'agent-2', status: 'failed' },
+    ]);
   });
 
-  it('returns null for unrelated queue content', () => {
-    expect(parseTaskNotification('Continue')).toBeNull();
+  it('maps terminal statuses: steered→completed, aborted/stopped/error→failed', () => {
+    for (const [status, expected] of [
+      ['steered', 'completed'],
+      ['aborted', 'failed'],
+      ['stopped', 'failed'],
+      ['error', 'failed'],
+    ] as const) {
+      expect(extractSubagentCompletions(notificationMessage([{ id: 'a', status }]))[0]?.status).toBe(expected);
+    }
+  });
+
+  it('ignores non-terminal statuses (running, queued, background)', () => {
+    for (const status of ['running', 'queued', 'background']) {
+      expect(extractSubagentCompletions(notificationMessage([{ id: 'a', status }]))).toEqual([]);
+    }
+  });
+
+  it('extracts completion from get_subagent_result tool_execution_end details', () => {
+    const event = {
+      type: 'tool_execution_end',
+      toolCallId: 'call_get',
+      toolName: 'get_subagent_result',
+      result: {
+        content: [{ type: 'text', text: 'Agent: agent-123 …' }],
+        details: { agentId: 'agent-123', status: 'completed' },
+      },
+    };
+    expect(extractSubagentCompletions(event)).toEqual([{ taskId: 'agent-123', status: 'completed' }]);
+  });
+
+  it('ignores unrelated custom messages and events', () => {
+    expect(extractSubagentCompletions({ type: 'message_start', message: { role: 'custom', customType: 'other', details: { id: 'a', status: 'completed' } } })).toEqual([]);
+    expect(extractSubagentCompletions({ type: 'turn_end' })).toEqual([]);
+    expect(extractSubagentCompletions('Continue')).toEqual([]);
   });
 });
 
@@ -73,12 +150,7 @@ describe('AsyncTaskTracker', () => {
   it('tracks pending tasks and resolves them once', () => {
     const tracker = new AsyncTaskTracker();
 
-    const started = tracker.recordLaunch({
-      taskId: 'agent-123',
-      toolUseId: 'call_abc',
-      description: 'Implement remaining tasks',
-      outputFile: '/tmp/claude/tasks/agent-123.output',
-    });
+    const started = tracker.recordLaunch({ taskId: 'agent-123', description: 'Implement remaining tasks' });
 
     expect(started).toEqual({
       type: 'task_started',
@@ -87,14 +159,7 @@ describe('AsyncTaskTracker', () => {
     });
     expect(tracker.hasPending()).toBe(true);
 
-    const notification = tracker.recordNotification({
-      taskId: 'agent-123',
-      toolUseId: 'call_abc',
-      outputFile: '/tmp/claude/tasks/agent-123.output',
-      status: 'completed',
-      summary: 'Agent completed',
-      result: 'DONE',
-    });
+    const notification = tracker.recordNotification({ taskId: 'agent-123', status: 'completed', result: 'DONE' });
 
     expect(notification).toEqual({
       type: 'task_notification',
@@ -103,75 +168,13 @@ describe('AsyncTaskTracker', () => {
       result: 'DONE',
     });
     expect(tracker.hasPending()).toBe(false);
-    expect(tracker.recordNotification({
-      taskId: 'agent-123',
-      toolUseId: 'call_abc',
-      status: 'completed',
-      summary: 'Agent completed',
-    })).toBeNull();
-  });
-});
-
-describe('extractAsyncAgentLaunches', () => {
-  it('extracts async launch from SDK user tool_result event', () => {
-    const event = {
-      type: 'user',
-      message: {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'call_abc',
-            content: [
-              {
-                type: 'text',
-                text: [
-                  'Async agent launched successfully.',
-                  'agentId: agent-123 (internal ID - do not mention to user.)',
-                  'output_file: /tmp/claude/tasks/agent-123.output',
-                ].join('\n'),
-              },
-            ],
-          },
-        ],
-      },
-    };
-
-    expect(extractAsyncAgentLaunches(event, new Map([['call_abc', 'Implement remaining tasks']]))).toEqual([
-      {
-        taskId: 'agent-123',
-        toolUseId: 'call_abc',
-        description: 'Implement remaining tasks',
-        outputFile: '/tmp/claude/tasks/agent-123.output',
-      },
-    ]);
+    // Duplicate notifications (message_start + message_end both fire) are idempotent.
+    expect(tracker.recordNotification({ taskId: 'agent-123', status: 'completed' })).toBeNull();
   });
 
-  it('ignores matching launch text from non-Agent tool results', () => {
-    const event = {
-      type: 'user',
-      message: {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'call_read',
-            content: [
-              {
-                type: 'text',
-                text: [
-                  'Source code fixture:',
-                  'Async agent launched successfully.',
-                  'agentId: ${taskId} (internal ID - do not mention to user.)',
-                  'output_file: /tmp/claude/tasks/${taskId}.output',
-                ].join('\n'),
-              },
-            ],
-          },
-        ],
-      },
-    };
-
-    expect(extractAsyncAgentLaunches(event, new Map())).toEqual([]);
+  it('ignores completions for unknown task ids (foreground agents)', () => {
+    const tracker = new AsyncTaskTracker();
+    expect(tracker.recordNotification({ taskId: 'never-launched', status: 'completed' })).toBeNull();
+    expect(tracker.hasPending()).toBe(false);
   });
 });

@@ -55,63 +55,48 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
   return session;
 }
 
-function toolUseEvent(id: string, description: string): unknown {
+// pi-subagents structured events: background spawn = Agent tool_execution_end
+// with AgentDetails (status 'background'); completion = subagent-notification
+// custom message with NotificationDetails.
+function asyncLaunchResult(toolUseId: string, taskId: string, description = 'Implement remaining tasks'): unknown {
   return {
-    type: 'assistant',
-    message: {
-      content: [
-        {
-          type: 'tool_use',
-          id,
-          name: 'Agent',
-          input: { description, run_in_background: true },
-        },
-      ],
+    type: 'tool_execution_end',
+    toolCallId: toolUseId,
+    toolName: 'Agent',
+    result: {
+      content: [{ type: 'text', text: `Agent started in background.\nAgent ID: ${taskId}` }],
+      details: {
+        displayName: 'Agent',
+        description,
+        subagentType: 'general-purpose',
+        toolUses: 0,
+        tokens: '',
+        durationMs: 0,
+        status: 'background',
+        agentId: taskId,
+      },
     },
   };
 }
 
-function asyncLaunchResult(toolUseId: string, taskId: string): unknown {
+function taskNotification(taskId: string, status: 'completed' | 'error' = 'completed'): unknown {
   return {
-    type: 'user',
+    type: 'message_start',
     message: {
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: toolUseId,
-          content: [
-            {
-              type: 'text',
-              text: [
-                'Async agent launched successfully.',
-                `agentId: ${taskId} (internal ID - do not mention to user.)`,
-                `output_file: /tmp/pi/tasks/${taskId}.output`,
-              ].join('\n'),
-            },
-          ],
-        },
-      ],
-    },
-  };
-}
-
-function taskNotification(taskId: string, toolUseId: string, status: 'completed' | 'failed' = 'completed'): unknown {
-  return {
-    type: 'message_update',
-    message: {
-      content: [
-        {
-          type: 'text',
-          text: [
-            '<task-notification>',
-            `<task-id>${taskId}</task-id>`,
-            `<tool-use-id>${toolUseId}</tool-use-id>`,
-            `<status>${status}</status>`,
-            '<result>DONE</result>',
-            '</task-notification>',
-          ].join('\n'),
-        },
-      ],
+      role: 'custom',
+      customType: 'subagent-notification',
+      content: '<task-notification>…</task-notification>',
+      display: true,
+      details: {
+        id: taskId,
+        description: 'Implement remaining tasks',
+        status,
+        toolUses: 3,
+        turnCount: 1,
+        totalTokens: 100,
+        durationMs: 5000,
+        resultPreview: 'DONE',
+      },
     },
   };
 }
@@ -388,7 +373,6 @@ describe('OrcdSession Pi runtime loop', () => {
 
   it('emits task_started for async agent launches seen in live Pi events', async () => {
     const runtime = createRuntimeSession([
-      toolUseEvent('call_abc', 'Implement remaining tasks'),
       asyncLaunchResult('call_abc', 'agent-123'),
     ], 'session-task');
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
@@ -414,14 +398,13 @@ describe('OrcdSession Pi runtime loop', () => {
         description: 'Implement remaining tasks',
       }),
     })));
-    runtime.emit(taskNotification('agent-123', 'call_abc'));
+    runtime.emit(taskNotification('agent-123'));
     await run;
   });
 
   it('delays session_exit until pending async task notification arrives from Pi events', async () => {
     const runtime = createRuntimeSession([
-      toolUseEvent('call_delay', 'Wait for async work'),
-      asyncLaunchResult('call_delay', 'agent-delay-123'),
+      asyncLaunchResult('call_delay', 'agent-delay-123', 'Wait for async work'),
     ], 'session-delay');
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
@@ -447,7 +430,7 @@ describe('OrcdSession Pi runtime loop', () => {
     })));
     expect(received).not.toContain('session_exit');
 
-    runtime.emit(taskNotification('agent-delay-123', 'call_delay'));
+    runtime.emit(taskNotification('agent-delay-123'));
     await run;
 
     expect(payloads).toContainEqual(expect.objectContaining({
@@ -468,8 +451,7 @@ describe('OrcdSession Pi runtime loop', () => {
 
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {
     const runtime = createRuntimeSession([
-      toolUseEvent('call_cancel', 'Run follow-up async work'),
-      asyncLaunchResult('call_cancel', 'agent-cancel-123'),
+      asyncLaunchResult('call_cancel', 'agent-cancel-123', 'Run follow-up async work'),
     ], 'session-cancel');
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 

@@ -1,17 +1,26 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure parser/tracker guard returns are intentional */
+
+// Background subagent lifecycle tracking, keyed off pi-subagents' STRUCTURED
+// event details — never the LLM-facing prose. Two sources:
+//
+//  1. Launch: the `Agent` tool's `tool_execution_end` carries
+//     `result.details = { agentId, status: 'background' | 'queued', … }`
+//     (AgentDetails from our pi-subagents fork).
+//  2. Completion: the extension's follow-up nudge arrives as a custom message
+//     (`role: 'custom'`, `customType: 'subagent-notification'`) whose
+//     `details` is a NotificationDetails `{ id, status, resultPreview, others? }`.
+//     Additionally, `get_subagent_result`'s tool_execution_end carries the same
+//     terminal status in its details — covering the case where the parent
+//     consumes the result directly (which SUPPRESSES the notification nudge).
+
 export interface AsyncAgentLaunch {
   taskId: string;
-  toolUseId: string;
   description: string;
-  outputFile?: string;
 }
 
-export interface TaskNotification {
+export interface TaskCompletion {
   taskId: string;
-  toolUseId?: string;
-  outputFile?: string;
   status: 'completed' | 'failed';
-  summary?: string;
   result?: string;
 }
 
@@ -39,95 +48,97 @@ interface TaskState {
   status: 'running' | 'completed' | 'failed';
 }
 
-function firstMatch(text: string, re: RegExp): string | undefined {
-  const match = re.exec(text);
-  return match?.[1]?.trim();
-}
-
-function tagValue(content: string, tag: string): string | undefined {
-  const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`);
-  return firstMatch(content, re);
-}
-
-export function parseAsyncAgentLaunch(text: string, toolUseId: string, description: string): AsyncAgentLaunch | null {
-  if (!text.includes('Async agent launched successfully.')) return null;
-
-  const taskId = firstMatch(text, /agentId:\s*([^\s(]+)/);
-  if (!taskId) return null;
-
-  const outputFile = firstMatch(text, /output_file:\s*(\S+)/);
-  return {
-    taskId,
-    toolUseId,
-    description,
-    ...(outputFile ? { outputFile } : {}),
-  };
-}
-
-export function parseTaskNotification(content: string): TaskNotification | null {
-  if (!content.includes('<task-notification>')) return null;
-
-  const taskId = tagValue(content, 'task-id');
-  const status = tagValue(content, 'status');
-  if (!taskId || (status !== 'completed' && status !== 'failed')) return null;
-
-  const toolUseId = tagValue(content, 'tool-use-id');
-  const outputFile = tagValue(content, 'output-file');
-  const summary = tagValue(content, 'summary');
-  const result = tagValue(content, 'result');
-
-  return {
-    taskId,
-    status,
-    ...(toolUseId ? { toolUseId } : {}),
-    ...(outputFile ? { outputFile } : {}),
-    ...(summary ? { summary } : {}),
-    ...(result ? { result } : {}),
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function textFromToolResultContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
+// pi-subagents AgentRecord.status values that mean the agent is no longer
+// running. 'steered' = wrapped up at the turn limit — it produced a result,
+// so it resolves as completed, not failed.
+const TERMINAL_STATUS: Record<string, 'completed' | 'failed'> = {
+  completed: 'completed',
+  steered: 'completed',
+  aborted: 'failed',
+  stopped: 'failed',
+  error: 'failed',
+};
 
-  return content
-    .map((block) => {
-      if (!isRecord(block)) return '';
-      const text = block.text;
-      return typeof text === 'string' ? text : '';
-    })
-    .filter(Boolean)
-    .join('\n');
+function toolExecutionDetails(event: Record<string, unknown>): Record<string, unknown> | null {
+  const result = event.result;
+  if (!isRecord(result)) return null;
+  const details = result.details;
+  return isRecord(details) ? details : null;
 }
 
-export function extractAsyncAgentLaunches(
-  event: unknown,
-  toolDescriptions: Map<string, string>,
-): AsyncAgentLaunch[] {
-  if (!isRecord(event) || event.type !== 'user') return [];
+function completionFromDetails(details: Record<string, unknown>): TaskCompletion | null {
+  // NotificationDetails uses `id`; AgentDetails (tool results) uses `agentId`.
+  const id = typeof details.id === 'string' ? details.id : details.agentId;
+  if (typeof id !== 'string' || !id) return null;
 
-  const message = event.message;
-  if (!isRecord(message) || !Array.isArray(message.content)) return [];
+  const status = typeof details.status === 'string' ? TERMINAL_STATUS[details.status] : undefined;
+  if (!status) return null;
 
-  const launches: AsyncAgentLaunch[] = [];
-  for (const block of message.content) {
-    if (!isRecord(block) || block.type !== 'tool_result') continue;
+  const result = typeof details.resultPreview === 'string' ? details.resultPreview : undefined;
+  return { taskId: id, status, ...(result ? { result } : {}) };
+}
 
-    const toolUseId = block.tool_use_id;
-    if (typeof toolUseId !== 'string') continue;
+/** Background/queued subagent spawns, from an `Agent` tool_execution_end's structured details. */
+export function extractSubagentLaunches(event: unknown): AsyncAgentLaunch[] {
+  if (!isRecord(event) || event.type !== 'tool_execution_end') return [];
 
-    const description = toolDescriptions.get(toolUseId);
-    if (!description) continue;
+  const details = toolExecutionDetails(event);
+  if (!details) return [];
 
-    const launch = parseAsyncAgentLaunch(textFromToolResultContent(block.content), toolUseId, description);
-    if (launch) launches.push(launch);
+  const agentId = details.agentId;
+  if (typeof agentId !== 'string' || !agentId) return [];
+  if (details.status !== 'background' && details.status !== 'queued') return [];
+
+  const description =
+    typeof details.description === 'string' && details.description ? details.description : 'Subagent';
+  return [{ taskId: agentId, description }];
+}
+
+/**
+ * Terminal subagent outcomes from a live Pi event. Handles the
+ * subagent-notification custom message (including grouped `others`) and any
+ * tool_execution_end whose details carry an agentId with a terminal status
+ * (get_subagent_result consumption, foreground Agent completions — unknown
+ * task ids are ignored by the tracker).
+ */
+export function extractSubagentCompletions(event: unknown): TaskCompletion[] {
+  if (!isRecord(event)) return [];
+
+  // Both message_start and message_end fire for custom messages; the tracker's
+  // recordNotification is idempotent so processing both is harmless.
+  if (event.type === 'message_start' || event.type === 'message_end') {
+    const message = event.message;
+    if (!isRecord(message) || message.role !== 'custom' || message.customType !== 'subagent-notification') return [];
+
+    const details = message.details;
+    if (!isRecord(details)) return [];
+
+    const completions: TaskCompletion[] = [];
+    const first = completionFromDetails(details);
+    if (first) completions.push(first);
+
+    if (Array.isArray(details.others)) {
+      for (const other of details.others) {
+        if (!isRecord(other)) continue;
+        const completion = completionFromDetails(other);
+        if (completion) completions.push(completion);
+      }
+    }
+    return completions;
   }
 
-  return launches;
+  if (event.type === 'tool_execution_end') {
+    const details = toolExecutionDetails(event);
+    if (!details) return [];
+    const completion = completionFromDetails(details);
+    return completion ? [completion] : [];
+  }
+
+  return [];
 }
 
 export class AsyncTaskTracker {
@@ -143,16 +154,16 @@ export class AsyncTaskTracker {
     };
   }
 
-  recordNotification(notification: TaskNotification): TaskNotificationEvent | null {
-    const task = this.tasks.get(notification.taskId);
+  recordNotification(completion: TaskCompletion): TaskNotificationEvent | null {
+    const task = this.tasks.get(completion.taskId);
     if (!task || task.status !== 'running') return null;
 
-    task.status = notification.status;
+    task.status = completion.status;
     return {
       type: 'task_notification',
-      task_id: notification.taskId,
-      status: notification.status,
-      ...(notification.result ? { result: notification.result } : {}),
+      task_id: completion.taskId,
+      status: completion.status,
+      ...(completion.result ? { result: completion.result } : {}),
     };
   }
 
