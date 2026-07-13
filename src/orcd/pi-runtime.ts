@@ -3,22 +3,9 @@ import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, ModelRegistry, SessionManager
 import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
+import { expandInlineCommands } from './inline-commands';
 
 const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
-
-// Pi only injects a skill's full body when the prompt uses the exact `/skill:<name>`
-// syntax (see AgentSession._expandSkillCommand). Users type bare `/merge` in the UI,
-// which otherwise reaches the model as plain text — leaving skill invocation to the
-// model's discretion. Rewrite a leading bare slash-command to `/skill:<name>` when it
-// matches a loaded skill so injection is deterministic. Gate on a known skill so we
-// never turn genuine non-skill input into a dead `/skill:unknown` literal.
-function rewriteSkillCommand(session: AgentSession, text: string): string {
-  if (!text.startsWith('/') || text.startsWith('/skill:')) return text;
-  const sp = text.indexOf(' ');
-  const name = sp === -1 ? text.slice(1) : text.slice(1, sp);
-  const known = session.resourceLoader.getSkills().skills.some((s) => s.name === name);
-  return known ? `/skill:${text.slice(1)}` : text;
-}
 
 export interface CreatePiRuntimeSessionOpts {
   cwd: string;
@@ -197,7 +184,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     id: session.sessionId,
 
     async prompt(text, promptOpts) {
-      await session.prompt(rewriteSkillCommand(session, text), promptOpts);
+      await session.prompt(expandInlineCommands(session, text), promptOpts);
     },
 
     subscribe(cb) {
