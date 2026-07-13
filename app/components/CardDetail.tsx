@@ -170,6 +170,7 @@ function CardFields({
                 sourceBranch: null,
                 provider: prov,
                 model: proj?.defaultModel ?? config.getDefaultModel(prov),
+                thinkingLevel: proj?.defaultThinkingLevel ?? draft.thinkingLevel,
               });
               onColorChange?.(proj?.color ?? null);
             }}
@@ -539,7 +540,7 @@ export const CardDetail = observer(function CardDetail({
                 <SelectValue />
               </Badge>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper" align="start">
               {STATUSES.map((s) => (
                 <SelectItem key={s} value={s}>
                   {statusLabels[s]}
