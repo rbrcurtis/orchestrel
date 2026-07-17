@@ -24,8 +24,8 @@ import {
   type Model,
   type SimpleStreamOptions,
   type StopReason,
-  streamSimpleAnthropic,
 } from '@earendil-works/pi-ai';
+import { streamSimple as streamSimpleAnthropic } from '@earendil-works/pi-ai/api/anthropic-messages';
 import { getAccessToken } from './auth';
 import { convertPiMessagesToAnthropic, convertPiToolsToAnthropic, fromClaudeCodeToolName, type IndexedBlock } from './convert';
 import { buildClaudeCodeSystemPrompt } from './prompt';

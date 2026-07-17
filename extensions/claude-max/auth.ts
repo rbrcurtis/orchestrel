@@ -9,7 +9,8 @@
  * rotated tokens back atomically so Claude Code and orcd stay in sync.
  * Adapted from src/orcd/claude-code-auth.ts.
  */
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { OAuthCredentials, OAuthLoginCallbacks } from '@earendil-works/pi-ai';
@@ -19,8 +20,24 @@ const TOKEN_URL = 'https://console.anthropic.com/v1/oauth/token';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const REFRESH_SKEW_MS = 60_000;
 
+// macOS Claude Code stores creds in the login Keychain instead of
+// ~/.claude/.credentials.json. Same JSON payload, different store.
+const KEYCHAIN_SERVICE = 'Claude Code-credentials';
+
+function useKeychain(): boolean {
+  return process.platform === 'darwin' && !existsSync(CREDENTIALS_PATH);
+}
+
+function readRawCreds(): Record<string, unknown> {
+  if (useKeychain()) {
+    const out = execFileSync('security', ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'], { encoding: 'utf8' });
+    return JSON.parse(out) as Record<string, unknown>;
+  }
+  return JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf8')) as Record<string, unknown>;
+}
+
 export function readClaudeCreds(): OAuthCredentials {
-  const raw = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf8')) as Record<string, unknown>;
+  const raw = readRawCreds();
   const o = raw.claudeAiOauth as Record<string, unknown> | undefined;
   const access = o?.accessToken;
   const refresh = o?.refreshToken;
@@ -32,12 +49,17 @@ export function readClaudeCreds(): OAuthCredentials {
 }
 
 function writeClaudeCreds(next: OAuthCredentials): void {
-  const raw = JSON.parse(readFileSync(CREDENTIALS_PATH, 'utf8')) as Record<string, unknown>;
+  const raw = readRawCreds();
   const prev = (raw.claudeAiOauth as Record<string, unknown>) ?? {};
   const merged = {
     ...raw,
     claudeAiOauth: { ...prev, accessToken: next.access, refreshToken: next.refresh, expiresAt: next.expires },
   };
+  if (useKeychain()) {
+    // -U updates in place; keychain writes are atomic from readers' perspective.
+    execFileSync('security', ['add-generic-password', '-U', '-s', KEYCHAIN_SERVICE, '-a', process.env.USER ?? '', '-w', JSON.stringify(merged)]);
+    return;
+  }
   // Atomic write so a concurrent reader (claude itself) never sees a torn file.
   const tmp = `${CREDENTIALS_PATH}.orcd.tmp`;
   writeFileSync(tmp, JSON.stringify(merged, null, 2), { mode: 0o600 });
