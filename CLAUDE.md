@@ -41,7 +41,7 @@ Orchestrel supports multiple orcd nodes (remote execution boxes). The BE connect
 
 Provider config lives in each node's `orcd.yaml`. Each provider has `label`, optional `baseUrl`/`apiKey`/`authToken`/`oauth`, and a `models` map of `alias → { label, modelID, contextWindow }`. orcd registers every provider generically with no provider-specific branches — all providers work identically, no special cases.
 
-**Provider-specific behavior lives outside orcd, in Pi extensions (layer 5).** Claude Max OAuth and its Claude Code request reshaping are NOT in orcd's application code. A standalone Pi extension at `extensions/claude-max/` (symlinked to `~/.pi/agent/extensions/claude-max` via `scripts/install-claude-max-extension.sh`) is auto-discovered by Pi and self-registers the `oauth` block + `streamSimple` reshaper that augments the `anthropic` provider. orcd imports nothing from it. Setting `oauth: claude-max` on a provider in `config.yaml` depends on that extension being installed; without it the provider has no working auth.
+**Provider-specific behavior lives outside orcd, in Pi extensions (layer 5).** Claude Max OAuth and its Claude Code request reshaping are NOT in orcd's application code. The `claude-max` Pi extension lives in the pi-agent config repo (github.com/rbrcurtis/pi-agent, checked out at `~/.pi/agent`) under `extensions/claude-max/` and is auto-discovered by Pi and self-registers the `oauth` block + `streamSimple` reshaper that augments the `anthropic` provider. orcd imports nothing from it. Setting `oauth: claude-max` on a provider in `config.yaml` depends on that extension being installed; without it the provider has no working auth.
 
 ## Code Style
 

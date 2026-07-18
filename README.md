@@ -64,7 +64,7 @@ The backend is purely event-driven: every handler reacts to a single event plus 
 
 ### Provider routing
 
-Provider config lives in each node's `orcd.yaml`. orcd registers every provider generically — no provider-specific branches. Provider-specific behavior lives outside orcd in Pi extensions: e.g. Claude Max OAuth and its request reshaping ship as the standalone `extensions/claude-max/` extension, which Pi auto-discovers from `~/.pi/agent/extensions/`. Setting `oauth: claude-max` on a provider requires that extension to be installed on that node.
+Provider config lives in each node's `orcd.yaml`. orcd registers every provider generically — no provider-specific branches. Provider-specific behavior lives outside orcd in Pi extensions: e.g. Claude Max OAuth and its request reshaping ship as the `claude-max` extension in the pi-agent config repo (github.com/rbrcurtis/pi-agent), which Pi auto-discovers from `~/.pi/agent/extensions/`. Setting `oauth: claude-max` on a provider requires that extension to be installed on that node.
 
 ## Features
 
@@ -244,7 +244,7 @@ Adding an execution box (checklist — every step is required; the Pi extension 
      ```
 
    - **`shared-memory-reinforce.ts`** — copy from an existing node's `~/.pi/agent/extensions/`; injects the shared-memory usage reminder at new-session start (Pi does not run Claude Code hooks).
-   - **`claude-max`** — only if a provider on the node sets `oauth: claude-max`; install with `scripts/install-claude-max-extension.sh`.
+   - **`claude-max`** — only if a provider on the node sets `oauth: claude-max`; ships with the pi-agent config repo (`~/.pi/agent/extensions/claude-max`, deps installed by its `setup.sh`).
 7. **Project checkouts**: the node needs the actual project files at the paths registered in the UI.
 
 Extensions load per session (at `createAgentSession`), so installing them does not require an orcd restart — but already-running sessions won't gain tools until they exit and are resumed.
@@ -289,9 +289,7 @@ orc.example.yaml                  Node registry template (BE)
 orcd.example.yaml                 Per-node daemon config template
 bin/
   orc                             Wrapper around the pi CLI with Orchestrel provider/model routing
-extensions/
-  claude-max/                     Pi extension: Claude Max OAuth + request reshaping
-scripts/                          DB backup, claude-max extension install, migrations
+scripts/                          DB backup, migrations
 app/
   routes/                         Board and chat React Router routes
   components/                     CardDetail, SessionView, transcript, settings, UI primitives

@@ -1,5 +1,0 @@
-{
-  "name": "claude-max",
-  "private": true,
-  "pi": { "extensions": ["index.ts"] }
-}
