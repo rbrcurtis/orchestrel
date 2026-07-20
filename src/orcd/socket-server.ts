@@ -443,9 +443,7 @@ export class OrcdServer {
 
     // Pi runtime injects provider baseUrl/apiKey via the Model object and
     // AuthStorage.setRuntimeApiKey (see pi-runtime.ts) — not via process.env.
-    // modelAliasEnv sets ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL for tiered
-    // subagent model mapping, configured via the provider's `aliases` in config.yaml.
-    return Object.assign({}, process.env, cfg.modelAliasEnv) as Record<string, string>;
+    return { ...process.env } as Record<string, string>;
   }
 
   // ── Memory upsert ───────────────────────────────────────────────────────

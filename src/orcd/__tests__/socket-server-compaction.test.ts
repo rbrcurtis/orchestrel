@@ -90,7 +90,6 @@ function createServer() {
         apiKey: '',
         models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
         modelLabels: {},
-        modelAliasEnv: {},
       },
     },
     { provider: 'test', model: 'test-model' },
@@ -156,7 +155,7 @@ describe('OrcdServer subscriptions', () => {
 });
 
 describe('OrcdServer provider env', () => {
-  it('merges process env and model alias env without injecting provider runtime env', () => {
+  it('passes process env through without injecting provider runtime env', () => {
     const saved = {
       ORC_TEST_PROVIDER_ENV: process.env.ORC_TEST_PROVIDER_ENV,
       ORC_PROVIDER_RUNTIME_URL: process.env.ORC_PROVIDER_RUNTIME_URL,
@@ -186,9 +185,6 @@ describe('OrcdServer provider env', () => {
             profile: 'provider-profile',
             models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
             modelLabels: {},
-            modelAliasEnv: {
-              ORC_DEFAULT_MODEL: 'test-model',
-            },
           },
         },
         { provider: 'test', model: 'test-model' },
@@ -197,7 +193,6 @@ describe('OrcdServer provider env', () => {
       const env = server['buildProviderEnv']('test');
 
       expect(env.ORC_TEST_PROVIDER_ENV).toBe('from-process');
-      expect(env.ORC_DEFAULT_MODEL).toBe('test-model');
       expect(env.ORC_PROVIDER_RUNTIME_URL).toBeUndefined();
       expect(env.ORC_PROVIDER_RUNTIME_KEY).toBeUndefined();
       expect(env.ORC_PROVIDER_RUNTIME_TOKEN).toBeUndefined();

@@ -4,6 +4,7 @@ import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, Com
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
 import { expandInlineCommands } from './inline-commands';
+import { syncAgentOverrides, type ProviderAliases } from './subagent-agents';
 
 const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
 
@@ -21,6 +22,8 @@ export interface CreatePiRuntimeSessionOpts {
     authToken?: string;
     oauth?: string;
     models: Record<string, ModelDef>;
+    aliases?: ProviderAliases;
+    agents?: Record<string, string>;
   };
 }
 
@@ -159,6 +162,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   if (opts.provider) setRuntimeApiKey(authStorage, providerId, opts.provider.apiKey || opts.provider.authToken);
   if (opts.provider && providerId === opts.providerId) {
     registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider, isAdaptiveEffort(opts.effort));
+  }
+  // Pin pi-subagents agent tiers (Explore pins anthropic/haiku in its embedded
+  // default, which breaks on other providers) to this provider's models, per
+  // the effective agent → model map. Written per-cwd before session creation
+  // so pi-subagents picks it up when it loads agent definitions.
+  if (opts.provider) {
+    syncAgentOverrides(opts.cwd, providerId, opts.provider);
   }
   const modelId = opts.provider?.models[opts.modelId]?.modelID ?? opts.modelId;
   const model = modelRegistry.find(providerId, modelId);

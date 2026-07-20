@@ -1,5 +1,6 @@
 import type { MemoryUpsertConfig, ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
-import { buildModelAliasEnv, loadConfig, parseConfig as parseSharedConfig, resolveEnvVars } from '../shared/config';
+import { loadConfig, parseConfig as parseSharedConfig, resolveEnvVars } from '../shared/config';
+import type { ProviderAliases } from './subagent-agents';
 
 export interface ProviderConfig {
   type: ProviderType;
@@ -12,7 +13,8 @@ export interface ProviderConfig {
   profile?: string;
   models: Record<string, ModelDef>;
   modelLabels?: Record<string, { alias: string; label: string; contextWindow: number }>;
-  modelAliasEnv: Record<string, string>;
+  aliases?: ProviderAliases;
+  agents?: Record<string, string>;
 }
 
 export interface OrcdConfig {
@@ -27,7 +29,7 @@ export interface OrcdConfig {
   memoryUpsert?: MemoryUpsertConfig;
 }
 
-export { buildModelAliasEnv, resolveEnvVars };
+export { resolveEnvVars };
 
 /** Flatten the shared config into orcd's historical shape (models as modelID list). */
 function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
@@ -48,7 +50,8 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
       ...(p.profile ? { profile: p.profile } : {}),
       models: p.models,
       modelLabels,
-      modelAliasEnv: buildModelAliasEnv(p.models, p.aliases),
+      ...(p.aliases ? { aliases: p.aliases } : {}),
+      ...(p.agents ? { agents: p.agents } : {}),
     };
   }
   return {

@@ -45,7 +45,7 @@ describe('OrcdSession BGC event mapping', () => {
       provider: 'anthropic',
       sessionId: 'window',
       contextWindow: 200000, // stale card value
-      providerConfig: { type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '', modelAliasEnv: {}, models: { fable: { label: 'Fable 5', modelID: 'claude-fable-5', contextWindow: 1000000 } } },
+      providerConfig: { type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '', models: { fable: { label: 'Fable 5', modelID: 'claude-fable-5', contextWindow: 1000000 } } },
     });
     let win = 0;
     s.subscribe((m) => { if (m.type === 'context_usage') win = m.contextWindow; });

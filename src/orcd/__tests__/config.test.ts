@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildModelAliasEnv, parseConfig, resolveEnvVars } from '../config';
+import { parseConfig, resolveEnvVars } from '../config';
 
 describe('resolveEnvVars', () => {
   it('replaces ${VAR} with env value', () => {
@@ -109,78 +109,5 @@ providers:
 `;
     expect(parseConfig(yaml, {}).ringBufferSize).toBe(5000);
     expect(parseConfig(yaml.replace('authToken: tok', 'authToken: tok\nringBufferSize: 20000'), {}).ringBufferSize).toBe(20000);
-  });
-});
-
-describe('buildModelAliasEnv', () => {
-  const model = (modelID: string) => ({ label: modelID, modelID, contextWindow: 200000 });
-
-  it('returns no aliases when the provider has no models', () => {
-    expect(buildModelAliasEnv({})).toEqual({});
-  });
-
-  it('positional fallback: maps one model to all three aliases', () => {
-    expect(buildModelAliasEnv({ first: model('m1') })).toEqual({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'm1',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'm1',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'm1',
-    });
-  });
-
-  it('positional fallback: maps two models with the second also used for haiku', () => {
-    expect(buildModelAliasEnv({ first: model('m1'), second: model('m2') })).toEqual({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'm1',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'm2',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'm2',
-    });
-  });
-
-  it('positional fallback: maps only the first three models', () => {
-    expect(buildModelAliasEnv({
-      first: model('m1'),
-      second: model('m2'),
-      third: model('m3'),
-      fourth: model('m4'),
-    })).toEqual({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'm1',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'm2',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'm3',
-    });
-  });
-
-  it('explicit aliases: resolves model keys to modelIDs', () => {
-    const models = { big: model('big-id'), small: model('small-id') };
-    expect(buildModelAliasEnv(models, { primary: 'big', subagent: 'big', lightweight: 'small' })).toEqual({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'big-id',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'big-id',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'small-id',
-    });
-  });
-
-  it('explicit aliases: all same key avoids thrashing', () => {
-    const models = { main: model('qwen3-coder'), alt: model('qwen3-small') };
-    expect(buildModelAliasEnv(models, { primary: 'main', subagent: 'main', lightweight: 'main' })).toEqual({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'qwen3-coder',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'qwen3-coder',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'qwen3-coder',
-    });
-  });
-
-  it('explicit aliases: unspecified aliases default to first model', () => {
-    const models = { big: model('big-id'), small: model('small-id') };
-    expect(buildModelAliasEnv(models, { subagent: 'small' })).toEqual({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'big-id',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'small-id',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'big-id',
-    });
-  });
-
-  it('explicit aliases: empty aliases object defaults all to first model', () => {
-    const models = { alpha: model('alpha-id'), beta: model('beta-id') };
-    expect(buildModelAliasEnv(models, {})).toEqual({
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'alpha-id',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'alpha-id',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'alpha-id',
-    });
   });
 });

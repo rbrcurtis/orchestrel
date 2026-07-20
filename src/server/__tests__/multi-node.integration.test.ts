@@ -20,7 +20,6 @@ function anthropicProvider(alias: string, label: string, cw: number): Record<str
       apiKey: '',
       models: { m: { label, modelID: 'm', contextWindow: cw } },
       modelLabels: { m: { alias, label, contextWindow: cw } },
-      modelAliasEnv: {},
     },
   };
 }

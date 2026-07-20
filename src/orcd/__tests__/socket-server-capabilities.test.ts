@@ -7,7 +7,7 @@ describe('buildCapabilities', () => {
       { listen: { host: '127.0.0.1', port: 0 }, authToken: 't', name: 'gpubox' },
       {
         anthropic: {
-          type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '', modelAliasEnv: {},
+          type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '',
           models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet-4-6', contextWindow: 1000000 } },
           modelLabels: { 'claude-sonnet-4-6': { alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 } },
         },

@@ -12,7 +12,7 @@ describe('OrcdServer TCP listener', () => {
     const port = freePort();
     server = new OrcdServer(
       { listen: { host: '127.0.0.1', port }, authToken: 'tok', name: 'local' },
-      { test: { type: 'anthropic', baseUrl: '', apiKey: '', models: { m: { label: 'M', modelID: 'm', contextWindow: 1000 } }, modelLabels: {}, modelAliasEnv: {} } },
+      { test: { type: 'anthropic', baseUrl: '', apiKey: '', models: { m: { label: 'M', modelID: 'm', contextWindow: 1000 } }, modelLabels: {} } },
       { provider: 'test', model: 'm' },
     );
     await server.start();

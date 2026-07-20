@@ -21,17 +21,25 @@ providers:
   # The provider id and modelID values must match models known to Pi's model registry.
   anthropic:
     label: Anthropic
-    # aliases: maps semantic roles to model keys for SDK subagent spawning.
-    #   primary    → opus env var fallback (ANTHROPIC_DEFAULT_OPUS_MODEL)
-    #   subagent   → SDK-spawned subagents (ANTHROPIC_DEFAULT_SONNET_MODEL)
-    #   lightweight → lightweight subagents like Explore (ANTHROPIC_DEFAULT_HAIKU_MODEL)
-    # If omitted, positional fallback applies (1st→opus, 2nd→sonnet, 3rd→haiku).
-    # If partial, unspecified aliases default to first model in the map.
-    # On single-model servers (oMLX), set all aliases to the same key to avoid thrashing.
+    # Pi-subagents model mapping. orcd writes managed per-cwd agent overrides
+    # (.pi/agents/<Name>.md) pinning each pi-subagents agent to one of this
+    # provider's models — pi has no env-var tier system like the Claude SDK had.
+    #
+    # Tier defaults (no config needed):
+    #   general-purpose → subagent tier   (slot 2, the old sonnet equiv)
+    #   Explore         → lightweight tier (slot 3, the old haiku equiv)
+    # Tiers resolve via `aliases` when present, else positionally from models.
+    #   aliases: { subagent: sonnet, lightweight: haiku }
+    #
+    # agents: granular per-agent overrides (agent name → model key). Merged over
+    # the tier defaults; known agents: general-purpose, Explore, Plan.
+    # Set every agent to the same key on single-model servers (oMLX) to avoid thrashing.
     aliases:
-      primary: opus
       subagent: sonnet
       lightweight: haiku
+    agents:
+      Explore: haiku
+      Plan: sonnet
     models:
       opus:   { label: "Opus 4.7",   modelID: claude-opus-4-7,              contextWindow: 1000000 }
       sonnet: { label: "Sonnet 5",   modelID: claude-sonnet-5,              contextWindow: 1000000 }
@@ -82,15 +90,14 @@ providers:
   #     reasoner: { label: "V3.2 Reasoner", modelID: deepseek-reasoner, contextWindow: 128000 }
   #     chat: { label: "V3.2 Chat", modelID: deepseek-chat, contextWindow: 128000 }
 
-  # Example: single-model local server (all aliases point to same model to avoid thrashing).
+  # Example: single-model local server (map every agent to the same model to avoid thrashing).
   # omlx:
   #   label: Local MLX
   #   baseUrl: http://mac.local:8000
   #   authToken: omlx
-  #   aliases:
-  #     primary: main
-  #     subagent: main
-  #     lightweight: main
+  #   agents:
+  #     general-purpose: main
+  #     Explore: main
   #   models:
   #     main: { label: "Qwen3 Coder", modelID: qwen3-coder-next, contextWindow: 262144 }
 
