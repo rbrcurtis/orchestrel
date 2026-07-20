@@ -88,7 +88,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       name: name.trim(),
       path: path.trim(),
       setupCommands: setupCommands || undefined,
-      defaultBranch: (isGitRepo && defaultBranch ? defaultBranch : undefined) as 'main' | 'dev' | undefined,
+      defaultBranch: (isGitRepo && defaultBranch ? defaultBranch : null) as 'main' | 'dev' | null,
       defaultWorktree: isGitRepo ? defaultWorktree : undefined,
       color,
       defaultModel,
@@ -164,11 +164,15 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
               {isGitRepo && (
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Default Branch</label>
-                  <Select value={defaultBranch} onValueChange={setDefaultBranch}>
+                  <Select
+                    value={defaultBranch || '__head__'}
+                    onValueChange={(val) => setDefaultBranch(val === '__head__' ? '' : val)}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select branch..." />
                     </SelectTrigger>
                     <SelectContent position="popper" sideOffset={4}>
+                      <SelectItem value="__head__">HEAD</SelectItem>
                       <SelectItem value="main">main</SelectItem>
                       <SelectItem value="dev">dev</SelectItem>
                     </SelectContent>

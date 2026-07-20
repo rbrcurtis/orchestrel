@@ -216,11 +216,15 @@ function CardFields({
       {!!selectedProject?.isGitRepo && draft.useWorktree && (
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
-          <Select value={draft.sourceBranch ?? selectedProject.defaultBranch ?? ''} onValueChange={(val) => patch({ sourceBranch: val })}>
+          <Select
+            value={draft.sourceBranch ?? selectedProject.defaultBranch ?? '__head__'}
+            onValueChange={(val) => patch({ sourceBranch: val === '__head__' ? null : val })}
+          >
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__head__">HEAD</SelectItem>
               <SelectItem value="main">main</SelectItem>
               <SelectItem value="dev">dev</SelectItem>
             </SelectContent>
