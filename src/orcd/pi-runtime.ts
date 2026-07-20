@@ -69,7 +69,15 @@ function effortToThinkingLevel(effort: string | undefined): PiThinkingLevel {
   if (effort === 'low') return 'low';
   if (effort === 'medium') return 'medium';
   if (effort === 'max') return 'xhigh';
+  // 'adaptive' also lands here: the session level becomes the effort hint sent
+  // as output_config.effort; adaptive vs budget thinking is decided at provider
+  // registration time (see registerOrchestrelProvider).
   return 'high';
+}
+
+/** True when the card's thinking level asks the endpoint to decide thinking depth itself. */
+export function isAdaptiveEffort(effort: string | undefined): boolean {
+  return effort === 'adaptive';
 }
 
 function canCompact(session: AgentSession): session is AgentSession & {
@@ -106,6 +114,7 @@ function registerOrchestrelProvider(
   modelRegistry: ModelRegistry,
   providerId: string,
   provider: NonNullable<CreatePiRuntimeSessionOpts['provider']>,
+  adaptive: boolean,
 ): void {
   const api = modelApi(provider.type);
   const cfg: ProviderConfigInput = {
@@ -122,6 +131,12 @@ function registerOrchestrelProvider(
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: model.contextWindow,
       maxTokens: 64_000,
+      // Adaptive thinking (card thinking level = adaptive): let the endpoint
+      // decide how much to think instead of capping it with a fixed budget, and
+      // advertise xhigh so 'max' effort isn't clamped back to 'high'.
+      ...(adaptive
+        ? { compat: { forceAdaptiveThinking: true }, thinkingLevelMap: { xhigh: 'xhigh' } }
+        : {}),
     })),
   };
 
@@ -142,7 +157,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   const modelRegistry = ModelRegistry.create(authStorage, `${agentDir}/models.json`);
   const providerId = opts.provider && usesBuiltInProvider(opts.provider) ? opts.provider.type : opts.providerId;
   if (opts.provider) setRuntimeApiKey(authStorage, providerId, opts.provider.apiKey || opts.provider.authToken);
-  if (opts.provider && providerId === opts.providerId) registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider);
+  if (opts.provider && providerId === opts.providerId) {
+    registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider, isAdaptiveEffort(opts.effort));
+  }
   const modelId = opts.provider?.models[opts.modelId]?.modelID ?? opts.modelId;
   const model = modelRegistry.find(providerId, modelId);
   if (!model) throw new Error(`Pi model not found: ${providerId}/${opts.modelId}`);
@@ -254,6 +271,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     },
 
     async setEffort(effort) {
+      // Note: 'adaptive' maps to 'high' here — the adaptive/budget distinction
+      // lives in the provider registration made at session creation and can't
+      // be flipped on a live session. A card must start a fresh session to
+      // switch modes.
       if (!canSetThinkingLevel(session)) return;
       session.setThinkingLevel(effortToThinkingLevel(effort));
     },

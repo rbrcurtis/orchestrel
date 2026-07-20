@@ -37,6 +37,7 @@ vi.mock('@earendil-works/pi-ai', () => ({}));
 function makeSession(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'pi-session-1',
+    sessionManager: {},
     prompt: mockPrompt,
     subscribe: mockSubscribe,
     abort: mockAbort,
@@ -220,6 +221,42 @@ describe('createPiRuntimeSession', () => {
       ],
     });
     expect(mockFind).toHaveBeenCalledWith('trackable', 'claude-sonnet-4-6');
+  });
+
+  it('registers adaptive thinking (forceAdaptiveThinking + xhigh) when effort is adaptive', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const registry = { find: mockFind, registerProvider: vi.fn() };
+    mockModelRegistryCreate.mockReturnValue(registry);
+
+    await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'kimi',
+      modelId: 'k3',
+      effort: 'adaptive',
+      provider: {
+        type: 'anthropic',
+        label: 'Kimi',
+        baseUrl: 'https://api.kimi.com/coding/',
+        apiKey: 'sk-kimi-test',
+        models: {
+          k3: { label: 'K3 (1M)', modelID: 'k3', contextWindow: 1048576 },
+        },
+      },
+    });
+
+    expect(registry.registerProvider).toHaveBeenCalledWith('kimi', expect.objectContaining({
+      models: [
+        expect.objectContaining({
+          id: 'k3',
+          reasoning: true,
+          compat: { forceAdaptiveThinking: true },
+          thinkingLevelMap: { xhigh: 'xhigh' },
+        }),
+      ],
+    }));
+    expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      thinkingLevel: 'high',
+    }));
   });
 
   it('maps unsupported or disabled efforts to stable Pi thinking levels', async () => {

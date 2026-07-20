@@ -21,7 +21,7 @@ interface Project {
   defaultWorktree: boolean;
   color: string;
   defaultModel: string;
-  defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
+  defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
   providerID: string;
   nodeName: string;
   archived: boolean;
@@ -44,7 +44,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
   const [color, setColor] = useState(project?.color ?? '#00f0ff');
   const [defaultModel, setDefaultModel] = useState(project?.defaultModel ?? 'sonnet');
-  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(
+  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high' | 'adaptive'>(
     project?.defaultThinkingLevel ?? 'high',
   );
   const config = useConfigStore();
@@ -254,7 +254,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Default Thinking</label>
                 <Select
                   value={defaultThinkingLevel}
-                  onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high')}
+                  onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high' | 'adaptive')}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -264,6 +264,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="adaptive">Adaptive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

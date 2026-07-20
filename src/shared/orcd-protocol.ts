@@ -6,7 +6,7 @@ export interface CreateAction {
   cwd: string;
   provider: string;
   model: string;
-  effort?: string;       // 'high' | 'medium' | 'low' | 'disabled'
+  effort?: string;       // 'adaptive' | 'high' | 'medium' | 'low' | 'disabled'
   sessionId?: string;    // Resume existing session
   contextWindow?: number;
   summarizeThreshold?: number;  // 0-1, fraction of context window to trigger compaction

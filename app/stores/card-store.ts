@@ -110,7 +110,7 @@ export class CardStore {
     projectId?: number | null;
     model?: string;
     provider?: string;
-    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
     summarizeThreshold?: number;
     worktreeBranch?: string | null;
     sourceBranch?: 'main' | 'dev' | null;
@@ -135,7 +135,7 @@ export class CardStore {
     description: string;
     projectId: number;
     model?: string;
-    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
     summarizeThreshold?: number;
   }): Promise<Card> {
     let title = 'New chat';
@@ -173,7 +173,7 @@ export class CardStore {
     provider?: string;
     model?: string;
     summarizeThreshold?: number;
-    thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
     worktreeBranch?: string | null;
     sourceBranch?: 'main' | 'dev' | null;
   }): Promise<Card> {

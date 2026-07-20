@@ -294,6 +294,7 @@ function CardFields({
                 <SelectItem value="low">Low</SelectItem>
                 <SelectItem value="medium">Medium</SelectItem>
                 <SelectItem value="high">High</SelectItem>
+                <SelectItem value="adaptive">Adaptive</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -461,7 +462,7 @@ export const CardDetail = observer(function CardDetail({
       sourceBranch: merged.sourceBranch as 'main' | 'dev' | null | undefined,
       provider: merged.provider,
       model: merged.model,
-      thinkingLevel: merged.thinkingLevel as 'off' | 'low' | 'medium' | 'high',
+      thinkingLevel: merged.thinkingLevel as 'off' | 'low' | 'medium' | 'high' | 'adaptive',
       summarizeThreshold: merged.summarizeThreshold,
     });
   }
@@ -792,7 +793,7 @@ export const NewCardDetail = observer(function NewCardDetail({
         sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
         provider: draft.provider,
         model: draft.model,
-        thinkingLevel: draft.thinkingLevel as 'off' | 'low' | 'medium' | 'high',
+        thinkingLevel: draft.thinkingLevel as 'off' | 'low' | 'medium' | 'high' | 'adaptive',
         summarizeThreshold: draft.summarizeThreshold,
       });
       writeNewCardDraftDescription('');

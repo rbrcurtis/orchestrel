@@ -176,7 +176,7 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high'; summarizeThreshold?: number }) {
+  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive'; summarizeThreshold?: number }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -278,13 +278,14 @@ export const SessionView = observer(function SessionView({
           </select>
           <select
             value={thinkingLevel}
-            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
+            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' | 'adaptive' })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto"
           >
             <option value="off">Off</option>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
+            <option value="adaptive">Adaptive</option>
           </select>
           {isStreaming ? (
             <Button
