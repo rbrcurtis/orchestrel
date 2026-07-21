@@ -4,10 +4,10 @@
 import arg from 'arg';
 import Database from 'better-sqlite3';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync } from 'fs';
-import { dirname, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
-import { getAgentDir } from '@earendil-works/pi-coding-agent';
+import { homedir } from 'os';
 import { buildModelAliasEnv, parseConfig } from '../src/shared/config.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -377,6 +377,16 @@ function rejectConflictingArgs(passthroughArgs) {
       throw new Error('Do not pass --model to orc; use positional provider and model instead.');
     }
   }
+}
+
+function getAgentDir() {
+  const envDir = process.env.PI_CODING_AGENT_DIR;
+  if (envDir) {
+    if (envDir === '~') return homedir();
+    if (envDir.startsWith('~/')) return join(homedir(), envDir.slice(2));
+    return envDir;
+  }
+  return join(homedir(), '.pi', 'agent');
 }
 
 // Mirror orcd's registerOrchestrelProvider: every config provider that isn't
