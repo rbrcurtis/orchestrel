@@ -139,7 +139,7 @@ export function parseSubagentPolicy(value: string): OrchestrelSubagentPolicy {
   };
 }
 
-/** Remove only legacy Orchestrel-generated agent overrides, never user Pi files. */
+/** Remove only marker-tagged legacy `.pi/agents` overrides, never user Pi files. */
 export function cleanupManagedSubagentFiles(cwd: string): void {
   try {
     const piDir = join(cwd, '.pi');

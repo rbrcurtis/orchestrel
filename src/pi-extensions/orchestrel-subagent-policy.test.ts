@@ -1,4 +1,4 @@
-import { createEventBus, type EventBus, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { createEventBus, DefaultResourceLoader, type EventBus, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 import type { OrchestrelSubagentPolicy } from '../shared/subagent-policy';
 import {
@@ -91,22 +91,45 @@ describe('Orchestrel subagent policy extension', () => {
     });
   });
 
-  it('keeps two event bus policies independent', () => {
+  it('keeps concurrent policies isolated across resource loaders and event buses', async () => {
     const trackable = createEventBus();
     const chatgpt = createEventBus();
-    loadPolicyFactory(trackable, trackablePolicy);
-    loadPolicyFactory(chatgpt, {
-      parentProvider: 'chatgpt', parentModel: 'chatgpt/gpt-5.5',
-      agents: { Explore: { model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' } },
-      allowCrossProvider: false,
+    const loaderOptions = {
+      cwd: process.cwd(),
+      agentDir: process.cwd(),
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+    };
+    const trackableLoader = new DefaultResourceLoader({
+      ...loaderOptions,
+      eventBus: trackable,
+      extensionFactories: [createOrchestrelSubagentPolicyExtension(trackablePolicy)],
     });
+    const chatgptLoader = new DefaultResourceLoader({
+      ...loaderOptions,
+      eventBus: chatgpt,
+      extensionFactories: [createOrchestrelSubagentPolicyExtension({
+        parentProvider: 'chatgpt', parentModel: 'chatgpt/gpt-5.5',
+        agents: { Explore: { model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' } },
+        allowCrossProvider: false,
+      })],
+    });
+    await Promise.all([trackableLoader.reload(), chatgptLoader.reload()]);
 
-    expect(request(trackable, {
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
-    }).decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
-    expect(request(chatgpt, {
-      agentType: 'Explore', parentProvider: 'chatgpt', parentModel: 'chatgpt/gpt-5.5',
-    }).decision).toEqual({ model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' });
+    const [trackableResult, chatgptResult] = await Promise.all([
+      Promise.resolve().then(() => request(trackable, {
+        agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
+      })),
+      Promise.resolve().then(() => request(chatgpt, {
+        agentType: 'Explore', parentProvider: 'chatgpt', parentModel: 'chatgpt/gpt-5.5',
+      })),
+    ]);
+
+    expect(trackableResult.decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
+    expect(chatgptResult.decision).toEqual({ model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' });
   });
 
   it('leaves a previous policy decision alone and unsubscribes at session shutdown', () => {

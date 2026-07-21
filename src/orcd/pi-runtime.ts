@@ -6,7 +6,7 @@ import type { ModelDef, ProviderType } from '../shared/config';
 import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
 import { createOrchestrelSubagentPolicyExtension } from '../pi-extensions/orchestrel-subagent-policy';
 import { expandInlineCommands } from './inline-commands';
-import type { ProviderAliases } from './subagent-agents';
+import type { ProviderAliases } from '../shared/subagent-policy';
 
 const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
 
