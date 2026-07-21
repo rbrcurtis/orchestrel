@@ -1,10 +1,12 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
-import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, ModelRegistry, SessionManager, createAgentSession, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
+import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
+import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
+import { createOrchestrelSubagentPolicyExtension } from '../pi-extensions/orchestrel-subagent-policy';
 import { expandInlineCommands } from './inline-commands';
-import { syncAgentOverrides, type ProviderAliases } from './subagent-agents';
+import type { ProviderAliases } from './subagent-agents';
 
 const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
 
@@ -163,16 +165,28 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   if (opts.provider && providerId === opts.providerId) {
     registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider, isAdaptiveEffort(opts.effort));
   }
-  // Pin pi-subagents agent tiers (Explore pins anthropic/haiku in its embedded
-  // default, which breaks on other providers) to this provider's models, per
-  // the effective agent → model map. Written per-cwd before session creation
-  // so pi-subagents picks it up when it loads agent definitions.
-  if (opts.provider) {
-    syncAgentOverrides(opts.cwd, providerId, opts.provider);
-  }
   const modelId = opts.provider?.models[opts.modelId]?.modelID ?? opts.modelId;
   const model = modelRegistry.find(providerId, modelId);
   if (!model) throw new Error(`Pi model not found: ${providerId}/${opts.modelId}`);
+
+  // Legacy managed files were process-global configuration. Remove them before
+  // discovery; the policy extension below is isolated to this session's loader.
+  cleanupManagedSubagentFiles(opts.cwd);
+  const policy = buildSubagentPolicy(providerId, modelId, opts.provider ?? {
+    models: { [opts.modelId]: { label: opts.modelId, modelID: modelId, contextWindow: 200_000 } },
+  });
+  const eventBus = createEventBus();
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: opts.cwd,
+    agentDir,
+    eventBus,
+    extensionFactories: [createOrchestrelSubagentPolicyExtension(policy, {
+      onDecision: ({ agentType, decision }) => {
+        if ('model' in decision) console.log(`[orcd] subagent ${agentType} -> ${decision.model} (${decision.source})`);
+      },
+    })],
+  });
+  await resourceLoader.reload();
 
   let sessionManager = SessionManager.create(opts.cwd);
   const requestedSessionId = opts.sessionId;
@@ -188,6 +202,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     agentDir,
     authStorage,
     modelRegistry,
+    resourceLoader,
     sessionManager,
     model: model as Model<Api>,
     thinkingLevel: effortToThinkingLevel(opts.effort),

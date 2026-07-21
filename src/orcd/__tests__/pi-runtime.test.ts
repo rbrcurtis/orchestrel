@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockPrompt = vi.fn();
@@ -15,6 +18,8 @@ const mockSessionManagerCreate = vi.fn();
 const mockSessionManagerList = vi.fn();
 const mockSessionManagerOpen = vi.fn();
 const mockGetAgentDir = vi.fn();
+const mockCreateEventBus = vi.fn();
+const mockDefaultResourceLoader = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
   AuthStorage: {
@@ -29,6 +34,8 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
     open: mockSessionManagerOpen,
   },
   createAgentSession: mockCreateAgentSession,
+  createEventBus: mockCreateEventBus,
+  DefaultResourceLoader: mockDefaultResourceLoader,
   getAgentDir: mockGetAgentDir,
 }));
 
@@ -54,6 +61,10 @@ describe('createPiRuntimeSession', () => {
     vi.clearAllMocks();
 
     mockGetAgentDir.mockReturnValue('/home/ryan/.pi/agent');
+    mockCreateEventBus.mockImplementation(() => ({ kind: 'event-bus' }));
+    mockDefaultResourceLoader.mockImplementation(function (this: Record<string, unknown>, opts: Record<string, unknown>) {
+      Object.assign(this, opts, { reload: vi.fn().mockResolvedValue(undefined) });
+    });
     mockAuthStorageCreate.mockReturnValue({ kind: 'auth-storage', setRuntimeApiKey: mockSetRuntimeApiKey });
     mockFind.mockReturnValue({ provider: 'anthropic', id: 'claude-sonnet-4-6' });
     mockModelRegistryCreate.mockReturnValue({ find: mockFind, registerProvider: vi.fn() });
@@ -89,6 +100,7 @@ describe('createPiRuntimeSession', () => {
       agentDir: '/home/ryan/.pi/agent',
       authStorage,
       modelRegistry: { find: mockFind, registerProvider: expect.any(Function) },
+      resourceLoader: expect.any(Object),
       sessionManager: { kind: 'session-manager-create' },
       model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
       thinkingLevel: 'xhigh',
@@ -96,6 +108,43 @@ describe('createPiRuntimeSession', () => {
     // Must bind extensions so the session_start event fires — extensions like
     // the MCP adapter initialize on it. Without this, MCP servers never connect.
     expect(mockBindExtensions).toHaveBeenCalledOnce();
+  });
+
+  it('gives each session an isolated policy loader and cleans legacy agent files without creating .pi', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const legacyCwd = mkdtempSync(join(tmpdir(), 'orcd-policy-legacy-'));
+    const cleanCwd = mkdtempSync(join(tmpdir(), 'orcd-policy-clean-'));
+    const provider = {
+      type: 'anthropic' as const,
+      label: 'Trackable',
+      baseUrl: 'http://127.0.0.1:3457',
+      apiKey: 'trackable',
+      models: {
+        primary: { label: 'Primary', modelID: 'primary-id', contextWindow: 200_000 },
+        subagent: { label: 'Subagent', modelID: 'subagent-id', contextWindow: 200_000 },
+        lightweight: { label: 'Lightweight', modelID: 'lightweight-id', contextWindow: 200_000 },
+      },
+    };
+    mkdirSync(join(legacyCwd, '.pi', 'agents'), { recursive: true });
+    writeFileSync(join(legacyCwd, '.pi', 'agents', 'Explore.md'), '---\nmanaged_by: orchestrel\n---\nlegacy');
+
+    try {
+      await createPiRuntimeSession({ cwd: legacyCwd, providerId: 'trackable', modelId: 'primary', provider });
+      await createPiRuntimeSession({ cwd: cleanCwd, providerId: 'trackable', modelId: 'primary', provider });
+
+      expect(mockCreateEventBus).toHaveBeenCalledTimes(2);
+      const loaderOptions = mockDefaultResourceLoader.mock.calls.map(([opts]) => opts);
+      expect(loaderOptions[0].eventBus).not.toBe(loaderOptions[1].eventBus);
+      expect(loaderOptions[0].extensionFactories).toHaveLength(1);
+      expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+        resourceLoader: expect.any(Object),
+      }));
+      expect(existsSync(join(legacyCwd, '.pi', 'agents', 'Explore.md'))).toBe(false);
+      expect(existsSync(join(cleanCwd, '.pi'))).toBe(false);
+    } finally {
+      rmSync(legacyCwd, { recursive: true, force: true });
+      rmSync(cleanCwd, { recursive: true, force: true });
+    }
   });
 
   it('pins new Pi session storage to the orcd session id when provided', async () => {

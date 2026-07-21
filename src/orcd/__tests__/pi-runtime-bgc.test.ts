@@ -18,6 +18,10 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
     getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} })),
   }) },
   SessionManager: { create: () => ({}), open: () => ({}), list: vi.fn(async () => []) },
+  createEventBus: () => ({}),
+  DefaultResourceLoader: class {
+    async reload() {}
+  },
   createAgentSession: vi.fn(async () => ({
     session: {
       sessionId: 'sess-1',

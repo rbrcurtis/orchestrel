@@ -36,7 +36,32 @@ function validateRequest(raw: unknown): SubagentModelPolicyRequest {
   return req as unknown as SubagentModelPolicyRequest;
 }
 
-function register(pi: ExtensionAPI, policy: OrchestrelSubagentPolicy): void {
+export interface OrchestrelSubagentPolicyExtensionOptions {
+  onDecision?: (input: {
+    agentType: string;
+    decision: { model: string; source: string } | { error: string };
+  }) => void;
+}
+
+function notifyDecision(
+  onDecision: OrchestrelSubagentPolicyExtensionOptions['onDecision'],
+  agentType: string,
+  decision: unknown,
+): void {
+  if (!onDecision || !decision || typeof decision !== 'object') return;
+  const value = decision as Record<string, unknown>;
+  if (typeof value.model === 'string' && typeof value.source === 'string') {
+    onDecision({ agentType, decision: { model: value.model, source: value.source } });
+  } else if (typeof value.error === 'string') {
+    onDecision({ agentType, decision: { error: value.error } });
+  }
+}
+
+function register(
+  pi: ExtensionAPI,
+  policy: OrchestrelSubagentPolicy,
+  opts: OrchestrelSubagentPolicyExtensionOptions = {},
+): void {
   const unsubscribe = pi.events.on('subagents:model-policy', (raw) => {
     const req = validateRequest(raw);
     if (req.decision) return;
@@ -45,6 +70,7 @@ function register(pi: ExtensionAPI, policy: OrchestrelSubagentPolicy): void {
       req.decision = {
         error: `Subagent policy provider "${policy.parentProvider}" does not match parent provider "${req.parentProvider}".`,
       };
+      notifyDecision(opts.onDecision, req.agentType, req.decision);
       return;
     }
 
@@ -56,6 +82,7 @@ function register(pi: ExtensionAPI, policy: OrchestrelSubagentPolicy): void {
         : {
           error: `Subagent model "${req.requestedModel}" is not allowed. This session uses provider "${policy.parentProvider}".`,
         };
+      notifyDecision(opts.onDecision, req.agentType, req.decision);
       return;
     }
 
@@ -63,6 +90,7 @@ function register(pi: ExtensionAPI, policy: OrchestrelSubagentPolicy): void {
       model: policy.parentModel,
       source: 'parent model',
     };
+    notifyDecision(opts.onDecision, req.agentType, req.decision);
   });
 
   pi.on('session_shutdown', () => unsubscribe());
@@ -70,8 +98,9 @@ function register(pi: ExtensionAPI, policy: OrchestrelSubagentPolicy): void {
 
 export function createOrchestrelSubagentPolicyExtension(
   policy: OrchestrelSubagentPolicy,
+  opts?: OrchestrelSubagentPolicyExtensionOptions,
 ): ExtensionFactory {
-  return (pi) => register(pi, policy);
+  return (pi) => register(pi, policy, opts);
 }
 
 export default function orchestrelSubagentPolicyFromEnv(pi: ExtensionAPI): void {

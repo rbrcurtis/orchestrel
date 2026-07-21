@@ -23,12 +23,16 @@ const trackablePolicy: OrchestrelSubagentPolicy = {
   allowCrossProvider: false,
 };
 
-function loadPolicyFactory(bus: EventBus, policy: OrchestrelSubagentPolicy) {
+function loadPolicyFactory(
+  bus: EventBus,
+  policy: OrchestrelSubagentPolicy,
+  onDecision?: (input: { agentType: string; decision: { model: string; source: string } | { error: string } }) => void,
+) {
   const shutdown = vi.fn();
   const pi = { events: bus, on: (event: string, handler: () => void) => {
     if (event === 'session_shutdown') shutdown.mockImplementation(handler);
   } } as unknown as ExtensionAPI;
-  createOrchestrelSubagentPolicyExtension(policy)(pi);
+  createOrchestrelSubagentPolicyExtension(policy, { onDecision })(pi);
   return shutdown;
 }
 
@@ -53,6 +57,21 @@ describe('Orchestrel subagent policy extension', () => {
       parentProvider: 'trackable', parentModel: 'trackable/auto',
     });
     expect(explicit.decision).toEqual({ model: 'trackable/auto', source: 'explicit' });
+  });
+
+  it('reports the selected model to an optional decision callback', () => {
+    const bus = createEventBus();
+    const onDecision = vi.fn();
+    loadPolicyFactory(bus, trackablePolicy, onDecision);
+
+    request(bus, {
+      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
+    });
+
+    expect(onDecision).toHaveBeenCalledWith({
+      agentType: 'Explore',
+      decision: { model: 'trackable/claude-opus-4-6', source: 'lightweight tier' },
+    });
   });
 
   it('rejects explicit and parent providers that do not match policy', () => {
