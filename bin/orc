@@ -9,7 +9,12 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
 import { parseConfig } from '../src/shared/config.ts';
-import { syncAgentOverrides } from '../src/orcd/subagent-agents.ts';
+import {
+  buildSubagentPolicy,
+  cleanupManagedSubagentFiles,
+  serializeSubagentPolicy,
+} from '../src/shared/subagent-policy.ts';
+import { ORCHESTREL_SUBAGENT_POLICY_ENV } from '../src/pi-extensions/orchestrel-subagent-policy.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
@@ -19,6 +24,7 @@ const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
 const ENV_DEFAULT_PROVIDER = 'ORC_PROVIDER';
 const ENV_DEFAULT_MODEL = 'ORC_MODEL';
 const LEGACY_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
+const SUBAGENT_POLICY_EXTENSION = resolve(REPO_ROOT, 'src/pi-extensions/orchestrel-subagent-policy.ts');
 
 const args = arg(
   {
@@ -87,6 +93,8 @@ function main() {
   // ambiguous (pi's built-in openrouter also has "auto") and pi rejects
   // ambiguous bare ids. "provider/id" resolves to exactly our provider.
   const modelSpec = `${resolved.providerId}/${model.modelID}`;
+  const policy = buildSubagentPolicy(resolved.providerId, model.modelID, provider);
+  const policyJson = serializeSubagentPolicy(policy);
   const piArgs = buildPiArgs(modelSpec, passthroughArgs, prompt);
 
   if (args['--print-env']) {
@@ -101,6 +109,12 @@ function main() {
           piArgs,
           piPath: resolvePiPath(),
           configPath,
+          subagentPolicy: {
+            parentProvider: policy.parentProvider,
+            parentModel: policy.parentModel,
+            agents: policy.agents,
+          },
+          subagentPolicyExtension: SUBAGENT_POLICY_EXTENSION,
         },
         null,
         2,
@@ -109,17 +123,15 @@ function main() {
     return;
   }
 
+  // Remove only legacy managed overrides. Runtime policy is delivered through
+  // Pi's extension environment, leaving user-authored cwd .pi files untouched.
+  cleanupManagedSubagentFiles(process.cwd());
+
   // Pi (the binary) only knows its built-in providers plus whatever is in
   // ~/.pi/agent/models.json. orcd registers custom providers programmatically
   // via the SDK, but this standalone wrapper spawns the pi binary, so we must
   // materialize custom providers to models.json or pi rejects the model ID.
   syncModelsJson(config);
-
-  // Pin pi-subagents agent tiers to this provider's models (same mechanism
-  // orcd uses): pi-subagents' embedded Explore pins anthropic/claude-haiku-4-5
-  // and there is no env-var tier system — only per-cwd .pi/agents/*.md
-  // frontmatter models steer subagents off the embedded defaults.
-  syncAgentOverrides(process.cwd(), resolved.providerId, provider);
 
   const piPath = requirePiPath();
   const child = spawn(
@@ -132,6 +144,7 @@ function main() {
         // pi upgrades are deliberate (0.80.10+ breaks orcd's SDK imports), so
         // suppress pi's new-version nag instead of acting on it
         PI_SKIP_VERSION_CHECK: '1',
+        [ORCHESTREL_SUBAGENT_POLICY_ENV]: policyJson,
       },
     },
   );
@@ -432,8 +445,9 @@ function syncModelsJson(config) {
 }
 
 function buildPiArgs(modelId, passthroughArgs, prompt) {
-  if (prompt !== undefined) return ['--model', modelId, '--mode', 'json', '-p', prompt, ...passthroughArgs];
-  return ['--model', modelId, ...passthroughArgs];
+  const base = ['--model', modelId, '-e', SUBAGENT_POLICY_EXTENSION];
+  if (prompt !== undefined) return [...base, '--mode', 'json', '-p', prompt, ...passthroughArgs];
+  return [...base, ...passthroughArgs];
 }
 
 function resolvePiPath() {

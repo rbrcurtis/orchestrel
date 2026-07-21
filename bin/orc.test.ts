@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
-import { chmod, mkdtemp, rm, writeFile } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { promisify } from 'util';
@@ -12,12 +13,19 @@ describe('orc CLI provider/model defaults', () => {
   let dir: string;
   let configPath: string;
   let piPath: string;
+  let stubOutputPath: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'orc-cli-test-'));
     configPath = join(dir, 'config.yaml');
     piPath = join(dir, 'pi');
-    await writeFile(piPath, '#!/bin/sh\nexit 0\n');
+    stubOutputPath = join(dir, 'pi-output.json');
+    await writeFile(
+      piPath,
+      `#!/bin/sh
+node -e 'require("fs").writeFileSync(process.env.ORC_STUB_OUTPUT, JSON.stringify({args: process.argv.slice(1), env: {ORCHESTREL_SUBAGENT_POLICY: process.env.ORCHESTREL_SUBAGENT_POLICY}}))' -- "$@"
+`,
+    );
     await chmod(piPath, 0o755);
 
     await writeFile(
@@ -62,7 +70,12 @@ providers:
     expect(output.modelAlias).toBe('auto');
     expect(output.modelID).toBe('auto');
     // bin/orc qualifies the model as provider/id so pi resolves the right provider.
-    expect(output.piArgs).toEqual(['--model', 'trackable/auto']);
+    expect(output.piArgs).toEqual([
+      '--model',
+      'trackable/auto',
+      '-e',
+      resolve(repoRoot, 'src/pi-extensions/orchestrel-subagent-policy.ts'),
+    ]);
   }, 30000);
 
   it('lets positional provider and model args override ORC_PROVIDER and ORC_MODEL', async () => {
@@ -118,17 +131,45 @@ providers:
 
     expect(output.passthroughArgs).toEqual([]);
     // bin/orc qualifies the model as provider/id so pi resolves the right provider.
-    expect(output.piArgs).toEqual(['--model', 'trackable/auto']);
+    expect(output.piArgs).toEqual([
+      '--model',
+      'trackable/auto',
+      '-e',
+      resolve(repoRoot, 'src/pi-extensions/orchestrel-subagent-policy.ts'),
+    ]);
   }, 30000);
 
-  it('passes no provider secrets or model-alias env vars to pi', async () => {
-    const anthropicOutput = await runOrc(['anthropic', 'sonnet'], {});
+  it('passes the runtime subagent policy and extension to Pi without creating cwd .pi files', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'orc-clean-cwd-'));
+    try {
+      const stub = await runOrcSpawn(['trackable', 'auto'], cwd);
 
-    // Provider config reaches pi via ~/.pi/agent/models.json (syncModelsJson)
-    // and subagent tiers via per-cwd .pi/agents/*.md (syncAgentOverrides) —
-    // nothing is passed through the environment. --print-env exits before
-    // either sync runs, so this only verifies the spawn contract.
-    expect(anthropicOutput.env).toBeUndefined();
+      expect(stub.args).toContain('-e');
+      expect(stub.args).toContain(resolve(repoRoot, 'src/pi-extensions/orchestrel-subagent-policy.ts'));
+      expect(JSON.parse(stub.env.ORCHESTREL_SUBAGENT_POLICY)).toMatchObject({
+        parentProvider: 'trackable',
+        parentModel: 'trackable/auto',
+      });
+      expect(existsSync(join(cwd, '.pi'))).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  it('removes marked legacy overrides but preserves user-authored agent files', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'orc-legacy-cwd-'));
+    const agentsDir = join(cwd, '.pi', 'agents');
+    try {
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(join(agentsDir, 'marked.md'), '---\nmanaged_by: orchestrel\n---\n');
+      await writeFile(join(agentsDir, 'unmarked.md'), '---\nmodel: user/model\n---\n');
+      await runOrcSpawn(['trackable', 'auto'], cwd);
+
+      expect(existsSync(join(agentsDir, 'marked.md'))).toBe(false);
+      expect(existsSync(join(agentsDir, 'unmarked.md'))).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   }, 30000);
 
   async function runOrc(
@@ -151,5 +192,27 @@ providers:
       },
     );
     return JSON.parse(stdout) as Record<string, unknown>;
+  }
+
+  async function runOrcSpawn(cliArgs: string[], cwd: string): Promise<{
+    args: string[];
+    env: { ORCHESTREL_SUBAGENT_POLICY: string };
+  }> {
+    await execFileAsync(tsxPath, [resolve(repoRoot, 'bin/orc'), '--config', configPath, ...cliArgs], {
+      cwd,
+      env: {
+        ...process.env,
+        ORC_CONFIG: undefined,
+        ORC_PROVIDER: undefined,
+        ORC_MODEL: undefined,
+        ORC_PI_PATH: piPath,
+        ORC_STUB_OUTPUT: stubOutputPath,
+        PI_CODING_AGENT_DIR: join(dir, 'pi-agent'),
+      },
+    });
+    return JSON.parse(await readFile(stubOutputPath, 'utf8')) as {
+      args: string[];
+      env: { ORCHESTREL_SUBAGENT_POLICY: string };
+    };
   }
 });
