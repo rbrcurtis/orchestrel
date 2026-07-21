@@ -8,7 +8,8 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
-import { buildModelAliasEnv, parseConfig } from '../src/shared/config.ts';
+import { parseConfig } from '../src/shared/config.ts';
+import { syncAgentOverrides } from '../src/orcd/subagent-agents.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '..');
@@ -88,7 +89,6 @@ function main() {
   const modelSpec = `${resolved.providerId}/${model.modelID}`;
   const piArgs = buildPiArgs(modelSpec, passthroughArgs, prompt);
 
-  const env = buildPiEnv(provider);
   if (args['--print-env']) {
     process.stdout.write(
       JSON.stringify(
@@ -97,7 +97,6 @@ function main() {
           modelAlias: resolved.modelAlias,
           modelID: model.modelID,
           ...(resolved.card ? { card: resolved.card } : {}),
-          env,
           passthroughArgs,
           piArgs,
           piPath: resolvePiPath(),
@@ -116,6 +115,12 @@ function main() {
   // materialize custom providers to models.json or pi rejects the model ID.
   syncModelsJson(config);
 
+  // Pin pi-subagents agent tiers to this provider's models (same mechanism
+  // orcd uses): pi-subagents' embedded Explore pins anthropic/claude-haiku-4-5
+  // and there is no env-var tier system — only per-cwd .pi/agents/*.md
+  // frontmatter models steer subagents off the embedded defaults.
+  syncAgentOverrides(process.cwd(), resolved.providerId, provider);
+
   const piPath = requirePiPath();
   const child = spawn(
     piPath,
@@ -124,7 +129,6 @@ function main() {
       stdio: 'inherit',
       env: {
         ...process.env,
-        ...env,
         // pi upgrades are deliberate (0.80.10+ breaks orcd's SDK imports), so
         // suppress pi's new-version nag instead of acting on it
         PI_SKIP_VERSION_CHECK: '1',
@@ -425,13 +429,6 @@ function syncModelsJson(config) {
   const tmp = `${modelsPath}.orc-tmp`;
   writeFileSync(tmp, JSON.stringify({ providers }, null, 2) + '\n', { mode: 0o600 });
   renameSync(tmp, modelsPath);
-}
-
-function buildPiEnv(provider) {
-  // Provider baseUrl/auth reach pi via ~/.pi/agent/models.json (see syncModelsJson),
-  // not env — pi ignores PI_BASE_URL/PI_API_KEY/PI_AUTH_TOKEN. The only env pi
-  // consumes here is the ANTHROPIC_DEFAULT_*_MODEL alias map for subagent tiers.
-  return buildModelAliasEnv(provider.models);
 }
 
 function buildPiArgs(modelId, passthroughArgs, prompt) {

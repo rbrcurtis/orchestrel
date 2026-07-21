@@ -121,16 +121,14 @@ providers:
     expect(output.piArgs).toEqual(['--model', 'trackable/auto']);
   }, 30000);
 
-  // Note: provider baseUrl/apiKey/authToken now reach pi via ~/.pi/agent/models.json
-  // (syncModelsJson), NOT via env vars — pi ignores PI_API_KEY/ANTHROPIC_API_KEY here.
-  // The only env bin/orc emits is the ANTHROPIC_DEFAULT_*_MODEL alias map.
-  it('emits only the model-alias env map, not provider API keys', async () => {
+  it('passes no provider secrets or model-alias env vars to pi', async () => {
     const anthropicOutput = await runOrc(['anthropic', 'sonnet'], {});
-    const env = readEnv(anthropicOutput);
 
-    expect(env.PI_API_KEY).toBeUndefined();
-    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
-    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('claude-sonnet');
+    // Provider config reaches pi via ~/.pi/agent/models.json (syncModelsJson)
+    // and subagent tiers via per-cwd .pi/agents/*.md (syncAgentOverrides) —
+    // nothing is passed through the environment. --print-env exits before
+    // either sync runs, so this only verifies the spawn contract.
+    expect(anthropicOutput.env).toBeUndefined();
   }, 30000);
 
   async function runOrc(
@@ -153,12 +151,5 @@ providers:
       },
     );
     return JSON.parse(stdout) as Record<string, unknown>;
-  }
-
-  function readEnv(output: Record<string, unknown>): Record<string, string> {
-    if (!output.env || typeof output.env !== 'object' || Array.isArray(output.env)) {
-      throw new Error('print-env output is missing env object');
-    }
-    return output.env as Record<string, string>;
   }
 });
