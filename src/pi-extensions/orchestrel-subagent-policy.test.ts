@@ -81,10 +81,12 @@ describe('Orchestrel subagent policy extension', () => {
     }).decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
   });
 
-  it('rejects unqualified and cross-provider parent model identities', () => {
-    expect(() => validateRequest({
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'auto',
-    })).toThrow('subagent model policy request parentModel must be a fully qualified provider/modelID');
+  it('rejects malformed and cross-provider parent model identities', () => {
+    for (const parentModel of ['auto', 'trackable/', 'trackable/claude/sonnet', 'trackable/claude sonnet']) {
+      expect(() => validateRequest({
+        agentType: 'Explore', parentProvider: 'trackable', parentModel,
+      })).toThrow('subagent model policy request parentModel must be a fully qualified provider/modelID');
+    }
     expect(() => validateRequest({
       agentType: 'Explore', parentProvider: 'trackable', parentModel: 'anthropic/claude-sonnet-4-6',
     })).toThrow('subagent model policy request parentModel provider must equal parentProvider "trackable"');
