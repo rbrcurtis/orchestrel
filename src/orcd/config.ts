@@ -1,6 +1,6 @@
 import type { MemoryUpsertConfig, ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
 import { loadConfig, parseConfig as parseSharedConfig, resolveEnvVars } from '../shared/config';
-import type { ProviderAliases } from './subagent-agents';
+import type { ProviderAliases } from '../shared/subagent-policy';
 
 export interface ProviderConfig {
   type: ProviderType;

@@ -2,6 +2,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { parse as parseYaml } from 'yaml';
+import type { ProviderAliases } from './subagent-policy';
 
 export interface ModelDef {
   label: string;
@@ -21,15 +22,9 @@ export interface ProviderDef {
   region?: string;
   profile?: string;
   models: Record<string, ModelDef>;
-  // pi-subagents subagent model tiers: resolved from these aliases (else
-  // positionally from models) into per-cwd .pi/agents/*.md frontmatter by
-  // src/orcd/subagent-agents.ts. There is no env-var tier system in pi (the
-  // old ANTHROPIC_DEFAULT_*_MODEL map was a Claude Agent SDK mechanism).
-  aliases?: {
-    subagent?: string;
-    lightweight?: string;
-  };
-  /** Granular pi-subagents agent → model key overrides (e.g. `Explore: haiku`). */
+  /** Runtime subagent model tiers, resolved by the Orchestrel policy extension. */
+  aliases?: ProviderAliases;
+  /** Granular runtime subagent agent → model key overrides (e.g. `Explore: haiku`). */
   agents?: Record<string, string>;
 }
 
