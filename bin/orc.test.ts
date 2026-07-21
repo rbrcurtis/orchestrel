@@ -144,9 +144,11 @@ providers:
         cwd: repoRoot,
         env: {
           ...process.env,
-          ...env,
           ORC_CONFIG: undefined,
+          ORC_PROVIDER: undefined,
+          ORC_MODEL: undefined,
           ORC_PI_PATH: env.ORC_PI_PATH ?? piPath,
+          ...env,
         },
       },
     );

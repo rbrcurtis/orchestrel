@@ -47,6 +47,46 @@ export interface OrchestrelConfig {
   memoryUpsert?: MemoryUpsertConfig;
 }
 
+/**
+ * Map provider models to SDK model aliases (opus/sonnet/haiku).
+ *
+ * The Agent SDK uses these aliases when spawning subagents — e.g. Explore agents
+ * use the haiku alias for lightweight work. The session's own model is passed
+ * explicitly via `model:` so opus/primary is just a fallback for the env var.
+ *
+ * If `aliases` is provided, resolves semantic names (subagent/lightweight) to
+ * model key modelIDs. Opus always falls back to the first model in the map.
+ * If `aliases` is absent, falls back to positional assignment from the models map.
+ *
+ * CAVEAT: On single-model servers (like oMLX on a single Mac), having different
+ * models across tiers causes model thrashing — set all aliases to the same key.
+ */
+export function buildModelAliasEnv(
+  models: Record<string, ModelDef>,
+  aliases?: { subagent?: string; lightweight?: string },
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  const modelIds = Object.values(models).map((m) => m.modelID);
+  const [first, second = first, third = second] = modelIds;
+  if (!first) return env;
+
+  if (aliases) {
+    const resolveKey = (key: string | undefined): string => {
+      return (key ? models[key]?.modelID : undefined) ?? first;
+    };
+    env.ANTHROPIC_DEFAULT_OPUS_MODEL = first;
+    env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolveKey(aliases.subagent);
+    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = resolveKey(aliases.lightweight);
+  } else {
+    // Positional fallback: 1st→opus, 2nd→sonnet, 3rd→haiku
+    env.ANTHROPIC_DEFAULT_OPUS_MODEL = first;
+    env.ANTHROPIC_DEFAULT_SONNET_MODEL = second;
+    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = third;
+  }
+
+  return env;
+}
+
 /** Replace `${VAR}` with values from env. Unset vars become empty string. */
 export function resolveEnvVars(str: string, env: Record<string, string | undefined>): string {
   return str.replace(/\$\{(\w+)\}/g, (_, name: string) => env[name] ?? '');
