@@ -29,6 +29,13 @@ function validateRequest(raw: unknown): SubagentModelPolicyRequest {
   if (typeof req.parentModel !== 'string' || !req.parentModel) {
     throw new Error('subagent model policy request parentModel must be a non-empty string');
   }
+  const slash = req.parentModel.indexOf('/');
+  if (slash <= 0 || slash === req.parentModel.length - 1) {
+    throw new Error('subagent model policy request parentModel must be a fully qualified provider/modelID');
+  }
+  if (req.parentModel.slice(0, slash) !== req.parentProvider) {
+    throw new Error(`subagent model policy request parentModel provider must equal parentProvider "${req.parentProvider}"`);
+  }
   if (req.requestedModel !== undefined && (typeof req.requestedModel !== 'string' || !req.requestedModel)) {
     throw new Error('subagent model policy request requestedModel must be a non-empty string');
   }

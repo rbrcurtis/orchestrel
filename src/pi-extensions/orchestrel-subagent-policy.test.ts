@@ -42,6 +42,19 @@ function request(bus: EventBus, value: Omit<Request, 'decision'>): Request {
   return req;
 }
 
+function validateRequest(value: Omit<Request, 'decision'>): void {
+  let handler: ((raw: unknown) => void) | undefined;
+  const pi = {
+    events: { on: (_channel: string, listener: (raw: unknown) => void) => {
+      handler = listener;
+      return () => {};
+    } },
+    on: () => {},
+  } as unknown as ExtensionAPI;
+  createOrchestrelSubagentPolicyExtension(trackablePolicy)(pi);
+  handler!(value);
+}
+
 describe('Orchestrel subagent policy extension', () => {
   it('returns mapped models and lets explicit same-provider models win', () => {
     const bus = createEventBus();
@@ -57,6 +70,24 @@ describe('Orchestrel subagent policy extension', () => {
       parentProvider: 'trackable', parentModel: 'trackable/auto',
     });
     expect(explicit.decision).toEqual({ model: 'trackable/auto', source: 'explicit' });
+  });
+
+  it('accepts a dynamically changed parent model on the policy provider', () => {
+    const bus = createEventBus();
+    loadPolicyFactory(bus, trackablePolicy);
+
+    expect(request(bus, {
+      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/claude-sonnet-4-6',
+    }).decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
+  });
+
+  it('rejects unqualified and cross-provider parent model identities', () => {
+    expect(() => validateRequest({
+      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'auto',
+    })).toThrow('subagent model policy request parentModel must be a fully qualified provider/modelID');
+    expect(() => validateRequest({
+      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'anthropic/claude-sonnet-4-6',
+    })).toThrow('subagent model policy request parentModel provider must equal parentProvider "trackable"');
   });
 
   it('reports the selected model to an optional decision callback', () => {
