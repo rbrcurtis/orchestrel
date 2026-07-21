@@ -113,7 +113,7 @@ export class CardStore {
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
     summarizeThreshold?: number;
     worktreeBranch?: string | null;
-    sourceBranch?: 'main' | 'dev' | null;
+    sourceBranch?: 'HEAD' | 'main' | 'dev' | null;
   }): Promise<Card> {
     const card = (await this.ws().emit('card:create', {
       title: data.title,
@@ -175,7 +175,7 @@ export class CardStore {
     summarizeThreshold?: number;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
     worktreeBranch?: string | null;
-    sourceBranch?: 'main' | 'dev' | null;
+    sourceBranch?: 'HEAD' | 'main' | 'dev' | null;
   }): Promise<Card> {
     const existing = this.cards.get(data.id);
     if (existing) this.cards.set(data.id, { ...existing, ...data } as Card);

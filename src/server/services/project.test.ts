@@ -22,7 +22,7 @@ vi.mock('../init-state', () => ({
       const { join } = await import('path')
       // Tests use arbitrary project paths; treat them as existing and only
       // reflect real .git presence so isGitRepo detection stays meaningful.
-      return { exists: true, isGitRepo: existsSync(join(path, '.git')), defaultBranch: null }
+      return { exists: true, isGitRepo: existsSync(join(path, '.git')), defaultBranch: 'main' }
     },
   }),
 }))
@@ -75,6 +75,21 @@ describe('ProjectService', () => {
 
     const found = await Project.findOneByOrFail({ id: p.id })
     expect(found.archived).toBe(true)
+  })
+
+  it('updateProject persists HEAD as the default branch', async () => {
+    const { mkdtemp, mkdir } = await import('fs/promises')
+    const { projectService } = await import('./project')
+
+    const path = await mkdtemp(join(tmpdir(), 'orchestrel-head-project-'))
+    await mkdir(join(path, '.git'))
+    const project = await projectService.createProject({ name: 'Use HEAD', path })
+
+    const updated = await projectService.updateProject(project.id, { path, defaultBranch: 'HEAD' })
+
+    expect(updated.defaultBranch).toBe('HEAD')
+    const found = await Project.findOneByOrFail({ id: project.id })
+    expect(found.defaultBranch).toBe('HEAD')
   })
 
   it('persists defaultSandbox for git projects', async () => {

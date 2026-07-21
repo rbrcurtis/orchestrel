@@ -217,14 +217,14 @@ function CardFields({
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
           <Select
-            value={draft.sourceBranch ?? selectedProject.defaultBranch ?? '__head__'}
-            onValueChange={(val) => patch({ sourceBranch: val === '__head__' ? null : val })}
+            value={draft.sourceBranch ?? selectedProject.defaultBranch ?? 'HEAD'}
+            onValueChange={(val) => patch({ sourceBranch: val })}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__head__">HEAD</SelectItem>
+              <SelectItem value="HEAD">HEAD</SelectItem>
               <SelectItem value="main">main</SelectItem>
               <SelectItem value="dev">dev</SelectItem>
             </SelectContent>
@@ -463,7 +463,7 @@ export const CardDetail = observer(function CardDetail({
       description: merged.description,
       projectId: merged.projectId,
       worktreeBranch: merged.worktreeBranch,
-      sourceBranch: merged.sourceBranch as 'main' | 'dev' | null | undefined,
+      sourceBranch: merged.sourceBranch as 'HEAD' | 'main' | 'dev' | null | undefined,
       provider: merged.provider,
       model: merged.model,
       thinkingLevel: merged.thinkingLevel as 'off' | 'low' | 'medium' | 'high' | 'adaptive',
@@ -794,7 +794,7 @@ export const NewCardDetail = observer(function NewCardDetail({
         column: selectedColumn as Column,
         projectId: draft.projectId,
         worktreeBranch: draft.useWorktree ? slugify(draft.title) || null : null,
-        sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
+        sourceBranch: draft.sourceBranch as 'HEAD' | 'main' | 'dev' | null | undefined,
         provider: draft.provider,
         model: draft.model,
         thinkingLevel: draft.thinkingLevel as 'off' | 'low' | 'medium' | 'high' | 'adaptive',

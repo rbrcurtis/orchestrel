@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 
 function createWorktree(repoPath: string, worktreePath: string, branch: string, sourceBranch?: string): void {
   let resolvedSource = sourceBranch;
-  if (sourceBranch && !sourceBranch.includes('/')) {
+  if (sourceBranch && sourceBranch !== 'HEAD' && !sourceBranch.includes('/')) {
     // Only fetch from origin if it exists — local-only repos have no remote to fetch from.
     const hasOrigin = execFileSync('git', ['remote'], { cwd: repoPath, stdio: 'pipe' }).toString().split('\n').includes('origin');
     if (hasOrigin) {

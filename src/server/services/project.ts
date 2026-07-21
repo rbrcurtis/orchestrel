@@ -77,7 +77,7 @@ class ProjectService {
     if (data.path) {
       const v = await validateOnNode(data.nodeName ?? proj.nodeName, data.path);
       data.isGitRepo = v.isGitRepo;
-      if (v.isGitRepo && data.defaultBranch == null && v.defaultBranch) data.defaultBranch = v.defaultBranch;
+      if (v.isGitRepo && data.defaultBranch === undefined && v.defaultBranch) data.defaultBranch = v.defaultBranch;
     }
 
     const nextIsGitRepo = data.isGitRepo ?? proj.isGitRepo;

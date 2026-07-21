@@ -40,7 +40,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [path, setPath] = useState(project?.path ?? '');
   const [setupCommands, setSetupCommands] = useState(project?.setupCommands ?? '');
   const isGitRepo = project?.isGitRepo ?? false;
-  const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? '');
+  const [defaultBranch, setDefaultBranch] = useState(project?.defaultBranch ?? 'HEAD');
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
   const [color, setColor] = useState(project?.color ?? '#00f0ff');
   const [defaultModel, setDefaultModel] = useState(project?.defaultModel ?? 'sonnet');
@@ -88,7 +88,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       name: name.trim(),
       path: path.trim(),
       setupCommands: setupCommands || undefined,
-      defaultBranch: (isGitRepo && defaultBranch ? defaultBranch : null) as 'main' | 'dev' | null,
+      defaultBranch: (isGitRepo ? defaultBranch : null) as 'HEAD' | 'main' | 'dev' | null,
       defaultWorktree: isGitRepo ? defaultWorktree : undefined,
       color,
       defaultModel,
@@ -165,14 +165,14 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Default Branch</label>
                   <Select
-                    value={defaultBranch || '__head__'}
-                    onValueChange={(val) => setDefaultBranch(val === '__head__' ? '' : val)}
+                    value={defaultBranch}
+                    onValueChange={setDefaultBranch}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select branch..." />
                     </SelectTrigger>
                     <SelectContent position="popper" sideOffset={4}>
-                      <SelectItem value="__head__">HEAD</SelectItem>
+                      <SelectItem value="HEAD">HEAD</SelectItem>
                       <SelectItem value="main">main</SelectItem>
                       <SelectItem value="dev">dev</SelectItem>
                     </SelectContent>

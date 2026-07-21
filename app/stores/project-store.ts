@@ -82,7 +82,7 @@ export class ProjectStore {
     name: string;
     path: string;
     setupCommands?: string | null;
-    defaultBranch?: 'main' | 'dev' | null;
+    defaultBranch?: 'HEAD' | 'main' | 'dev' | null;
     defaultWorktree?: boolean;
     defaultModel?: string;
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
@@ -107,7 +107,7 @@ export class ProjectStore {
     name?: string;
     path?: string;
     setupCommands?: string | null;
-    defaultBranch?: 'main' | 'dev' | null;
+    defaultBranch?: 'HEAD' | 'main' | 'dev' | null;
     defaultWorktree?: boolean;
     defaultModel?: string;
     defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
