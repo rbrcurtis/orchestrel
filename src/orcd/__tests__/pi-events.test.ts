@@ -183,27 +183,103 @@ describe('subagent tool_execution mapper', () => {
     ).toEqual({ type: 'task_started', task_id: 'call-1', description: 'Subagent' });
   });
 
-  it('maps Agent updates to task_progress preferring live activity over status', () => {
+  it('leaves background Agent lifecycle to the async tracker real agent id', () => {
+    const args = { description: 'Explore repo', run_in_background: true };
     expect(
-      mapSubagentExecEvent({ type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'call-1', partialResult: { activity: 'finding files', status: 'running' } }),
-    ).toEqual({ type: 'task_progress', task_id: 'call-1', data: 'finding files' });
+      mapSubagentExecEvent({ type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'call-1', args }),
+    ).toBeNull();
     expect(
-      mapSubagentExecEvent({ type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'call-1', partialResult: { status: 'running' } }),
+      mapSubagentExecEvent({
+        type: 'tool_execution_update',
+        toolName: 'Agent',
+        toolCallId: 'call-1',
+        partialResult: { details: { status: 'background' } },
+      }),
+    ).toBeNull();
+    expect(
+      mapSubagentExecEvent({
+        type: 'tool_execution_end',
+        toolName: 'Agent',
+        toolCallId: 'call-1',
+        result: { details: { agentId: 'agent-1', status: 'background' } },
+      }),
+    ).toBeNull();
+  });
+
+  it('maps real pi-subagents AgentDetails updates into useful progress', () => {
+    expect(
+      mapSubagentExecEvent({
+        type: 'tool_execution_update',
+        toolName: 'Agent',
+        toolCallId: 'call-1',
+        partialResult: {
+          content: [{ type: 'text', text: '52 tool uses...' }],
+          details: {
+            modelName: 'gpt-5.6 terra',
+            toolUses: 52,
+            tokens: '1.5M token',
+            turnCount: 42,
+            maxTurns: 50,
+            status: 'running',
+            activity: 'thinking…',
+          },
+        },
+      }),
+    ).toEqual({
+      type: 'task_progress',
+      task_id: 'call-1',
+      data: 'thinking… · 52 tools · 1.5M token · turn 42/50 · gpt-5.6 terra',
+    });
+  });
+
+  it('falls back to the nested AgentDetails status when no activity is present', () => {
+    expect(
+      mapSubagentExecEvent({
+        type: 'tool_execution_update',
+        toolName: 'Agent',
+        toolCallId: 'call-1',
+        partialResult: { details: { status: 'running' } },
+      }),
     ).toEqual({ type: 'task_progress', task_id: 'call-1', data: 'running' });
   });
 
-  it('returns null for an Agent update with no activity or status (caller drops it)', () => {
+  it('returns null for an Agent update with no details (caller drops it)', () => {
     expect(
       mapSubagentExecEvent({ type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'call-1', partialResult: {} }),
     ).toBeNull();
   });
 
-  it('maps Agent end to task_notification, reflecting the error flag', () => {
+  it('maps Agent end status from structured details instead of the wrapper error flag', () => {
     expect(
-      mapSubagentExecEvent({ type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'call-1', isError: false }),
-    ).toEqual({ type: 'task_notification', task_id: 'call-1', status: 'completed' });
+      mapSubagentExecEvent({
+        type: 'tool_execution_end',
+        toolName: 'Agent',
+        toolCallId: 'call-1',
+        isError: false,
+        result: { details: { status: 'error', error: 'Provider rejected request' } },
+      }),
+    ).toEqual({
+      type: 'task_notification',
+      task_id: 'call-1',
+      status: 'failed',
+      result: 'Provider rejected request',
+    });
     expect(
-      mapSubagentExecEvent({ type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'call-1', isError: true }),
-    ).toEqual({ type: 'task_notification', task_id: 'call-1', status: 'failed' });
+      mapSubagentExecEvent({
+        type: 'tool_execution_end',
+        toolName: 'Agent',
+        toolCallId: 'call-2',
+        isError: false,
+        result: {
+          content: [{ type: 'text', text: 'Agent completed in 4.9s (1 tool use).\n\nFound greeting.txt' }],
+          details: { status: 'completed' },
+        },
+      }),
+    ).toEqual({
+      type: 'task_notification',
+      task_id: 'call-2',
+      status: 'completed',
+      result: 'Agent completed in 4.9s (1 tool use).\n\nFound greeting.txt',
+    });
   });
 });

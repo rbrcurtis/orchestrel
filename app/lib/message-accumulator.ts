@@ -462,6 +462,7 @@ export class MessageAccumulator {
     const sub = this.subagents.get(msg.task_id);
     if (sub) {
       sub.status = msg.status;
+      if (msg.result) sub.lastProgress = summarizeToolResult(msg.result);
       setTimeout(() => this.subagents.delete(msg.task_id), 2000);
     }
   }

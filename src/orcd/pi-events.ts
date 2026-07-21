@@ -18,12 +18,62 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * AgentDetails (carried on tool_execution_update.partialResult). Prefer the live
  * `activity` ("finding files", "running command", …); fall back to status.
  */
+function subagentDetails(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const details = value.details;
+  return isRecord(details) ? details : value;
+}
+
 function subagentProgressText(partial: unknown): string {
-  if (!isRecord(partial)) return '';
-  const activity = typeof partial.activity === 'string' ? partial.activity.trim() : '';
-  if (activity) return activity;
-  const status = typeof partial.status === 'string' ? partial.status.trim() : '';
-  return status;
+  const details = subagentDetails(partial);
+  if (!details) return '';
+
+  const activity = typeof details.activity === 'string' ? details.activity.trim() : '';
+  const status = typeof details.status === 'string' ? details.status.trim() : '';
+  const parts = [activity || status];
+
+  const toolUses = details.toolUses;
+  if (typeof toolUses === 'number' && toolUses > 0) parts.push(`${toolUses} ${toolUses === 1 ? 'tool' : 'tools'}`);
+
+  const tokens = typeof details.tokens === 'string' ? details.tokens.trim() : '';
+  if (tokens) parts.push(tokens);
+
+  const turnCount = details.turnCount;
+  const maxTurns = details.maxTurns;
+  if (typeof turnCount === 'number' && turnCount > 0) {
+    parts.push(`turn ${turnCount}${typeof maxTurns === 'number' && maxTurns > 0 ? `/${maxTurns}` : ''}`);
+  }
+
+  const modelName = typeof details.modelName === 'string' ? details.modelName.trim() : '';
+  if (modelName) parts.push(modelName);
+
+  return parts.filter(Boolean).join(' · ');
+}
+
+function resultText(result: Record<string, unknown> | null): string | undefined {
+  if (!result || !Array.isArray(result.content)) return undefined;
+  const text = result.content
+    .map((block) => isRecord(block) && typeof block.text === 'string' ? block.text : '')
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  return text || undefined;
+}
+
+function subagentCompletion(event: Record<string, unknown>): TaskNotificationEvent {
+  const result = isRecord(event.result) ? event.result : null;
+  const details = subagentDetails(result);
+  const detailStatus = typeof details?.status === 'string' ? details.status : '';
+  const failed = event.isError === true || ['error', 'stopped', 'aborted'].includes(detailStatus);
+  const error = typeof details?.error === 'string' && details.error.trim() ? details.error.trim() : undefined;
+  const summary = error ?? resultText(result);
+
+  return {
+    type: 'task_notification',
+    task_id: event.toolCallId as string,
+    status: failed ? 'failed' : 'completed',
+    ...(summary ? { result: summary } : {}),
+  };
 }
 
 /**
@@ -43,9 +93,15 @@ export function mapSubagentExecEvent(
   if (event.toolName !== SUBAGENT_TOOL_NAME) return null;
   const taskId = event.toolCallId;
   if (typeof taskId !== 'string') return null;
+  const args = isRecord(event.args) ? event.args : {};
+  const details = event.type === 'tool_execution_update'
+    ? subagentDetails(event.partialResult)
+    : event.type === 'tool_execution_end' && isRecord(event.result)
+      ? subagentDetails(event.result)
+      : null;
+  if (args.run_in_background === true || details?.status === 'background' || details?.status === 'queued') return null;
 
   if (event.type === 'tool_execution_start') {
-    const args = isRecord(event.args) ? event.args : {};
     const description =
       typeof args.description === 'string' && args.description.trim() ? args.description.trim() : 'Subagent';
     return { type: 'task_started', task_id: taskId, description };
@@ -57,9 +113,7 @@ export function mapSubagentExecEvent(
     return { type: 'task_progress', task_id: taskId, data };
   }
 
-  if (event.type === 'tool_execution_end') {
-    return { type: 'task_notification', task_id: taskId, status: event.isError === true ? 'failed' : 'completed' };
-  }
+  if (event.type === 'tool_execution_end') return subagentCompletion(event);
 
   return null;
 }

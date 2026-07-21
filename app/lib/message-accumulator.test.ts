@@ -139,6 +139,29 @@ describe('MessageAccumulator blocking subagents', () => {
     expect(acc.subagents.has('call_agent')).toBe(false);
   });
 
+  it('shows the final Pi subagent result when task notification completes', () => {
+    const acc = new MessageAccumulator();
+
+    acc.handleMessage({
+      type: 'task_started',
+      task_id: 'call_agent',
+      description: 'Review implementation',
+    } as SdkMessage);
+    acc.handleMessage({
+      type: 'task_notification',
+      task_id: 'call_agent',
+      status: 'failed',
+      result: 'Provider rejected request',
+    } as SdkMessage);
+
+    expect(acc.subagents.get('call_agent')).toEqual({
+      taskId: 'call_agent',
+      description: 'Review implementation',
+      status: 'failed',
+      lastProgress: 'Provider rejected request',
+    });
+  });
+
   it('does not complete a cleared blocking subagent from stale tool ids', () => {
     const acc = new MessageAccumulator();
 
