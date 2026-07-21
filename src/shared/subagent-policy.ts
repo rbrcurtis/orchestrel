@@ -24,7 +24,17 @@ const DEFAULT_TIERS = {
   Explore: 'lightweight',
 } as const;
 
-const MANAGED_MARKER = 'managed_by: orchestrel';
+function isManagedAgentFile(contents: string): boolean {
+  const lines = contents.split(/\r?\n/);
+  if (lines[0] !== '---') return false;
+
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === '---') return false;
+    if (/^managed_by:\s*orchestrel\s*$/.test(lines[i])) return true;
+  }
+
+  return false;
+}
 
 function modelForTier(
   tier: keyof ProviderAliases,
@@ -34,9 +44,8 @@ function modelForTier(
   const first = models[0];
   if (!first) return undefined;
 
-  if (provider.aliases) {
-    const key = provider.aliases[tier];
-    if (!key) return first.modelID;
+  const key = provider.aliases?.[tier];
+  if (key) {
     const model = provider.models[key];
     if (!model) throw new Error(`unknown model key "${key}" for ${tier} tier`);
     return model.modelID;
@@ -81,6 +90,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function validateQualifiedModel(value: unknown, parentProvider: string, field: string): string {
+  if (typeof value !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(value)) {
+    throw new Error(`${field} must be a fully qualified provider/modelID`);
+  }
+  const [provider] = value.split('/');
+  if (provider !== parentProvider) {
+    throw new Error(`${field} provider must equal parentProvider "${parentProvider}"`);
+  }
+  return value;
+}
+
 export function parseSubagentPolicy(value: string): OrchestrelSubagentPolicy {
   let parsed: unknown;
   try {
@@ -92,23 +112,28 @@ export function parseSubagentPolicy(value: string): OrchestrelSubagentPolicy {
   if (typeof parsed.parentProvider !== 'string' || !parsed.parentProvider) {
     throw new Error('subagent policy parentProvider must be a non-empty string');
   }
-  if (typeof parsed.parentModel !== 'string' || !parsed.parentModel) {
-    throw new Error('subagent policy parentModel must be a non-empty string');
-  }
+  const parentModel = validateQualifiedModel(
+    parsed.parentModel,
+    parsed.parentProvider,
+    'subagent policy parentModel',
+  );
   if (parsed.allowCrossProvider !== false) throw new Error('allowCrossProvider must be false');
   if (!isRecord(parsed.agents)) throw new Error('subagent policy agents must be an object');
 
   const agents: Record<string, AgentPolicy> = {};
   for (const [name, agent] of Object.entries(parsed.agents)) {
-    if (!isRecord(agent) || typeof agent.model !== 'string' || !agent.model || typeof agent.source !== 'string' || !agent.source) {
+    if (!isRecord(agent) || typeof agent.source !== 'string' || !agent.source) {
       throw new Error(`subagent policy agent "${name}" must have non-empty model and source strings`);
     }
-    agents[name] = { model: agent.model, source: agent.source };
+    agents[name] = {
+      model: validateQualifiedModel(agent.model, parsed.parentProvider, `subagent policy agent "${name}" model`),
+      source: agent.source,
+    };
   }
 
   return {
     parentProvider: parsed.parentProvider,
-    parentModel: parsed.parentModel,
+    parentModel,
     agents,
     allowCrossProvider: false,
   };
@@ -124,7 +149,7 @@ export function cleanupManagedSubagentFiles(cwd: string): void {
     for (const file of readdirSync(agentsDir)) {
       if (!file.endsWith('.md')) continue;
       const path = join(agentsDir, file);
-      if (readFileSync(path, 'utf-8').includes(MANAGED_MARKER)) rmSync(path);
+      if (isManagedAgentFile(readFileSync(path, 'utf-8'))) rmSync(path);
     }
 
     if (readdirSync(agentsDir).length !== 0) return;

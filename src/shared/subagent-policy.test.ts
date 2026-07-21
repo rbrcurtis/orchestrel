@@ -47,6 +47,20 @@ describe('buildSubagentPolicy', () => {
     });
   });
 
+  it('uses positional fallback for a tier with no configured alias', () => {
+    expect(buildSubagentPolicy('kimi', 'main-id', {
+      models: {
+        main: model('main-id'),
+        worker: model('worker-id'),
+        small: model('small-id'),
+      },
+      aliases: { subagent: 'main' },
+    }).agents).toMatchObject({
+      'general-purpose': { model: 'kimi/main-id', source: 'subagent tier' },
+      Explore: { model: 'kimi/small-id', source: 'lightweight tier' },
+    });
+  });
+
   it('throws for a configured unknown agent model key', () => {
     expect(() => buildSubagentPolicy('trackable', 'auto', {
       models: { main: model('auto') },
@@ -62,6 +76,25 @@ describe('subagent policy serialization', () => {
     expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, allowCrossProvider: true }))).toThrow(
       'allowCrossProvider must be false',
     );
+  });
+
+  it('rejects bare and cross-provider parent and agent models', () => {
+    const policy = buildSubagentPolicy('kimi', 'main-id', { models: { main: model('main-id') } });
+
+    expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, parentModel: 'main-id' }))).toThrow(
+      'subagent policy parentModel must be a fully qualified provider/modelID',
+    );
+    expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, parentModel: 'other/main-id' }))).toThrow(
+      'subagent policy parentModel provider must equal parentProvider "kimi"',
+    );
+    expect(() => parseSubagentPolicy(JSON.stringify({
+      ...policy,
+      agents: { Explore: { model: 'small-id', source: 'test' } },
+    }))).toThrow('subagent policy agent "Explore" model must be a fully qualified provider/modelID');
+    expect(() => parseSubagentPolicy(JSON.stringify({
+      ...policy,
+      agents: { Explore: { model: 'other/small-id', source: 'test' } },
+    }))).toThrow('subagent policy agent "Explore" model provider must equal parentProvider "kimi"');
   });
 });
 
@@ -94,6 +127,17 @@ describe('cleanupManagedSubagentFiles', () => {
     cleanupManagedSubagentFiles(dir);
     expect(existsSync(agents)).toBe(false);
     expect(existsSync(join(dir, '.pi'))).toBe(true);
+  });
+
+  it('keeps an unmarked file whose body mentions the managed marker', () => {
+    const agents = join(dir, '.pi', 'agents');
+    mkdirSync(agents, { recursive: true });
+    const custom = join(agents, 'Custom.md');
+    writeFileSync(custom, '---\ndescription: custom\n---\nThe body mentions managed_by: orchestrel.');
+
+    cleanupManagedSubagentFiles(dir);
+
+    expect(readFileSync(custom, 'utf-8')).toContain('managed_by: orchestrel');
   });
 
   it('does not create .pi in a clean project', () => {
