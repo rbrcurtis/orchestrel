@@ -78,6 +78,16 @@ function toHistoryMessage(message: unknown, sessionId: string, idx: number): unk
     };
   }
 
+  if (message.role === 'compactionSummary') {
+    // Pi splices compactions into the context as role 'compactionSummary' — map to
+    // the same compact_boundary system event the live stream emits.
+    return {
+      ...base,
+      type: 'system',
+      subtype: 'compact_boundary',
+    };
+  }
+
   if (message.role === 'toolResult') {
     return {
       ...base,

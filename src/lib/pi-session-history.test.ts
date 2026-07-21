@@ -114,6 +114,35 @@ describe('getPiSessionMessages', () => {
     await expect(getPiSessionMessages('pi-session-1', '/repo')).resolves.toEqual([]);
   });
 
+  it('maps Pi compactionSummary messages to compact_boundary system entries', async () => {
+    const { getPiSessionMessages } = await import('./pi-session-history');
+    mockBuildSessionContext.mockReturnValue({
+      messages: [
+        { role: 'compactionSummary', summary: 'condensed history', tokensBefore: 150000, timestamp: 4 },
+        { role: 'user', content: 'after compact', timestamp: 5 },
+      ],
+    });
+
+    await expect(getPiSessionMessages('pi-session-1', '/repo')).resolves.toEqual([
+      {
+        type: 'system',
+        subtype: 'compact_boundary',
+        uuid: 'pi-session-1-pi-history-0',
+        session_id: 'pi-session-1',
+        parent_tool_use_id: null,
+        timestamp: 4,
+      },
+      {
+        type: 'user',
+        uuid: 'pi-session-1-pi-history-1',
+        session_id: 'pi-session-1',
+        parent_tool_use_id: null,
+        timestamp: 5,
+        message: { role: 'user', content: 'after compact' },
+      },
+    ]);
+  });
+
   it('emits a system init history entry when Pi context has model metadata', async () => {
     const { getPiSessionMessages } = await import('./pi-session-history');
     mockBuildSessionContext.mockReturnValue({
