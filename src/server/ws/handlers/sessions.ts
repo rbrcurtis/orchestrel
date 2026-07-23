@@ -1,9 +1,9 @@
 import type { AckResponse } from '../../../shared/ws-protocol';
+import { resolveWorkDir } from '../../../shared/worktree';
 import type { AppSocket } from '../types';
 import { busRoomBridge } from '../subscriptions';
 import { Card } from '../../models/Card';
 import { Project } from '../../models/Project';
-import { resolveWorkDir } from '../../../shared/worktree';
 import { getPiSessionMessages } from '../../../lib/pi-session-history';
 
 export async function handleSessionLoad(
@@ -26,7 +26,7 @@ export async function handleSessionLoad(
     if (card?.sessionId && card.projectId) {
       const proj = await Project.findOneBy({ id: card.projectId });
       if (proj) {
-        const cwd = resolveWorkDir(card.worktreeBranch ?? null, proj.path);
+        const cwd = card.sessionCwd ?? resolveWorkDir(card.worktreeBranch, proj.path);
         const initState = await import('../../init-state');
         const client = initState.getClientByNode(card.nodeName);
 

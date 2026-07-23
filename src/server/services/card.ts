@@ -1,4 +1,5 @@
 import { ILike, IsNull } from 'typeorm';
+import path from 'node:path';
 import { Card } from '../models/Card';
 import type { Column } from '../../shared/ws-protocol';
 import { Project } from '../models/Project';
@@ -11,6 +12,46 @@ export interface PageResult {
 }
 
 const PAGE_SIZE = 20;
+
+function textFromContent(content: unknown): string | null {
+  let text = '';
+  if (typeof content === 'string') {
+    text = content.trim();
+  } else if (Array.isArray(content)) {
+    text = content
+      .filter((block): block is Record<string, unknown> => typeof block === 'object' && block !== null)
+      .filter((block) => block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text as string)
+      .join('\n')
+      .trim();
+  }
+  return text || null;
+}
+
+function firstUserMessage(history: unknown[]): string | null {
+  let found: string | null = null;
+  for (const item of history) {
+    if (typeof item !== 'object' || item === null) continue;
+    const message = (item as Record<string, unknown>).message;
+    if (typeof message !== 'object' || message === null) continue;
+    const record = message as Record<string, unknown>;
+    if (record.role !== 'user') continue;
+    found = textFromContent(record.content);
+    if (found) break;
+  }
+  return found;
+}
+
+function fallbackTitle(description: string): string {
+  const words = description
+    .replace(/[`#>*_~()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 3);
+  return words.join(' ') || 'Imported session';
+}
 
 async function ollamaSuggestTitle(description: string): Promise<string> {
   const res = await fetch('http://localhost:11434/api/generate', {
@@ -169,6 +210,77 @@ class CardService {
     const slice = all.slice(startIdx, startIdx + limit);
     const nextCursor = startIdx + limit < all.length ? slice[slice.length - 1]?.id : undefined;
     return { cards: slice, nextCursor, total: all.length };
+  }
+
+  async importSession(opts: { sessionId: string; path: string; nodeName: string }): Promise<Card> {
+    const sessionId = opts.sessionId.trim();
+    if (!sessionId) throw new Error('Session ID is required');
+    if (!opts.path) throw new Error('Project path is required');
+    if (!path.isAbsolute(opts.path)) throw new Error('Import path must be absolute');
+    if (!opts.nodeName.trim()) throw new Error('Node name is required');
+
+    let project = await Project.findOneBy({ path: opts.path, nodeName: opts.nodeName });
+    const initState = await import('../init-state');
+    const client = initState.getClientByNode(opts.nodeName);
+    if (!client || !client.isConnected()) throw new Error(`No connected orcd client for node ${opts.nodeName}`);
+
+    if (!project) {
+      const candidates = await Project.findBy({ nodeName: opts.nodeName });
+      for (const candidate of candidates) {
+        const [supplied, configured] = await Promise.all([
+          client.pathValidate(opts.path),
+          client.pathValidate(candidate.path),
+        ]);
+        if (supplied.isGitRepo && configured.isGitRepo && supplied.gitCommonDir && supplied.gitCommonDir === configured.gitCommonDir) {
+          project = candidate;
+          break;
+        }
+      }
+    }
+    if (!project) throw new Error(`No project configured for path: ${opts.path}`);
+
+    const existing = await Card.findOneBy({ sessionId });
+    if (existing) throw new Error(`Session ${sessionId} is already associated with a card`);
+
+    const history = await client.getHistory(sessionId, opts.path);
+    if (history.length === 0) throw new Error(`No history found for session ${sessionId}`);
+    const description = firstUserMessage(history);
+    if (!description) throw new Error(`Session ${sessionId} has no substantive user message`);
+
+    let title: string;
+    try {
+      title = await ollamaSuggestTitle(description);
+    } catch (err) {
+      console.warn(`[card:import:${sessionId}] title generation failed:`, err);
+      title = '';
+    }
+    title = title.trim() || fallbackTitle(description);
+
+    const duplicate = await Card.findOneBy({ sessionId });
+    if (duplicate) {
+      console.error(`[card:import:${sessionId}] session is already associated with card ${duplicate.id}`);
+      throw new Error(`Session ${sessionId} is already associated with a card`);
+    }
+
+    try {
+      const card = await this.createCard({
+        title,
+        description,
+        projectId: project.id,
+        sessionId,
+        sessionCwd: opts.path === project.path ? null : opts.path,
+        column: 'review',
+        sandbox: project.defaultSandbox,
+      });
+      console.log(`[card:import:${sessionId}] created card ${card.id}`);
+      return card;
+    } catch (err) {
+      console.error(`[card:import:${sessionId}] create failed:`, err);
+      if (err instanceof Error && err.message.includes('UNIQUE constraint failed: cards.session_id')) {
+        throw new Error(`Session ${sessionId} is already associated with a card`);
+      }
+      throw err;
+    }
   }
 
   async generateTitle(cardId: number): Promise<Card> {

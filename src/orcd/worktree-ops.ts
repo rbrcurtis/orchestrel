@@ -65,16 +65,25 @@ export async function prepareWorktree(opts: {
   return { path: wtPath, branch: opts.branch };
 }
 
-export async function validatePath(path: string): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null }> {
-  if (!existsSync(path)) { console.log(`[path_validate] path does not exist: ${path}`); return { exists: false, isGitRepo: false, defaultBranch: null }; }
+export async function validatePath(path: string): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null; gitCommonDir: string | null }> {
+  if (!existsSync(path)) {
+    console.log(`[path_validate] path does not exist: ${path}`);
+    return { exists: false, isGitRepo: false, defaultBranch: null, gitCommonDir: null };
+  }
   const isGitRepo = existsSync(join(path, '.git'));
   let defaultBranch: string | null = null;
+  let gitCommonDir: string | null = null;
   if (isGitRepo) {
     try {
       defaultBranch = execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: path, stdio: 'pipe' }).toString().trim() || null;
     } catch (err) {
       console.log(`[path_validate] could not resolve branch for ${path}:`, err instanceof Error ? err.message : err);
     }
+    try {
+      gitCommonDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: path, stdio: 'pipe' }).toString().trim() || null;
+    } catch (err) {
+      console.log(`[path_validate] could not resolve common git dir for ${path}:`, err instanceof Error ? err.message : err);
+    }
   }
-  return { exists: true, isGitRepo, defaultBranch };
+  return { exists: true, isGitRepo, defaultBranch, gitCommonDir };
 }

@@ -371,18 +371,18 @@ export async function rearmScheduledSessions(client: OrcdClient): Promise<void> 
 
   let warmed = 0;
   for (const card of cards) {
-    if (!card.sessionId || !card.worktreeBranch || !card.projectId) continue;
+    if (!card.sessionId || (!card.sessionCwd && !card.worktreeBranch) || !card.projectId) continue;
     if (client.isActive(card.sessionId)) continue;
     const proj = await Project.findOneBy({ id: card.projectId });
     if (!proj) continue;
-    const wt = resolveWorkDir(card.worktreeBranch, proj.path);
-    if (!hasEnabledScheduledJobs(wt)) continue;
+    const cwd = card.sessionCwd ?? resolveWorkDir(card.worktreeBranch, proj.path);
+    if (!hasEnabledScheduledJobs(cwd)) continue;
 
     try {
       console.log(`[rearm] card ${card.id} has scheduled jobs; warming session ${card.sessionId.slice(0, 8)}`);
       await client.warm({
         sessionId: card.sessionId,
-        cwd: wt,
+        cwd,
         provider: card.provider,
         model: card.model,
         contextWindow: windowForCard(card),

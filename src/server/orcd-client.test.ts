@@ -164,10 +164,10 @@ describe('OrcdClient dispatch ordering', () => {
     };
     internals.socket = { writable: true };
     internals.send = (a) => {
-      internals.dispatch({ type: 'path_validated', requestId: a.requestId, exists: true, isGitRepo: true, defaultBranch: 'main' });
+      internals.dispatch({ type: 'path_validated', requestId: a.requestId, exists: true, isGitRepo: true, defaultBranch: 'main', gitCommonDir: '/repo/.git' });
     };
     const res = await client.pathValidate('/repo');
-    expect(res).toMatchObject({ exists: true, isGitRepo: true, defaultBranch: 'main' });
+    expect(res).toMatchObject({ exists: true, isGitRepo: true, defaultBranch: 'main', gitCommonDir: '/repo/.git' });
   });
 
   it('schedules a reconnect when the initial dial fails', async () => {

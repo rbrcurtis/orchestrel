@@ -295,6 +295,17 @@ export class OrcdServer {
       return;
     }
 
+    // Pi rejects prompts while its blocking manual compactor is mutating the
+    // session. Match the TUI: hold messages submitted during `/compact`, then
+    // start them as soon as compaction finishes.
+    if (this.compactionQueuedMessages.has(session.id)) {
+      const queued = this.compactionQueuedMessages.get(session.id) ?? [];
+      queued.push(action.prompt);
+      this.compactionQueuedMessages.set(session.id, queued);
+      console.log(`[orcd:${session.id.slice(0, 8)}:compact] queued message for after compaction`);
+      return;
+    }
+
     session.sendMessage(action.prompt).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
@@ -491,6 +502,8 @@ export class OrcdServer {
    * emitCompactStarted/Done are idempotent, so if a subscription is somehow
    * active it won't double-emit.
    */
+  private readonly compactionQueuedMessages = new Map<string, string[]>();
+
   private async runFullCompaction(session: OrcdSession): Promise<void> {
     const sid = session.id;
     if (this.compacting.has(sid) || this.pendingApply.has(sid)) {
@@ -498,6 +511,7 @@ export class OrcdServer {
       return;
     }
     this.compacting.add(sid);
+    this.compactionQueuedMessages.set(sid, []);
     session.emitCompactStarted();
     try {
       await session.compact();
@@ -507,6 +521,20 @@ export class OrcdServer {
     } finally {
       session.emitCompactDone();
       this.compacting.delete(sid);
+
+      const queued = this.compactionQueuedMessages.get(sid) ?? [];
+      this.compactionQueuedMessages.delete(sid);
+      if (queued.length > 0) {
+        console.log(`[orcd:${sid.slice(0, 8)}:compact] sending ${queued.length} queued message(s)`);
+        const [first, ...rest] = queued;
+        const run = session.sendMessage(first);
+        // Once the first call marks the session running, Pi natively queues the
+        // rest as follow-ups in submission order.
+        for (const prompt of rest) void session.sendMessage(prompt);
+        void run.finally(() => {
+          console.log(`[orcd] session ${sid.slice(0, 8)} post-compaction follow-up exited (state=${session.state})`);
+        });
+      }
     }
   }
 

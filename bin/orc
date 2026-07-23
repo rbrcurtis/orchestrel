@@ -23,6 +23,7 @@ const DEFAULT_PI_PATH = resolve(REPO_ROOT, 'node_modules', '.bin', 'pi');
 const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
 const ENV_DEFAULT_PROVIDER = 'ORC_PROVIDER';
 const ENV_DEFAULT_MODEL = 'ORC_MODEL';
+const DEFAULT_API_URL = 'http://localhost:6194';
 const LEGACY_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 const SUBAGENT_POLICY_EXTENSION = resolve(REPO_ROOT, 'src/pi-extensions/orchestrel-subagent-policy.ts');
 
@@ -32,6 +33,7 @@ const args = arg(
     '-h': '--help',
     '--config': String,
     '--print-env': Boolean,
+    '--import': String,
     '--prompt': String,
     '-p': '--prompt',
   },
@@ -50,10 +52,12 @@ function usage() {
     '  orc --resume trackable auto          # open the session picker',
     '  orc -p "what time is it?" trackable auto',
     '  orc --print-env trackable auto',
+    '  orc --import abc123                  # import an existing session into this project',
     '',
     'Options:',
     '  --config <path>   Override config.yaml path',
     '  --print-env       Print resolved env/model and exit',
+    '  --import <id>      Import an existing session into a review card',
     '  -p, --prompt      Run a one-shot prompt through Pi',
     '  -h, --help        Show help',
     '',
@@ -63,14 +67,22 @@ function usage() {
   ].join('\n');
 }
 
-function main() {
+async function main() {
   if (args['--help']) {
     process.stdout.write(`${usage()}\n`);
     return;
   }
 
+  const sessionId = args['--import'];
   const configPath = resolveConfigPath(args['--config']);
   const config = loadWrapperConfig(configPath);
+  if (sessionId !== undefined) {
+    if (args._.length > 0 || args['--prompt'] !== undefined || args['--print-env']) {
+      throw new Error('--import cannot be combined with Pi arguments or modes');
+    }
+    await importSession(sessionId, config.name);
+    return;
+  }
   const passthroughArgs = [...args._];
   stripSkipPermissionsFlag(passthroughArgs);
   const resumeTarget = extractResumeTarget(passthroughArgs);
@@ -161,6 +173,31 @@ function main() {
     console.error(`orc: failed to launch pi: ${err.message}`);
     process.exit(1);
   });
+}
+
+async function importSession(sessionId, nodeName) {
+  const id = sessionId.trim();
+  if (!id) throw new Error('--import requires a session ID');
+
+  const baseUrl = (process.env.ORC_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '');
+  const res = await fetch(`${baseUrl}/api/cards/import-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: id, path: process.cwd(), nodeName }),
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = payload && typeof payload === 'object' && 'error' in payload
+      ? String(payload.error)
+      : payload && typeof payload === 'object' && 'message' in payload
+        ? String(payload.message)
+        : `Import failed: ${res.status} ${res.statusText}`;
+    throw new Error(message);
+  }
+  if (!payload || typeof payload !== 'object' || !('id' in payload) || !('title' in payload)) {
+    throw new Error('Import endpoint returned an invalid response');
+  }
+  process.stdout.write(`Imported card ${payload.id}: ${payload.title}\n`);
 }
 
 function resolveConfigPath(override) {
@@ -462,9 +499,7 @@ function requirePiPath() {
   return p;
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   console.error(`orc: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
-}
+});

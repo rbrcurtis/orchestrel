@@ -52,7 +52,7 @@ describe('orcd-protocol requestId', () => {
     const pv: OrcdAction = { action: 'path_validate', requestId: 'p1', path: '/repo' };
     expect(pv.action).toBe('path_validate');
 
-    const pvr: OrcdMessage = { type: 'path_validated', requestId: 'p1', exists: true, isGitRepo: true, defaultBranch: 'main' };
+    const pvr: OrcdMessage = { type: 'path_validated', requestId: 'p1', exists: true, isGitRepo: true, defaultBranch: 'main', gitCommonDir: '/repo/.git' };
     expect(pvr.type).toBe('path_validated');
   });
 });

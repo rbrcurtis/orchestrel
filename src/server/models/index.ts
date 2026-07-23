@@ -100,8 +100,28 @@ export async function initDatabase(): Promise<void> {
     } catch (err) {
       console.log(`[db:migrate] cards.sandbox column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
+    try {
+      await runner.query(`ALTER TABLE cards ADD COLUMN session_cwd TEXT`);
+    } catch (err) {
+      console.log(`[db:migrate] cards.session_cwd column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
     await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
     await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
+    const duplicateSessions = await runner.query(`
+      SELECT session_id, GROUP_CONCAT(id) AS card_ids
+      FROM cards
+      WHERE session_id IS NOT NULL
+      GROUP BY session_id
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    `) as Array<{ session_id: string; card_ids: string }>;
+    if (duplicateSessions[0]) {
+      const duplicate = duplicateSessions[0];
+      throw new Error(
+        `Cannot enforce unique card sessions: session ${duplicate.session_id} is attached to cards ${duplicate.card_ids}`,
+      );
+    }
+    await runner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_session_id_unique ON cards(session_id)`);
     await runner.release();
   }
 }

@@ -25,6 +25,22 @@ export interface CardCreateBody {
   projectId: number
 }
 
+export interface SessionImportBody {
+  /** @minLength 1 */
+  sessionId: string
+  /** @minLength 1 */
+  path: string
+  /** @minLength 1 */
+  nodeName: string
+}
+
+export interface SessionImportResponse {
+  id: number
+  title: string
+  description: string
+  projectId: number
+}
+
 export interface CardUpdateBody {
   /** @minLength 1 */
   title: string

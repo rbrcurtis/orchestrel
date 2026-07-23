@@ -12,16 +12,38 @@ const mockCapabilities = {
   ],
   defaults: { provider: 'anthropic', model: 'sonnet' },
 }
+const mockGetHistory = vi.fn()
+const mockPathValidate = vi.fn<(path: string) => Promise<{
+  exists: boolean
+  isGitRepo: boolean
+  defaultBranch: string
+  gitCommonDir: string
+}>>(async () => ({
+  exists: true,
+  isGitRepo: true,
+  defaultBranch: 'main',
+  gitCommonDir: '/tmp/default/.git',
+}))
+const mockOtherPathValidate = vi.fn(mockPathValidate)
+const mockOtherNodeClient = {
+  isActive: mockIsActive,
+  getHistory: mockGetHistory,
+  cancel: mockCancel,
+  capabilities: { ...mockCapabilities, name: 'other' },
+  isConnected: () => true,
+  pathValidate: mockOtherPathValidate,
+}
 const mockNodeClient = {
   isActive: mockIsActive,
+  getHistory: mockGetHistory,
   cancel: mockCancel,
   capabilities: mockCapabilities,
   isConnected: () => true,
-  pathValidate: async () => ({ exists: true, isGitRepo: false, defaultBranch: null }),
+  pathValidate: mockPathValidate,
 }
 vi.mock('../init-state', () => ({
   getOrcdClient: () => mockNodeClient,
-  getClientByNode: () => mockNodeClient,
+  getClientByNode: (nodeName: string) => nodeName === 'other' ? mockOtherNodeClient : mockNodeClient,
 }))
 
 let ds: DataSource
@@ -145,6 +167,137 @@ describe('CardService', () => {
     await stopped.save()
     await cardService.updateCard(stopped.id, { column: 'backlog' })
     expect(mockCancel).toHaveBeenCalledWith('sess-live-2')
+  })
+
+  it('rejects relative import paths before calling a node', async () => {
+    const { cardService } = await import('./card')
+    mockPathValidate.mockClear()
+
+    await expect(cardService.importSession({ sessionId: 'relative-path', path: 'relative/path', nodeName: 'local' }))
+      .rejects.toThrow('Import path must be absolute')
+    expect(mockPathValidate).not.toHaveBeenCalled()
+  })
+
+  it('imports a session into its exact project using the first substantive user message', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const proj = await projectService.createProject({
+      name: 'Imported project',
+      path: '/tmp/import-exact',
+      defaultModel: 'opus',
+      defaultThinkingLevel: 'max',
+      defaultWorktree: true,
+      defaultSandbox: true,
+      providerID: 'anthropic',
+    })
+    expect(proj.defaultSandbox).toBe(true)
+    mockGetHistory.mockResolvedValueOnce([
+      { type: 'system', subtype: 'init' },
+      { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'ignore' }] } },
+      { type: 'user', message: { role: 'user', content: '  Implement the import endpoint.  ' } },
+    ])
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ response: 'Import endpoint' }), { status: 200 }),
+    )
+
+    const card = await cardService.importSession({ sessionId: 'import-session', path: '/tmp/import-exact', nodeName: 'local' })
+
+    expect(mockGetHistory).toHaveBeenCalledWith('import-session', '/tmp/import-exact')
+    expect(card).toMatchObject({
+      title: 'Import endpoint',
+      description: 'Implement the import endpoint.',
+      projectId: proj.id,
+      sessionId: 'import-session',
+      sessionCwd: null,
+      column: 'review',
+      model: 'opus',
+      thinkingLevel: 'max',
+      sandbox: true,
+    })
+    fetchMock.mockRestore()
+  })
+
+  it('does not import a same-path project configured on another node', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    await projectService.createProject({ name: 'Other node project', path: '/tmp/import-other-node', nodeName: 'other' })
+    mockPathValidate.mockImplementation(async (path: string) => ({
+      exists: true,
+      isGitRepo: true,
+      defaultBranch: 'main',
+      gitCommonDir: path === '/tmp/import-other-node' ? '/tmp/import-other-node/.git' : `${path}/.git`,
+    }))
+    await expect(cardService.importSession({ sessionId: 'other-node-session', path: '/tmp/import-other-node', nodeName: 'local' }))
+      .rejects.toThrow('No project configured for path')
+  })
+
+  it('imports a session from a configured project linked worktree using that worktree history', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const projectPath = '/tmp/import-worktree-project'
+    const worktreePath = '/tmp/import-linked-worktrees/feature'
+    const proj = await projectService.createProject({ name: 'Worktree project', path: projectPath })
+    mockPathValidate.mockImplementation(async (path: string) => ({
+      exists: true,
+      isGitRepo: true,
+      defaultBranch: 'main',
+      gitCommonDir: path === worktreePath || path === projectPath ? `${projectPath}/.git` : `${path}/.git`,
+    }))
+    mockGetHistory.mockResolvedValueOnce([
+      { type: 'user', message: { role: 'user', content: 'Import this linked worktree session.' } },
+    ])
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ response: 'Linked worktree import' }), { status: 200 }),
+    )
+
+    const card = await cardService.importSession({ sessionId: 'worktree-session', path: worktreePath, nodeName: 'local' })
+
+    expect(card.projectId).toBe(proj.id)
+    expect(card.worktreeBranch).toBeNull()
+    expect(card.sessionCwd).toBe(worktreePath)
+    const { ensureWorktree } = await import('../sessions/worktree')
+    expect(await ensureWorktree(card, mockNodeClient as never)).toBe(worktreePath)
+    expect(mockGetHistory).toHaveBeenCalledWith('worktree-session', worktreePath)
+    expect(mockPathValidate).toHaveBeenCalledWith(worktreePath)
+    expect(mockPathValidate).toHaveBeenCalledWith(projectPath)
+    fetchMock.mockRestore()
+  })
+
+  it('rejects importing a session from an unrelated git worktree', async () => {
+    const { cardService } = await import('./card')
+    mockPathValidate.mockImplementation(async (path: string) => ({
+      exists: true,
+      isGitRepo: true,
+      defaultBranch: 'main',
+      gitCommonDir: path === '/tmp/unrelated-worktree' ? '/tmp/unrelated/.git' : '/tmp/import-exact/.git',
+    }))
+
+    await expect(cardService.importSession({ sessionId: 'no-project', path: '/tmp/unrelated-worktree', nodeName: 'local' }))
+      .rejects.toThrow('No project configured for path')
+  })
+
+  it('rejects duplicate sessions before reading history', async () => {
+    const { cardService } = await import('./card')
+    await cardService.createCard({ title: 'Existing', description: 'd', sessionId: 'duplicate-session' })
+    mockGetHistory.mockClear()
+
+    await expect(cardService.importSession({ sessionId: 'duplicate-session', path: '/tmp/import-exact', nodeName: 'local' }))
+      .rejects.toThrow('already associated with a card')
+    expect(mockGetHistory).not.toHaveBeenCalled()
+  })
+
+  it('uses a deterministic fallback title when Ollama fails', async () => {
+    const { cardService } = await import('./card')
+    mockGetHistory.mockResolvedValueOnce([
+      { type: 'user', message: { role: 'user', content: '# Fix   login\n\nPlease investigate.' } },
+    ])
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('offline'))
+
+    const card = await cardService.importSession({ sessionId: 'fallback-session', path: '/tmp/import-exact', nodeName: 'local' })
+
+    expect(card.title).toBe('Fix login Please')
+    expect(card.description).toBe('# Fix   login\n\nPlease investigate.')
+    fetchMock.mockRestore()
   })
 
   it('limits Ollama title generation response length', async () => {

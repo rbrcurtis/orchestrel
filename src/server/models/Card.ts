@@ -2,6 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
+  Index,
   BaseEntity,
   EventSubscriber,
   type EntitySubscriberInterface,
@@ -39,11 +40,17 @@ export class Card extends BaseEntity {
   @Column({ name: 'pr_url', type: 'text', nullable: true })
   prUrl!: string | null;
 
+  @Index('idx_cards_session_id_unique', { unique: true })
   @Column({ name: 'session_id', type: 'text', nullable: true })
   sessionId!: string | null;
 
   @Column({ name: 'worktree_branch', type: 'text', nullable: true })
   worktreeBranch!: string | null;
+
+  // Imported sessions may belong to arbitrary linked worktrees, whose paths
+  // must not be derived from Orchestrel's managed worktree convention.
+  @Column({ name: 'session_cwd', type: 'text', nullable: true })
+  sessionCwd!: string | null;
 
   @Column({ type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
   sandbox!: boolean;

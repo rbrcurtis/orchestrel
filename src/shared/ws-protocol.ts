@@ -14,6 +14,7 @@ export const cardSchema = z.object({
   prUrl: z.string().nullable(),
   sessionId: z.string().nullable(),
   worktreeBranch: z.string().nullable(),
+  sessionCwd: z.string().nullable().optional(),
   sandbox: sqliteBool,
   sourceBranch: z.enum(['HEAD', 'main', 'dev']).nullable(),
   model: z.string(),

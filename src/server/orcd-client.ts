@@ -370,10 +370,10 @@ export class OrcdClient {
   /**
    * Validate that a path exists on the remote node.
    */
-  async pathValidate(path: string): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null }> {
+  async pathValidate(path: string): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null; gitCommonDir: string | null }> {
     const msg = await this.request({ action: 'path_validate', path } as OrcdAction);
     if (msg.type !== 'path_validated') throw new Error('expected path_validated reply');
-    return { exists: msg.exists, isGitRepo: msg.isGitRepo, defaultBranch: msg.defaultBranch };
+    return { exists: msg.exists, isGitRepo: msg.isGitRepo, defaultBranch: msg.defaultBranch, gitCommonDir: msg.gitCommonDir };
   }
 
   /**

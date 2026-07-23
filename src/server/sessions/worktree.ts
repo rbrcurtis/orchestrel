@@ -8,6 +8,11 @@ import type { OrcdClient } from '../orcd-client';
 // resolved path. When the card has no worktree branch, the project path is the
 // cwd directly.
 export async function ensureWorktree(card: Card, client: OrcdClient): Promise<string> {
+  if (card.sessionCwd) {
+    console.log(`[session:${card.id}] ensureWorktree: using imported session cwd ${card.sessionCwd}`);
+    return card.sessionCwd;
+  }
+
   if (!card.projectId) throw new Error(`Card ${card.id} has no project`);
   const proj = await Project.findOneByOrFail({ id: card.projectId });
 

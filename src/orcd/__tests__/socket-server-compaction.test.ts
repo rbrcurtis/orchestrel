@@ -300,6 +300,30 @@ describe('OrcdServer background compaction', () => {
     expect(wrote.some((w) => w.includes('compact_boundary'))).toBe(false);
   });
 
+  it('runs messages submitted during full compaction after it finishes', async () => {
+    const server = createServer();
+    const client = createClient();
+    const session = bgcSession('compact-queue');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    let finishCompact: (() => void) | undefined;
+    vi.spyOn(session, 'compact').mockImplementation(() => new Promise<void>((resolve) => {
+      finishCompact = resolve;
+    }));
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    server['handleAction'](client as never, {
+      action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm', mode: 'full',
+    } as CompactAction);
+    await new Promise((r) => setTimeout(r, 0));
+    server['handleAction'](client as never, { action: 'message', sessionId: session.id, prompt: 'after compact' });
+    expect(sendSpy).not.toHaveBeenCalled();
+
+    finishCompact?.();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sendSpy).toHaveBeenCalledWith('after compact');
+  });
+
   it('defers the splice to run-end when the session is busy, then applies', async () => {
     const server = createServer();
     const session = bgcSession('bgc-defer');

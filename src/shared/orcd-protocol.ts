@@ -240,6 +240,7 @@ export interface PathValidatedMessage {
   exists: boolean;
   isGitRepo: boolean;
   defaultBranch: string | null;
+  gitCommonDir: string | null;
 }
 
 export interface HistoryMessage {

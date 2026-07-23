@@ -6,7 +6,7 @@ import { instanceToPlain } from 'class-transformer'
 import { Card } from '../../models/Card'
 import { Project } from '../../models/Project'
 import { cardService } from '../../services/card'
-import type { CardResponse, CardCreateBody, CardUpdateBody } from '../types'
+import type { CardResponse, CardCreateBody, CardUpdateBody, SessionImportBody, SessionImportResponse } from '../types'
 
 function toCardResponse(card: Card): CardResponse {
   return instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true }) as CardResponse
@@ -41,6 +41,29 @@ export class CardsController extends Controller {
 
     this.setStatus(201)
     return toCardResponse(card)
+  }
+
+  @Post('cards/import-session')
+  @SuccessResponse(201, 'Created')
+  public async importSession(@Body() body: SessionImportBody): Promise<SessionImportResponse> {
+    try {
+      const card = await cardService.importSession(body)
+      if (card.projectId === null) {
+        console.error('[card:import] imported card is missing a project')
+        throw new Error('Imported card is missing a project')
+      }
+      this.setStatus(201)
+      console.log(`[card:import] returning created card ${card.id}`)
+      return {
+        id: card.id,
+        title: card.title,
+        description: card.description,
+        projectId: card.projectId,
+      }
+    } catch (err) {
+      console.error('[card:import] failed:', err)
+      throw httpError(422, err instanceof Error ? err.message : String(err))
+    }
   }
 
   @Put('cards/{id}')
