@@ -24,6 +24,10 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/component
 import { cn, copyText } from '~/lib/utils';
 import { slugify } from '../../src/shared/worktree';
 import type { Column, Project } from '../../src/shared/ws-protocol';
+import { FileAttachments, FilePickerButton } from './FileAttachments';
+import { uploadFiles } from '~/lib/file-attachments';
+import { discardDraft, importSharedDrafts, saveDraft, type SharedDraft } from '~/lib/shared-drafts';
+import { SharedDraftNotice } from './SharedDraftNotice';
 
 type Props = {
   cardId: number;
@@ -75,6 +79,10 @@ type CardFieldsProps = {
   onDescriptionBlur?: () => void;
   onSave?: () => void;
   onColorChange?: (color: string | null) => void;
+  files?: File[];
+  fileErrors?: string[];
+  onFilesChange?: (files: File[]) => void;
+  onFileErrorsChange?: (errors: string[]) => void;
 };
 
 function CardFields({
@@ -94,6 +102,10 @@ function CardFields({
   onDescriptionBlur,
   onSave,
   onColorChange,
+  files = [],
+  fileErrors = [],
+  onFilesChange,
+  onFileErrorsChange,
 }: CardFieldsProps) {
   const projectStore = useProjectStore();
   const config = useConfigStore();
@@ -134,22 +146,39 @@ function CardFields({
             multiline
             placeholder="Add a description..."
           />
+        ) : onFilesChange && onFileErrorsChange ? (
+          <FileAttachments files={files} errors={fileErrors} onFilesChange={onFilesChange} onErrorsChange={onFileErrorsChange}>
+            {({ onPaste, openPicker, dragging }) => (
+              <div className={`relative ${dragging ? 'rounded-md ring-2 ring-neon-cyan/50' : ''}`}>
+                <Textarea
+                  ref={descRef}
+                  value={draft.description}
+                  onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                  onBlur={onDescriptionBlur}
+                  onPaste={onPaste}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+                      e.preventDefault();
+                      onSave?.();
+                    }
+                  }}
+                  rows={4}
+                  placeholder="Add a description..."
+                  className="max-h-40 resize-y pr-10"
+                />
+                <div className="absolute bottom-2 right-2"><FilePickerButton onClick={openPicker} /></div>
+              </div>
+            )}
+          </FileAttachments>
         ) : (
           <Textarea
             ref={descRef}
             value={draft.description}
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
             onBlur={onDescriptionBlur}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
-                e.preventDefault();
-                onSave?.();
-              }
-            }}
             rows={4}
             placeholder="Add a description..."
-            // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
-            className="resize-y max-h-40 overflow-y-auto"
+            className="max-h-40 resize-y"
           />
         )}
       </div>
@@ -767,6 +796,10 @@ export const NewCardDetail = observer(function NewCardDetail({
   });
   const [creating, setCreating] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
+  const [sharedDraft, setSharedDraft] = useState<SharedDraft | null>(null);
+  const [queuedDrafts, setQueuedDrafts] = useState<SharedDraft[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileErrors, setFileErrors] = useState<string[]>([]);
 
   useEffect(() => {
     descRef.current?.focus();
@@ -784,10 +817,35 @@ export const NewCardDetail = observer(function NewCardDetail({
     writeNewCardDraftDescription(draft.description);
   }, [draft.description]);
 
+  useEffect(() => {
+    void importSharedDrafts('card').then((incoming) => {
+      if (!incoming.length) return;
+      const hasExisting = !!draft.description.trim();
+      if (hasExisting) {
+        setQueuedDrafts(incoming);
+        return;
+      }
+      const [first, ...rest] = incoming;
+      setSharedDraft(first);
+      setDraft((current) => ({ ...current, description: first.text }));
+      setFiles(first.files);
+      setFileErrors(first.errors);
+      setQueuedDrafts(rest);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!sharedDraft) return;
+    void saveDraft({ ...sharedDraft, text: draft.description, files, errors: fileErrors });
+  }, [sharedDraft, draft.description, files, fileErrors]);
+
   async function handleSave() {
     if (!draft.title.trim() || !draft.projectId) return;
     setCreating(true);
     try {
+      const pendingInitialFiles = files.length > 0
+        ? await uploadFiles(files, { draftId: sharedDraft?.id ?? crypto.randomUUID() })
+        : undefined;
       const card = await cardStore.createCard({
         title: draft.title,
         description: draft.description || undefined,
@@ -799,8 +857,10 @@ export const NewCardDetail = observer(function NewCardDetail({
         model: draft.model,
         thinkingLevel: draft.thinkingLevel as 'off' | 'low' | 'medium' | 'high' | 'adaptive',
         summarizeThreshold: draft.summarizeThreshold,
+        pendingInitialFiles,
       });
       writeNewCardDraftDescription('');
+      if (sharedDraft) await discardDraft(sharedDraft);
       if (selectedColumn === 'running' && draft.projectId && draft.description.trim()) {
         onCreated(card.id, card.projectId ?? null);
       } else {
@@ -866,6 +926,26 @@ export const NewCardDetail = observer(function NewCardDetail({
             }
           }}
           onColorChange={onColorChange}
+          files={files}
+          fileErrors={fileErrors}
+          onFilesChange={setFiles}
+          onFileErrorsChange={setFileErrors}
+        />
+        <SharedDraftNotice
+          count={queuedDrafts.length}
+          onOpen={() => {
+            const [next, ...rest] = queuedDrafts;
+            if (!next) return;
+            setSharedDraft(next);
+            setDraft((current) => ({ ...current, description: next.text }));
+            setFiles(next.files);
+            setFileErrors(next.errors);
+            setQueuedDrafts(rest);
+          }}
+          onDiscard={() => {
+            for (const item of queuedDrafts) void discardDraft(item);
+            setQueuedDrafts([]);
+          }}
         />
       </ScrollArea>
     </div>
