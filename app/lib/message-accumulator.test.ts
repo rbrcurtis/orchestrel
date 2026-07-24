@@ -207,6 +207,26 @@ describe('MessageAccumulator blocking subagents', () => {
     if (entry.kind !== 'blocks') return;
     expect(entry.blocks[0].output).toBe('file contents');
   });
+
+  it('attaches incremental Bash output before the tool finishes', () => {
+    const acc = new MessageAccumulator();
+
+    acc.handleMessage(toolStart('call_bash'));
+    acc.handleMessage(toolInput('{"command":"printf first; sleep 1; printf second"}'));
+    acc.handleMessage(toolStop());
+    acc.handleMessage({ type: 'stream_event', event: { type: 'message_stop' } } as SdkMessage);
+    acc.handleMessage({
+      type: 'tool_execution_update',
+      toolCallId: 'call_bash',
+      toolName: 'bash',
+      partialResult: { content: [{ type: 'text', text: 'first' }] },
+    });
+
+    const entry = acc.conversation[0];
+    expect(entry.kind).toBe('blocks');
+    if (entry.kind !== 'blocks') return;
+    expect(entry.blocks[0].output).toBe('first');
+  });
 });
 
 describe('MessageAccumulator serialize/hydrate', () => {

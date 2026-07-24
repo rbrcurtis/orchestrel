@@ -4,6 +4,8 @@ import type {
   SdkStreamEvent,
   SdkResultMessage,
   SdkToolUseSummary,
+  SdkToolExecutionUpdate,
+  SdkToolExecutionEnd,
   SdkUserMessage,
   SdkTaskStarted,
   SdkTaskProgress,
@@ -148,6 +150,14 @@ export class MessageAccumulator {
         break;
       case 'tool_use_summary':
         this.handleToolUseSummary(msg);
+        break;
+      case 'tool_execution_update':
+        this.handleToolExecutionUpdate(msg);
+        break;
+      case 'tool_execution_end':
+        this.handleToolExecutionEnd(msg);
+        break;
+      case 'tool_progress':
         break;
       case 'task_started':
         this.handleTaskStarted(msg);
@@ -400,6 +410,15 @@ export class MessageAccumulator {
       this.attachToolOutput(block.tool_use_id, result);
       this.completeBlockingSubagent(block.tool_use_id, result, block.is_error ?? false);
     }
+  }
+
+  private handleToolExecutionUpdate(msg: SdkToolExecutionUpdate): void {
+    this.attachToolOutput(msg.toolCallId, textFromToolResultContent(msg.partialResult.content));
+  }
+
+  private handleToolExecutionEnd(msg: SdkToolExecutionEnd): void {
+    const output = textFromToolResultContent(msg.result?.content);
+    if (output) this.attachToolOutput(msg.toolCallId, output);
   }
 
   private handleToolUseSummary(msg: SdkToolUseSummary): void {

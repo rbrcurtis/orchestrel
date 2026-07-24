@@ -87,6 +87,26 @@ export interface SdkToolProgress {
   data: string;
 }
 
+interface SdkToolExecutionResult {
+  content?: Array<{ type?: string; text?: string }>;
+  details?: unknown;
+}
+
+export interface SdkToolExecutionUpdate {
+  type: 'tool_execution_update';
+  toolCallId: string;
+  toolName: string;
+  partialResult: SdkToolExecutionResult;
+}
+
+export interface SdkToolExecutionEnd {
+  type: 'tool_execution_end';
+  toolCallId: string;
+  toolName: string;
+  result?: SdkToolExecutionResult;
+  isError: boolean;
+}
+
 export interface SdkToolUseSummary {
   type: 'tool_use_summary';
   tool_name: string;
@@ -134,6 +154,8 @@ export type SdkMessage =
   | SdkUserMessage
   | SdkResultMessage
   | SdkToolProgress
+  | SdkToolExecutionUpdate
+  | SdkToolExecutionEnd
   | SdkToolUseSummary
   | SdkTaskStarted
   | SdkTaskProgress

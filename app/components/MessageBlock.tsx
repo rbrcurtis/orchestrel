@@ -306,13 +306,14 @@ function BlocksEntry({ blocks, accentColor }: { blocks: ContentBlock[]; accentCo
             const command = typeof input['command'] === 'string' ? input['command'] : '';
             const description = typeof input['description'] === 'string' ? input['description'] : undefined;
             return (
-              <BashToolBlock
-                key={i}
-                command={command}
-                description={description}
-                output={block.output}
-                isRunning={!block.complete && !block.output}
-              />
+              <div key={i} className="py-1 min-w-0 overflow-hidden">
+                <BashToolBlock
+                  command={command}
+                  description={description}
+                  output={block.output}
+                  isRunning={!block.complete && !block.output}
+                />
+              </div>
             );
           }
           return (

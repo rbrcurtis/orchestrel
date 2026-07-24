@@ -169,6 +169,37 @@ describe('MessageBlock code block rendering', () => {
 });
 
 describe('MessageBlock tool rendering', () => {
+  it('collapses Bash cells to the first command line by default', () => {
+    render(
+      <MessageBlock
+        entry={{
+          kind: 'blocks',
+          blocks: [
+            new ContentBlock({
+              type: 'tool_use',
+              content: 'Bash',
+              id: 'call_bash',
+              name: 'Bash',
+              input: JSON.stringify({ command: 'echo first\necho second' }),
+              output: 'first\nsecond',
+              complete: true,
+            }),
+          ],
+        }}
+        index={0}
+      />,
+    );
+
+    expect(screen.getByText('echo first')).toBeTruthy();
+    expect(screen.queryByText('echo second')).toBeNull();
+    expect(screen.queryByText('first\nsecond')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(screen.getByText((_, el) => el?.textContent === 'echo first\necho second')).toBeTruthy();
+    expect(screen.getByText((_, el) => el?.textContent === 'first\nsecond')).toBeTruthy();
+  });
+
   it('renders tool input and output with matching text style in a 400px scroll area', () => {
     render(
       <MessageBlock

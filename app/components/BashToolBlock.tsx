@@ -1,5 +1,7 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import { ScrollArea } from '~/components/ui/scroll-area';
 
 /** Strip ANSI escape codes (colors, cursor moves, etc.) */
@@ -28,8 +30,10 @@ export const BashToolBlock = observer(function BashToolBlock({
   isRunning,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
   const raw = output ?? streamingOutput ?? '';
   const displayOutput = stripAnsi(raw);
+  const firstCommandLine = command.split(/\r?\n/, 1)[0];
 
   // Auto-scroll to bottom when output grows
   useEffect(() => {
@@ -39,37 +43,46 @@ export const BashToolBlock = observer(function BashToolBlock({
   }, [displayOutput, isRunning]);
 
   return (
-    <div className="my-1 rounded border border-border overflow-hidden font-mono text-xs min-w-0 max-w-full">
-      {/* Header bar */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a2e] border-b border-border min-w-0">
+    <Collapsible
+      open={expanded}
+      onOpenChange={setExpanded}
+      className="my-1 rounded border border-border overflow-hidden font-mono text-xs min-w-0 max-w-full"
+    >
+      <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 bg-muted hover:bg-hover transition-colors text-left min-w-0">
+        {expanded ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
         {isRunning && (
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+          <span className="inline-block size-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
         )}
-        {description && <span className="text-muted-foreground truncate text-[11px] min-w-0">{description}</span>}
-      </div>
+        {expanded ? (
+          description && <span className="text-muted-foreground truncate text-[11px] min-w-0">{description}</span>
+        ) : (
+          <>
+            <span className="text-emerald-400 select-none shrink-0">$</span>
+            <span className="text-foreground truncate min-w-0">{firstCommandLine}</span>
+          </>
+        )}
+      </CollapsibleTrigger>
 
-      {/* Terminal body */}
-      <ScrollArea className="bg-[#0d0d1a]" viewportClassName="max-h-[400px]">
-        <div className="px-3 py-2 min-w-0 max-w-full">
-          {/* Command prompt */}
-          <div className="flex gap-1.5 min-w-0">
-            <span className="text-emerald-400 select-none flex-shrink-0">$</span>
-            <span className="text-foreground whitespace-pre-wrap break-all min-w-0">{command}</span>
+      <CollapsibleContent>
+        <ScrollArea className="bg-muted border-t border-border" viewportClassName="max-h-[400px]">
+          <div className="px-3 py-2 min-w-0 max-w-full">
+            <div className="flex gap-1.5 min-w-0">
+              <span className="text-emerald-400 select-none shrink-0">$</span>
+              <span className="text-foreground whitespace-pre-wrap break-all min-w-0">{command}</span>
+            </div>
+
+            {displayOutput && (
+              <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed min-w-0 max-w-full">
+                {displayOutput}
+              </pre>
+            )}
+
+            {isRunning && <span className="inline-block w-1.5 h-3.5 bg-emerald-400/70 animate-pulse mt-0.5" />}
+
+            <div ref={bottomRef} />
           </div>
-
-          {/* Output */}
-          {displayOutput && (
-            <pre className="text-muted-foreground whitespace-pre-wrap break-all mt-1 leading-relaxed min-w-0 max-w-full">
-              {displayOutput}
-            </pre>
-          )}
-
-          {/* Cursor indicator while running */}
-          {isRunning && <span className="inline-block w-1.5 h-3.5 bg-emerald-400/70 animate-pulse mt-0.5" />}
-
-          <div ref={bottomRef} />
-        </div>
-      </ScrollArea>
-    </div>
+        </ScrollArea>
+      </CollapsibleContent>
+    </Collapsible>
   );
 });
