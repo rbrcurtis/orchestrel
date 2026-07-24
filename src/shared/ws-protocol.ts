@@ -26,6 +26,7 @@ export const cardSchema = z.object({
   turnsCompleted: z.number(),
   contextTokens: z.number(),
   contextWindow: z.number(),
+  pendingInitialFiles: z.array(z.lazy(() => fileRefSchema)).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -81,6 +82,7 @@ export const cardCreateSchema = z.object({
   sandbox: z.boolean().optional(),
   sourceBranch: z.enum(['HEAD', 'main', 'dev']).nullable().optional(),
   archiveOthers: z.boolean().optional(),
+  pendingInitialFiles: z.array(z.lazy(() => fileRefSchema)).optional(),
 });
 
 export const cardUpdateSchema = z

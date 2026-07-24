@@ -12,6 +12,7 @@ import {
 } from 'typeorm';
 import { Expose } from 'class-transformer';
 import { messageBus } from '../bus';
+import type { FileRef } from '../../shared/ws-protocol';
 
 @Entity({ name: 'cards' })
 export class Card extends BaseEntity {
@@ -84,6 +85,9 @@ export class Card extends BaseEntity {
 
   @Column({ name: 'context_window', type: 'integer', default: 200000 })
   contextWindow!: number;
+
+  @Column({ name: 'pending_initial_files', type: 'simple-json', default: '[]' })
+  pendingInitialFiles!: FileRef[];
 
   @Column({ name: 'created_at', type: 'text' })
   createdAt!: string;

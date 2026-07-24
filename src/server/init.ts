@@ -30,38 +30,8 @@ export async function initBackend(): Promise<{
   router.use(express.default.json());
   RegisterRoutes(router);
 
-  // File upload
-  const multer = (await import('multer')).default;
-  const { writeFileSync, mkdirSync } = await import('fs');
-  const { join } = await import('path');
-  const { randomUUID } = await import('crypto');
-
-  const MAX_FILE_SIZE = 25 * 1024 * 1024;
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE } });
-
-  router.post('/api/upload', upload.array('files'), (req: Request, res: Response) => {
-    const rawSessionId = (req.body?.sessionId as string | undefined) ?? 'unsorted';
-    const sessionId = rawSessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const dir = join('/tmp/orchestrel-uploads', sessionId);
-    mkdirSync(dir, { recursive: true });
-
-    const files = req.files as Express.Multer.File[] | undefined;
-    if (!files?.length) {
-      console.warn(`[rest:upload] session=${sessionId}: no files in request, rejecting`);
-      res.status(400).json({ error: 'No files uploaded' });
-      return;
-    }
-
-    const refs = files.map((f) => {
-      const id = randomUUID().slice(0, 8);
-      const filename = `${id}-${f.originalname}`;
-      const filePath = join(dir, filename);
-      writeFileSync(filePath, f.buffer);
-      return { id, name: f.originalname, mimeType: f.mimetype, path: filePath, size: f.size };
-    });
-
-    res.json({ files: refs });
-  });
+  const { createAttachmentRouter } = await import('./attachments');
+  router.use(createAttachmentRouter());
 
   // OpenAPI spec + Swagger UI
   const { readFileSync } = await import('fs');

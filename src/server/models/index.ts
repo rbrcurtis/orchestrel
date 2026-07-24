@@ -105,8 +105,14 @@ export async function initDatabase(): Promise<void> {
     } catch (err) {
       console.log(`[db:migrate] cards.session_cwd column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
+    try {
+      await runner.query(`ALTER TABLE cards ADD COLUMN pending_initial_files TEXT NOT NULL DEFAULT '[]'`);
+    } catch (err) {
+      console.log(`[db:migrate] cards.pending_initial_files column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
     await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
     await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
+    await runner.query(`UPDATE cards SET pending_initial_files = '[]' WHERE pending_initial_files IS NULL`);
     const duplicateSessions = await runner.query(`
       SELECT session_id, GROUP_CONCAT(id) AS card_ids
       FROM cards

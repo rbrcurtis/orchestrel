@@ -1,5 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import type { Card, Column } from '../../src/shared/ws-protocol';
+import type { Card, Column, FileRef } from '../../src/shared/ws-protocol';
 import type { WsClient } from '../lib/ws-client';
 
 export class CardStore {
@@ -114,6 +114,7 @@ export class CardStore {
     summarizeThreshold?: number;
     worktreeBranch?: string | null;
     sourceBranch?: 'HEAD' | 'main' | 'dev' | null;
+    pendingInitialFiles?: FileRef[];
   }): Promise<Card> {
     const card = (await this.ws().emit('card:create', {
       title: data.title,
@@ -126,6 +127,7 @@ export class CardStore {
       summarizeThreshold: data.summarizeThreshold,
       worktreeBranch: data.worktreeBranch,
       sourceBranch: data.sourceBranch,
+      pendingInitialFiles: data.pendingInitialFiles,
     })) as Card;
     runInAction(() => this.cards.set(card.id, card));
     return card;
@@ -137,6 +139,7 @@ export class CardStore {
     model?: string;
     thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
     summarizeThreshold?: number;
+    pendingInitialFiles?: FileRef[];
   }): Promise<Card> {
     let title = 'New chat';
 
@@ -158,6 +161,7 @@ export class CardStore {
       thinkingLevel: data.thinkingLevel,
       summarizeThreshold: data.summarizeThreshold,
       archiveOthers: true,
+      pendingInitialFiles: data.pendingInitialFiles,
     })) as Card;
     runInAction(() => this.cards.set(card.id, card));
     return card;
