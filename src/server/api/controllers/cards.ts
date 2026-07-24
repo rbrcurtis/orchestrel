@@ -6,7 +6,7 @@ import { instanceToPlain } from 'class-transformer'
 import { Card } from '../../models/Card'
 import { Project } from '../../models/Project'
 import { cardService } from '../../services/card'
-import type { CardResponse, CardCreateBody, CardUpdateBody, SessionImportBody, SessionImportResponse } from '../types'
+import type { CardResponse, CardCreateBody, CardSuggestTitleBody, CardUpdateBody, SessionImportBody, SessionImportResponse } from '../types'
 
 function toCardResponse(card: Card): CardResponse {
   return instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true }) as CardResponse
@@ -36,11 +36,18 @@ export class CardsController extends Controller {
       title: body.title,
       description: body.description,
       projectId: body.projectId,
-      column: 'ready',
+      column: body.column ?? 'ready',
+      archiveOthers: body.archiveOthers,
+      pendingInitialFiles: body.pendingInitialFiles,
     })
 
     this.setStatus(201)
     return toCardResponse(card)
+  }
+
+  @Post('cards/suggest-title')
+  public async suggestTitle(@Body() body: CardSuggestTitleBody): Promise<{ title: string }> {
+    return { title: await cardService.suggestTitle(body.description) }
   }
 
   @Post('cards/import-session')

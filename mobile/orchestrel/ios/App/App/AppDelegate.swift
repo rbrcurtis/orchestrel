@@ -38,14 +38,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        if url.scheme == "orchestrel", url.host == "share", let id = url.pathComponents.last, UUID(uuidString: id) != nil {
-            currentWebView()?.load(URLRequest(url: defaultURL))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NotificationCenter.default.post(name: .sharedDraftReceived, object: id)
-            }
-            return true
-        }
-        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+        ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
@@ -59,7 +52,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 private extension AppDelegate {
     var defaultURL: URL {
-        URL(string: "https://cecil.orchestrel.com/")!
+        URL(string: "https://orchestrel.com/")!
     }
 
     var lastURLDefaultsKey: String {
@@ -75,7 +68,7 @@ private extension AppDelegate {
     }
 
     func isRestorableURL(_ url: URL) -> Bool {
-        url.scheme == "https" && url.host == "cecil.orchestrel.com"
+        url.scheme == "https" && url.host == "orchestrel.com"
     }
 
     func saveCurrentURL() {

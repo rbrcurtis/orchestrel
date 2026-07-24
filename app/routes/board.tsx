@@ -16,7 +16,6 @@ import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
-import { importSharedDrafts, subscribeToNativeShares } from '~/lib/shared-drafts';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -122,18 +121,6 @@ const BoardLayout = observer(function BoardLayout() {
   const [columnCount, setColumnCount] = useState(() => readLocalStorage(COLUMN_COUNT_KEY, 1));
   const [newCardColumn, setNewCardColumn] = useState<string | null>(null);
   const [activeModal, setActiveModal] = useState<'settings' | null>(null);
-
-  useEffect(() => {
-    const receive = () => {
-      void importSharedDrafts('card').then((drafts) => {
-        if (drafts.length) setNewCardColumn((current) => current ?? 'backlog');
-      });
-    };
-    receive();
-    let unsubscribe = () => {};
-    void subscribeToNativeShares(receive).then((stop) => { unsubscribe = stop; });
-    return () => unsubscribe();
-  }, []);
 
   const maxColumns = useMaxColumns(panelRef);
   const [focusedCardId, setFocusedCardId] = useState<number | null>(null);

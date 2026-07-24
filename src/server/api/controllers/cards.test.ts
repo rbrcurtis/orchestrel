@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { Card, CardSubscriber } from '../../models/Card'
 import { Project, ProjectSubscriber } from '../../models/Project'
@@ -93,6 +93,39 @@ describe('CardsController POST /api/cards', () => {
     // Verify it's actually in 'ready' column in DB
     const saved = await Card.findOneBy({ id: result.id })
     expect(saved?.column).toBe('ready')
+  })
+
+  it('preserves share composer workflow fields', async () => {
+    const { CardsController } = await import('./cards')
+    const ctrl = new CardsController()
+    const file = {
+      id: 'file-1',
+      name: 'brief.pdf',
+      size: 42,
+      mimeType: 'application/pdf',
+      path: '/tmp/attachments/draft/brief.pdf',
+    }
+
+    const result = await ctrl.createCard({
+      title: 'Shared chat',
+      description: 'Review this',
+      projectId,
+      column: 'running',
+      archiveOthers: true,
+      pendingInitialFiles: [file],
+    })
+
+    const saved = await Card.findOneByOrFail({ id: result.id })
+    expect(saved.column).toBe('running')
+    expect(saved.pendingInitialFiles).toEqual([file])
+  })
+
+  it('suggests a title through the REST API', async () => {
+    const [{ CardsController }, { cardService }] = await Promise.all([import('./cards'), import('../../services/card')])
+    vi.spyOn(cardService, 'suggestTitle').mockResolvedValueOnce('Mobile share flow')
+    const ctrl = new CardsController()
+    await expect(ctrl.suggestTitle({ description: 'Investigate the mobile share flow' }))
+      .resolves.toEqual({ title: 'Mobile share flow' })
   })
 
   it('rejects invalid projectId', async () => {

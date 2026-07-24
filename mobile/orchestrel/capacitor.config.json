@@ -3,9 +3,9 @@
   "appName": "Orchestrel",
   "webDir": "www",
   "server": {
-    "url": "https://cecil.orchestrel.com/",
+    "url": "https://orchestrel.com/",
     "allowNavigation": [
-      "cecil.orchestrel.com",
+      "orchestrel.com",
       "*.cloudflareaccess.com",
       "challenges.cloudflare.com",
       "wednesday-access.cloudflareaccess.com"

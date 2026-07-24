@@ -11,4 +11,6 @@ export default [
     route('chat/:projectId', 'routes/chat.$projectId.tsx'),
     route('chat/:projectId/:cardId', 'routes/chat.$projectId.$cardId.tsx'),
   ]),
+  route('share/card', 'routes/share.card.tsx'),
+  route('share/chat/:projectId', 'routes/share.chat.$projectId.tsx'),
 ] satisfies RouteConfig;

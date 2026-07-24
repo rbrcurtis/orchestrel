@@ -3,9 +3,9 @@
   "appName": "Orc Chat",
   "webDir": "www",
   "server": {
-    "url": "https://cecil.orchestrel.com/chat/1",
+    "url": "https://orchestrel.com/chat/19",
     "allowNavigation": [
-      "cecil.orchestrel.com",
+      "orchestrel.com",
       "*.cloudflareaccess.com",
       "challenges.cloudflare.com",
       "wednesday-access.cloudflareaccess.com"

@@ -13,7 +13,7 @@
 - Support plain text, URLs, images, and arbitrary files, including mixed multi-item shares.
 - Keep the existing 25 MB per-file limit at native import, browser attachment, and server upload boundaries.
 - Shared content must never create a card, start a chat, or upload a file before explicit submission.
-- Orchestrel opens the standard new-card UI; Orc Chat opens the standard new-chat UI for project `1`.
+- Orchestrel opens the standard new-card UI; Orc Chat opens the standard new-chat UI for project `19`.
 - Preserve an existing non-empty draft; store an incoming share as a separate pending draft rather than merging or overwriting it.
 - Acknowledge native inbox entries only after the browser draft is durable in IndexedDB.
 - Keep handlers event-driven: card creation persists attachment refs; the independent running-card session listener observes current card state and stages attachments.
@@ -620,7 +620,7 @@ In `BoardLayout`, subscribe once to native share events and poll pending entries
 
 In `chat.$projectId.tsx`, hydrate the `chat` active draft, render `FileAttachments`, and persist edits. On explicit Start chat, upload first, then call `createChatCard` with refs. Navigate only after creation succeeds; retain the full draft on either upload or creation failure.
 
-Only auto-import native Orc Chat drafts when `project.id === 1`. Browser navigation to another project continues to behave normally.
+Only auto-import native Orc Chat drafts when `project.id === 19`. Browser navigation to another project continues to behave normally.
 
 - [ ] **Step 7: Verify the workflows**
 
@@ -659,7 +659,7 @@ git commit -m "feat: open shared content in card and chat drafts"
 **Interfaces:**
 - Consumes: App Group manifests defined in the spec.
 - Produces Capacitor plugin: `list()`, `read({ id })`, `acknowledge({ id })`, `discard({ id })`, event `sharedDraftReceived`.
-- Produces app deep-link routing to hosted `/` (new-card opening occurs in React) and `/chat/1`.
+- Produces app deep-link routing to hosted `/` (new-card opening occurs in React) and `/chat/19`.
 
 - [ ] **Step 1: Implement SharedDraftPlugin.swift in Orchestrel**
 
@@ -693,7 +693,7 @@ Have the plugin observe this notification and call `notifyListeners("sharedDraft
 
 - [ ] **Step 3: Copy the plugin for Orc Chat with isolated constants**
 
-Implement the same class under Orc Chat with App Group `group.com.orchestrel.orcchat.ios.share`, URL scheme `orcchat`, and destination `https://cecil.orchestrel.com/chat/1`. Keep its existing last-URL restoration and root redirect behavior; a share deep link takes precedence over restoration for that activation.
+Implement the same class under Orc Chat with App Group `group.com.orchestrel.orcchat.ios.share`, URL scheme `orcchat`, and destination `https://orchestrel.com/chat/19`. Keep its existing last-URL restoration and root redirect behavior; a share deep link takes precedence over restoration for that activation.
 
 - [ ] **Step 4: Add plugin files and app entitlements to Xcode projects**
 

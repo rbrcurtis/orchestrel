@@ -21,7 +21,7 @@ The shared text or URL initializes the description. Shared files initialize the 
 
 ### Orc Chat
 
-Selecting Orc Chat opens its standard new-chat UI for project `1`, which is the project wrapped by the current app configuration. Shared text or URLs initialize the prompt and shared files initialize the attachment list. The user adds commentary and explicitly starts the chat.
+Selecting Orc Chat opens its standard new-chat UI for project `19`, which is the project wrapped by the current app configuration. Shared text or URLs initialize the prompt and shared files initialize the attachment list. The user adds commentary and explicitly starts the chat.
 
 The project remains a configuration concern of the Orc Chat wrapper. The first implementation does not add a native project picker or dynamically discover a project in the Share Extension.
 
@@ -149,7 +149,7 @@ The Share Extension uses these app deep links:
 The native app intercepts these URLs; they are not navigated as web URLs. It notifies the plugin and directs the WebView to the existing destination:
 
 - Orchestrel: board route with the standard new-card panel open;
-- Orc Chat: `/chat/1` with the standard new-chat composer open.
+- Orc Chat: `/chat/19` with the standard new-chat composer open.
 
 The share manifest ID is not exposed to the hosted web server in a query string. The React bridge consumes the pending native inbox directly.
 
@@ -161,7 +161,7 @@ The apps' long-lived Apache form authentication remains unchanged. The extension
 
 1. User shares content to Orc Chat.
 2. Extension writes the App Group inbox entry and opens `orcchat://share/<id>`.
-3. The app opens `/chat/1`; React imports the text and files into the new-chat draft.
+3. The app opens `/chat/19`; React imports the text and files into the new-chat draft.
 4. User edits commentary and presses **Start chat**.
 5. React uploads files through `/api/upload` and receives `FileRef[]`.
 6. React creates the running card without relying on column-change auto-start for the initial attachment prompt.

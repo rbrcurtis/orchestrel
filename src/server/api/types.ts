@@ -23,6 +23,20 @@ export interface CardCreateBody {
   /** @minLength 1 */
   description: string
   projectId: number
+  column?: 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'archive'
+  archiveOthers?: boolean
+  pendingInitialFiles?: Array<{
+    id: string
+    name: string
+    mimeType: string
+    path: string
+    size: number
+  }>
+}
+
+export interface CardSuggestTitleBody {
+  /** @minLength 1 */
+  description: string
 }
 
 export interface SessionImportBody {

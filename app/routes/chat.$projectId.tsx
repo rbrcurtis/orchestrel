@@ -7,8 +7,6 @@ import { Textarea } from '~/components/ui/textarea';
 import { useCardStore, useProjectStore } from '~/stores/context';
 import { FileAttachments, FilePickerButton } from '~/components/FileAttachments';
 import { uploadFiles } from '~/lib/file-attachments';
-import { discardDraft, importSharedDrafts, saveDraft, type SharedDraft } from '~/lib/shared-drafts';
-import { SharedDraftNotice } from '~/components/SharedDraftNotice';
 
 const ChatProjectView = observer(function ChatProjectView() {
   const { projectId: projectIdParam } = useParams();
@@ -18,8 +16,6 @@ const ChatProjectView = observer(function ChatProjectView() {
   const project = projectStore.resolveProjectRef(projectIdParam);
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
-  const [sharedDraft, setSharedDraft] = useState<SharedDraft | null>(null);
-  const [queuedDrafts, setQueuedDrafts] = useState<SharedDraft[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [fileErrors, setFileErrors] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -34,28 +30,6 @@ const ChatProjectView = observer(function ChatProjectView() {
     textareaRef.current?.focus();
   }, [project?.id]);
 
-  useEffect(() => {
-    if (project?.id !== 1) return;
-    void importSharedDrafts('chat').then((incoming) => {
-      if (!incoming.length) return;
-      if (description.trim() || files.length) {
-        setQueuedDrafts(incoming);
-        return;
-      }
-      const [first, ...rest] = incoming;
-      setSharedDraft(first);
-      setDescription(first.text);
-      setFiles(first.files);
-      setFileErrors(first.errors);
-      setQueuedDrafts(rest);
-    });
-  }, [project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!sharedDraft) return;
-    void saveDraft({ ...sharedDraft, text: description, files, errors: fileErrors });
-  }, [sharedDraft, description, files, fileErrors]);
-
   function handleSubmit() {
     const text = description.trim() || (files.length ? 'Please review the attached files.' : '');
     if (!text || creating || !project) return;
@@ -64,10 +38,9 @@ const ChatProjectView = observer(function ChatProjectView() {
     void (async () => {
       try {
         const pendingInitialFiles = files.length > 0
-          ? await uploadFiles(files, { draftId: sharedDraft?.id ?? crypto.randomUUID() })
+          ? await uploadFiles(files, { draftId: crypto.randomUUID() })
           : undefined;
         const card = await cardStore.createChatCard({ description: text, projectId: project.id, pendingInitialFiles });
-        if (sharedDraft) await discardDraft(sharedDraft);
         navigate(`/chat/${project.id}/${card.id}`);
       } finally {
         setCreating(false);
@@ -95,22 +68,6 @@ const ChatProjectView = observer(function ChatProjectView() {
             All projects
           </Link>
           <div className="rounded-3xl border border-border/70 bg-card/80 p-3 shadow-2xl shadow-black/20 backdrop-blur">
-            <SharedDraftNotice
-              count={queuedDrafts.length}
-              onOpen={() => {
-                const [next, ...rest] = queuedDrafts;
-                if (!next) return;
-                setSharedDraft(next);
-                setDescription(next.text);
-                setFiles(next.files);
-                setFileErrors(next.errors);
-                setQueuedDrafts(rest);
-              }}
-              onDiscard={() => {
-                for (const item of queuedDrafts) void discardDraft(item);
-                setQueuedDrafts([]);
-              }}
-            />
             <FileAttachments files={files} errors={fileErrors} onFilesChange={setFiles} onErrorsChange={setFileErrors}>
               {({ onPaste, openPicker, dragging }) => (
                 <div className={`relative ${dragging ? 'rounded-md ring-2 ring-neon-cyan/50' : ''}`}>

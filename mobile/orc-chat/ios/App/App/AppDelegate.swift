@@ -41,14 +41,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        if url.scheme == "orcchat", url.host == "share", let id = url.pathComponents.last, UUID(uuidString: id) != nil {
-            currentWebView()?.load(URLRequest(url: chatURL))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NotificationCenter.default.post(name: .sharedDraftReceived, object: id)
-            }
-            return true
-        }
-        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+        ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
@@ -62,7 +55,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 private extension AppDelegate {
     var chatURL: URL {
-        URL(string: "https://cecil.orchestrel.com/chat/1")!
+        URL(string: "https://orchestrel.com/chat/19")!
     }
 
     var lastURLDefaultsKey: String {
@@ -78,7 +71,7 @@ private extension AppDelegate {
     }
 
     func isRestorableURL(_ url: URL) -> Bool {
-        url.scheme == "https" && url.host == "cecil.orchestrel.com"
+        url.scheme == "https" && url.host == "orchestrel.com"
     }
 
     func saveCurrentURL() {
@@ -134,8 +127,8 @@ private extension AppDelegate {
             didInstallChatRedirect = true
             let source = """
             (function () {
-              if (window.location.hostname === 'cecil.orchestrel.com' && window.location.pathname === '/') {
-                window.location.replace('https://cecil.orchestrel.com/chat/1');
+              if (window.location.hostname === 'orchestrel.com' && window.location.pathname === '/') {
+                window.location.replace('https://orchestrel.com/chat/19');
               }
             })();
             """
@@ -144,7 +137,7 @@ private extension AppDelegate {
             webView.configuration.userContentController.addUserScript(script)
         }
 
-        if webView.url?.host == "cecil.orchestrel.com", webView.url?.path == "/" {
+        if webView.url?.host == "orchestrel.com", webView.url?.path == "/" {
             webView.load(URLRequest(url: chatURL))
         }
     }
