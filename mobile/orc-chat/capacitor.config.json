@@ -1,0 +1,18 @@
+{
+  "appId": "com.orchestrel.orcchat.ios",
+  "appName": "Orc Chat",
+  "webDir": "www",
+  "server": {
+    "url": "https://cecil.orchestrel.com/chat/1",
+    "allowNavigation": [
+      "cecil.orchestrel.com",
+      "*.cloudflareaccess.com",
+      "challenges.cloudflare.com",
+      "wednesday-access.cloudflareaccess.com"
+    ]
+  },
+  "ios": {
+    "scheme": "OrcChat",
+    "contentInset": "always"
+  }
+}

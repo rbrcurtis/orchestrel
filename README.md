@@ -104,6 +104,15 @@ Provider config lives in each node's `orcd.yaml`. orcd registers every provider 
 - REST API is generated with TSOA and served with Swagger UI at `/api/docs`.
 - Optional Cloudflare Access JWT auth for remote deployments; local/LAN requests use a local admin identity.
 
+## iOS Apps
+
+The two Capacitor wrappers live alongside the web application:
+
+- `mobile/orchestrel` — full Orchestrel app (`com.orchestrel.ios`)
+- `mobile/orc-chat` — chat-focused app (`com.orchestrel.orcchat.ios`)
+
+Run `npm install`, `npm run sync`, and `npm run open` from either directory to sync and open its Xcode project. Both wrappers load the hosted Orchestrel application configured in their `capacitor.config.json`.
+
 ## Tech Stack
 
 | Layer | Technology |

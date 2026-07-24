@@ -1,0 +1,16 @@
+{
+  "name": "orc-chat-ios",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "sync": "cap sync ios",
+    "open": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.0"
+  }
+}
