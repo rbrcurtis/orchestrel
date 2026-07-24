@@ -96,6 +96,16 @@ function summarizeToolResult(result: string): string {
   return line.length > 80 ? `${line.slice(0, 77)}...` : line;
 }
 
+function displayUserContent(content: string): string {
+  // Older orcd processes persist Pi's injected skill XML as the user message.
+  // Collapse it at the final display boundary too, so local/remote history and
+  // sessions created before an orcd restart cannot pin a multi-page skill block.
+  const match = content.match(/^<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*<\/skill>(?:\n\n([\s\S]+))?$/);
+  if (!match) return content;
+  const args = match[2]?.trim();
+  return args ? `/${match[1]}(${args})` : `/${match[1]}`;
+}
+
 function textFromToolResultContent(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -208,7 +218,7 @@ export class MessageAccumulator {
         const { content } = msg.message;
         if (typeof content === 'string') {
           this.finalizePendingHistoryTurn(timestamp);
-          this.conversation.push({ kind: 'user', content, timestamp });
+          this.conversation.push({ kind: 'user', content: displayUserContent(content), timestamp });
         } else if (Array.isArray(content)) {
           // Array content may be a real prompt with text blocks, or an internal
           // tool_result message persisted with role=user. Only treat text-bearing
@@ -224,7 +234,7 @@ export class MessageAccumulator {
             .join('\n');
           if (text) {
             this.finalizePendingHistoryTurn(timestamp);
-            this.conversation.push({ kind: 'user', content: text, timestamp });
+            this.conversation.push({ kind: 'user', content: displayUserContent(text), timestamp });
           }
         }
         break;

@@ -136,12 +136,12 @@ describe('getPiSessionMessages', () => {
     expect(JSON.stringify(messages)).not.toContain('Merge instructions');
   });
 
-  it('collapses legacy expanded skill blocks that predate display metadata', async () => {
+  it('collapses legacy expanded skill blocks that predate display metadata, preserving arguments', async () => {
     const { getPiSessionMessages } = await import('./pi-session-history');
     mockBuildSessionContext.mockReturnValue({
       messages: [{
         role: 'user',
-        content: '<skill name="merge" location="/skills/merge/SKILL.md">\nMerge instructions...\n</skill>',
+        content: '<skill name="foo" location="/skills/foo/SKILL.md">\nInstructions...\n</skill>\n\nbar baz',
         timestamp: 1,
       }],
     });
@@ -149,7 +149,7 @@ describe('getPiSessionMessages', () => {
     const messages = await getPiSessionMessages('pi-session-1', '/repo');
 
     expect(messages[0]).toEqual(expect.objectContaining({
-      message: { role: 'user', content: '/merge' },
+      message: { role: 'user', content: '/foo(bar baz)' },
     }));
   });
 

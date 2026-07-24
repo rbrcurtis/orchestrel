@@ -229,6 +229,27 @@ describe('MessageAccumulator blocking subagents', () => {
   });
 });
 
+describe('MessageAccumulator history display', () => {
+  it('collapses expanded skill XML to its slash command, preserving parenthesized arguments', () => {
+    const acc = new MessageAccumulator();
+
+    acc.handleHistoryMessage({
+      type: 'user',
+      uuid: 'msg_skill',
+      session_id: 'sess_1',
+      parent_tool_use_id: null,
+      message: {
+        role: 'user',
+        content: '<skill name="foo" location="/skills/foo/SKILL.md">\nFull instructions\n</skill>\n\nbar baz',
+      },
+    });
+
+    expect(acc.conversation).toEqual([
+      expect.objectContaining({ kind: 'user', content: '/foo(bar baz)' }),
+    ]);
+  });
+});
+
 describe('MessageAccumulator serialize/hydrate', () => {
   it('round-trips conversation, rebuilding ContentBlock instances', () => {
     const acc = new MessageAccumulator();
