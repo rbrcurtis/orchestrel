@@ -1,5 +1,6 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { execFileSync } from 'child_process';
+import { realpathSync } from 'fs';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -21,7 +22,7 @@ describe('validatePath', () => {
     expect(res.exists).toBe(true);
     expect(res.isGitRepo).toBe(true);
     expect(res.defaultBranch).toBe('main');
-    expect(res.gitCommonDir).toBe(join(dir, '.git'));
+    expect(res.gitCommonDir).toBe(join(realpathSync(dir), '.git'));
   });
 
   it('returns the same common git dir for a linked worktree', async () => {

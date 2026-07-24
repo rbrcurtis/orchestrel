@@ -113,6 +113,15 @@ The two Capacitor wrappers live alongside the web application:
 
 Run `npm install`, `npm run sync`, and `npm run open` from either directory to sync and open its Xcode project. Both wrappers load the hosted Orchestrel application configured in their `capacitor.config.json`.
 
+Both apps include iOS Share Extensions for text, URLs, images, and files up to 25 MB. Orchestrel opens the standard new-card draft; Orc Chat opens the project 1 new-chat draft. Enable the matching App Group capability for both the app and extension provisioning profiles in the Apple Developer portal:
+
+| App | Share Extension | App Group |
+| --- | --- | --- |
+| `com.orchestrel.ios` | `com.orchestrel.ios.share` | `group.com.orchestrel.ios.share` |
+| `com.orchestrel.orcchat.ios` | `com.orchestrel.orcchat.ios.share` | `group.com.orchestrel.orcchat.ios.share` |
+
+The Share Extensions use a responder-chain handoff to launch their containing apps, which is intended for the current private distribution workflow rather than public App Store review. Abandoned native inbox entries are cleaned up after seven days.
+
 ## Tech Stack
 
 | Layer | Technology |

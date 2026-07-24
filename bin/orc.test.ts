@@ -1,6 +1,6 @@
 import { execFile } from 'child_process';
 import { createServer } from 'http';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
@@ -86,7 +86,7 @@ providers:
         },
       })
 
-      expect(requests).toEqual([{ url: '/api/cards/import-session', body: { sessionId: 'session-123', path: cwd, nodeName: 'import-node' } }])
+      expect(requests).toEqual([{ url: '/api/cards/import-session', body: { sessionId: 'session-123', path: await realpath(cwd), nodeName: 'import-node' } }])
       expect(stdout).toContain('Imported card 42: Imported session')
     } finally {
       await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()))
