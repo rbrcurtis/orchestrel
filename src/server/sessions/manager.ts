@@ -1,4 +1,4 @@
-import { resolve } from 'path';
+import { resolve, sep } from 'path';
 import type { FileRef } from '../../shared/ws-protocol';
 
 /** Prepend file-path instructions to a prompt when files are attached. */
@@ -7,8 +7,10 @@ export function buildPromptWithFiles(message: string, files?: FileRef[]): string
     console.log(`[sessions:manager] buildPromptWithFiles: no files attached, returning message as-is`);
     return message;
   }
+  const roots = ['/tmp/orchestrel-uploads', '/tmp/orchestrel-attachments'].map((root) => `${resolve(root)}${sep}`);
   for (const f of files) {
-    if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
+    const path = resolve(f.path);
+    if (!roots.some((root) => path.startsWith(root))) {
       throw new Error(`Invalid file path: ${f.path}`);
     }
   }

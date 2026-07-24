@@ -680,7 +680,21 @@ async function startCardSession(
     const { ensureWorktree } = await import('../sessions/worktree');
     const cwd = await ensureWorktree(card, client);
     const startedFromDescription = !card.sessionId;
-    const prompt = card.sessionId ? '' : (card.description || card.title);
+    let prompt = card.sessionId ? '' : (card.description || card.title);
+    const pending = card.sessionId ? [] : (card.pendingInitialFiles ?? []);
+    if (pending.length > 0) {
+      const { readAttachment } = await import('../attachments');
+      const { buildPromptWithFiles } = await import('../sessions/manager');
+      const staged = [];
+      for (const file of pending) {
+        staged.push(await client.stageFile({
+          cardId: card.id,
+          file,
+          bytes: readAttachment(file),
+        }));
+      }
+      prompt = buildPromptWithFiles(prompt, staged);
+    }
 
     const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
     // Heal the persisted context window from the node's live capabilities (the
@@ -699,12 +713,17 @@ async function startCardSession(
 
     card.sessionId = sessionId;
     card.contextWindow = window;
+    if (pending.length > 0) card.pendingInitialFiles = [];
     // The card description is the first prompt sent. Follow-up prompts increment
     // promptsSent in the ws message handler; this covers the initial start.
     if (startedFromDescription) card.promptsSent = (card.promptsSent ?? 0) + 1;
     trackSession(card.id, sessionId);
     card.updatedAt = new Date().toISOString();
     await repo().save(card);
+    if (pending.length > 0) {
+      const { deleteAttachments } = await import('../attachments');
+      deleteAttachments(pending);
+    }
 
     console.log(`[session:${card.id}] session started: ${sessionId.slice(0, 8)}`);
     return sessionId;
