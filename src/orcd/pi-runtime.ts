@@ -1,4 +1,5 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
+import { createHash } from 'node:crypto';
 import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
@@ -9,6 +10,7 @@ import { expandInlineCommands } from './inline-commands';
 import type { ProviderAliases } from '../shared/subagent-policy';
 
 const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
+const DISPLAY_PROMPT_ENTRY = 'orchestrel-display-prompt';
 
 export interface CreatePiRuntimeSessionOpts {
   cwd: string;
@@ -226,7 +228,17 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     id: session.sessionId,
 
     async prompt(text, promptOpts) {
-      await session.prompt(expandInlineCommands(session, text), promptOpts);
+      const expanded = expandInlineCommands(session, text);
+      if (expanded !== text) {
+        // Pi persists the expanded skill/template as the user message. Keep the
+        // invocation beside it as non-context metadata so transcript history can
+        // show what Ryan typed without exposing the injected instructions.
+        session.sessionManager.appendCustomEntry(DISPLAY_PROMPT_ENTRY, {
+          displayText: text,
+          expandedHash: createHash('sha256').update(expanded).digest('hex'),
+        });
+      }
+      await session.prompt(expanded, promptOpts);
     },
 
     subscribe(cb) {

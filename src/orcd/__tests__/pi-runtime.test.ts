@@ -20,6 +20,7 @@ const mockSessionManagerOpen = vi.fn();
 const mockGetAgentDir = vi.fn();
 const mockCreateEventBus = vi.fn();
 const mockDefaultResourceLoader = vi.fn();
+const mockAppendCustomEntry = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
   AuthStorage: {
@@ -44,7 +45,11 @@ vi.mock('@earendil-works/pi-ai', () => ({}));
 function makeSession(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'pi-session-1',
-    sessionManager: {},
+    sessionManager: { appendCustomEntry: mockAppendCustomEntry },
+    resourceLoader: {
+      getSkills: () => ({ skills: [] }),
+      getPrompts: () => ({ prompts: [] }),
+    },
     prompt: mockPrompt,
     subscribe: mockSubscribe,
     abort: mockAbort,
@@ -342,6 +347,31 @@ describe('createPiRuntimeSession', () => {
     await session.prompt('hello', { streamingBehavior: 'steer' });
 
     expect(mockPrompt).toHaveBeenCalledWith('hello', { streamingBehavior: 'steer' });
+    expect(mockAppendCustomEntry).not.toHaveBeenCalled();
+  });
+
+  it('persists the original slash command as display metadata before sending its expansion', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    mockDefaultResourceLoader.mockImplementation(function (this: Record<string, unknown>, opts: Record<string, unknown>) {
+      Object.assign(this, opts, {
+        reload: vi.fn().mockResolvedValue(undefined),
+        getSkills: () => ({ skills: [] }),
+        getPrompts: () => ({ prompts: [{ name: 'merge', content: 'Merge the current branch now.' }] }),
+      });
+    });
+    mockCreateAgentSession.mockImplementation(async (opts: { resourceLoader: unknown }) => ({
+      session: makeSession({ resourceLoader: opts.resourceLoader }),
+    }));
+    const session = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
+
+    await session.prompt('/merge');
+
+    const expanded = mockPrompt.mock.calls[0][0] as string;
+    expect(expanded).not.toBe('/merge');
+    expect(mockAppendCustomEntry).toHaveBeenCalledWith('orchestrel-display-prompt', {
+      displayText: '/merge',
+      expandedHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
   });
 
   it('subscribe forwards callback to Pi session events and returns SDK unsubscribe handle', async () => {

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockList = vi.fn();
 const mockOpen = vi.fn();
 const mockBuildSessionContext = vi.fn();
+const mockGetBranch = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
   SessionManager: {
@@ -18,7 +19,8 @@ describe('getPiSessionMessages', () => {
       { id: 'other-session', path: '/home/ryan/.pi/agent/sessions/--repo--/other.jsonl' },
       { id: 'pi-session-1', path: '/home/ryan/.pi/agent/sessions/--repo--/pi-session-1.jsonl' },
     ]);
-    mockOpen.mockReturnValue({ buildSessionContext: mockBuildSessionContext });
+    mockOpen.mockReturnValue({ buildSessionContext: mockBuildSessionContext, getBranch: mockGetBranch });
+    mockGetBranch.mockReturnValue([]);
     mockBuildSessionContext.mockReturnValue({
       messages: [
         { role: 'user', content: 'hello', timestamp: 1 },
@@ -99,6 +101,79 @@ describe('getPiSessionMessages', () => {
       '/repo',
     );
     expect(mockBuildSessionContext).toHaveBeenCalledOnce();
+  });
+
+  it('restores the original slash command instead of exposing its expanded prompt', async () => {
+    const { createHash } = await import('node:crypto');
+    const { getPiSessionMessages } = await import('./pi-session-history');
+    const expanded = '<skill name="merge">Merge instructions...</skill>';
+    mockBuildSessionContext.mockReturnValue({
+      messages: [
+        { role: 'user', content: expanded, timestamp: 1 },
+        { role: 'assistant', content: [{ type: 'text', text: 'Done' }], timestamp: 2 },
+      ],
+    });
+    mockGetBranch.mockReturnValue([
+      {
+        type: 'custom',
+        id: 'display-1',
+        parentId: null,
+        timestamp: '2026-07-24T19:00:00Z',
+        customType: 'orchestrel-display-prompt',
+        data: {
+          displayText: '/merge',
+          expandedHash: createHash('sha256').update(expanded).digest('hex'),
+        },
+      },
+    ]);
+
+    const messages = await getPiSessionMessages('pi-session-1', '/repo');
+
+    expect(messages[0]).toEqual(expect.objectContaining({
+      type: 'user',
+      message: { role: 'user', content: '/merge' },
+    }));
+    expect(JSON.stringify(messages)).not.toContain('Merge instructions');
+  });
+
+  it('collapses legacy expanded skill blocks that predate display metadata', async () => {
+    const { getPiSessionMessages } = await import('./pi-session-history');
+    mockBuildSessionContext.mockReturnValue({
+      messages: [{
+        role: 'user',
+        content: '<skill name="merge" location="/skills/merge/SKILL.md">\nMerge instructions...\n</skill>',
+        timestamp: 1,
+      }],
+    });
+
+    const messages = await getPiSessionMessages('pi-session-1', '/repo');
+
+    expect(messages[0]).toEqual(expect.objectContaining({
+      message: { role: 'user', content: '/merge' },
+    }));
+  });
+
+  it('does not replace an unrelated user message when display metadata is stale', async () => {
+    const { getPiSessionMessages } = await import('./pi-session-history');
+    mockBuildSessionContext.mockReturnValue({
+      messages: [{ role: 'user', content: 'Continue', timestamp: 1 }],
+    });
+    mockGetBranch.mockReturnValue([
+      {
+        type: 'custom',
+        id: 'display-1',
+        parentId: null,
+        timestamp: '2026-07-24T19:00:00Z',
+        customType: 'orchestrel-display-prompt',
+        data: { displayText: '/merge', expandedHash: 'stale-hash' },
+      },
+    ]);
+
+    const messages = await getPiSessionMessages('pi-session-1', '/repo');
+
+    expect(messages[0]).toEqual(expect.objectContaining({
+      message: { role: 'user', content: 'Continue' },
+    }));
   });
 
   it('skips unsupported Pi message roles instead of creating fake user turns', async () => {
@@ -183,11 +258,13 @@ describe('getPiSessionMessages', () => {
         buildSessionContext: () => ({
           messages: [{ role: 'user', content: 'older turn', timestamp: 1 }],
         }),
+        getBranch: () => [],
       })
       .mockReturnValueOnce({
         buildSessionContext: () => ({
           messages: [{ role: 'assistant', content: [{ type: 'text', text: 'newer turn' }], timestamp: 2 }],
         }),
+        getBranch: () => [],
       });
 
     const messages = await getPiSessionMessages('pi-session-1', '/repo');
