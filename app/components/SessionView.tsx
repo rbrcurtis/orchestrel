@@ -45,9 +45,8 @@ export const SessionView = observer(function SessionView({
   const initialPrompt = card?.description.trim() ?? '';
   // The card description is the initial prompt. For new sessions it's also the first
   // message in the loaded history, so prepending unconditionally would render it twice.
-  const firstEntry = conversation[0];
-  const historyStartsWithPrompt =
-    firstEntry?.kind === 'user' && firstEntry.content.trim() === initialPrompt;
+  const firstUserEntry = conversation.find((entry) => entry.kind === 'user');
+  const historyStartsWithPrompt = firstUserEntry?.content.trim() === initialPrompt;
   const visibleConversation = initialPrompt && !historyStartsWithPrompt
     ? [{ kind: 'user' as const, content: initialPrompt, timestamp: card ? new Date(card.createdAt).getTime() : undefined }, ...conversation]
     : conversation;

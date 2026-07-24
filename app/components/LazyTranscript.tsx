@@ -65,6 +65,7 @@ export function LazyTranscript({
 
   const startIndex = Math.max(0, items.length - visibleCount);
   const visibleItems = items.slice(startIndex);
+  const latestUserIndex = items.findLastIndex((entry) => entry.kind === 'user');
   const hasOlder = startIndex > 0;
   hasOlderRef.current = hasOlder;
   itemsLenRef.current = items.length;
@@ -246,7 +247,11 @@ export function LazyTranscript({
           {visibleItems.map((row, i) => {
             const index = startIndex + i;
             return (
-              <div key={index} data-message-row>
+              <div
+                key={index}
+                data-message-row
+                className={index === latestUserIndex ? 'sticky top-0 z-10 bg-card/95 py-1 backdrop-blur-sm' : undefined}
+              >
                 <MessageBlock
                   entry={row}
                   index={index}

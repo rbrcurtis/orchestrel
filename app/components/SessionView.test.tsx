@@ -211,6 +211,7 @@ describe('SessionView initial prompt', () => {
       session: {
         accumulator: {
           conversation: [
+            { kind: 'system', subtype: 'init' },
             { kind: 'user', content: 'Build the project launchpad' },
             { kind: 'user', content: 'Follow up prompt' },
           ],
@@ -222,7 +223,9 @@ describe('SessionView initial prompt', () => {
 
     renderSessionView();
 
-    expect(screen.getByTestId('conversation').textContent).toBe('Build the project launchpad\nFollow up prompt');
+    const text = screen.getByTestId('conversation').textContent ?? '';
+    expect(text.match(/Build the project launchpad/g)).toHaveLength(1);
+    expect(text).toContain('Follow up prompt');
   });
 });
 
