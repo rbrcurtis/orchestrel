@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, Play, AlertCircle, Paperclip, X, WifiOff } from 'lucide-react';
+import { Send, Square, Play, AlertCircle, X, WifiOff } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
@@ -9,6 +9,8 @@ import { SubagentFeed } from './SubagentFeed';
 import { LazyTranscript } from './LazyTranscript';
 import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
+import { FileAttachments, FilePickerButton } from './FileAttachments';
+import { uploadFiles } from '~/lib/file-attachments';
 
 type Props = {
   cardId: number;
@@ -382,19 +384,6 @@ function SessionNotification({ message, onDismiss }: { message: string | null; o
   );
 }
 
-// --- File upload helpers ---
-
-async function uploadFiles(files: File[], sessionId?: string): Promise<FileRef[]> {
-  const form = new FormData();
-  if (sessionId) form.append('sessionId', sessionId);
-  for (const f of files) form.append('files', f);
-
-  const res = await fetch('/api/upload', { method: 'POST', body: form });
-  if (!res.ok) throw new Error('Upload failed');
-  const data = await res.json();
-  return data.files;
-}
-
 // --- Prompt input ---
 
 function PromptInput({
@@ -435,11 +424,9 @@ function PromptInput({
     }
   });
   const [files, setFiles] = useState<File[]>([]);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const [fileErrors, setFileErrors] = useState<string[]>([]);
   const localRef = useRef<HTMLTextAreaElement>(null);
   const ref = textareaRef ?? localRef;
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync text to localStorage on every change
   function updateText(val: string) {
@@ -461,50 +448,19 @@ function PromptInput({
     }
   }, [storageKey]);
 
-  function addFiles(newFiles: FileList | File[]) {
-    const arr = Array.from(newFiles).filter((f) => f.size <= 25 * 1024 * 1024);
-    setFiles((prev) => [...prev, ...arr]);
-  }
-
-  function removeFile(idx: number) {
-    setFiles((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function handlePaste(e: React.ClipboardEvent) {
-    if (!isRunning && !hasSession) return;
-    const items = Array.from(e.clipboardData.items);
-    const imageFiles = items
-      .filter((item) => item.type.startsWith('image/'))
-      .map((item) => item.getAsFile())
-      .filter((f): f is File => f !== null);
-    if (imageFiles.length > 0) {
-      e.preventDefault();
-      addFiles(imageFiles);
-    }
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDragging(false);
-    if (!isRunning && !hasSession) return;
-    if (e.dataTransfer.files.length > 0) {
-      addFiles(e.dataTransfer.files);
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = text.trim();
     if (!trimmed && files.length === 0) return;
 
-    setUploadError(null);
+    setFileErrors([]);
     let sent = false;
     if (files.length > 0) {
       try {
         const refs = await uploadFiles(files);
         sent = await onSend(trimmed || 'Please review the attached files.', refs);
       } catch {
-        setUploadError('Failed to upload files');
+        setFileErrors(['Failed to upload files']);
         return;
       }
     } else {
@@ -577,95 +533,56 @@ function PromptInput({
   const disabled = isPending || sendPending || (!text.trim() && files.length === 0);
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="px-3 py-2 border-t border-border bg-muted shrink-0"
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={handleDrop}
-    >
-      {/* File chips row - right aligned, left of stop button area */}
-      {files.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-2 justify-end pr-[46px] sm:pr-[38px]">
-          {files.map((f, i) => (
-            <span
-              key={i}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated text-xs text-muted-foreground border border-border"
-            >
-              <span className="max-w-[120px] truncate">{f.name}</span>
-              <button
-                type="button"
-                onClick={() => removeFile(i)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      {uploadError && (
-        <div className="text-xs text-destructive mb-1 text-right pr-[46px] sm:pr-[38px]">{uploadError}</div>
-      )}
-      <div className={`flex gap-2 ${dragging ? 'ring-2 ring-neon-cyan/50 rounded-md' : ''}`}>
-        <div className="relative flex-1 min-w-0">
-          <Textarea
-            ref={ref}
-            value={text}
-            onChange={(e) => updateText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onFocus={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-focus', { detail: { cardId } }))}
-            onBlur={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-blur'))}
-            placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
-            rows={3}
-            // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
-            className="resize-none min-h-full max-h-40 overflow-y-auto pr-10 focus-ring"
-          />
-          {/* Reconnect button - top right inside textarea, only when disconnected */}
-          {!wsConnected && (
-            <button
-              type="button"
-              onClick={() => wsClient.forceReconnect()}
-              className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-md bg-destructive/15 text-destructive text-xs font-medium hover:bg-destructive/25 transition-colors"
-              title="WebSocket disconnected — tap to reconnect"
-            >
-              <WifiOff className="size-3" />
-              Reconnect
-            </button>
-          )}
-          {/* Paperclip button - bottom right inside textarea */}
-          {(isRunning || hasSession) && (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute bottom-2 right-2 text-muted-foreground hover:text-foreground transition-colors"
-              title="Attach files"
-            >
-              <Paperclip className="size-4" />
-            </button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) addFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-        </div>
-        <div className="flex flex-col items-center justify-end gap-1.5 shrink-0">
-          <ContextGauge percent={contextPercent} compacted={compacted} onCompact={onCompact} />
-          <Button type="submit" disabled={disabled} className="size-[50px] sm:size-[34px] p-0">
-            <Send className="size-5 sm:size-4" />
-          </Button>
-        </div>
-      </div>
+    <form onSubmit={handleSubmit} className="shrink-0 border-t border-border bg-muted px-3 py-2">
+      <FileAttachments
+        files={files}
+        errors={fileErrors}
+        disabled={!isRunning && !hasSession}
+        onFilesChange={setFiles}
+        onErrorsChange={setFileErrors}
+      >
+        {({ onPaste, openPicker, dragging }) => (
+          <div className={`flex gap-2 ${dragging ? 'rounded-md ring-2 ring-neon-cyan/50' : ''}`}>
+            <div className="relative min-w-0 flex-1">
+              <Textarea
+                ref={ref}
+                value={text}
+                onChange={(e) => updateText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={onPaste}
+                onFocus={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-focus', { detail: { cardId } }))}
+                onBlur={() => window.dispatchEvent(new CustomEvent('orchestrel:prompt-blur'))}
+                placeholder={isRunning ? 'Send a follow-up message...' : 'Enter a prompt to start a session...'}
+                rows={3}
+                // oxlint-disable-next-line orchestrel/no-overflow-auto -- native textarea handles own scroll
+                className="min-h-full max-h-40 resize-none overflow-y-auto pr-10 focus-ring"
+              />
+              {!wsConnected && (
+                <button
+                  type="button"
+                  onClick={() => wsClient.forceReconnect()}
+                  className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive/15 px-2 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/25"
+                  title="WebSocket disconnected — tap to reconnect"
+                >
+                  <WifiOff className="size-3" />
+                  Reconnect
+                </button>
+              )}
+              {(isRunning || hasSession) && (
+                <div className="absolute bottom-2 right-2">
+                  <FilePickerButton onClick={openPicker} />
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-col items-center justify-end gap-1.5">
+              <ContextGauge percent={contextPercent} compacted={compacted} onCompact={onCompact} />
+              <Button type="submit" disabled={disabled} className="size-[50px] p-0 sm:size-[34px]">
+                <Send className="size-5 sm:size-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </FileAttachments>
     </form>
   );
 }
