@@ -122,15 +122,27 @@ describe('MessageBlock user prompt rendering', () => {
     expect(html).not.toContain('text-neon-cyan');
   });
 
-  it('renders expanded skill markdown literally instead of collapsing it', () => {
-    const html = renderEntry({
-      kind: 'user',
-      content: '# Test-Driven Development\n\n## Instructions\n\nWrite the test first.',
-    });
+  it('collapses multiline user prompts to their first line by default', () => {
+    render(
+      <MessageBlock
+        entry={{ kind: 'user', content: 'Build the launchpad\nInclude deployment automation' }}
+        index={0}
+      />,
+    );
 
-    expect(html).toContain('Test-Driven Development');
-    expect(html).toContain('## Instructions');
-    expect(html).not.toContain('skill loaded');
+    expect(screen.getByText('Build the launchpad')).toBeTruthy();
+    expect(screen.queryByText('Include deployment automation')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+
+    expect(screen.getByText(/Include deployment automation/)).toBeTruthy();
+  });
+
+  it('keeps single-line user prompts fully visible without an expand control', () => {
+    render(<MessageBlock entry={{ kind: 'user', content: 'Ship it' }} index={0} />);
+
+    expect(screen.getByText('Ship it')).toBeTruthy();
+    expect(screen.queryByRole('button', { expanded: false })).toBeNull();
   });
 });
 

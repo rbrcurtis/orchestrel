@@ -1,10 +1,11 @@
 import { memo, useState, useMemo, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Copy, Check } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ToolUseBlock } from './ToolUseBlock';
 import { BashToolBlock } from './BashToolBlock';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import { ScrollArea, ScrollBar } from '~/components/ui/scroll-area';
 import type { ConversationEntry, ContentBlock, TurnResult } from '~/lib/message-accumulator';
 import { copyText } from '~/lib/utils';
@@ -407,31 +408,49 @@ function UserBlock({ content, accentColor }: { content: string; accentColor?: st
   }
 
   const accentVar = accentColor || 'var(--neon-cyan)';
+  const multiline = displayText.includes('\n');
+  const firstLine = displayText.split(/\r?\n/, 1)[0];
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="flex justify-end my-2 min-w-0">
-      <div
+      <Collapsible
+        open={!multiline || expanded}
+        onOpenChange={setExpanded}
         className="group text-sm text-foreground bg-elevated rounded-lg pl-3 pr-1 py-2 max-w-[85%] border-l-2 min-w-0 overflow-hidden"
         style={{ borderLeftColor: accentVar }}
       >
-        <CopyableRow copyText={displayText || content}>
-          <div className="min-w-0">
-            {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {attachedFiles.map((f, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted text-xs text-muted-foreground border border-border"
-                  >
-                    {f.name}
-                  </span>
-                ))}
-              </div>
-            )}
-            {displayText && <span className="whitespace-pre-wrap break-words">{displayText}</span>}
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {attachedFiles.map((f, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted text-xs text-muted-foreground border border-border"
+              >
+                {f.name}
+              </span>
+            ))}
           </div>
-        </CopyableRow>
-      </div>
+        )}
+        <div className="flex items-start gap-1.5 min-w-0 max-w-full overflow-hidden">
+          {multiline ? (
+            <CollapsibleTrigger className="flex flex-1 items-start gap-1.5 text-left min-w-0">
+              {expanded
+                ? <ChevronDown className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                : <ChevronRight className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
+              {!expanded && <span className="truncate min-w-0">{firstLine}</span>}
+            </CollapsibleTrigger>
+          ) : (
+            <div className="flex-1 min-w-0 whitespace-pre-wrap break-words">{displayText}</div>
+          )}
+          <CopyButton text={displayText || content} />
+        </div>
+        {multiline && (
+          <CollapsibleContent>
+            <div className="whitespace-pre-wrap break-words pl-5 pr-5 min-w-0">{displayText}</div>
+          </CollapsibleContent>
+        )}
+      </Collapsible>
     </div>
   );
 }
