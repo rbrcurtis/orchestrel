@@ -3,6 +3,7 @@ import type {
   OrcdAction,
   OrcdMessage,
 } from '../shared/orcd-protocol';
+import type { FileRef } from '../shared/ws-protocol';
 
 export interface OrcdClientOpts {
   host: string;
@@ -391,6 +392,20 @@ export class OrcdClient {
   async worktreeRemove(projectPath: string, path: string): Promise<void> {
     const msg = await this.request({ action: 'worktree_remove', projectPath, path } as OrcdAction);
     if (msg.type !== 'ok') throw new Error('expected ok reply');
+  }
+
+  async stageFile(opts: {
+    cardId: number;
+    file: Pick<FileRef, 'id' | 'name' | 'mimeType' | 'size'>;
+    bytes: Buffer;
+  }): Promise<FileRef> {
+    const msg = await this.request({
+      action: 'file_stage',
+      cardId: opts.cardId,
+      file: { ...opts.file, base64: opts.bytes.toString('base64') },
+    });
+    if (msg.type !== 'file_staged') throw new Error('unexpected file staging response');
+    return msg.file;
   }
 
   /**

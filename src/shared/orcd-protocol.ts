@@ -126,6 +126,19 @@ export interface GetHistoryAction {
   cwd: string;
 }
 
+export interface FileStageAction {
+  action: 'file_stage';
+  requestId?: string;
+  cardId: number;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    base64: string;
+  };
+}
+
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -142,7 +155,8 @@ export type OrcdAction =
   | WorktreePrepareAction
   | WorktreeRemoveAction
   | PathValidateAction
-  | GetHistoryAction;
+  | GetHistoryAction
+  | FileStageAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -249,6 +263,18 @@ export interface HistoryMessage {
   messages: unknown[];
 }
 
+export interface FileStagedMessage {
+  type: 'file_staged';
+  requestId?: string;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    path: string;
+    size: number;
+  };
+}
+
 export type OrcdMessage =
   | SessionCreatedMessage
   | StreamEventMessage
@@ -263,4 +289,5 @@ export type OrcdMessage =
   | WorktreeReadyMessage
   | OkMessage
   | PathValidatedMessage
-  | HistoryMessage;
+  | HistoryMessage
+  | FileStagedMessage;

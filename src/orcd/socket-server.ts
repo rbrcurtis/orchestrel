@@ -3,6 +3,7 @@ import { upsertMemories } from '../lib/memory-upsert';
 import type { CapabilitiesMessage, OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
 import type { OrcdConfig, ProviderConfig } from './config';
+import { fileStager } from './file-staging';
 
 export interface OrcdListenConfig {
   listen: { host: string; port: number };
@@ -152,6 +153,24 @@ export class OrcdServer {
       case 'get_history':
         this.handleGetHistory(client, action);
         break;
+      case 'file_stage':
+        this.handleFileStage(client, action);
+        break;
+    }
+  }
+
+  private handleFileStage(client: ClientState, action: OrcdAction & { action: 'file_stage' }): void {
+    try {
+      const file = fileStager.stage(action);
+      this.send(client, { type: 'file_staged', requestId: action.requestId, file });
+    } catch (err) {
+      console.error('[orcd] file_stage failed:', err instanceof Error ? err.message : String(err));
+      this.send(client, {
+        type: 'error',
+        sessionId: '',
+        requestId: action.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
