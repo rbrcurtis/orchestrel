@@ -98,12 +98,12 @@ function summarizeToolResult(result: string): string {
 
 function displayUserContent(content: string): string {
   // Older orcd processes persist Pi's injected skill XML as the user message.
-  // Collapse it at the final display boundary too, so local/remote history and
-  // sessions created before an orcd restart cannot pin a multi-page skill block.
-  const match = content.match(/^<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*<\/skill>(?:\n\n([\s\S]+))?$/);
-  if (!match) return content;
-  const args = match[2]?.trim();
-  return args ? `/${match[1]}(${args})` : `/${match[1]}`;
+  // Replace blocks wherever they occur: inline commands may be surrounded by
+  // ordinary prose or accompanied by other commands in the same prompt.
+  return content.replace(
+    /<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g,
+    (_block, name: string) => `/${name}`,
+  );
 }
 
 function textFromToolResultContent(content: unknown): string {

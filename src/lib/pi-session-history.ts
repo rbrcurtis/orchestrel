@@ -136,11 +136,11 @@ function messageText(message: unknown): string | undefined {
   return text || undefined;
 }
 
-function legacySkillInvocation(text: string): string | undefined {
-  const match = text.match(/^<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*<\/skill>(?:\n\n([\s\S]+))?$/);
-  if (!match) return undefined;
-  const args = match[2]?.trim();
-  return args ? `/${match[1]}(${args})` : `/${match[1]}`;
+function collapseLegacySkillBlocks(text: string): string {
+  return text.replace(
+    /<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g,
+    (_block, name: string) => `/${name}`,
+  );
 }
 
 function getMessagesFromManager(manager: {
@@ -178,8 +178,8 @@ function getMessagesFromManager(manager: {
     if (text) {
       const hash = createHash('sha256').update(text).digest('hex');
       const displayTexts = replacements.get(hash);
-      const displayText = displayTexts?.shift() ?? legacySkillInvocation(text);
-      if (displayText) displayMessage = { ...(message as Record<string, unknown>), content: displayText };
+      const displayText = displayTexts?.shift() ?? collapseLegacySkillBlocks(text);
+      if (displayText !== text) displayMessage = { ...(message as Record<string, unknown>), content: displayText };
     }
     const historyMessage = toHistoryMessage(displayMessage, sessionId, idx);
     if (historyMessage !== undefined) messages.push(historyMessage);
