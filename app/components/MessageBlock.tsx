@@ -193,14 +193,27 @@ function CopyableRow({ children, copyText }: { children: React.ReactNode; copyTe
   );
 }
 
-// --- Thinking block (always visible, muted) ---
-
+// --- Thinking block ---
 
 function ThinkingBlock({ thinking }: { thinking: string }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <div className="text-xs text-muted-foreground min-w-0 overflow-hidden">
-      <div className="whitespace-pre-wrap break-words pl-3 border-l border-border min-w-0">{thinking}</div>
-    </div>
+    <Collapsible
+      open={expanded}
+      onOpenChange={setExpanded}
+      className="rounded border border-border overflow-hidden my-1 min-w-0 max-w-full"
+    >
+      <CollapsibleTrigger className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs font-medium bg-muted hover:bg-hover transition-colors min-w-0">
+        {expanded ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+        <span className="text-muted-foreground">Thinking...</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="p-2 text-xs text-muted-foreground whitespace-pre-wrap break-words min-w-0">
+          {thinking}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -291,7 +304,11 @@ function BlocksEntry({ blocks, accentColor }: { blocks: ContentBlock[]; accentCo
           return <TextBlock key={i} content={block.content} accentColor={accentColor} />;
         }
         if (block.type === 'thinking') {
-          return <ThinkingBlock key={i} thinking={block.content} />;
+          return (
+            <div key={i} className="py-1 min-w-0 overflow-hidden">
+              <ThinkingBlock thinking={block.content} />
+            </div>
+          );
         }
         if (block.type === 'tool_use') {
           let input: Record<string, unknown> = {};
