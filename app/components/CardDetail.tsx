@@ -742,6 +742,11 @@ type NewCardProps = {
   onColorChange?: (color: string | null) => void;
   initialProjectId?: number;
   projectFilter?: Set<number>;
+  initialDescription?: string;
+  initialFiles?: File[];
+  initialFileErrors?: string[];
+  attachmentDraftId?: string;
+  onSaved?: () => void;
 };
 
 export const NewCardDetail = observer(function NewCardDetail({
@@ -751,6 +756,11 @@ export const NewCardDetail = observer(function NewCardDetail({
   onColorChange,
   initialProjectId,
   projectFilter,
+  initialDescription,
+  initialFiles = [],
+  initialFileErrors = [],
+  attachmentDraftId,
+  onSaved,
 }: NewCardProps) {
   const cardStore = useCardStore();
   const projectStore = useProjectStore();
@@ -759,7 +769,7 @@ export const NewCardDetail = observer(function NewCardDetail({
 
   const [selectedColumn, setSelectedColumn] = useState(column);
   const [draft, setDraft] = useState<Draft>(() => {
-    const description = readNewCardDraftDescription();
+    const description = initialDescription ?? readNewCardDraftDescription();
 
     if (initialProjectId != null) {
       const proj = projectStore.getProject(initialProjectId);
@@ -794,8 +804,8 @@ export const NewCardDetail = observer(function NewCardDetail({
   });
   const [creating, setCreating] = useState(false);
   const [suggestingTitle, setSuggestingTitle] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
-  const [fileErrors, setFileErrors] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>(initialFiles);
+  const [fileErrors, setFileErrors] = useState<string[]>(initialFileErrors);
 
   useEffect(() => {
     descRef.current?.focus();
@@ -818,7 +828,7 @@ export const NewCardDetail = observer(function NewCardDetail({
     setCreating(true);
     try {
       const pendingInitialFiles = files.length > 0
-        ? await uploadFiles(files, { draftId: crypto.randomUUID() })
+        ? await uploadFiles(files, { draftId: attachmentDraftId ?? crypto.randomUUID() })
         : undefined;
       const card = await cardStore.createCard({
         title: draft.title,
@@ -834,6 +844,10 @@ export const NewCardDetail = observer(function NewCardDetail({
         pendingInitialFiles,
       });
       writeNewCardDraftDescription('');
+      if (onSaved) {
+        onSaved();
+        return;
+      }
       if (selectedColumn === 'running' && draft.projectId && draft.description.trim()) {
         onCreated(card.id, card.projectId ?? null);
       } else {
