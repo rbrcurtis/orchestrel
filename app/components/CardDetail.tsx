@@ -196,7 +196,7 @@ function CardFields({
                 worktreeBranch: proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || cardTitle) || null : null,
                 sourceBranch: null,
                 provider: prov,
-                model: proj?.defaultModel ?? config.getDefaultModel(prov),
+                model: proj?.defaultModel ?? config.defaultModelForNode(proj?.nodeName ?? '', prov),
                 thinkingLevel: proj?.defaultThinkingLevel ?? draft.thinkingLevel,
               });
               onColorChange?.(proj?.color ?? null);
@@ -265,13 +265,13 @@ function CardFields({
             <label className="block text-xs font-medium text-muted-foreground mb-1">Provider</label>
             <Select
               value={draft.provider}
-              onValueChange={(val) => patch({ provider: val, model: config.getDefaultModel(val) })}
+              onValueChange={(val) => patch({ provider: val, model: config.defaultModelForNode(selectedProject.nodeName, val) })}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" className="max-h-60">
-                {config.allProviders.map(([id, p]) => (
+                {config.providersEntriesForNode(selectedProject.nodeName).map(([id, p]) => (
                   <SelectItem key={id} value={id}>
                     {p.label}
                   </SelectItem>
@@ -283,10 +283,10 @@ function CardFields({
             <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
             <Select key={draft.provider} value={draft.model} onValueChange={(val) => patch({ model: val })}>
               <SelectTrigger className="w-full">
-                <span data-slot="select-value">{config.getModel(draft.provider, draft.model)?.label ?? draft.model}</span>
+                <span data-slot="select-value">{config.getModelForNode(selectedProject.nodeName, draft.provider, draft.model)?.label ?? draft.model}</span>
               </SelectTrigger>
               <SelectContent position="popper" className="max-h-60">
-                {config.getModels(draft.provider).map(([alias, m]) => (
+                {config.getModelsForNode(selectedProject.nodeName, draft.provider).map(([alias, m]) => (
                   <SelectItem key={alias} value={alias}>
                     {m.label}
                   </SelectItem>
@@ -783,7 +783,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           worktreeBranch: null,
           sourceBranch: null,
           provider: prov,
-          model: proj.defaultModel ?? config.getDefaultModel(prov),
+          model: proj.defaultModel ?? config.defaultModelForNode(proj.nodeName, prov),
           thinkingLevel: proj.defaultThinkingLevel ?? 'high',
           summarizeThreshold: 0.5,
         };

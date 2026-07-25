@@ -181,8 +181,6 @@ export interface SyncPayload {
   cards: Card[];
   projects: Project[];
   nodes: NodeInfo[];
-  /** Union of all connected nodes' providers — back-compat for provider/model selectors. */
-  providers: Record<string, ProviderConfig>;
   user?: User;
   users?: User[];
 }

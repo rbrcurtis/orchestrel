@@ -24,8 +24,9 @@ const cardStore = {
 };
 
 const configStore = {
-  allProviders: [['chatgpt', { label: 'ChatGPT' }]],
-  getModels: vi.fn(() => [['gpt-5.5', { label: 'GPT 5.5' }]]),
+  providersEntriesForNode: vi.fn(() => [['chatgpt', { label: 'ChatGPT' }]]),
+  getModelsForNode: vi.fn(() => [['gpt-5.5', { label: 'GPT 5.5' }]]),
+  defaultModelForNode: vi.fn(() => 'gpt-5.5'),
   nodeByName: vi.fn(() => ({ name: 'local', connected: true, providers: {} })),
 };
 
@@ -71,7 +72,7 @@ beforeEach(() => {
   sessionStore.stoppingCards = new Set<number>();
   store.ws.connected = true;
   store.ws.forceReconnect = vi.fn();
-  configStore.getModels.mockReturnValue([['gpt-5.5', { label: 'GPT 5.5' }]]);
+  configStore.getModelsForNode.mockReturnValue([['gpt-5.5', { label: 'GPT 5.5' }]]);
 });
 
 function makeCard(contextTokens: number, contextWindow: number): Card {

@@ -2,7 +2,7 @@ import type { AppSocket, AppServer } from './types';
 import { busRoomBridge } from './subscriptions';
 import { cardService } from '../services/card';
 import { projectService } from '../services/project';
-import { nodesForClient, mergedProvidersForClient } from '../config/capabilities';
+import { nodesForClient } from '../config/capabilities';
 import {
   handleCardCreate,
   handleCardUpdate,
@@ -63,7 +63,6 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
           cards: cards as unknown as Card[],
           projects: projects as unknown as Project[],
           nodes: nodesForClient(),
-          providers: mergedProvidersForClient(),
           user: { id: identity.id, email: identity.email, role: identity.role },
           users,
         },

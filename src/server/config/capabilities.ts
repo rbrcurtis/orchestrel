@@ -60,13 +60,3 @@ export function nodesForClient(): NodeInfo[] {
     };
   });
 }
-
-/** Union of all connected nodes' providers — back-compat for FE provider/model selectors. */
-export function mergedProvidersForClient(): Record<string, ProviderConfig> {
-  const merged: Record<string, ProviderConfig> = {};
-  for (const c of listNodeClients()) {
-    if (!c.isConnected()) continue;
-    Object.assign(merged, providersFromNode(c.nodeName));
-  }
-  return merged;
-}

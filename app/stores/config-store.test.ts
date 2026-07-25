@@ -1,161 +1,55 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ConfigStore } from './config-store';
 
-const FIXTURE = {
-  anthropic: {
-    label: 'Anthropic',
-    models: {
-      sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
-      opus: { label: 'Opus 4.6', modelID: 'claude-opus-4-6', contextWindow: 200000 },
-    },
-  },
-  okkanti: {
-    label: 'Kiro — Okkanti',
+const LOCAL = {
+  trackable: {
+    label: 'Trackable',
     models: {
       auto: { label: 'Auto', modelID: 'auto', contextWindow: 200000 },
-      sonnet: { label: 'Sonnet 4.6', modelID: 'claude-sonnet-4-6', contextWindow: 200000 },
+      'gpt-5.6-sol': { label: 'GPT-5.6 Sol', modelID: 'gpt-5.6-sol', contextWindow: 272000 },
     },
   },
 };
 
-describe('ConfigStore', () => {
-  describe('hydrate()', () => {
-    it('stores providers data', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.providers).toEqual(FIXTURE);
-    });
+const ONI = {
+  trackable: {
+    label: 'Trackable',
+    models: {
+      auto: { label: 'Auto', modelID: 'auto', contextWindow: 200000 },
+      opus: { label: 'Opus 4.6', modelID: 'claude-opus-4-6', contextWindow: 200000 },
+    },
+  },
+};
 
-    it('replaces existing providers on re-hydrate', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      store.hydrate({ anthropic: FIXTURE.anthropic });
-      expect(Object.keys(store.providers)).toEqual(['anthropic']);
-    });
+describe('ConfigStore node capabilities', () => {
+  it('keeps providers with the same ID isolated by node', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([
+      { name: 'local', connected: true, providers: LOCAL, defaults: { provider: 'trackable', model: 'auto' } },
+      { name: 'oni', connected: true, providers: ONI, defaults: { provider: 'trackable', model: 'auto' } },
+    ]);
+
+    expect(store.getModelsForNode('local', 'trackable').map(([alias]) => alias)).toEqual(['auto', 'gpt-5.6-sol']);
+    expect(store.getModelsForNode('oni', 'trackable').map(([alias]) => alias)).toEqual(['auto', 'opus']);
+    expect(store.getModelForNode('oni', 'trackable', 'gpt-5.6-sol')).toBeUndefined();
   });
 
-  describe('getProvider()', () => {
-    it('returns provider config by ID', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getProvider('anthropic')).toEqual(FIXTURE.anthropic);
-    });
+  it('replaces node capabilities on re-hydration', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([{ name: 'local', connected: true, providers: LOCAL }]);
+    store.hydrateNodes([{ name: 'oni', connected: false, providers: {} }]);
 
-    it('returns undefined for unknown provider', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getProvider('unknown')).toBeUndefined();
-    });
+    expect(store.nodeByName('local')).toBeUndefined();
+    expect(store.connectedNodes).toEqual([]);
+    expect(store.providersForNode('oni')).toEqual({});
   });
 
-  describe('getModels()', () => {
-    it('returns model entries as [alias, config] pairs', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      const models = store.getModels('anthropic');
-      expect(models).toEqual([
-        ['sonnet', FIXTURE.anthropic.models.sonnet],
-        ['opus', FIXTURE.anthropic.models.opus],
-      ]);
-    });
+  it('returns provider entries and defaults for one node only', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([{ name: 'local', connected: true, providers: LOCAL }]);
 
-    it('returns empty array for unknown provider', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getModels('unknown')).toEqual([]);
-    });
-  });
-
-  describe('getModel()', () => {
-    it('returns specific model config', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getModel('anthropic', 'opus')).toEqual(FIXTURE.anthropic.models.opus);
-    });
-
-    it('returns undefined for unknown model alias', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getModel('anthropic', 'haiku')).toBeUndefined();
-    });
-
-    it('returns undefined for unknown provider', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getModel('unknown', 'sonnet')).toBeUndefined();
-    });
-  });
-
-  describe('getDefaultModel()', () => {
-    it('returns the first model key for a known provider', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getDefaultModel('anthropic')).toBe('sonnet');
-    });
-
-    it('returns the first model key for okkanti (auto)', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getDefaultModel('okkanti')).toBe('auto');
-    });
-
-    it('falls back to "sonnet" for unknown provider', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.getDefaultModel('unknown')).toBe('sonnet');
-    });
-
-    it('falls back to "sonnet" before hydration', () => {
-      const store = new ConfigStore();
-      expect(store.getDefaultModel('anthropic')).toBe('sonnet');
-    });
-  });
-
-  describe('allProviders', () => {
-    it('returns all provider entries as [id, config] pairs', () => {
-      const store = new ConfigStore();
-      store.hydrate(FIXTURE);
-      expect(store.allProviders).toEqual([
-        ['anthropic', FIXTURE.anthropic],
-        ['okkanti', FIXTURE.okkanti],
-      ]);
-    });
-
-    it('returns empty array before hydration', () => {
-      const store = new ConfigStore();
-      expect(store.allProviders).toEqual([]);
-    });
-  });
-
-  describe('nodes', () => {
-    const NODES = [
-      { name: 'local', connected: true, providers: FIXTURE, defaults: { provider: 'anthropic', model: 'sonnet' } },
-      { name: 'gpubox', connected: false, providers: {} },
-    ];
-
-    it('hydrates nodes and exposes only connected ones', () => {
-      const store = new ConfigStore();
-      store.hydrateNodes(NODES);
-      expect(store.nodes.length).toBe(2);
-      expect(store.connectedNodes.map((n) => n.name)).toEqual(['local']);
-    });
-
-    it('returns per-node providers and models', () => {
-      const store = new ConfigStore();
-      store.hydrateNodes(NODES);
-      expect(store.providersForNode('local').anthropic.label).toBe('Anthropic');
-      expect(store.getModelsForNode('local', 'anthropic')).toEqual([
-        ['sonnet', FIXTURE.anthropic.models.sonnet],
-        ['opus', FIXTURE.anthropic.models.opus],
-      ]);
-      expect(store.defaultModelForNode('local', 'anthropic')).toBe('sonnet');
-    });
-
-    it('returns empty providers for an offline or unknown node', () => {
-      const store = new ConfigStore();
-      store.hydrateNodes(NODES);
-      expect(store.providersForNode('gpubox')).toEqual({});
-      expect(store.defaultModelForNode('nope', 'anthropic')).toBe('sonnet');
-    });
+    expect(store.providersEntriesForNode('local').map(([id]) => id)).toEqual(['trackable']);
+    expect(store.defaultModelForNode('local', 'trackable')).toBe('auto');
+    expect(store.defaultModelForNode('unknown', 'trackable')).toBe('sonnet');
   });
 });

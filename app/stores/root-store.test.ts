@@ -120,7 +120,6 @@ function makeSyncPayload(column: Column): SyncPayload {
       },
     ],
     nodes: [],
-    providers: {},
     user: { id: 1, email: 'ryan@example.com', role: 'admin' },
     users: [],
   };

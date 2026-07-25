@@ -236,13 +236,12 @@ export const SessionView = observer(function SessionView({
             disabled={nodeOffline}
             onChange={(e) => {
               const newProvider = e.target.value;
-              const models = config.getModels(newProvider);
-              const defaultModel = models.length > 0 ? models[0][0] : 'sonnet';
+              const defaultModel = config.defaultModelForNode(card?.nodeName ?? '', newProvider);
               handleUpdateCard({ provider: newProvider, model: defaultModel });
             }}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {config.allProviders.map(([id, p]) => (
+            {config.providersEntriesForNode(card?.nodeName ?? '').map(([id, p]) => (
               <option key={id} value={id}>
                 {p.label}
               </option>
@@ -254,7 +253,7 @@ export const SessionView = observer(function SessionView({
             onChange={(e) => handleUpdateCard({ model: e.target.value })}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {config.getModels(providerID).map(([alias, m]) => (
+            {config.getModelsForNode(card?.nodeName ?? '', providerID).map(([alias, m]) => (
               <option key={alias} value={alias}>
                 {m.label}
               </option>

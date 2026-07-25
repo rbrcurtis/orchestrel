@@ -1,7 +1,7 @@
 import type { AckResponse, Project } from '../../../shared/ws-protocol';
 import type { AppSocket, AppServer } from '../types';
 import { projectService } from '../../services/project';
-import { nodesForClient, mergedProvidersForClient } from '../../config/capabilities';
+import { nodesForClient } from '../../config/capabilities';
 
 export async function handleProjectCreate(
   data: { name: string; path: string; [key: string]: unknown },
@@ -54,7 +54,6 @@ export async function handleProjectUpdate(
             cards: filteredCards as unknown as import('../../../shared/ws-protocol').Card[],
             projects: filteredProjects as unknown as import('../../../shared/ws-protocol').Project[],
             nodes: nodesForClient(),
-            providers: mergedProvidersForClient(),
             user: { id: clientIdentity!.id, email: clientIdentity!.email, role: clientIdentity!.role },
           });
         }

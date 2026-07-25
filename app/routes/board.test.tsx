@@ -91,7 +91,7 @@ function renderBoard(opts?: { openSavedCard?: boolean }) {
   const store = new RootStore();
   store.subscribe = vi.fn();
   store.projects.hydrate([makeProject(42, 'Orchestrel')]);
-  store.config.hydrate(providerConfig());
+  store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);
 
   if (opts?.openSavedCard) {
     store.cards.hydrate([makeCard()], true);

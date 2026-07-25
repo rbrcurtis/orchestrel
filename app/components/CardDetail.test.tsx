@@ -65,7 +65,7 @@ function providerConfig() {
 function renderNewCardDetail(opts?: { initialProjectId?: number; projectFilter?: Set<number>; projects?: Project[] }) {
   const store = new RootStore();
   store.projects.hydrate(opts?.projects ?? [makeProject(42, 'Orchestrel')]);
-  store.config.hydrate(providerConfig());
+  store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);
   store.cards.createCard = vi.fn(async (data) => makeCard(data.description ?? ''));
   store.cards.suggestTitle = vi.fn(async () => 'Suggested card');
 
@@ -89,7 +89,7 @@ function renderCardDetail() {
   const store = new RootStore();
   store.projects.hydrate([makeProject(42, 'Orchestrel')]);
   store.cards.hydrate([makeCard('saved description')]);
-  store.config.hydrate(providerConfig());
+  store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);
   store.cards.updateCard = vi.fn(async (data) => ({ ...makeCard('saved description'), ...data }));
 
   render(
