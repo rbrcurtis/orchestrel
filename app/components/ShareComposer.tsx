@@ -85,7 +85,7 @@ export function ShareComposer({ mode, projectId }: { mode: Mode; projectId?: num
   return (
     <main className="mx-auto h-dvh max-w-3xl bg-background">
       <NewCardDetail
-        column="backlog"
+        column="running"
         initialDescription={manifest.text}
         initialFiles={files}
         initialFileErrors={errors}
