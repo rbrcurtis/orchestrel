@@ -6,8 +6,9 @@ import type { ClientToServerEvents, ServerToClientEvents, SocketData } from '../
 // vite.config.ts with esbuild which uses TC39 decorators, not legacy TypeScript
 // decorators that TypeORM requires. Static imports would fail at config bundle time.
 //
-// State that must survive Vite restarts lives in src/server/init-state.ts (dynamically
-// imported, so Node.js module cache preserves it across re-bundles).
+// State that must survive Vite restarts lives in src/server/init-state.ts, which
+// persists it on globalThis (esbuild inlines dynamic imports into the config bundle,
+// so module-level state would otherwise reset on every re-bundle).
 
 export function wsServerPlugin(): Plugin {
   return {
@@ -88,7 +89,7 @@ export function wsServerPlugin(): Plugin {
             console.log('[rest] API routes registered');
 
             // --- Socket.IO: create once, persists across Vite restarts ---
-            let io = initState.io;
+            let io = initState.getIo();
             if (!io) {
               const httpServer = await initState.getHttpServer();
               io = new IoServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
@@ -114,7 +115,7 @@ export function wsServerPlugin(): Plugin {
             }
 
             // --- One-time init: OrcdClient + controller listeners ---
-            if (initState.initialized) return;
+            if (initState.isInitialized()) return;
 
             const { OrcdClient } = await import('../orcd-client');
             const { loadNodeRegistry } = await import('../config/nodes');

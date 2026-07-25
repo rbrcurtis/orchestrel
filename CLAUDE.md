@@ -67,14 +67,14 @@ This is a **purely event-driven system**. Every handler reacts to a single event
 
 ## Vite Dev Server Restart Survival
 
-`vite.config.ts` is bundled by esbuild — module-level variables in files **statically** imported by it reset on every re-bundle. But **dynamic imports** go through the Node.js module cache and persist across restarts.
+`vite.config.ts` is bundled by esbuild into a single file on every Vite dev-server restart — esbuild **inlines dynamic imports** into that bundle, so module-level variables reset on every re-bundle whether the import is static or dynamic. The Node module cache does NOT preserve them.
 
-**Rule:** State that must survive Vite dev server restarts (singletons, initialization flags, cached server instances) must live in dynamically imported modules, never in files statically imported by `vite.config.ts`.
+**Rule:** State that must survive Vite dev server restarts (singletons, initialization flags, cached server instances) must live on `globalThis` via `src/server/init-state.ts` — never in module-level variables.
 
-- `src/server/init-state.ts` — holds WSS instance, initialization flag, and upgrade handler attachment. Always dynamically imported.
+- `src/server/init-state.ts` — holds the WSS instance, initialization flag, per-node OrcdClient registry, and the httpServer handle, all backed by `globalThis`.
 - `src/server/ws/server.ts` — statically imported by `vite.config.ts` (exports `wsServerPlugin`). NO persistent state here.
-- On each `configureServer` call: REST middleware is re-wired (restApp closure), WSS upgrade handler is re-attached to the new httpServer. WSS creation, OC bus listeners, and OpenCode server start only happen once (guarded by `init-state.initialized`).
-- **OrcdClient** also lives in a dynamically imported module and must survive restarts — it tracks active session IDs in memory. orcd owns the actual agent sessions; OrcdClient is lightweight (just connection + active session tracking).
+- On each `configureServer` call: REST middleware is re-wired (restApp closure), WSS upgrade handler is re-attached to the new httpServer. WSS creation, OC bus listeners, and OpenCode server start only happen once (guarded by `init-state.isInitialized()`).
+- **OrcdClient** instances also live in init-state and survive restarts — they track active session IDs in memory. orcd owns the actual agent sessions; OrcdClient is lightweight (just connection + active session tracking).
 
 ## Dev Server
 
