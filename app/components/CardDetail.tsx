@@ -595,6 +595,7 @@ export const CardDetail = observer(function CardDetail({
               className="text-sm font-medium flex-1 min-w-0"
               placeholder="Untitled"
               minLength={1}
+              truncate
             />
           ) : (
             <span className="text-sm font-medium truncate flex-1">{card.title}</span>

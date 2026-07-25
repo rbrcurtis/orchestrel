@@ -11,6 +11,7 @@ interface InlineEditProps {
   disabled?: boolean;
   minLength?: number;
   maxLength?: number;
+  truncate?: boolean;
 }
 
 export function InlineEdit({
@@ -23,6 +24,7 @@ export function InlineEdit({
   disabled = false,
   minLength,
   maxLength,
+  truncate = false,
 }: InlineEditProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -128,7 +130,11 @@ export function InlineEdit({
         }}
       >
         <span
-          className={['flex-1 whitespace-pre-wrap break-words', value ? '' : 'text-muted-foreground']
+          title={truncate ? value : undefined}
+          className={[
+            truncate ? 'flex-1 truncate' : 'flex-1 whitespace-pre-wrap break-words',
+            value ? '' : 'text-muted-foreground',
+          ]
             .filter(Boolean)
             .join(' ')}
         >

@@ -425,14 +425,15 @@ function UserBlock({ content, accentColor }: { content: string; accentColor?: st
   }
 
   const accentVar = accentColor || 'var(--neon-cyan)';
-  const multiline = displayText.includes('\n');
+  // Collapse multi-line or long prompts behind a first-line preview
+  const collapsible = displayText.includes('\n') || displayText.length > 100;
   const firstLine = displayText.split(/\r?\n/, 1)[0];
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="flex justify-end my-2 min-w-0">
       <Collapsible
-        open={!multiline || expanded}
+        open={!collapsible || expanded}
         onOpenChange={setExpanded}
         className="group text-sm text-foreground bg-elevated rounded-lg pl-3 pr-1 py-2 max-w-[85%] border-l-2 min-w-0 overflow-hidden"
         style={{ borderLeftColor: accentVar }}
@@ -450,23 +451,20 @@ function UserBlock({ content, accentColor }: { content: string; accentColor?: st
           </div>
         )}
         <div className="flex items-start gap-1.5 min-w-0 max-w-full overflow-hidden">
-          {multiline ? (
+          {collapsible ? (
             <CollapsibleTrigger className="flex flex-1 items-start gap-1.5 text-left min-w-0">
               {expanded
                 ? <ChevronDown className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
                 : <ChevronRight className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
-              {!expanded && <span className="truncate min-w-0">{firstLine}</span>}
+              {expanded
+                ? <span className="whitespace-pre-wrap break-words min-w-0">{displayText}</span>
+                : <span className="truncate min-w-0">{firstLine}</span>}
             </CollapsibleTrigger>
           ) : (
             <div className="flex-1 min-w-0 whitespace-pre-wrap break-words">{displayText}</div>
           )}
           <CopyButton text={displayText || content} />
         </div>
-        {multiline && (
-          <CollapsibleContent>
-            <div className="whitespace-pre-wrap break-words pl-5 pr-5 min-w-0">{displayText}</div>
-          </CollapsibleContent>
-        )}
       </Collapsible>
     </div>
   );

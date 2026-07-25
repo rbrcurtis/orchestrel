@@ -138,6 +138,17 @@ describe('MessageBlock user prompt rendering', () => {
     expect(screen.getByText(/Include deployment automation/)).toBeTruthy();
   });
 
+  it('collapses long single-line user prompts by default', () => {
+    const long = `Refactor the board ${'layout '.repeat(20)}end marker`;
+    render(<MessageBlock entry={{ kind: 'user', content: long }} index={0} />);
+
+    expect(screen.getByRole('button', { expanded: false })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+
+    expect(screen.getByRole('button', { expanded: true })).toBeTruthy();
+  });
+
   it('keeps single-line user prompts fully visible without an expand control', () => {
     render(<MessageBlock entry={{ kind: 'user', content: 'Ship it' }} index={0} />);
 
