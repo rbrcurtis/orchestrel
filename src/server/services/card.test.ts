@@ -149,6 +149,19 @@ describe('CardService', () => {
     expect(card.contextWindow).toBe(1_000_000)
   })
 
+  it('applies project worktree and base-branch defaults, respecting an explicit opt-out', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const proj = await projectService.createProject({ name: 'WT project', path: '/tmp/wt-project', defaultWorktree: true })
+
+    const card = await cardService.createCard({ title: 'My Cool Feature', description: 'd', column: 'backlog', projectId: proj.id })
+    expect(card.worktreeBranch).toBe('my-cool-feature')
+    expect(card.sourceBranch).toBe('main')
+
+    const noWt = await cardService.createCard({ title: 'Plain card', description: 'd', column: 'backlog', projectId: proj.id, worktreeBranch: null })
+    expect(noWt.worktreeBranch).toBeNull()
+  })
+
   it('does not cancel a live session when archiving a running card, but does when moving back to backlog', async () => {
     const { cardService } = await import('./card')
     mockCancel.mockClear()

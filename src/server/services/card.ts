@@ -4,6 +4,7 @@ import { Card } from '../models/Card';
 import type { Column } from '../../shared/ws-protocol';
 import { Project } from '../models/Project';
 import { contextWindowFor, defaultProviderFor } from '../config/capabilities';
+import { slugify } from '../../shared/worktree';
 
 export interface PageResult {
   cards: Card[];
@@ -99,6 +100,13 @@ class CardService {
         data.model = data.model ?? proj.defaultModel;
         data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
         data.sourceBranch = data.sourceBranch ?? proj.defaultBranch;
+        // Mirror the UI's card-create behavior: when the project defaults to
+        // worktrees, derive the branch from the title. Explicit null (user
+        // unchecked "use worktree" in the UI) is respected — only fill in the
+        // default when the caller didn't specify.
+        if (data.worktreeBranch === undefined && proj.isGitRepo && proj.defaultWorktree) {
+          data.worktreeBranch = slugify(data.title ?? '') || null;
+        }
       }
     }
     providerID = providerID ?? defaultProviderFor(nodeName) ?? 'anthropic';
