@@ -383,7 +383,10 @@ const BoardLayout = observer(function BoardLayout() {
               search,
               projectFilter,
               selectedCardId,
-              selectCard: (id: number | null) => selectCard(id, { focusPrompt: true }),
+              selectCard: (id: number | null) => {
+                if (section === 'board' && id !== null && search.length > 0) setSearch('');
+                selectCard(id, { focusPrompt: true });
+              },
               startNewCard,
               dropCard,
               onCardCreated,

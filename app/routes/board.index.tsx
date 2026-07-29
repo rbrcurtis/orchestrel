@@ -150,9 +150,8 @@ const ActiveBoard = observer(function ActiveBoard() {
     loadBacklogPage();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Backlog is paged, so a typed query must hit the server to reach unloaded
-  // backlog cards (debounced); matches merge into the store and the client-side
-  // filter below then shows them alongside the other active columns.
+  // Backlog and archive are paged, so a typed query must hit the server to
+  // reach unloaded cards. Matches merge into the store and are filtered below.
   useEffect(() => {
     if (search.length === 0) return;
     const t = setTimeout(() => void cardStore.search(search), 250);
@@ -356,6 +355,16 @@ const ActiveBoard = observer(function ActiveBoard() {
     return result;
   }, [columns, search, projectFilter]);
 
+  const archiveCards = cardStore.cardsByColumn('archive').map((c) => enrichCard(c, colorMap));
+  const filteredArchiveCards = useMemo(() => {
+    if (search.length === 0) return [];
+    const q = search.toLowerCase();
+    return archiveCards.filter((c) => {
+      if (projectFilter.size > 0 && !projectFilter.has(c.projectId ?? -1)) return false;
+      return c.title.toLowerCase().includes(q) || Boolean(c.description?.toLowerCase().includes(q));
+    });
+  }, [archiveCards, search, projectFilter]);
+
   const activeCard = useMemo(() => {
     if (!activeId) return null;
     for (const col of ACTIVE_COLUMNS) {
@@ -391,6 +400,9 @@ const ActiveBoard = observer(function ActiveBoard() {
                   {backlogLoading ? 'Loading…' : `Load more (${storeColumns.backlog.length} of ${backlogTotal})`}
                 </Button>
               </div>
+            )}
+            {col === 'done' && filteredArchiveCards.length > 0 && (
+              <StatusRow id="archive" cards={filteredArchiveCards} onCardClick={selectCard} />
             )}
           </Fragment>
         ))}
