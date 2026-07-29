@@ -393,7 +393,7 @@ export const CardDetail = observer(function CardDetail({
     provider: 'anthropic',
     model: 'sonnet',
     thinkingLevel: 'high',
-    summarizeThreshold: 0.5,
+    summarizeThreshold: 0,
   });
 
   const [formOpen, setFormOpen] = useState(true);
@@ -786,7 +786,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           provider: prov,
           model: proj.defaultModel ?? config.defaultModelForNode(proj.nodeName, prov),
           thinkingLevel: proj.defaultThinkingLevel ?? 'high',
-          summarizeThreshold: 0.5,
+          summarizeThreshold: 0,
         };
       }
     }
@@ -800,7 +800,7 @@ export const NewCardDetail = observer(function NewCardDetail({
       provider: 'anthropic',
       model: 'sonnet',
       thinkingLevel: 'high',
-      summarizeThreshold: 0.5,
+      summarizeThreshold: 0,
     };
   });
   const [creating, setCreating] = useState(false);

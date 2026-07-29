@@ -112,7 +112,7 @@ class CardService {
     providerID = providerID ?? defaultProviderFor(nodeName) ?? 'anthropic';
     data.provider = data.provider ?? providerID;
     data.nodeName = nodeName;
-    data.summarizeThreshold = data.summarizeThreshold ?? 0.5;
+    data.summarizeThreshold = data.summarizeThreshold ?? 0;
 
     // Best-effort initial context window from the node's advertised capabilities.
     // May be undefined if the node isn't connected yet, leaving the 200k schema
