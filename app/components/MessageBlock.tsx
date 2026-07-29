@@ -453,9 +453,11 @@ function UserBlock({ content, accentColor }: { content: string; accentColor?: st
         <div className="flex items-start gap-1.5 min-w-0 max-w-full overflow-hidden">
           {collapsible ? (
             <CollapsibleTrigger className="flex flex-1 items-start gap-1.5 text-left min-w-0">
-              {expanded
-                ? <ChevronDown className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
-                : <ChevronRight className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
+              <span className="flex h-5 items-center shrink-0">
+                {expanded
+                  ? <ChevronDown className="size-3.5 text-muted-foreground" />
+                  : <ChevronRight className="size-3.5 text-muted-foreground" />}
+              </span>
               {expanded
                 ? <span className="whitespace-pre-wrap break-words min-w-0">{displayText}</span>
                 : <span className="truncate min-w-0">{firstLine}</span>}
