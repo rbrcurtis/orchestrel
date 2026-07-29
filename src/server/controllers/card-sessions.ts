@@ -12,6 +12,24 @@ const sessionCardMap = new Map<string, number>();
 const bgcMap = new Map<string, number>();
 const pendingAsyncAfterTurnComplete = new Map<string, boolean>();
 
+// Cards whose ws handler is in the middle of `client.create()`. The column is
+// set to 'running' optimistically before the orcd roundtrip so the board
+// updates instantly; this set tells board:changed / agent:status reactors that
+// the missing active session is expected, not a dead one.
+const pendingCreates = new Set<number>();
+
+export function markCreatePending(cardId: number): void {
+  pendingCreates.add(cardId);
+}
+
+export function clearCreatePending(cardId: number): void {
+  pendingCreates.delete(cardId);
+}
+
+export function isCreatePending(cardId: number): boolean {
+  return pendingCreates.has(cardId);
+}
+
 /** Register a sessionId → cardId mapping so the global router can route messages. */
 export function trackSession(cardId: number, sessionId: string): void {
   sessionCardMap.set(sessionId, cardId);
@@ -432,6 +450,14 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
       // Check if already active in orcd
       if (fullCard.sessionId && client.isActive(fullCard.sessionId)) {
         console.log(`[oc:auto-start] card #${card.id} session ${fullCard.sessionId.slice(0, 8)} already active`);
+        return;
+      }
+
+      // A prompt submitted via ws already set the column and is creating the
+      // session itself — auto-starting here would spawn a duplicate session
+      // with the description as prompt.
+      if (isCreatePending(card.id)) {
+        console.log(`[oc:auto-start] card #${card.id} create already in flight from ws handler, skipping`);
         return;
       }
 

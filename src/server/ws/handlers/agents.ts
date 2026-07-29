@@ -1,7 +1,7 @@
 import type { AckResponse } from '../../../shared/ws-protocol';
 import { Card } from '../../models/Card';
 import { buildPromptWithFiles } from '../../sessions/manager';
-import { trackSession } from '../../controllers/card-sessions';
+import { trackSession, markCreatePending, clearCreatePending, isCreatePending } from '../../controllers/card-sessions';
 import { ensureWorktree } from '../../sessions/worktree';
 import { isCompactCommand } from '../../../shared/slash-commands';
 import { busRoomBridge } from '../subscriptions';
@@ -75,33 +75,54 @@ export async function handleAgentSend(
       card.updatedAt = new Date().toISOString();
       await card.save();
     } else {
-      // New session or resume
-      const cwd = await ensureWorktree(card, client);
-      const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
-      // Node is connected here, so windowForCard resolves the live window. Heal
-      // the persisted cache back to the DB (it drifts to 200k when a card is
-      // created while the node's capabilities aren't yet available).
-      const window = windowForCard(card);
-      const sessionId = await client.create({
-        prompt,
-        cwd,
-        provider: card.provider,
-        model: card.model,
-        sessionId: card.sessionId ?? undefined,
-        contextWindow: window,
-        summarizeThreshold: card.summarizeThreshold,
-        effort,
-      });
+      // New session or resume. Move the card to running BEFORE the worktree +
+      // orcd create roundtrip so the board reacts instantly; the session just
+      // isn't active yet. markCreatePending tells the board:changed auto-start
+      // and agent:status reconciliation that the missing session is expected.
+      const prevColumn = card.column;
+      markCreatePending(cardId);
+      try {
+        if (card.column !== 'running') {
+          card.column = 'running';
+          card.updatedAt = new Date().toISOString();
+          await card.save();
+        }
 
-      card.sessionId = sessionId;
-      card.contextWindow = window;
-      trackSession(cardId, sessionId);
+        const cwd = await ensureWorktree(card, client);
+        const effort = card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel;
+        // Node is connected here, so windowForCard resolves the live window. Heal
+        // the persisted cache back to the DB (it drifts to 200k when a card is
+        // created while the node's capabilities aren't yet available).
+        const window = windowForCard(card);
+        const sessionId = await client.create({
+          prompt,
+          cwd,
+          provider: card.provider,
+          model: card.model,
+          sessionId: card.sessionId ?? undefined,
+          contextWindow: window,
+          summarizeThreshold: card.summarizeThreshold,
+          effort,
+        });
 
-      if (card.column !== 'running') {
-        card.column = 'running';
+        card.sessionId = sessionId;
+        card.contextWindow = window;
+        trackSession(cardId, sessionId);
+
+        card.updatedAt = new Date().toISOString();
+        await card.save();
+      } catch (err) {
+        console.error(`[session:${cardId}] session create failed:`, err instanceof Error ? err.message : String(err));
+        // Create failed — put the card back where it was so it isn't stranded
+        // in running with no session behind it.
+        if (card.column !== prevColumn) {
+          card.column = prevColumn;
+          card.updatedAt = new Date().toISOString();
+          await card.save();
+        }
+      } finally {
+        clearCreatePending(cardId);
       }
-      card.updatedAt = new Date().toISOString();
-      await card.save();
     }
   } catch (err) {
     console.error(`[session:${cardId}] agent:send error:`, err instanceof Error ? err.message : String(err));
@@ -179,7 +200,7 @@ export async function handleAgentStatus(
     const client = card ? initState.getClientByNode(card.nodeName) : null;
 
     const active = !!(card?.sessionId && client?.isActive(card.sessionId));
-    const starting = !!card && card.column === 'running' && !card.sessionId;
+    const starting = !!card && card.column === 'running' && (!card.sessionId || isCreatePending(cardId));
 
     if (!active && !starting && card && card.column === 'running') {
       card.column = 'review';
