@@ -25,6 +25,7 @@ vi.mock('../../sessions/worktree', () => ({
 
 vi.mock('../../controllers/card-sessions', () => ({
   trackSession: mockTrackSession,
+  isCreatePending: () => false,
 }));
 
 const mockClient = {

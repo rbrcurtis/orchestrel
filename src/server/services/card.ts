@@ -55,14 +55,19 @@ function fallbackTitle(description: string): string {
 }
 
 async function ollamaSuggestTitle(description: string): Promise<string> {
-  const res = await fetch('http://localhost:11434/api/generate', {
+  const { loadTitleGenerationConfig } = await import('../config/nodes');
+  const config = loadTitleGenerationConfig();
+  const res = await fetch(config.url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+    },
     body: JSON.stringify({
-      model: 'llama3.2:latest',
+      model: config.model,
       stream: false,
       options: { num_predict: 12, temperature: 0, num_ctx: 512 },
-      prompt: `Generate a kanban card title of 3 words or fewer based on this description. Return only the title text, no quotes, no prefix.\n\nDescription: ${description}`,
+      prompt: `Generate a clear 3-4 word kanban card title based on this description. Never use more than 4 words. Return only the title text, no quotes, no prefix.\n\nDescription: ${description}`,
     }),
   });
   if (!res.ok) throw new Error(`Ollama request failed: ${res.status} ${res.statusText}`);

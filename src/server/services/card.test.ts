@@ -45,6 +45,12 @@ vi.mock('../init-state', () => ({
   getOrcdClient: () => mockNodeClient,
   getClientByNode: (nodeName: string) => nodeName === 'other' ? mockOtherNodeClient : mockNodeClient,
 }))
+vi.mock('../config/nodes', () => ({
+  loadTitleGenerationConfig: () => ({
+    url: 'http://localhost:11434/api/generate',
+    model: 'llama3.2:1b-instruct-q4_k_m',
+  }),
+}))
 
 let ds: DataSource
 
@@ -324,7 +330,10 @@ describe('CardService', () => {
     const { cardService } = await import('./card')
     await cardService.suggestTitle('Do a task')
 
-    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { options?: { num_predict?: number } }
+    const request = fetchMock.mock.calls[0]
+    const body = JSON.parse(request?.[1]?.body as string) as { model?: string; options?: { num_predict?: number } }
+    expect(request?.[0]).toBe('http://localhost:11434/api/generate')
+    expect(body.model).toBe('llama3.2:1b-instruct-q4_k_m')
     expect(body.options?.num_predict).toBeLessThanOrEqual(12)
     fetchMock.mockRestore()
   })

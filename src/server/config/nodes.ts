@@ -10,8 +10,18 @@ export interface NodeEntry {
   authToken: string;
 }
 
+export interface TitleGenerationConfig {
+  url: string;
+  model: string;
+  apiKey?: string;
+}
+
+function parseRegistryYaml(yamlStr: string): Record<string, unknown> {
+  return parseYaml(yamlStr) as Record<string, unknown>;
+}
+
 export function parseNodeRegistry(yamlStr: string, env: Record<string, string | undefined>): NodeEntry[] {
-  const raw = parseYaml(yamlStr) as Record<string, unknown>;
+  const raw = parseRegistryYaml(yamlStr);
   if (!Array.isArray(raw.servers)) throw new Error('orc.yaml: "servers" must be an array');
   return (raw.servers as Record<string, unknown>[]).map((s) => ({
     name: String(s.name),
@@ -19,6 +29,24 @@ export function parseNodeRegistry(yamlStr: string, env: Record<string, string | 
     port: Number(s.port),
     authToken: s.authToken != null ? resolveEnvVars(String(s.authToken), env) : '',
   }));
+}
+
+export function parseTitleGenerationConfig(
+  yamlStr: string,
+  env: Record<string, string | undefined>,
+): TitleGenerationConfig {
+  const raw = parseRegistryYaml(yamlStr);
+  const titleGeneration = raw.titleGeneration as Record<string, unknown> | undefined;
+  if (!titleGeneration?.url || !titleGeneration.model) {
+    throw new Error('orc.yaml: "titleGeneration" requires url and model');
+  }
+  return {
+    url: resolveEnvVars(String(titleGeneration.url), env),
+    model: resolveEnvVars(String(titleGeneration.model), env),
+    ...(titleGeneration.apiKey
+      ? { apiKey: resolveEnvVars(String(titleGeneration.apiKey), env) }
+      : {}),
+  };
 }
 
 export function nodeRegistryPath(): string {
@@ -33,6 +61,15 @@ export function loadNodeRegistry(): NodeEntry[] {
   if (!existsSync(path)) throw new Error(`orc.yaml not found at ${path}`);
   cached = parseNodeRegistry(readFileSync(path, 'utf-8'), process.env as Record<string, string | undefined>);
   return cached;
+}
+
+export function loadTitleGenerationConfig(): TitleGenerationConfig {
+  const path = nodeRegistryPath();
+  if (!existsSync(path)) throw new Error(`orc.yaml not found at ${path}`);
+  return parseTitleGenerationConfig(
+    readFileSync(path, 'utf-8'),
+    process.env as Record<string, string | undefined>,
+  );
 }
 
 export function resetNodeRegistryCache(): void { cached = null; }
