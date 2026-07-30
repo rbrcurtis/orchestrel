@@ -279,6 +279,9 @@ class CardService {
         sessionCwd: opts.path === project.path ? null : opts.path,
         column: 'review',
         sandbox: project.defaultSandbox,
+        // Imported sessions already ran wherever sessionCwd points — never
+        // derive a worktree branch from the project default.
+        worktreeBranch: null,
       });
       console.log(`[card:import:${sessionId}] created card ${card.id}`);
       return card;
