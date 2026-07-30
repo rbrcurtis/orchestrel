@@ -67,7 +67,7 @@ async function ollamaSuggestTitle(description: string): Promise<string> {
       model: config.model,
       stream: false,
       options: { num_predict: 12, temperature: 0, num_ctx: 512 },
-      prompt: `Generate a clear 3-4 word kanban card title based on this description. Never use more than 4 words. Return only the title text, no quotes, no prefix.\n\nDescription: ${description}`,
+      prompt: `Write a kanban card title for the task below. Rules: 4 words or fewer, start with a verb (Add, Setup, Create, Fix), state the overall goal rather than a sub-item. Return only the title.\n\nTask: ${description}`,
     }),
   });
   if (!res.ok) throw new Error(`Ollama request failed: ${res.status} ${res.statusText}`);
