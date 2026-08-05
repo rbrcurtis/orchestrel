@@ -13,7 +13,8 @@ vi.mock('../models/index', () => ({
 // The node client validates project paths. Mirror real filesystem semantics so
 // the isGitRepo-detection tests still exercise meaningful behavior: a path is a
 // git repo iff it has a .git entry, and "exists" iff it's on disk.
-vi.mock('../init-state', () => ({
+vi.mock('../init-state', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../init-state')>(),
   getClientByNode: () => ({
     isConnected: () => true,
     capabilities: { defaults: { provider: 'anthropic', model: 'sonnet' } },

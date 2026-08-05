@@ -41,7 +41,8 @@ const mockNodeClient = {
   isConnected: () => true,
   pathValidate: mockPathValidate,
 }
-vi.mock('../init-state', () => ({
+vi.mock('../init-state', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../init-state')>(),
   getOrcdClient: () => mockNodeClient,
   getClientByNode: (nodeName: string) => nodeName === 'other' ? mockOtherNodeClient : mockNodeClient,
 }))

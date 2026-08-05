@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { getMessageBus, setMessageBus } from './init-state';
 
 export interface BoardChangedPayload {
   card: import('./models/Card').Card | null;
@@ -37,5 +38,7 @@ export class MessageBus extends EventEmitter {
   }
 }
 
-export const messageBus = new MessageBus();
+const existing = getMessageBus();
+export const messageBus = existing ? existing as MessageBus : new MessageBus();
+if (!existing) setMessageBus(messageBus);
 messageBus.setMaxListeners(200);

@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
-import { MessageBus } from './bus'
+import { MessageBus, messageBus } from './bus'
+import { getMessageBus } from './init-state'
 
 describe('MessageBus', () => {
+  it('stores the application bus in restart-safe state', () => {
+    expect(getMessageBus()).toBe(messageBus)
+  })
+
   it('delivers published payload to subscriber', () => {
     const bus = new MessageBus()
     const handler = vi.fn()

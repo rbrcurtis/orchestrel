@@ -45,7 +45,8 @@ vi.mock('../models/Card', () => ({
 vi.mock('../sessions/worktree', () => ({
   ensureWorktree: mockEnsureWorktree,
 }));
-vi.mock('../init-state', () => ({
+vi.mock('../init-state', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../init-state')>(),
   getOrcdClient: mockGetOrcdClient,
   getClientByNode: mockGetClientByNode,
 }));
