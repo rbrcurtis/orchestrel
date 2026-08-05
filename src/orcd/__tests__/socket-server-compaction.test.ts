@@ -154,62 +154,6 @@ describe('OrcdServer subscriptions', () => {
   });
 });
 
-describe('OrcdServer provider env', () => {
-  it('passes process env through without injecting provider runtime env', () => {
-    const saved = {
-      ORC_TEST_PROVIDER_ENV: process.env.ORC_TEST_PROVIDER_ENV,
-      ORC_PROVIDER_RUNTIME_URL: process.env.ORC_PROVIDER_RUNTIME_URL,
-      ORC_PROVIDER_RUNTIME_KEY: process.env.ORC_PROVIDER_RUNTIME_KEY,
-      ORC_PROVIDER_RUNTIME_TOKEN: process.env.ORC_PROVIDER_RUNTIME_TOKEN,
-      ORC_PROVIDER_RUNTIME_REGION: process.env.ORC_PROVIDER_RUNTIME_REGION,
-      ORC_PROVIDER_RUNTIME_PROFILE: process.env.ORC_PROVIDER_RUNTIME_PROFILE,
-    };
-
-    try {
-      delete process.env.ORC_PROVIDER_RUNTIME_URL;
-      delete process.env.ORC_PROVIDER_RUNTIME_KEY;
-      delete process.env.ORC_PROVIDER_RUNTIME_TOKEN;
-      delete process.env.ORC_PROVIDER_RUNTIME_REGION;
-      delete process.env.ORC_PROVIDER_RUNTIME_PROFILE;
-      process.env.ORC_TEST_PROVIDER_ENV = 'from-process';
-
-      const server = new OrcdServer(
-        { listen: { host: '127.0.0.1', port: 0 }, authToken: 'tok', name: 'local' },
-        {
-          test: {
-            type: 'bedrock',
-            baseUrl: 'https://provider.test',
-            apiKey: 'provider-api-key',
-            authToken: 'provider-auth-token',
-            region: 'us-east-1',
-            profile: 'provider-profile',
-            models: { test: { label: 'Test Model', modelID: 'test-model', contextWindow: 100 } },
-            modelLabels: {},
-          },
-        },
-        { provider: 'test', model: 'test-model' },
-      );
-
-      const env = server['buildProviderEnv']('test');
-
-      expect(env.ORC_TEST_PROVIDER_ENV).toBe('from-process');
-      expect(env.ORC_PROVIDER_RUNTIME_URL).toBeUndefined();
-      expect(env.ORC_PROVIDER_RUNTIME_KEY).toBeUndefined();
-      expect(env.ORC_PROVIDER_RUNTIME_TOKEN).toBeUndefined();
-      expect(env.ORC_PROVIDER_RUNTIME_REGION).toBeUndefined();
-      expect(env.ORC_PROVIDER_RUNTIME_PROFILE).toBeUndefined();
-    } finally {
-      for (const [key, value] of Object.entries(saved)) {
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
-      }
-    }
-  });
-});
-
 describe('OrcdServer background compaction', () => {
   function bgcSession(id: string) {
     const session = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: id });

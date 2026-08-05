@@ -28,12 +28,6 @@ export interface ProviderDef {
   agents?: Record<string, string>;
 }
 
-export interface MemoryUpsertConfig {
-  enabled: boolean;
-  baseUrl: string;
-  apiKey: string;
-}
-
 export interface OrchestrelConfig {
   listen: { host: string; port: number };
   authToken: string;
@@ -43,7 +37,6 @@ export interface OrchestrelConfig {
   defaultCwd?: string;
   ringBufferSize: number;
   providers: Record<string, ProviderDef>;
-  memoryUpsert?: MemoryUpsertConfig;
 }
 
 /** Replace `${VAR}` with values from env. Unset vars become empty string. */
@@ -113,15 +106,6 @@ export function parseConfig(
     port: Number(rawListen.port ?? 7420),
   };
 
-  const mu = raw.memoryUpsert as Record<string, unknown> | undefined;
-  const memoryUpsert: MemoryUpsertConfig | undefined = mu
-    ? {
-        enabled: Boolean(mu.enabled ?? false),
-        baseUrl: resolveEnvVars(String(mu.baseUrl ?? 'http://localhost:3100'), env),
-        apiKey: resolveEnvVars(String(mu.apiKey ?? ''), env),
-      }
-    : undefined;
-
   return {
     listen,
     authToken: raw.authToken != null ? resolveEnvVars(String(raw.authToken), env) : '',
@@ -131,7 +115,6 @@ export function parseConfig(
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
     ringBufferSize: Number(raw.ringBufferSize ?? 5000),
     providers,
-    memoryUpsert,
   };
 }
 

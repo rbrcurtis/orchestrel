@@ -89,8 +89,6 @@ export class ProjectStore {
     color?: string | null;
     providerID?: string;
     nodeName?: string;
-    memoryBaseUrl?: string | null;
-    memoryApiKey?: string | null;
     archived?: boolean;
   }): Promise<Project> {
     const project = (await this.ws().emit('project:create', {
@@ -114,8 +112,6 @@ export class ProjectStore {
     color?: string | null;
     providerID?: string;
     nodeName?: string;
-    memoryBaseUrl?: string | null;
-    memoryApiKey?: string | null;
     archived?: boolean;
     userIds?: number[];
   }): Promise<Project> {

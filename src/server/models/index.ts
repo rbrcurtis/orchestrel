@@ -67,13 +67,6 @@ export async function initDatabase(): Promise<void> {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
-    // Add memory server columns to projects (per-project memory API config)
-    try {
-      await runner.query(`ALTER TABLE projects ADD COLUMN memory_base_url TEXT`);
-      await runner.query(`ALTER TABLE projects ADD COLUMN memory_api_key TEXT`);
-    } catch (err) {
-      console.log(`[db:migrate] memory_* column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
-    }
     try {
       await runner.query(`ALTER TABLE projects ADD COLUMN node_name TEXT NOT NULL DEFAULT 'local'`);
     } catch (err) {

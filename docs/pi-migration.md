@@ -1,6 +1,6 @@
 # Pi Migration Resource Model
 
-Orchestrel is now Pi-native at the agent runtime boundary. The web app and `orcd` still use Orchestrel's own socket protocol for cards, streams, lifecycle, compaction, and memory upsert, but the underlying agent runtime and resource model are Pi resources.
+Orchestrel is now Pi-native at the agent runtime boundary. The web app and `orcd` still use Orchestrel's own socket protocol for cards, streams, lifecycle, and compaction, but the underlying agent runtime and resource model are Pi resources.
 
 ## Current Resource Ownership
 
@@ -18,7 +18,7 @@ Orchestrel should not depend on Claude Code resource directories or session file
 - `~/.claude/CLAUDE.md` for project or user instructions.
 - `.claude/commands` for slash commands.
 - `.claude/skills` for skills.
-- Claude Code JSONL sessions under `~/.claude/projects` for session history, compaction, reload, async task tracking, or memory upsert.
+- Claude Code JSONL sessions under `~/.claude/projects` for session history, compaction, reload, or async task tracking.
 
 Historical notes and tests may mention old Claude paths as negative examples or legacy fixtures, but production docs and runtime behavior should describe Pi resources as canonical.
 

@@ -22,8 +22,6 @@ function makeProject(id: number, name: string, archived = false): Project {
     defaultThinkingLevel: 'high',
     providerID: 'anthropic',
     color: '#00f0ff',
-    memoryBaseUrl: null,
-    memoryApiKey: null,
     createdAt: '2026-05-07T00:00:00.000Z',
     archived,
   } as Project;

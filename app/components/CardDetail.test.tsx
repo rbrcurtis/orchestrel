@@ -21,8 +21,6 @@ function makeProject(id: number, name: string, archived = false): Project {
     providerID: 'anthropic',
     nodeName: 'local',
     color: '#f00',
-    memoryBaseUrl: null,
-    memoryApiKey: null,
     createdAt: '2026-04-24T00:00:00.000Z',
     archived,
   } as unknown as Project;

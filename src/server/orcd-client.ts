@@ -313,13 +313,6 @@ export class OrcdClient {
   }
 
   /**
-   * Request memory upsert for a session (extract facts → store in memory API).
-   */
-  memoryUpsert(sessionId: string): void {
-    this.send({ action: 'memory_upsert', sessionId });
-  }
-
-  /**
    * Compact a session. `mode: 'full'` runs Pi's native blocking compaction (the
    * chat `/compact` command); omitting it (or 'background') runs Orchestrel's
    * incremental background compaction (the UI context wheel).

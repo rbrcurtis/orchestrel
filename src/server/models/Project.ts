@@ -79,12 +79,6 @@ export class Project extends BaseEntity {
   @Column({ type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
   archived!: boolean;
 
-  @Column({ name: 'memory_base_url', type: 'text', nullable: true })
-  memoryBaseUrl!: string | null;
-
-  @Column({ name: 'memory_api_key', type: 'text', nullable: true })
-  memoryApiKey!: string | null;
-
   @Column({ name: 'created_at', type: 'text' })
   createdAt!: string;
 }

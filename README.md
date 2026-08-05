@@ -85,11 +85,10 @@ Provider config lives in each node's `orcd.yaml`. orcd registers every provider 
 - Session transcript reload from Pi session history (including remote nodes via `get_history`) plus live replay from the daemon event buffer.
 - Synthetic subagent activity feed from Agent/Task launches and async task notifications.
 
-**Context and Memory**
+**Context Management**
 - Per-card context gauge backed by provider/model context window metadata.
 - Configurable summarize threshold per card, including Off and 50–90% presets.
 - Background compaction is Pi-native and applies through the active Pi session at safe lifecycle boundaries.
-- Optional memory upsert at session exit and terminal card transitions, backed by a configured memory API.
 
 **Projects and Worktrees**
 - Project registry binding each project to a path and an orcd node.
@@ -144,7 +143,6 @@ The Share Extensions use a responder-chain handoff to launch their containing ap
 - Pi CLI on the PATH (for `bin/orc`)
 - Pi user config/auth/model resources under `~/.pi` on every node that runs agents
 - Optional Ollama on `localhost:11434` with `llama3.2:latest` for title suggestions
-- Optional memory API for session memory upsert
 
 ## Setup
 
@@ -209,7 +207,6 @@ Resolved from `ORC_CONFIG` when set, otherwise `./config.yaml` (the symlink).
 | `defaultCwd` | Default base directory for new work |
 | `ringBufferSize` | Per-session event buffer; size to cover the max expected BE↔node outage |
 | `providers` | Provider map exposed to the UI and used for Pi model routing |
-| `memoryUpsert` | Optional memory API settings used by orcd at session end |
 
 Provider entries:
 
@@ -315,7 +312,7 @@ app/
   lib/                            Socket.IO client, persistence, slot resolution, utilities
 src/
   orcd/                           TCP daemon, session registry, worktree ops, Pi SDK runtime
-  lib/                            Pi history, compaction, summarization, memory upsert
+  lib/                            Pi history, compaction, and summarization
   server/
     api/                          TSOA controllers and generated OpenAPI routes
     controllers/                  Card/session orchestration

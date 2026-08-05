@@ -66,12 +66,6 @@ export interface CancelAction {
   requestId?: string;
 }
 
-export interface MemoryUpsertAction {
-  action: 'memory_upsert';
-  sessionId: string;
-  requestId?: string;
-}
-
 export interface CompactAction {
   action: 'compact';
   sessionId: string;
@@ -148,7 +142,6 @@ export type OrcdAction =
   | UnsubscribeAction
   | ListAction
   | CancelAction
-  | MemoryUpsertAction
   | CompactAction
   | HelloAction
   | CapabilitiesAction

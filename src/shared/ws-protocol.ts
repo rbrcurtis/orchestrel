@@ -46,8 +46,6 @@ export const projectSchema = z.object({
   nodeName: z.string().default('local'),
   color: z.string(),
   archived: sqliteBool,
-  memoryBaseUrl: z.string().nullable().optional(),
-  memoryApiKey: z.string().nullable().optional(),
   createdAt: z.string(),
   userIds: z.array(z.number()).optional(),
 });
@@ -102,8 +100,6 @@ export const projectCreateSchema = z.object({
   nodeName: z.string().optional(),
   color: z.string().optional(),
   archived: z.boolean().optional(),
-  memoryBaseUrl: z.string().nullable().optional(),
-  memoryApiKey: z.string().nullable().optional(),
 });
 
 export const projectUpdateSchema = z

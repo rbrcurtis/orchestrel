@@ -641,41 +641,6 @@ export function registerProcessReaper(bus: MessageBus = messageBus): void {
   });
 }
 
-export function registerMemoryUpsertOnArchive(bus: MessageBus = messageBus): void {
-  bus.subscribe('board:changed', async (payload) => {
-    const { card, oldColumn, newColumn } = payload as {
-      card: Card | null;
-      oldColumn: string | null;
-      newColumn: string | null;
-    };
-    if (!card) {
-      console.log(`[oc:memory] board:changed with null card, skipping upsert`);
-      return;
-    }
-
-    // Only on first transition to done/archive — skip done→archive (already upserted by orcd on exit)
-    const isTerminal = newColumn === 'done' || newColumn === 'archive';
-    const wasTerminal = oldColumn === 'done' || oldColumn === 'archive';
-    if (!isTerminal || wasTerminal) {
-      console.log(`[oc:memory] card ${card.id} column ${oldColumn} → ${newColumn}: not a fresh terminal transition, skipping upsert`);
-      return;
-    }
-    if (!card.sessionId) {
-      console.log(`[oc:memory] card ${card.id} entering ${newColumn} with no sessionId, skipping upsert`);
-      return;
-    }
-
-    const client = await clientForCard(card);
-    if (!client) {
-      console.log(`[oc:memory] card ${card.id} (session ${card.sessionId.slice(0, 8)}): node ${card.nodeName} has no client, skipping upsert`);
-      return;
-    }
-
-    console.log(`[oc:memory] requesting upsert for card ${card.id} (${oldColumn} → ${newColumn})`);
-    client.memoryUpsert(card.sessionId);
-  });
-}
-
 function repo() {
   return AppDataSource.getRepository(Card);
 }

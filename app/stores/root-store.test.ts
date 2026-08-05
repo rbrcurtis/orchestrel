@@ -115,8 +115,6 @@ function makeSyncPayload(column: Column): SyncPayload {
         nodeName: 'local',
         color: '#00f0ff',
         archived: false,
-        memoryBaseUrl: null,
-        memoryApiKey: null,
         createdAt: '2026-05-07T00:00:00.000Z',
       },
     ],

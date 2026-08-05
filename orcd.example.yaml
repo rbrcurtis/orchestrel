@@ -100,9 +100,3 @@ providers:
   #     Explore: main
   #   models:
   #     main: { label: "Qwen3 Coder", modelID: qwen3-coder-next, contextWindow: 262144 }
-
-# Optional: memory upsert service used by orcd at session end.
-# memoryUpsert:
-#   enabled: true
-#   baseUrl: http://localhost:3100
-#   apiKey: ${MEMORY_UPSERT_KEY}

@@ -80,7 +80,7 @@ export async function initBackend(): Promise<{
   // --- OrcdClient per node + controller listeners ---
   const { OrcdClient } = await import('./orcd-client');
   const { loadNodeRegistry } = await import('./config/nodes');
-  const { initOrcdRouter, reconcileRunningCards, rearmScheduledSessions, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive, registerProcessReaper } =
+  const { initOrcdRouter, reconcileRunningCards, rearmScheduledSessions, registerAutoStart, registerWorktreeCleanup, registerProcessReaper } =
     await import('./controllers/card-sessions');
 
   const nodes = loadNodeRegistry();
@@ -115,7 +115,6 @@ export async function initBackend(): Promise<{
   }
 
   registerAutoStart();
-  registerMemoryUpsertOnArchive();
   registerWorktreeCleanup();
   registerProcessReaper();
   console.log(`[orcd] ${nodes.length} node client(s) initialized`);

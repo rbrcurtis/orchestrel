@@ -23,8 +23,6 @@ interface Project {
   providerID: string;
   nodeName: string;
   archived: boolean;
-  memoryBaseUrl?: string | null;
-  memoryApiKey?: string | null;
   createdAt: string;
 }
 

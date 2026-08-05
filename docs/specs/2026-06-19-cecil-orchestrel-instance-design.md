@@ -68,7 +68,6 @@ providers:
       "qwen3.6-27b-coder": { label: "Qwen3.6 27B Coder", modelID: qwen3.6-27b-coder, contextWindow: 240000 }
 ```
 
-- `memoryUpsert` is intentionally omitted (that is Ryan's memory service + key).
 - Ray gateway runs at `127.0.0.1:11434` on the same host, so Cecil's agents reach it directly.
 
 ### 4. Database

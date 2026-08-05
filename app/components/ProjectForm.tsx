@@ -25,8 +25,6 @@ interface Project {
   providerID: string;
   nodeName: string;
   archived: boolean;
-  memoryBaseUrl?: string | null;
-  memoryApiKey?: string | null;
   userIds?: number[];
 }
 
@@ -53,8 +51,6 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   );
   const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
   const [archived, setArchived] = useState(project?.archived ?? false);
-  const [memoryBaseUrl, setMemoryBaseUrl] = useState(project?.memoryBaseUrl ?? '');
-  const [memoryApiKey, setMemoryApiKey] = useState(project?.memoryApiKey ?? '');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,8 +92,6 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       providerID,
       nodeName,
       archived,
-      memoryBaseUrl: memoryBaseUrl || null,
-      memoryApiKey: memoryApiKey || null,
       userIds: selectedUserIds,
     };
 
@@ -272,32 +266,6 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* Memory Server (optional override) */}
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Memory Server URL</label>
-                <Input
-                  type="text"
-                  value={memoryBaseUrl}
-                  onChange={(e) => setMemoryBaseUrl(e.target.value)}
-                  placeholder="Leave empty for default"
-                  className="font-mono"
-                />
-                <p className="text-xs text-muted-foreground mt-1">Override memory API endpoint for this project</p>
-              </div>
-
-              {memoryBaseUrl && (
-                <div>
-                  <label className="block text-sm font-medium text-muted-foreground mb-1">Memory API Key</label>
-                  <Input
-                    type="password"
-                    value={memoryApiKey}
-                    onChange={(e) => setMemoryApiKey(e.target.value)}
-                    placeholder="API key for the memory server"
-                    className="font-mono"
-                  />
-                </div>
-              )}
 
               {/* User Assignment — admin only */}
               {store.currentUser?.role === 'admin' && projects.users.length > 0 && (

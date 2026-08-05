@@ -1,8 +1,7 @@
 import { createServer, type Server, type Socket } from 'net';
-import { upsertMemories } from '../lib/memory-upsert';
 import type { CapabilitiesMessage, OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
-import type { OrcdConfig, ProviderConfig } from './config';
+import type { ProviderConfig } from './config';
 import { fileStager } from './file-staging';
 
 export interface OrcdListenConfig {
@@ -26,17 +25,12 @@ export class OrcdServer {
   readonly store = new SessionStore();
   private compacting = new Set<string>(); // session IDs currently compacting
   private pendingApply = new Map<string, import('@earendil-works/pi-coding-agent').CompactionResult>();
-  private upsertedSessions = new Set<string>(); // sessions that have had memory upsert run
-  private memoryConfig?: OrcdConfig['memoryUpsert'];
 
   constructor(
     private opts: OrcdListenConfig,
     private providers: Record<string, ProviderConfig>,
     private defaults: { provider: string; model: string },
-    memoryConfig?: OrcdConfig['memoryUpsert'],
-  ) {
-    this.memoryConfig = memoryConfig;
-  }
+  ) {}
 
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -131,9 +125,6 @@ export class OrcdServer {
         break;
       case 'cancel':
         this.handleCancel(action);
-        break;
-      case 'memory_upsert':
-        this.handleMemoryUpsert(action);
         break;
       case 'compact':
         this.handleCompact(client, action);
@@ -376,17 +367,6 @@ export class OrcdServer {
     });
   }
 
-  private handleMemoryUpsert(action: OrcdAction & { action: 'memory_upsert' }): void {
-    const session = this.store.get(action.sessionId);
-    if (!session) {
-      console.log(`[orcd:${action.sessionId.slice(0, 8)}] handleMemoryUpsert: session not found, ignoring`);
-      return;
-    }
-    this.runMemoryUpsert(session).catch((err) => {
-      console.error(`[orcd:${session.id.slice(0, 8)}] memory_upsert action failed:`, err);
-    });
-  }
-
   private handleCompact(client: ClientState, action: OrcdAction & { action: 'compact' }): void {
     let session = this.store.get(action.sessionId);
     const hydrated = !session;
@@ -460,52 +440,6 @@ export class OrcdServer {
       console.error(`[orcd] get_history error:`, err);
       this.send(client, { type: 'history', requestId: action.requestId, messages: [] });
     }
-  }
-
-  // ── Provider env helper ──────────────────────────────────────────────────
-
-  private buildProviderEnv(provider: string): Record<string, string> {
-    const cfg = this.providers[provider];
-    if (!cfg) {
-      console.warn(`[orcd] buildProviderEnv: unknown provider ${provider}, using process.env only`);
-      return { ...process.env } as Record<string, string>;
-    }
-
-    // Pi runtime injects provider baseUrl/apiKey via the Model object and
-    // AuthStorage.setRuntimeApiKey (see pi-runtime.ts) — not via process.env.
-    return { ...process.env } as Record<string, string>;
-  }
-
-  // ── Memory upsert ───────────────────────────────────────────────────────
-
-  private async runMemoryUpsert(session: OrcdSession): Promise<void> {
-    if (!this.memoryConfig?.enabled || !this.memoryConfig.baseUrl || !this.memoryConfig.apiKey) {
-      console.log(`[orcd:${session.id.slice(0, 8)}:mem] memory upsert disabled or missing config, skipping`);
-      return;
-    }
-    if (this.upsertedSessions.has(session.id)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}:mem] skipping duplicate upsert`);
-      return;
-    }
-
-    const env = this.buildProviderEnv(session.provider);
-    const log = (msg: string) => console.log(`[orcd:${session.id.slice(0, 8)}:mem] ${msg}`);
-
-    log(`running agent (server: ${this.memoryConfig.baseUrl})`);
-
-    const result = await upsertMemories({
-      sessionId: session.id,
-      projectPath: session.cwd,
-      projectName: session.cwd.split('/').pop() ?? 'unknown',
-      model: session.model,
-      env,
-      memoryBaseUrl: this.memoryConfig.baseUrl,
-      memoryApiKey: this.memoryConfig.apiKey,
-    });
-
-    this.upsertedSessions.add(session.id);
-    const { search, store, update, delete: del } = result.toolCalls;
-    log(`done: search=${search} store=${store} update=${update} delete=${del} (${result.durationMs}ms)`);
   }
 
   // ── Full compaction (chat `/compact`) ───────────────────────────────────
@@ -634,13 +568,6 @@ export class OrcdServer {
           console.log(`[orcd:${sid.slice(0, 8)}:bgc] threshold hit (${pct}%), starting`);
           void this.maybeStartBgc(session);
         }
-      }
-
-      if (msg.type === 'session_exit') {
-        // Auto memory upsert on exit
-        this.runMemoryUpsert(session).catch((err) => {
-          console.error(`[orcd:${sid.slice(0, 8)}:mem] exit upsert failed:`, err);
-        });
       }
     };
 

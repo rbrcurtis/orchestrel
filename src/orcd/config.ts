@@ -1,4 +1,4 @@
-import type { MemoryUpsertConfig, ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
+import type { ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
 import { loadConfig, parseConfig as parseSharedConfig, resolveEnvVars } from '../shared/config';
 import type { ProviderAliases } from '../shared/subagent-policy';
 
@@ -26,7 +26,6 @@ export interface OrcdConfig {
   defaultCwd?: string;
   ringBufferSize: number;
   providers: Record<string, ProviderConfig>;
-  memoryUpsert?: MemoryUpsertConfig;
 }
 
 export { resolveEnvVars };
@@ -63,7 +62,6 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
     defaultCwd: cfg.defaultCwd,
     ringBufferSize: cfg.ringBufferSize,
     providers,
-    memoryUpsert: cfg.memoryUpsert,
   };
 }
 
