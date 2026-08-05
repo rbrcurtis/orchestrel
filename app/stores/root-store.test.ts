@@ -8,6 +8,7 @@ class FakeSocket {
   ioHandlers = new Map<string, Array<(...args: unknown[]) => void>>();
   connected = true;
   nextSubscribeData: SyncPayload | undefined;
+  nextSubscribeResponse: Promise<AckResponse> | undefined;
 
   on(event: keyof ServerToClientEvents | 'connect' | 'disconnect' | 'connect_error', handler: (...args: unknown[]) => void) {
     const key = String(event);
@@ -29,7 +30,7 @@ class FakeSocket {
 
   emitWithAck(event: keyof ClientToServerEvents, _data: unknown): Promise<AckResponse> {
     if (event === 'subscribe') {
-      return Promise.resolve({ data: this.nextSubscribeData });
+      return this.nextSubscribeResponse ?? Promise.resolve({ data: this.nextSubscribeData });
     }
     if (event === 'agent:status') {
       return Promise.resolve({});
@@ -131,6 +132,7 @@ describe('RootStore websocket reconnect sync', () => {
     fakeSocket.ioHandlers.clear();
     fakeSocket.connected = true;
     fakeSocket.nextSubscribeData = undefined;
+    fakeSocket.nextSubscribeResponse = undefined;
     fakeSocket.io.open.mockClear();
     vi.clearAllMocks();
     vi.resetModules();
@@ -250,6 +252,27 @@ describe('RootStore websocket reconnect sync', () => {
     });
 
     expect(store.cards.getCard(100)?.title).toBe('Visible card');
+  });
+
+  it('keeps a live card update that arrives before a stale subscribe snapshot', async () => {
+    const { RootStore } = await import('./root-store');
+    const store = new RootStore();
+    const stale = makeSyncPayload('running');
+    stale.cards = [];
+    let resolveSubscribe: (value: AckResponse) => void = () => {};
+    fakeSocket.nextSubscribeResponse = new Promise((resolve) => {
+      resolveSubscribe = resolve;
+    });
+
+    store.subscribe(['running']);
+    fakeSocket.trigger('card:updated', {
+      ...makeSyncPayload('running').cards[0],
+      id: 102,
+      title: 'Created through API',
+    });
+    resolveSubscribe({ data: stale });
+
+    await waitFor(() => expect(store.cards.getCard(102)?.title).toBe('Created through API'));
   });
 
   function stubNotification(into: string[]) {
