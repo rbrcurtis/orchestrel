@@ -66,13 +66,19 @@ async function ollamaSuggestTitle(description: string): Promise<string> {
     body: JSON.stringify({
       model: config.model,
       stream: false,
-      options: { num_predict: 12, temperature: 0, num_ctx: 512 },
-      prompt: `Write a kanban card title for the task below. Rules: 4 words or fewer, start with a verb (Add, Setup, Create, Fix), state the overall goal rather than a sub-item. Return only the title.\n\nTask: ${description}`,
+      options: { num_predict: 16, temperature: 0, num_ctx: 512 },
+      system: `You are a title generator. Output only one kanban task title on one line. Use exactly three or four words. Keep the main action, object, and exact technical terms. Remove secondary details. Do not answer the task or add an explanation.`,
+      prompt: description,
     }),
   });
   if (!res.ok) throw new Error(`Ollama request failed: ${res.status} ${res.statusText}`);
   const data = (await res.json()) as { response: string };
-  return data.response.trim();
+  const generated = data.response.trim().split(/\s+/);
+  const contentWords = generated.filter((word, index) =>
+    index === 0 || !/^(a|an|and|after|for|from|in|into|of|on|or|the|to|when|with|without)$/i.test(word),
+  );
+  const words = (contentWords.length >= 3 ? contentWords : generated).slice(0, 4);
+  return words.join(' ');
 }
 
 class CardService {
