@@ -320,9 +320,9 @@ describe('CardService', () => {
     fetchMock.mockRestore()
   })
 
-  it('limits generated titles to four complete words', async () => {
+  it('sends the description to the configured title endpoint and trims the response', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ response: 'Fixing 500 error after password reset' }), {
+      new Response(JSON.stringify({ response: '  Fix password reset 500 \n' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -332,11 +332,11 @@ describe('CardService', () => {
     const title = await cardService.suggestTitle('Fix the HTTP 500 after users reset their passwords')
 
     const request = fetchMock.mock.calls[0]
-    const body = JSON.parse(request?.[1]?.body as string) as { model?: string; options?: { num_predict?: number } }
+    const body = JSON.parse(request?.[1]?.body as string) as { model?: string; prompt?: string }
     expect(request?.[0]).toBe('http://localhost:11434/api/generate')
     expect(body.model).toBe('title')
-    expect(body.options?.num_predict).toBeLessThanOrEqual(16)
-    expect(title).toBe('Fixing 500 error password')
+    expect(body.prompt).toContain('Fix the HTTP 500 after users reset their passwords')
+    expect(title).toBe('Fix password reset 500')
     fetchMock.mockRestore()
   })
 })
