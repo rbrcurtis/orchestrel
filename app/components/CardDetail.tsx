@@ -23,6 +23,7 @@ import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import { cn, copyText } from '~/lib/utils';
 import { slugify } from '../../src/shared/worktree';
+import { DEFAULT_SENTINEL } from '../../src/shared/ws-protocol';
 import type { Column, Project } from '../../src/shared/ws-protocol';
 import { FileAttachments, FilePickerButton } from './FileAttachments';
 import { uploadFiles } from '~/lib/file-attachments';
@@ -189,15 +190,22 @@ function CardFields({
             onValueChange={(val) => {
               const pid = val === '__none__' ? null : Number(val);
               const proj = pid != null ? projectStore.getProject(pid) : undefined;
-              const prov = proj?.providerID ?? draft.provider;
+              const resolved = proj
+                ? config.resolveDefaults(
+                    proj.nodeName,
+                    proj.providerID ?? 'anthropic',
+                    proj.defaultModel ?? DEFAULT_SENTINEL,
+                    proj.defaultThinkingLevel ?? DEFAULT_SENTINEL,
+                  )
+                : undefined;
               patch({
                 projectId: pid,
                 useWorktree: !!(proj?.isGitRepo && proj.defaultWorktree),
                 worktreeBranch: proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || cardTitle) || null : null,
                 sourceBranch: null,
-                provider: prov,
-                model: proj?.defaultModel ?? config.defaultModelForNode(proj?.nodeName ?? '', prov),
-                thinkingLevel: proj?.defaultThinkingLevel ?? draft.thinkingLevel,
+                provider: resolved?.provider ?? draft.provider,
+                model: resolved?.model ?? config.defaultModelForNode('', draft.provider),
+                thinkingLevel: resolved?.thinkingLevel ?? draft.thinkingLevel,
               });
               onColorChange?.(proj?.color ?? null);
             }}
@@ -775,7 +783,12 @@ export const NewCardDetail = observer(function NewCardDetail({
     if (initialProjectId != null) {
       const proj = projectStore.getProject(initialProjectId);
       if (proj) {
-        const prov = proj.providerID ?? 'anthropic';
+        const { provider, model, thinkingLevel } = config.resolveDefaults(
+          proj.nodeName,
+          proj.providerID ?? 'anthropic',
+          proj.defaultModel ?? DEFAULT_SENTINEL,
+          proj.defaultThinkingLevel ?? DEFAULT_SENTINEL,
+        );
         return {
           title: '',
           description,
@@ -783,9 +796,9 @@ export const NewCardDetail = observer(function NewCardDetail({
           useWorktree: !!proj.defaultWorktree,
           worktreeBranch: null,
           sourceBranch: null,
-          provider: prov,
-          model: proj.defaultModel ?? config.defaultModelForNode(proj.nodeName, prov),
-          thinkingLevel: proj.defaultThinkingLevel ?? 'high',
+          provider,
+          model,
+          thinkingLevel,
           summarizeThreshold: 0,
         };
       }

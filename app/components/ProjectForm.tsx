@@ -9,7 +9,18 @@ import { Card, CardHeader, CardTitle, CardContent } from '~/components/ui/card';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Checkbox } from '~/components/ui/checkbox';
 import { AlertCircle } from 'lucide-react';
+import { DEFAULT_SENTINEL } from '../../src/shared/ws-protocol';
 import { GradientColorPicker } from './GradientColorPicker';
+
+const THINKING_LABELS: Record<string, string> = {
+  off: 'Off',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  adaptive: 'Adaptive',
+};
+
+type ThinkingOption = 'off' | 'low' | 'medium' | 'high' | 'adaptive' | typeof DEFAULT_SENTINEL;
 
 interface Project {
   id: number;
@@ -21,7 +32,7 @@ interface Project {
   defaultWorktree: boolean;
   color: string;
   defaultModel: string;
-  defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
+  defaultThinkingLevel: ThinkingOption;
   providerID: string;
   nodeName: string;
   archived: boolean;
@@ -42,7 +53,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [defaultWorktree, setDefaultWorktree] = useState(project?.defaultWorktree ?? false);
   const [color, setColor] = useState(project?.color ?? '#00f0ff');
   const [defaultModel, setDefaultModel] = useState(project?.defaultModel ?? 'sonnet');
-  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high' | 'adaptive'>(
+  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<ThinkingOption>(
     project?.defaultThinkingLevel ?? 'high',
   );
   const config = useConfigStore();
@@ -58,10 +69,29 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const store = useStore();
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>(project?.userIds ?? []);
 
+  // Labels for the 'default' options, showing what the node's orcd config resolves to
+  const nodeDefaultProvider = config.nodeDefaultProvider(nodeName);
+  const nodeDefaultModel = config.nodeDefaultModel(nodeName);
+  const defaultProviderLabel = nodeDefaultProvider
+    ? (config.providersForNode(nodeName)[nodeDefaultProvider]?.label ?? nodeDefaultProvider)
+    : undefined;
+  const defaultModelLabel =
+    nodeDefaultProvider && nodeDefaultModel
+      ? (config.getModelForNode(nodeName, nodeDefaultProvider, nodeDefaultModel)?.label ?? nodeDefaultModel)
+      : undefined;
+  const defaultProviderOption = defaultProviderLabel ? `Default (${defaultProviderLabel})` : 'Default';
+  const defaultModelOption = defaultModelLabel ? `Default (${defaultModelLabel})` : 'Default';
+  const nodeDefaultThinking = config.nodeDefaultThinking(nodeName);
+  const defaultThinkingOption = nodeDefaultThinking
+    ? `Default (${THINKING_LABELS[nodeDefaultThinking] ?? nodeDefaultThinking})`
+    : 'Default';
+
   const isValid = name.trim() && path.trim();
 
   function handleNodeChange(newNode: string) {
     setNodeName(newNode);
+    // 'default' tracks whatever the new node's orcd config says
+    if (providerID === DEFAULT_SENTINEL) return;
     const providers = Object.keys(config.providersForNode(newNode));
     const nextProvider = providers.includes(providerID) ? providerID : (providers[0] ?? 'anthropic');
     setProviderID(nextProvider);
@@ -70,7 +100,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
 
   function handleProviderChange(newProvider: string) {
     setProviderID(newProvider);
-    setDefaultModel(config.defaultModelForNode(nodeName, newProvider));
+    setDefaultModel(newProvider === DEFAULT_SENTINEL ? DEFAULT_SENTINEL : config.defaultModelForNode(nodeName, newProvider));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -216,9 +246,14 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Provider</label>
                 <Select value={providerID} onValueChange={handleProviderChange}>
                   <SelectTrigger className="w-full">
-                    <span data-slot="select-value">{config.providersForNode(nodeName)[providerID]?.label ?? providerID}</span>
+                    <span data-slot="select-value">
+                      {providerID === DEFAULT_SENTINEL
+                        ? defaultProviderOption
+                        : (config.providersForNode(nodeName)[providerID]?.label ?? providerID)}
+                    </span>
                   </SelectTrigger>
                   <SelectContent position="popper" sideOffset={4}>
+                    <SelectItem value={DEFAULT_SENTINEL}>{defaultProviderOption}</SelectItem>
                     {Object.entries(config.providersForNode(nodeName)).map(([id, p]) => (
                       <SelectItem key={id} value={id}>
                         {p.label}
@@ -234,15 +269,21 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 <Select key={`${nodeName}-${providerID}`} value={defaultModel} onValueChange={setDefaultModel}>
                   <SelectTrigger className="w-full">
                     <span data-slot="select-value">
-                      {config.providersForNode(nodeName)[providerID]?.models[defaultModel]?.label ?? defaultModel}
+                      {providerID === DEFAULT_SENTINEL
+                        ? defaultModelOption
+                        : (config.providersForNode(nodeName)[providerID]?.models[defaultModel]?.label ?? defaultModel)}
                     </span>
                   </SelectTrigger>
                   <SelectContent position="popper" sideOffset={4}>
-                    {config.getModelsForNode(nodeName, providerID).map(([alias, m]) => (
-                      <SelectItem key={alias} value={alias}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
+                    {providerID === DEFAULT_SENTINEL ? (
+                      <SelectItem value={DEFAULT_SENTINEL}>{defaultModelOption}</SelectItem>
+                    ) : (
+                      config.getModelsForNode(nodeName, providerID).map(([alias, m]) => (
+                        <SelectItem key={alias} value={alias}>
+                          {m.label}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -252,12 +293,13 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Default Thinking</label>
                 <Select
                   value={defaultThinkingLevel}
-                  onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high' | 'adaptive')}
+                  onValueChange={(v) => setDefaultThinkingLevel(v as ThinkingOption)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper" sideOffset={4}>
+                    <SelectItem value={DEFAULT_SENTINEL}>{defaultThinkingOption}</SelectItem>
                     <SelectItem value="off">Off</SelectItem>
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>

@@ -13,6 +13,7 @@ authToken: ${ORCD_TOKEN}
 name: local
 defaultProvider: anthropic
 defaultModel: sonnet
+defaultThinkingLevel: high   # optional (off|low|medium|high|adaptive); used when a project sets "Default"
 defaultCwd: ~/Code             # where new cards default their working directory
 ringBufferSize: 5000           # per-session event buffer; size to cover the max expected BE↔node outage
 

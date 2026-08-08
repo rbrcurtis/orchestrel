@@ -29,7 +29,7 @@ export class OrcdServer {
   constructor(
     private opts: OrcdListenConfig,
     private providers: Record<string, ProviderConfig>,
-    private defaults: { provider: string; model: string },
+    private defaults: { provider: string; model: string; thinkingLevel?: string },
   ) {}
 
   start(): Promise<void> {

@@ -23,6 +23,7 @@ export interface OrcdConfig {
   name: string;
   defaultProvider: string;
   defaultModel: string;
+  defaultThinkingLevel?: string;
   defaultCwd?: string;
   ringBufferSize: number;
   providers: Record<string, ProviderConfig>;
@@ -59,6 +60,7 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
     name: cfg.name,
     defaultProvider: cfg.defaultProvider,
     defaultModel: cfg.defaultModel,
+    ...(cfg.defaultThinkingLevel ? { defaultThinkingLevel: cfg.defaultThinkingLevel } : {}),
     defaultCwd: cfg.defaultCwd,
     ringBufferSize: cfg.ringBufferSize,
     providers,

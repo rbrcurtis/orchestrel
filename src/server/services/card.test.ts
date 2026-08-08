@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { DataSource } from 'typeorm'
 import { Card, CardSubscriber } from '../models/Card'
 import { Project, ProjectSubscriber } from '../models/Project'
+import { DEFAULT_SENTINEL } from '../../shared/ws-protocol'
 
 const mockCancel = vi.fn()
 const mockIsActive = vi.fn(() => true)
@@ -10,7 +11,7 @@ const mockCapabilities = {
   providers: [
     { id: 'anthropic', label: 'Anthropic', models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1_000_000 }] },
   ],
-  defaults: { provider: 'anthropic', model: 'sonnet' },
+  defaults: { provider: 'anthropic', model: 'sonnet', thinkingLevel: 'medium' },
 }
 const mockGetHistory = vi.fn()
 const mockPathValidate = vi.fn<(path: string) => Promise<{
@@ -153,6 +154,29 @@ describe('CardService', () => {
     const proj = await projectService.createProject({ name: 'Cap project', path: '/tmp/cap-project' })
     const card = await cardService.createCard({ title: 'Cap card', description: 'd', column: 'backlog', projectId: proj.id, model: 'sonnet' })
     expect(card.nodeName).toBe('local')
+    expect(card.contextWindow).toBe(1_000_000)
+  })
+
+  it('resolves the default sentinel on a project to the node defaults when creating a card', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const proj = await projectService.createProject({
+      name: 'Sentinel project',
+      path: '/tmp/sentinel-project',
+      providerID: DEFAULT_SENTINEL,
+      defaultModel: DEFAULT_SENTINEL,
+      defaultThinkingLevel: DEFAULT_SENTINEL,
+    })
+    // The project keeps the sentinel so it tracks future orcd default changes
+    expect(proj.providerID).toBe(DEFAULT_SENTINEL)
+    expect(proj.defaultModel).toBe(DEFAULT_SENTINEL)
+    expect(proj.defaultThinkingLevel).toBe(DEFAULT_SENTINEL)
+
+    const card = await cardService.createCard({ title: 'Sentinel card', description: 'd', column: 'backlog', projectId: proj.id })
+    // Cards persist concrete values resolved from the node's advertised defaults
+    expect(card.provider).toBe('anthropic')
+    expect(card.model).toBe('sonnet')
+    expect(card.thinkingLevel).toBe('medium')
     expect(card.contextWindow).toBe(1_000_000)
   })
 

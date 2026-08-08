@@ -29,6 +29,14 @@ export function defaultProviderFor(nodeName: string): string | undefined {
   return getClientByNode(nodeName)?.capabilities?.defaults.provider;
 }
 
+export function defaultModelFor(nodeName: string): string | undefined {
+  return getClientByNode(nodeName)?.capabilities?.defaults.model;
+}
+
+export function defaultThinkingFor(nodeName: string): string | undefined {
+  return getClientByNode(nodeName)?.capabilities?.defaults.thinkingLevel;
+}
+
 // Convert a node's advertised capabilities into the FE provider-config shape.
 // modelID is unknown to the BE (orcd hides it), and the FE only needs
 // alias/label/contextWindow for selection, so the alias doubles as modelID.

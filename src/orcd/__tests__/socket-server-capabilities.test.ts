@@ -12,12 +12,12 @@ describe('buildCapabilities', () => {
           modelLabels: { 'claude-sonnet-4-6': { alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 } },
         },
       },
-      { provider: 'anthropic', model: 'sonnet' },
+      { provider: 'anthropic', model: 'sonnet', thinkingLevel: 'medium' },
     );
     const caps = server['buildCapabilities']('h1');
     expect(caps).toMatchObject({
       type: 'capabilities', requestId: 'h1', name: 'gpubox',
-      defaults: { provider: 'anthropic', model: 'sonnet' },
+      defaults: { provider: 'anthropic', model: 'sonnet', thinkingLevel: 'medium' },
     });
     expect(caps.providers[0]).toMatchObject({ id: 'anthropic', label: 'Anthropic' });
     expect(caps.providers[0].models[0]).toMatchObject({ alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 });

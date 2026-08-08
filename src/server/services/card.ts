@@ -1,9 +1,10 @@
 import { ILike, IsNull } from 'typeorm';
 import path from 'node:path';
 import { Card } from '../models/Card';
+import { DEFAULT_SENTINEL } from '../../shared/ws-protocol';
 import type { Column } from '../../shared/ws-protocol';
 import { Project } from '../models/Project';
-import { contextWindowFor, defaultProviderFor } from '../config/capabilities';
+import { contextWindowFor, defaultProviderFor, defaultModelFor, defaultThinkingFor } from '../config/capabilities';
 import { slugify } from '../../shared/worktree';
 
 export interface PageResult {
@@ -114,8 +115,14 @@ class CardService {
         }
       }
     }
+    // Resolve the 'default' sentinel: projects can track their node's orcd
+    // defaults, but cards persist concrete values (orcd receives them verbatim).
+    providerID = data.provider ?? providerID;
+    if (providerID === DEFAULT_SENTINEL) providerID = defaultProviderFor(nodeName);
+    if (data.model === DEFAULT_SENTINEL) data.model = defaultModelFor(nodeName);
+    if (data.thinkingLevel === DEFAULT_SENTINEL) data.thinkingLevel = defaultThinkingFor(nodeName);
     providerID = providerID ?? defaultProviderFor(nodeName) ?? 'anthropic';
-    data.provider = data.provider ?? providerID;
+    data.provider = providerID;
     data.nodeName = nodeName;
     data.summarizeThreshold = data.summarizeThreshold ?? 0;
 

@@ -226,7 +226,7 @@ export interface CapabilitiesMessage {
   requestId?: string;
   name: string;
   providers: CapabilityProvider[];
-  defaults: { provider: string; model: string };
+  defaults: { provider: string; model: string; thinkingLevel?: string };
 }
 
 export interface WorktreeReadyMessage {

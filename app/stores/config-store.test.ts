@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigStore } from './config-store';
+import { DEFAULT_SENTINEL } from '../../src/shared/ws-protocol';
 
 const LOCAL = {
   trackable: {
@@ -51,5 +52,44 @@ describe('ConfigStore node capabilities', () => {
     expect(store.providersEntriesForNode('local').map(([id]) => id)).toEqual(['trackable']);
     expect(store.defaultModelForNode('local', 'trackable')).toBe('auto');
     expect(store.defaultModelForNode('unknown', 'trackable')).toBe('sonnet');
+  });
+});
+
+describe('ConfigStore resolveDefaults', () => {
+  const withDefaults = {
+    name: 'local',
+    connected: true,
+    providers: LOCAL,
+    defaults: { provider: 'trackable', model: 'auto', thinkingLevel: 'low' },
+  };
+
+  it('replaces the default sentinel with the node defaults', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([withDefaults]);
+    expect(store.resolveDefaults('local', DEFAULT_SENTINEL, DEFAULT_SENTINEL, DEFAULT_SENTINEL)).toEqual({
+      provider: 'trackable',
+      model: 'auto',
+      thinkingLevel: 'low',
+    });
+  });
+
+  it('passes concrete provider, model, and thinking through unchanged', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([withDefaults]);
+    expect(store.resolveDefaults('local', 'trackable', 'gpt-5.6-sol', 'adaptive')).toEqual({
+      provider: 'trackable',
+      model: 'gpt-5.6-sol',
+      thinkingLevel: 'adaptive',
+    });
+  });
+
+  it('falls back when the node has no advertised defaults', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([{ name: 'local', connected: true, providers: LOCAL }]);
+    expect(store.resolveDefaults('local', DEFAULT_SENTINEL, DEFAULT_SENTINEL, DEFAULT_SENTINEL)).toEqual({
+      provider: 'anthropic',
+      model: 'sonnet',
+      thinkingLevel: 'high',
+    });
   });
 });

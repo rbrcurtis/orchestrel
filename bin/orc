@@ -23,6 +23,17 @@ const DEFAULT_PI_PATH = resolve(REPO_ROOT, 'node_modules', '.bin', 'pi');
 const DEFAULT_DB_PATH = resolve(REPO_ROOT, 'data', 'orchestrel.db');
 const ENV_DEFAULT_PROVIDER = 'ORC_PROVIDER';
 const ENV_DEFAULT_MODEL = 'ORC_MODEL';
+// Orchestrel thinking levels → pi --thinking levels. 'adaptive' is handled
+// separately: like orcd it runs at session level 'high' with adaptive thinking
+// forced on the provider (see registerOrchestrelProvider).
+const PI_THINKING_LEVELS = {
+  disabled: 'off',
+  off: 'off',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  max: 'xhigh',
+};
 const DEFAULT_API_URL = 'http://localhost:6194';
 const LEGACY_SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions';
 const SUBAGENT_POLICY_EXTENSION = resolve(REPO_ROOT, 'src/pi-extensions/orchestrel-subagent-policy.ts');
@@ -100,6 +111,11 @@ async function main() {
     throw new Error(`Unknown model alias "${resolved.modelAlias}" for provider "${resolved.providerId}"`);
   }
 
+  // Card metadata (resume) wins before the config default, mirroring provider/model.
+  const thinkingLevel = resolveThinkingLevel(config, resolved.card, configPath);
+  const adaptive = thinkingLevel === 'adaptive';
+  const piThinking = adaptive ? 'high' : thinkingLevel ? PI_THINKING_LEVELS[thinkingLevel] : undefined;
+
   rejectConflictingArgs(passthroughArgs);
   // Qualify the model with its provider — a bare model id like "auto" is
   // ambiguous (pi's built-in openrouter also has "auto") and pi rejects
@@ -107,7 +123,7 @@ async function main() {
   const modelSpec = `${resolved.providerId}/${model.modelID}`;
   const policy = buildSubagentPolicy(resolved.providerId, model.modelID, provider);
   const policyJson = serializeSubagentPolicy(policy);
-  const piArgs = buildPiArgs(modelSpec, passthroughArgs, prompt);
+  const piArgs = buildPiArgs(modelSpec, passthroughArgs, prompt, piThinking);
 
   if (args['--print-env']) {
     process.stdout.write(
@@ -116,6 +132,7 @@ async function main() {
           provider: resolved.providerId,
           modelAlias: resolved.modelAlias,
           modelID: model.modelID,
+          ...(thinkingLevel ? { thinkingLevel } : {}),
           ...(resolved.card ? { card: resolved.card } : {}),
           passthroughArgs,
           piArgs,
@@ -143,7 +160,7 @@ async function main() {
   // ~/.pi/agent/models.json. orcd registers custom providers programmatically
   // via the SDK, but this standalone wrapper spawns the pi binary, so we must
   // materialize custom providers to models.json or pi rejects the model ID.
-  syncModelsJson(config);
+  syncModelsJson(config, adaptive ? resolved.providerId : undefined);
 
   const piPath = requirePiPath();
   const child = spawn(
@@ -297,6 +314,13 @@ function envDefault(name) {
   return value ? value : null;
 }
 
+function resolveThinkingLevel(config, card, configPath) {
+  const level = card?.thinkingLevel ?? config.defaultThinkingLevel;
+  if (level == null) return undefined;
+  if (level === 'adaptive' || PI_THINKING_LEVELS[level]) return level;
+  throw new Error(`Unknown thinking level "${level}" in ${configPath}`);
+}
+
 function tryResolveModelAlias(provider, modelRef) {
   try {
     return resolveModelAlias(provider, modelRef);
@@ -354,7 +378,7 @@ function findCardBySessionId(sessionId) {
   try {
     const row = db
       .prepare(
-        'select id, title, provider, model from cards where session_id = ? order by updated_at desc limit 1',
+        'select id, title, provider, model, thinking_level from cards where session_id = ? order by updated_at desc limit 1',
       )
       .get(sessionId);
     if (!row) return null;
@@ -363,6 +387,7 @@ function findCardBySessionId(sessionId) {
       title: row.title,
       provider: row.provider,
       model: row.model,
+      thinkingLevel: row.thinking_level,
     };
   } finally {
     db.close();
@@ -447,7 +472,7 @@ function getAgentDir() {
 // pi's built-in anthropic (i.e. has a baseUrl) gets written to models.json so
 // the pi binary can resolve its model IDs. Built-in anthropic (Claude Max
 // OAuth, no baseUrl) is left untouched.
-function syncModelsJson(config) {
+function syncModelsJson(config, adaptiveProviderId) {
   const providers = {};
   for (const [id, provider] of Object.entries(config.providers)) {
     if (!provider.baseUrl) continue;
@@ -458,6 +483,9 @@ function syncModelsJson(config) {
       api,
       baseUrl: provider.baseUrl,
       ...(apiKey ? { apiKey } : {}),
+      // Adaptive thinking mirrors orcd's registerOrchestrelProvider: the model
+      // sends thinking.type "adaptive" + output_config.effort instead of a budget.
+      ...(id === adaptiveProviderId ? { compat: { forceAdaptiveThinking: true } } : {}),
       models: Object.entries(provider.models).map(([alias, model]) => ({
         id: model.modelID,
         name: model.label ?? alias,
@@ -481,8 +509,12 @@ function syncModelsJson(config) {
   renameSync(tmp, modelsPath);
 }
 
-function buildPiArgs(modelId, passthroughArgs, prompt) {
+function buildPiArgs(modelId, passthroughArgs, prompt, piThinking) {
   const base = ['--model', modelId, '-e', SUBAGENT_POLICY_EXTENSION];
+  // An explicit --thinking in the pi args wins over the config default.
+  if (piThinking && !passthroughArgs.some((t) => t === '--thinking' || t.startsWith('--thinking='))) {
+    base.push('--thinking', piThinking);
+  }
   if (prompt !== undefined) return [...base, '--mode', 'json', '-p', prompt, ...passthroughArgs];
   return [...base, ...passthroughArgs];
 }

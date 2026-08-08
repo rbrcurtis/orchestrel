@@ -189,6 +189,62 @@ providers:
     ]);
   }, 30000);
 
+  it('passes config defaultThinkingLevel to pi as --thinking', async () => {
+    await withDefaultThinking('high');
+
+    const output = await runOrc(['trackable', 'auto'], {});
+
+    expect(output.thinkingLevel).toBe('high');
+    expect(output.piArgs).toEqual([
+      '--model',
+      'trackable/auto',
+      '-e',
+      resolve(repoRoot, 'src/pi-extensions/orchestrel-subagent-policy.ts'),
+      '--thinking',
+      'high',
+    ]);
+  }, 30000);
+
+  it('does not duplicate --thinking when the pi args already set one', async () => {
+    await withDefaultThinking('high');
+
+    const output = await runOrc(['--thinking', 'low', 'trackable', 'auto'], {});
+
+    expect(output.piArgs).toEqual([
+      '--model',
+      'trackable/auto',
+      '-e',
+      resolve(repoRoot, 'src/pi-extensions/orchestrel-subagent-policy.ts'),
+      '--thinking',
+      'low',
+    ]);
+  }, 30000);
+
+  it('resolves adaptive default thinking to --thinking high plus forceAdaptiveThinking', async () => {
+    await withDefaultThinking('adaptive');
+    const cwd = await mkdtemp(join(tmpdir(), 'orc-adaptive-cwd-'));
+    try {
+      const stub = await runOrcSpawn(['trackable', 'auto'], cwd);
+
+      expect(stub.args).toContain('--thinking');
+      expect(stub.args[stub.args.indexOf('--thinking') + 1]).toBe('high');
+
+      // Adaptive mirrors orcd's registerOrchestrelProvider: the selected
+      // provider's models.json entry gets forceAdaptiveThinking. (trackable is
+      // the only test provider with a baseUrl, so it is the only synced entry.)
+      const models = JSON.parse(await readFile(join(dir, 'pi-agent', 'models.json'), 'utf8'));
+      expect(Object.keys(models.providers)).toEqual(['trackable']);
+      expect(models.providers.trackable.compat).toEqual({ forceAdaptiveThinking: true });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  async function withDefaultThinking(level: string) {
+    const yaml = await readFile(configPath, 'utf8');
+    await writeFile(configPath, yaml.replace('defaultModel: sonnet', `defaultModel: sonnet\ndefaultThinkingLevel: ${level}`));
+  }
+
   it('passes the runtime subagent policy and extension to Pi without creating cwd .pi files', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'orc-clean-cwd-'));
     try {

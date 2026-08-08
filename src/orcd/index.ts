@@ -7,7 +7,7 @@ async function main() {
   const server = new OrcdServer(
     { listen: config.listen, authToken: config.authToken, name: config.name, ringBufferSize: config.ringBufferSize },
     config.providers,
-    { provider: config.defaultProvider, model: config.defaultModel },
+    { provider: config.defaultProvider, model: config.defaultModel, ...(config.defaultThinkingLevel ? { thinkingLevel: config.defaultThinkingLevel } : {}) },
   );
   await server.start();
   const shutdown = () => { console.log('[orcd] shutting down...'); server.stop(); process.exit(0); };

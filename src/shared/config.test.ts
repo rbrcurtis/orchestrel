@@ -10,6 +10,7 @@ authToken: secret-tok
 name: gpubox
 defaultProvider: anthropic
 defaultModel: sonnet
+defaultThinkingLevel: medium
 providers:
   anthropic:
     label: Anthropic
@@ -29,5 +30,9 @@ providers:
   it('defaults name to local when absent', () => {
     const cfg = parseConfig(base.replace('name: gpubox\n', ''), {});
     expect(cfg.name).toBe('local');
+  });
+  it('parses defaultThinkingLevel when present and leaves it undefined when absent', () => {
+    expect(parseConfig(base, {}).defaultThinkingLevel).toBe('medium');
+    expect(parseConfig(base.replace('defaultThinkingLevel: medium\n', ''), {}).defaultThinkingLevel).toBeUndefined();
   });
 });

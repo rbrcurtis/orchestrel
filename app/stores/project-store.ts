@@ -1,5 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import type { Project, User } from '../../src/shared/ws-protocol';
+import { DEFAULT_SENTINEL } from '../../src/shared/ws-protocol';
+import type { Project, User, ThinkingLevel } from '../../src/shared/ws-protocol';
 import type { WsClient } from '../lib/ws-client';
 
 export class ProjectStore {
@@ -85,7 +86,7 @@ export class ProjectStore {
     defaultBranch?: 'HEAD' | 'main' | 'dev' | null;
     defaultWorktree?: boolean;
     defaultModel?: string;
-    defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
+    defaultThinkingLevel?: ThinkingLevel | typeof DEFAULT_SENTINEL;
     color?: string | null;
     providerID?: string;
     nodeName?: string;
@@ -108,7 +109,7 @@ export class ProjectStore {
     defaultBranch?: 'HEAD' | 'main' | 'dev' | null;
     defaultWorktree?: boolean;
     defaultModel?: string;
-    defaultThinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
+    defaultThinkingLevel?: ThinkingLevel | typeof DEFAULT_SENTINEL;
     color?: string | null;
     providerID?: string;
     nodeName?: string;

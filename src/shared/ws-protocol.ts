@@ -4,6 +4,16 @@ import { z } from 'zod';
 
 const sqliteBool = z.union([z.boolean(), z.number()]).transform((v) => !!v);
 
+/**
+ * Sentinel for project providerID/defaultModel/defaultThinkingLevel meaning
+ * "follow the node's orcd default". Resolved to concrete values when a card is
+ * created — cards, sessions, and orcd itself only ever see concrete values.
+ */
+export const DEFAULT_SENTINEL = '__default__';
+
+export const THINKING_LEVELS = ['off', 'low', 'medium', 'high', 'adaptive'] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
 export const cardSchema = z.object({
   id: z.number(),
   title: z.string(),
@@ -20,7 +30,7 @@ export const cardSchema = z.object({
   model: z.string(),
   provider: z.string(),
   nodeName: z.string().default('local'),
-  thinkingLevel: z.enum(['off', 'low', 'medium', 'high', 'adaptive']),
+  thinkingLevel: z.enum(THINKING_LEVELS),
   summarizeThreshold: z.number(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
@@ -41,7 +51,7 @@ export const projectSchema = z.object({
   defaultWorktree: sqliteBool,
   defaultSandbox: sqliteBool,
   defaultModel: z.string(),
-  defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high', 'adaptive']),
+  defaultThinkingLevel: z.enum([...THINKING_LEVELS, DEFAULT_SENTINEL]),
   providerID: z.string(),
   nodeName: z.string().default('local'),
   color: z.string(),
@@ -74,7 +84,7 @@ export const cardCreateSchema = z.object({
   projectId: z.number().nullable().optional(),
   model: z.string().optional(),
   provider: z.string().optional(),
-  thinkingLevel: z.enum(['off', 'low', 'medium', 'high', 'adaptive']).optional(),
+  thinkingLevel: z.enum(THINKING_LEVELS).optional(),
   summarizeThreshold: z.number().min(0).max(1).optional(),
   worktreeBranch: z.string().nullable().optional(),
   sandbox: z.boolean().optional(),
@@ -95,7 +105,7 @@ export const projectCreateSchema = z.object({
   defaultWorktree: z.boolean().optional(),
   defaultSandbox: z.boolean().optional(),
   defaultModel: z.string().optional(),
-  defaultThinkingLevel: z.enum(['off', 'low', 'medium', 'high', 'adaptive']).optional(),
+  defaultThinkingLevel: z.enum([...THINKING_LEVELS, DEFAULT_SENTINEL]).optional(),
   providerID: z.string().optional(),
   nodeName: z.string().optional(),
   color: z.string().optional(),
@@ -169,7 +179,7 @@ export interface NodeInfo {
   name: string;
   connected: boolean;
   providers: Record<string, ProviderConfig>; // empty when offline
-  defaults?: { provider: string; model: string };
+  defaults?: { provider: string; model: string; thinkingLevel?: string };
 }
 
 /** Sync payload pushed after subscribe */
