@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
-import type { ModelDef, ProviderType } from '../shared/config';
+import type { FullCompactionDef, ModelDef, ProviderType } from '../shared/config';
 import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
+import { createOrchestrelFullCompactionExtension } from '../pi-extensions/orchestrel-full-compaction';
 import { createOrchestrelSubagentPolicyExtension } from '../pi-extensions/orchestrel-subagent-policy';
 import { expandInlineCommands } from './inline-commands';
 import type { ProviderAliases } from '../shared/subagent-policy';
@@ -18,17 +19,21 @@ export interface CreatePiRuntimeSessionOpts {
   modelId: string;
   sessionId?: string;
   effort?: string;
-  provider?: {
-    type: ProviderType;
-    label?: string;
-    baseUrl: string;
-    apiKey: string;
-    authToken?: string;
-    oauth?: string;
-    models: Record<string, ModelDef>;
-    aliases?: ProviderAliases;
-    agents?: Record<string, string>;
-  };
+  provider?: RuntimeProviderConfig;
+  fullCompaction?: FullCompactionDef;
+  providers?: Record<string, RuntimeProviderConfig>;
+}
+
+export interface RuntimeProviderConfig {
+  type: ProviderType;
+  label?: string;
+  baseUrl: string;
+  apiKey: string;
+  authToken?: string;
+  oauth?: string;
+  models: Record<string, ModelDef>;
+  aliases?: ProviderAliases;
+  agents?: Record<string, string>;
 }
 
 export interface PiRuntimeSession {
@@ -163,13 +168,39 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   const authStorage = AuthStorage.create(`${agentDir}/auth.json`);
   const modelRegistry = ModelRegistry.create(authStorage, `${agentDir}/models.json`);
   const providerId = opts.provider && usesBuiltInProvider(opts.provider) ? opts.provider.type : opts.providerId;
-  if (opts.provider) setRuntimeApiKey(authStorage, providerId, opts.provider.apiKey || opts.provider.authToken);
-  if (opts.provider && providerId === opts.providerId) {
-    registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider, isAdaptiveEffort(opts.effort));
+  const providersToRegister = new Set<string>();
+  if (opts.provider) providersToRegister.add(opts.providerId);
+  if (opts.fullCompaction) providersToRegister.add(opts.fullCompaction.provider);
+  for (const id of providersToRegister) {
+    const provider = opts.providers?.[id] ?? (id === opts.providerId ? opts.provider : undefined);
+    if (!provider) throw new Error(`Pi provider not found: ${id}`);
+    const runtimeId = usesBuiltInProvider(provider) ? provider.type : id;
+    setRuntimeApiKey(authStorage, runtimeId, provider.apiKey || provider.authToken);
+    if (runtimeId === id) {
+      registerOrchestrelProvider(modelRegistry, id, provider, id === opts.providerId && isAdaptiveEffort(opts.effort));
+    }
   }
+
   const modelId = opts.provider?.models[opts.modelId]?.modelID ?? opts.modelId;
   const model = modelRegistry.find(providerId, modelId);
   if (!model) throw new Error(`Pi model not found: ${providerId}/${opts.modelId}`);
+
+  let fullCompactionFactory;
+  if (opts.fullCompaction) {
+    const provider = opts.providers?.[opts.fullCompaction.provider];
+    if (!provider) throw new Error(`Pi compaction provider not found: ${opts.fullCompaction.provider}`);
+    const id = usesBuiltInProvider(provider) ? provider.type : opts.fullCompaction.provider;
+    const configuredModel = provider.models[opts.fullCompaction.model];
+    const compactionModel = configuredModel && modelRegistry.find(id, configuredModel.modelID);
+    if (!compactionModel) {
+      throw new Error(`Pi compaction model not found: ${opts.fullCompaction.provider}/${opts.fullCompaction.model}`);
+    }
+    fullCompactionFactory = createOrchestrelFullCompactionExtension({
+      modelRegistry,
+      model: compactionModel,
+      timeoutMs: opts.fullCompaction.timeoutMs,
+    });
+  }
 
   // Legacy managed files were process-global configuration. Remove them before
   // discovery; the policy extension below is isolated to this session's loader.
@@ -182,11 +213,14 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     cwd: opts.cwd,
     agentDir,
     eventBus,
-    extensionFactories: [createOrchestrelSubagentPolicyExtension(policy, {
-      onDecision: ({ agentType, decision }) => {
-        if ('model' in decision) console.log(`[orcd] subagent ${agentType} -> ${decision.model} (${decision.source})`);
-      },
-    })],
+    extensionFactories: [
+      createOrchestrelSubagentPolicyExtension(policy, {
+        onDecision: ({ agentType, decision }) => {
+          if ('model' in decision) console.log(`[orcd] subagent ${agentType} -> ${decision.model} (${decision.source})`);
+        },
+      }),
+      ...(fullCompactionFactory ? [fullCompactionFactory] : []),
+    ],
   });
   await resourceLoader.reload();
 

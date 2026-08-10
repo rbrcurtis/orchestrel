@@ -17,6 +17,14 @@ defaultThinkingLevel: high   # optional (off|low|medium|high|adaptive); used whe
 defaultCwd: ~/Code             # where new cards default their working directory
 ringBufferSize: 5000           # per-session event buffer; size to cover the max expected BE↔node outage
 
+# Manual full compaction uses this node-local provider and model instead of the
+# conversation model. Change either reference and restart orcd to switch it.
+# Request scheduling and concurrency limits are owned by the model endpoint.
+fullCompaction:
+  provider: ray
+  model: assistant
+  timeoutMs: 300000
+
 providers:
   # Pi provider routing for Anthropic models.
   # The provider id and modelID values must match models known to Pi's model registry.

@@ -35,4 +35,16 @@ providers:
     expect(parseConfig(base, {}).defaultThinkingLevel).toBe('medium');
     expect(parseConfig(base.replace('defaultThinkingLevel: medium\n', ''), {}).defaultThinkingLevel).toBeUndefined();
   });
+
+  it('validates and parses the full compaction model reference', () => {
+    const yaml = base.replace('providers:\n', 'fullCompaction: { provider: anthropic, model: sonnet, timeoutMs: 120000 }\nproviders:\n');
+    expect(parseConfig(yaml, {}).fullCompaction).toEqual({
+      provider: 'anthropic',
+      model: 'sonnet',
+      timeoutMs: 120_000,
+    });
+    expect(() => parseConfig(yaml.replace('model: sonnet', 'model: missing'), {})).toThrow(
+      'fullCompaction model "anthropic/missing" is not configured',
+    );
+  });
 });

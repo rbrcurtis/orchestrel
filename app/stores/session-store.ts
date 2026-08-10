@@ -151,11 +151,13 @@ export class SessionStore {
         if (sdkMsg.subtype === 'compact_started') {
           s.compactInProgress = true;
         }
-        if (sdkMsg.subtype === 'compact_done') {
+        if (sdkMsg.subtype === 'compact_done' || sdkMsg.subtype === 'compact_failed') {
           s.compactInProgress = false;
-          s.contextTokens = 1;
+          if (sdkMsg.subtype === 'compact_done') s.contextTokens = 1;
           s.active = false;
-          if (s.status === 'running' || s.status === 'starting') s.status = 'completed';
+          if (s.status === 'running' || s.status === 'starting') {
+            s.status = sdkMsg.subtype === 'compact_done' ? 'completed' : 'errored';
+          }
         }
       }
 

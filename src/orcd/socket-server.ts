@@ -1,6 +1,7 @@
 import { createServer, type Server, type Socket } from 'net';
 import type { CapabilitiesMessage, OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
+import type { FullCompactionDef } from '../shared/config';
 import type { ProviderConfig } from './config';
 import { fileStager } from './file-staging';
 
@@ -30,6 +31,7 @@ export class OrcdServer {
     private opts: OrcdListenConfig,
     private providers: Record<string, ProviderConfig>,
     private defaults: { provider: string; model: string; thinkingLevel?: string },
+    private fullCompaction?: FullCompactionDef,
   ) {}
 
   start(): Promise<void> {
@@ -200,6 +202,8 @@ export class OrcdServer {
       model: action.model,
       provider: action.provider,
       providerConfig: providerCfg,
+      fullCompaction: this.fullCompaction,
+      providers: this.providers,
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
@@ -254,6 +258,8 @@ export class OrcdServer {
       model: action.model,
       provider: action.provider,
       providerConfig: providerCfg,
+      fullCompaction: this.fullCompaction,
+      providers: this.providers,
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
@@ -291,8 +297,7 @@ export class OrcdServer {
 
     // `/compact` (and other Pi TUI slash commands) are not interpreted on the
     // headless SDK path — without this they reach the model as literal prompt
-    // text. The chat command runs Pi's full native compaction (not the
-    // background compactor, which the UI context wheel drives separately).
+    // text. The chat command runs Pi's full native compaction.
     if (isCompactCommand(action.prompt)) {
       console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → full compaction`);
       void this.runFullCompaction(session);
@@ -376,6 +381,8 @@ export class OrcdServer {
         model: action.model,
         provider: action.provider,
         providerConfig: this.providers[action.provider],
+        fullCompaction: this.fullCompaction,
+        providers: this.providers,
         sessionId: action.sessionId,
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,
@@ -442,7 +449,7 @@ export class OrcdServer {
     }
   }
 
-  // ── Full compaction (chat `/compact`) ───────────────────────────────────
+  // ── Full compaction (manual requests) ──────────────────────────────────
 
   /**
    * Pi's native blocking compaction — summarizes the whole conversation and
@@ -468,11 +475,13 @@ export class OrcdServer {
     session.emitCompactStarted();
     try {
       await session.compact();
+      session.emitCompactDone();
       console.log(`[orcd:${sid.slice(0, 8)}:compact] full compaction applied`);
     } catch (err) {
       console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      session.emitCompactFailed(message);
     } finally {
-      session.emitCompactDone();
       this.compacting.delete(sid);
 
       const queued = this.compactionQueuedMessages.get(sid) ?? [];

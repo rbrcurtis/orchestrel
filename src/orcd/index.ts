@@ -8,6 +8,7 @@ async function main() {
     { listen: config.listen, authToken: config.authToken, name: config.name, ringBufferSize: config.ringBufferSize },
     config.providers,
     { provider: config.defaultProvider, model: config.defaultModel, ...(config.defaultThinkingLevel ? { thinkingLevel: config.defaultThinkingLevel } : {}) },
+    config.fullCompaction,
   );
   await server.start();
   const shutdown = () => { console.log('[orcd] shutting down...'); server.stop(); process.exit(0); };

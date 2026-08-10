@@ -313,9 +313,9 @@ export class OrcdClient {
   }
 
   /**
-   * Compact a session. `mode: 'full'` runs Pi's native blocking compaction (the
-   * chat `/compact` command); omitting it (or 'background') runs Orchestrel's
-   * incremental background compaction (the UI context wheel).
+   * Compact a session. `mode: 'full'` runs Pi's native blocking compaction;
+   * omitting it (or 'background') runs Orchestrel's incremental background
+   * compaction.
    */
   compact(opts: {
     sessionId: string;
@@ -483,7 +483,7 @@ export class OrcdClient {
         }
         // Only evict if THIS compaction is what marked the session active. A
         // /compact on a genuinely-running session must stay active afterward.
-        if (ev.subtype === 'compact_done' && this.compactActivated.delete(msg.sessionId)) {
+        if ((ev.subtype === 'compact_done' || ev.subtype === 'compact_failed') && this.compactActivated.delete(msg.sessionId)) {
           this.activeSessions.delete(msg.sessionId);
         }
       }

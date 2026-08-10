@@ -28,6 +28,12 @@ export interface ProviderDef {
   agents?: Record<string, string>;
 }
 
+export interface FullCompactionDef {
+  provider: string;
+  model: string;
+  timeoutMs: number;
+}
+
 export interface OrchestrelConfig {
   listen: { host: string; port: number };
   authToken: string;
@@ -37,6 +43,7 @@ export interface OrchestrelConfig {
   defaultThinkingLevel?: string;
   defaultCwd?: string;
   ringBufferSize: number;
+  fullCompaction?: FullCompactionDef;
   providers: Record<string, ProviderDef>;
 }
 
@@ -101,6 +108,27 @@ export function parseConfig(
     };
   }
 
+  let fullCompaction: FullCompactionDef | undefined;
+  if (raw.fullCompaction !== undefined) {
+    if (!raw.fullCompaction || typeof raw.fullCompaction !== 'object' || Array.isArray(raw.fullCompaction)) {
+      throw new Error('config: "fullCompaction" must be a map');
+    }
+    const value = raw.fullCompaction as Record<string, unknown>;
+    const provider = typeof value.provider === 'string' ? value.provider.trim() : '';
+    const model = typeof value.model === 'string' ? value.model.trim() : '';
+    if (!provider || !providers[provider]) {
+      throw new Error(`config: fullCompaction provider "${provider}" is not configured`);
+    }
+    if (!model || !providers[provider].models[model]) {
+      throw new Error(`config: fullCompaction model "${provider}/${model}" is not configured`);
+    }
+    const timeoutMs = Number(value.timeoutMs ?? 300_000);
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('config: fullCompaction timeoutMs must be a positive integer');
+    }
+    fullCompaction = { provider, model, timeoutMs };
+  }
+
   const rawListen = (raw.listen ?? {}) as Record<string, unknown>;
   const listen = {
     host: String(rawListen.host ?? '127.0.0.1'),
@@ -116,6 +144,7 @@ export function parseConfig(
     defaultThinkingLevel: raw.defaultThinkingLevel != null ? String(raw.defaultThinkingLevel) : undefined,
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
     ringBufferSize: Number(raw.ringBufferSize ?? 5000),
+    ...(fullCompaction ? { fullCompaction } : {}),
     providers,
   };
 }

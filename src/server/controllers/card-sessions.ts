@@ -53,7 +53,8 @@ function isBgcSystemEvent(event: Record<string, unknown>): event is { type: 'sys
     (event.subtype === 'bgc_started' ||
       event.subtype === 'compact_boundary' ||
       event.subtype === 'compact_started' ||
-      event.subtype === 'compact_done')
+      event.subtype === 'compact_done' ||
+      event.subtype === 'compact_failed')
   );
 }
 
@@ -148,16 +149,16 @@ export function initOrcdRouter(
           if (sys.subtype === 'compact_started') await handleTurnStart(cardId);
         }
 
-        if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done') {
+        if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done' || sys.subtype === 'compact_failed') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
-            card.contextTokens = 1;
+            if (sys.subtype !== 'compact_failed') card.contextTokens = 1;
             // `/compact` emits no turn_complete/session_exit, so return the card
             // to review here the same way a finished turn would.
-            if (sys.subtype === 'compact_done' && card.column === 'running') card.column = 'review';
+            if (sys.subtype !== 'compact_boundary' && card.column === 'running') card.column = 'review';
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
-            console.log(`[oc:${cardId}] ${sys.subtype}: reset contextTokens to 1`);
+            console.log(`[oc:${cardId}] ${sys.subtype}`);
           }
           bgcMap.delete(msg.sessionId);
         }

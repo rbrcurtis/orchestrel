@@ -244,6 +244,27 @@ describe('OrcdServer background compaction', () => {
     expect(wrote.some((w) => w.includes('compact_boundary'))).toBe(false);
   });
 
+  it('emits compact_failed instead of compact_done when full compaction fails', async () => {
+    const server = createServer();
+    const client = createClient();
+    const session = bgcSession('compact-failed');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
+    client.subscriptions.set(session.id, cb);
+    session.subscribe(cb);
+    vi.spyOn(session, 'compact').mockRejectedValue(new Error('local endpoint unavailable'));
+
+    server['handleAction'](client as never, {
+      action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm', mode: 'full',
+    } as CompactAction);
+    await new Promise((r) => setTimeout(r, 0));
+
+    const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
+    expect(wrote.some((w) => w.includes('compact_failed') && w.includes('local endpoint unavailable'))).toBe(true);
+    expect(wrote.some((w) => w.includes('compact_done'))).toBe(false);
+  });
+
   it('runs messages submitted during full compaction after it finishes', async () => {
     const server = createServer();
     const client = createClient();

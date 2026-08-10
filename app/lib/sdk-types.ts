@@ -33,8 +33,9 @@ export type StreamEvent =
 
 export interface SdkSystemMessage {
   type: 'system';
-  subtype: 'init' | 'compact_boundary' | 'bgc_started' | 'compact_started' | 'compact_done';
+  subtype: 'init' | 'compact_boundary' | 'bgc_started' | 'compact_started' | 'compact_done' | 'compact_failed';
   session_id?: string;
+  error?: string;
   model?: string;
   source?: string;
   timestamp?: number;
@@ -209,6 +210,7 @@ export interface HistorySystemMessage {
   subtype?: 'init' | 'compact_boundary' | string;
   model?: string;
   source?: string;
+  error?: string;
   timestamp?: HistoryTimestamp;
   message?: unknown;
 }
