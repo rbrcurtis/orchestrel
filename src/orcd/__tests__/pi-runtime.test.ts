@@ -236,6 +236,33 @@ describe('createPiRuntimeSession', () => {
     expect(mockFind).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
   });
 
+  it('registers a configured provider without auth for endpoints that accept anonymous requests', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const registry = { find: mockFind, registerProvider: vi.fn() };
+    mockModelRegistryCreate.mockReturnValue(registry);
+
+    await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'ray',
+      modelId: 'assistant',
+      provider: {
+        type: 'anthropic',
+        baseUrl: 'http://127.0.0.1:11434',
+        apiKey: '',
+        models: {
+          assistant: { label: 'Assistant', modelID: 'assistant', contextWindow: 262_144 },
+        },
+      },
+    });
+
+    // Pi requires an apiKey when models are defined; orcd sends a placeholder
+    // for auth-free endpoints (registration would throw otherwise).
+    expect(registry.registerProvider).toHaveBeenCalledWith('ray', expect.objectContaining({
+      baseUrl: 'http://127.0.0.1:11434',
+      apiKey: expect.any(String),
+    }));
+  });
+
   it('registers configured proxy providers and resolves app model aliases to Pi model IDs', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     const registry = { find: mockFind, registerProvider: vi.fn() };

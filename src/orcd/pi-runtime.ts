@@ -10,7 +10,10 @@ import { createOrchestrelSubagentPolicyExtension } from '../pi-extensions/orches
 import { expandInlineCommands } from './inline-commands';
 import type { ProviderAliases } from '../shared/subagent-policy';
 
-const EMPTY_API_KEY_ENV = 'ORCHESTREL_PI_EMPTY_API_KEY';
+// Placeholder for providers without credentials (e.g. local oMLX endpoints).
+// Pi's model registry requires an apiKey when models are defined, but the
+// endpoint ignores it — so any non-empty value works.
+const ANONYMOUS_API_KEY = 'anonymous';
 const DISPLAY_PROMPT_ENTRY = 'orchestrel-display-prompt';
 
 export interface CreatePiRuntimeSessionOpts {
@@ -133,7 +136,7 @@ function registerOrchestrelProvider(
     name: provider.label ?? providerId,
     api,
     baseUrl: provider.baseUrl || 'https://api.anthropic.com',
-    apiKey: provider.apiKey || provider.authToken || `$${EMPTY_API_KEY_ENV}`,
+    apiKey: provider.apiKey || provider.authToken || ANONYMOUS_API_KEY,
     models: Object.entries(provider.models).map(([alias, model]) => ({
       id: model.modelID,
       name: modelName(alias, model),
