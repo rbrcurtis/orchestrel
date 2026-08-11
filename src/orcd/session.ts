@@ -51,6 +51,10 @@ export class OrcdSession {
   // exit from cancel() can't clobber a later resumed turn (see finalizeExit).
   private runEpoch = 0;
   private exitFinalized = false;
+  // Set when the run's final result errored (e.g. provider retries exhausted).
+  // prompt() resolves normally in that case, so run() needs this to exit with
+  // state 'errored' instead of 'completed'.
+  private runError: string | null = null;
   private currentUnsubscribe: (() => void) | null = null;
   // How long cancel() waits for abort() to unwind the run loop naturally before
   // forcing session_exit itself (handles tools wedged on an un-abortable read).
@@ -294,6 +298,15 @@ export class OrcdSession {
       };
       for (const cb of this.subscribers) cb(msg);
 
+      // A failed final result (provider retries exhausted) resolves prompt()
+      // without throwing — remember it so run() exits 'errored'.
+      if (payload.subtype === 'error_during_execution') {
+        this.runError =
+          typeof payload.errorMessage === 'string' && payload.errorMessage.trim()
+            ? payload.errorMessage
+            : 'Turn failed';
+      }
+
       // A result means one agent turn finished. Background tasks (monitors,
       // subagents) may still be running, so this is NOT session_exit — the orc
       // backend uses turn_complete to move the card to review while orcd keeps
@@ -361,6 +374,7 @@ export class OrcdSession {
     this.running = true;
     const epoch = ++this.runEpoch;
     this.exitFinalized = false;
+    this.runError = null;
     try {
       const session = await this.getOrCreatePiSession(opts.effort);
       if (!this.initEmitted) {
@@ -388,17 +402,31 @@ export class OrcdSession {
         log('empty prompt; session resumed without running a turn');
       }
 
-      if (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
+      if (this.state !== 'stopped' && this.runError) {
+        // The final result errored but prompt() resolved without throwing.
+        // Surface the failure: emit an error message and exit 'errored' so the
+        // backend/UI keep the error visible instead of treating it as success.
+        this.state = 'errored';
+        log(`error: ${this.runError}`);
+        const errMsg: SessionErrorMessage = {
+          type: 'error',
+          sessionId: this.id,
+          error: this.runError,
+        };
+        for (const cb of this.subscribers) cb(errMsg);
+      }
+
+      if (this.state !== 'stopped' && this.state !== 'errored' && this.asyncTasks.hasPending()) {
         log('waiting for async task notifications before session_exit');
         await this.waitForAsyncTasks();
       }
 
-      if (this.state !== 'stopped' && hasEnabledScheduledJobs(this.cwd)) {
+      if (this.state !== 'stopped' && this.state !== 'errored' && hasEnabledScheduledJobs(this.cwd)) {
         log('enabled scheduled jobs present; staying alive until they fire');
         await this.waitForScheduledJobs();
       }
 
-      if (this.state !== 'stopped') {
+      if (this.state !== 'stopped' && this.state !== 'errored') {
         this.state = 'completed';
       }
       log(`exited (state=${this.state})`);

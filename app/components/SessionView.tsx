@@ -131,13 +131,26 @@ export const SessionView = observer(function SessionView({
     }
   }, [sessionStatus]);
 
-  // Show notification when session errors
+  // Show notification when session errors. Sticky: it survives the session's
+  // exit (and the history reload that wipes the live error entry) and only
+  // clears when the next prompt is sent, the card is switched, or it is
+  // dismissed.
   useEffect(() => {
     if (sessionStatus === 'errored') {
       const last = conversation.findLast((m) => m.kind === 'error');
       if (last && last.kind === 'error') setNotification(last.message);
-    } else {
-      setNotification(null);
+      return;
+    }
+    // A failed turn can arrive as an errored result even when the session
+    // itself exits 'completed' — surface that failure the same way.
+    const lastResult = conversation.findLast((m) => m.kind === 'result');
+    if (
+      lastResult &&
+      lastResult.kind === 'result' &&
+      lastResult.data.subtype !== 'success' &&
+      lastResult.data.subtype !== 'error_max_turns'
+    ) {
+      setNotification(lastResult.data.errorMessage?.trim() || 'Turn failed');
     }
   }, [sessionStatus, conversation.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -163,6 +176,7 @@ export const SessionView = observer(function SessionView({
   const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
 
   async function handleSend(message: string, files?: FileRef[]) {
+    setNotification(null); // a new prompt clears any stale session error
     try {
       await sessionStore.sendMessage(cardId, message, files);
       return true;
