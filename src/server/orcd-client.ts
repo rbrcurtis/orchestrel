@@ -313,9 +313,9 @@ export class OrcdClient {
   }
 
   /**
-   * Compact a session. `mode: 'full'` runs Pi's native blocking compaction (the
-   * chat `/compact` command); omitting it (or 'background') runs Orchestrel's
-   * incremental background compaction (the UI context wheel).
+   * Compact a session. `mode: 'full'` runs Pi's native blocking compaction
+   * (the chat `/compact` command and the UI context wheel); omitting it (or
+   * 'background') runs Orchestrel's incremental background compaction.
    */
   compact(opts: {
     sessionId: string;

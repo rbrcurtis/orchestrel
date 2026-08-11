@@ -291,8 +291,8 @@ export class OrcdServer {
 
     // `/compact` (and other Pi TUI slash commands) are not interpreted on the
     // headless SDK path — without this they reach the model as literal prompt
-    // text. The chat command runs Pi's full native compaction (not the
-    // background compactor, which the UI context wheel drives separately).
+    // text. The chat command runs Pi's full native compaction (the UI context
+    // wheel uses the same full compaction via the `compact` action).
     if (isCompactCommand(action.prompt)) {
       console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → full compaction`);
       void this.runFullCompaction(session);
