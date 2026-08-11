@@ -75,8 +75,8 @@ export interface CompactAction {
   contextWindow?: number;
   summarizeThreshold?: number;
   requestId?: string;
-  // 'full' = Pi-native blocking compaction (manual compact requests).
-  // 'background' (default) = Orchestrel incremental BGC.
+  // 'full' = Pi-native blocking compaction (the chat `/compact` command).
+  // 'background' (default) = Orchestrel incremental BGC (the UI context wheel).
   mode?: 'full' | 'background';
 }
 

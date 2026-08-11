@@ -6,7 +6,7 @@ import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
 import { hasEnabledScheduledJobs } from '../shared/scheduled-jobs';
 import { RingBuffer } from './ring-buffer';
 import type { CompactionResult } from '@earendil-works/pi-coding-agent';
-import type { OrcdConfig, ProviderConfig } from './config';
+import type { ProviderConfig } from './config';
 import type { SessionState } from './types';
 import type {
   ContextUsageMessage,
@@ -32,8 +32,6 @@ export class OrcdSession {
   readonly contextWindow: number | undefined;
   readonly summarizeThreshold: number;
   readonly providerConfig: ProviderConfig | undefined;
-  readonly fullCompaction: OrcdConfig['fullCompaction'];
-  readonly providers: Record<string, ProviderConfig> | undefined;
   readonly buffer: RingBuffer<unknown>;
 
   /** Last known context token count (updated after each result) */
@@ -79,8 +77,6 @@ export class OrcdSession {
     contextWindow?: number;
     summarizeThreshold?: number;
     providerConfig?: ProviderConfig;
-    fullCompaction?: OrcdConfig['fullCompaction'];
-    providers?: Record<string, ProviderConfig>;
     onFork?: (oldId: string, newId: string) => void;
     asyncTaskPollMsForTesting?: number;
     scheduledJobPollMsForTesting?: number;
@@ -93,8 +89,6 @@ export class OrcdSession {
     this.contextWindow = opts.contextWindow;
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
     this.providerConfig = opts.providerConfig;
-    this.fullCompaction = opts.fullCompaction;
-    this.providers = opts.providers;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
     this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
@@ -208,8 +202,6 @@ export class OrcdSession {
       sessionId: this.id,
       effort,
       provider: this.providerConfig,
-      fullCompaction: this.fullCompaction,
-      providers: this.providers,
     });
     this.piSession = session;
 
@@ -276,7 +268,7 @@ export class OrcdSession {
     if (this.isRecord(event) && event.type === 'compaction_end') {
       // Manual `/compact` finished → terminal compact_done (UI returns to idle).
       // Otherwise it's Pi's own auto-compaction (the ~92% safety net) — surface a
-      // compact_boundary so context usage resets even when BGC didn't drive it.
+      // compact_boundary so the UI context wheel resets even when BGC didn't drive it.
       if (event.reason === 'manual') this.emitCompactDone();
       else this.emitCompactBoundary();
       return;
@@ -605,12 +597,6 @@ export class OrcdSession {
     this.emitSyntheticSystemEvent('compact_done', 'orchestrel-compact');
   }
 
-  emitCompactFailed(error: string): void {
-    if (!this.fullCompacting) return;
-    this.fullCompacting = false;
-    this.emitSyntheticSystemEvent('compact_failed', 'orchestrel-compact', error);
-  }
-
   /**
    * Emit a synthetic `system`/`init` event so the UI renders its "Session started
    * · <model>" line. The Claude Agent SDK emitted this natively; Pi does not, so
@@ -638,9 +624,8 @@ export class OrcdSession {
   }
 
   private emitSyntheticSystemEvent(
-    subtype: 'compact_boundary' | 'bgc_started' | 'compact_started' | 'compact_done' | 'compact_failed',
+    subtype: 'compact_boundary' | 'bgc_started' | 'compact_started' | 'compact_done',
     source = 'orchestrel-bgc',
-    error?: string,
   ): void {
     const event = {
       type: 'system',
@@ -648,7 +633,6 @@ export class OrcdSession {
       session_id: this.id,
       source,
       timestamp: Date.now(),
-      ...(error ? { error } : {}),
     };
     const eventIndex = this.buffer.push(event);
     const msg: StreamEventMessage = {

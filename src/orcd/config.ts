@@ -1,4 +1,4 @@
-import type { FullCompactionDef, ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
+import type { ModelDef, OrchestrelConfig, ProviderType } from '../shared/config';
 import { loadConfig, parseConfig as parseSharedConfig, resolveEnvVars } from '../shared/config';
 import type { ProviderAliases } from '../shared/subagent-policy';
 
@@ -26,7 +26,6 @@ export interface OrcdConfig {
   defaultThinkingLevel?: string;
   defaultCwd?: string;
   ringBufferSize: number;
-  fullCompaction?: FullCompactionDef;
   providers: Record<string, ProviderConfig>;
 }
 
@@ -64,7 +63,6 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
     ...(cfg.defaultThinkingLevel ? { defaultThinkingLevel: cfg.defaultThinkingLevel } : {}),
     defaultCwd: cfg.defaultCwd,
     ringBufferSize: cfg.ringBufferSize,
-    ...(cfg.fullCompaction ? { fullCompaction: cfg.fullCompaction } : {}),
     providers,
   };
 }

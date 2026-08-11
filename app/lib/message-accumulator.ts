@@ -195,9 +195,6 @@ export class MessageAccumulator {
         } else if (msg.subtype === 'compact_done') {
           this.finalizeBlocks();
           this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: msg.timestamp });
-        } else if (msg.subtype === 'compact_failed') {
-          this.finalizeBlocks();
-          this.conversation.push({ kind: 'error', message: msg.error ?? 'Context compaction failed', timestamp: msg.timestamp });
         }
         break;
       case 'error':
@@ -297,9 +294,6 @@ export class MessageAccumulator {
         } else if (msg.subtype === 'compact_done') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
           this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: normalizeTimestamp(msg.timestamp) });
-        } else if (msg.subtype === 'compact_failed') {
-          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
-          this.conversation.push({ kind: 'error', message: msg.error ?? 'Context compaction failed', timestamp: normalizeTimestamp(msg.timestamp) });
         }
         break;
     }
