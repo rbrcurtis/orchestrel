@@ -14,6 +14,21 @@ export interface AuthResult {
   isLocal: boolean;
 }
 
+const APACHE_USER_EMAILS = new Map(
+  (process.env.APACHE_USER_EMAILS ?? '')
+    .split(',')
+    .map((entry) => entry.trim().split('=', 2))
+    .filter((entry): entry is [string, string] => entry.length === 2 && Boolean(entry[0]) && Boolean(entry[1]))
+    .map(([user, email]) => [user.toLowerCase(), email.toLowerCase()]),
+);
+
+function apacheUser(req: IncomingMessage): string | undefined {
+  const address = req.socket?.remoteAddress ?? '';
+  const isLoopback = address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+  const value = isLoopback ? req.headers['x-orchestrel-user'] : undefined;
+  return typeof value === 'string' && value ? value.toLowerCase() : undefined;
+}
+
 function isLocalRequest(req: IncomingMessage): boolean {
   const host = req.headers.host ?? '';
   const hostname = host.startsWith('[')
@@ -36,6 +51,17 @@ function isLocalRequest(req: IncomingMessage): boolean {
 }
 
 export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult> {
+  const user = apacheUser(req);
+  if (user) {
+    const email = APACHE_USER_EMAILS.get(user);
+    if (!email) {
+      console.warn(`[ws:auth] Apache user has no email mapping: ${user}`);
+      return { valid: false, isLocal: false };
+    }
+    console.log(`[ws:auth] Apache identity valid for ${email}`);
+    return { valid: true, email, isLocal: false };
+  }
+
   if (isLocalRequest(req)) {
     console.log(`[ws:auth] validateCfAccess: local request, bypassing CF Access`);
     return { valid: true, isLocal: true };
@@ -72,7 +98,7 @@ export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult
 
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
-/** Socket.IO middleware — validates CF Access JWT and attaches user identity to socket.data */
+/** Socket.IO middleware — validates the upstream identity and attaches it to socket.data */
 export async function socketAuthMiddleware(
   socket: AppSocket,
   next: (err?: Error) => void,
