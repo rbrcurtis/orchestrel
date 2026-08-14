@@ -214,4 +214,30 @@ describe('ferris wheel prompt focus', () => {
       expect(document.activeElement).toBe(textarea);
     });
   });
+
+  it('refocuses the prompt when the wheel keeps the same card', async () => {
+    const { store } = renderBoard();
+
+    act(() => {
+      store.cards.hydrate([reviewCard(1, '2026-04-24T00:00:00.000Z')], true);
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+
+    // Send via Enter — SessionView dispatches prompt-sent and blurs the prompt
+    fireEvent.change(textarea, { target: { value: 'go' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    await waitFor(() => expect(document.activeElement).not.toBe(textarea));
+
+    // Server echoes the card update; no other card is eligible, wheel keeps card 1
+    act(() => {
+      store.cards.hydrate(
+        [{ ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running', promptsSent: 1 }],
+        true,
+      );
+    });
+
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+  });
 });

@@ -179,6 +179,7 @@ export const SessionView = observer(function SessionView({
     setNotification(null); // a new prompt clears any stale session error
     try {
       await sessionStore.sendMessage(cardId, message, files);
+      window.dispatchEvent(new CustomEvent('orchestrel:prompt-sent', { detail: { cardId } }));
       return true;
     } catch (err) {
       setNotification(err instanceof Error ? err.message : String(err));

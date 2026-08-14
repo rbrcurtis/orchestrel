@@ -16,6 +16,7 @@ import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
+import type { Card } from '../../src/shared/ws-protocol';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -126,6 +127,10 @@ const BoardLayout = observer(function BoardLayout() {
   const [focusedCardId, setFocusedCardId] = useState<number | null>(null);
   const [promptFocusRequest, setPromptFocusRequest] = useState<{ cardId: number; seq: number } | null>(null);
   const promptFocusSeq = useRef(0);
+  // After a send, the wheel may rotate (the presentation effect below focuses
+  // the new card) or keep the same card — remember the sent card so the
+  // same-card case can refocus its prompt once the server's update lands.
+  const pendingSentRef = useRef<{ cardId: number; card: Card } | null>(null);
 
   const allCards = Array.from(cardStore.cards.values());
   const {
@@ -164,6 +169,16 @@ const BoardLayout = observer(function BoardLayout() {
   }); // intentionally no deps — selectCard is a local function that closes over current state
 
   useEffect(() => {
+    const handler = (e: Event) => {
+      const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
+      const card = cardStore.getCard(cardId);
+      if (card) pendingSentRef.current = { cardId, card };
+    };
+    window.addEventListener('orchestrel:prompt-sent', handler);
+    return () => window.removeEventListener('orchestrel:prompt-sent', handler);
+  }, [cardStore]);
+
+  useEffect(() => {
     const onFocus = (e: Event) => setFocusedCardId((e as CustomEvent<{ cardId: number }>).detail.cardId);
     const onBlur = () => setFocusedCardId(null);
     window.addEventListener('orchestrel:prompt-focus', onFocus);
@@ -197,7 +212,27 @@ const BoardLayout = observer(function BoardLayout() {
       if (prev.get(idx) !== cardId) {
         promptFocusSeq.current += 1;
         setPromptFocusRequest({ cardId, seq: promptFocusSeq.current });
-        break;
+        pendingSentRef.current = null;
+        return;
+      }
+    }
+    // No rotation: a prompt was just sent and the server's card update has
+    // landed (the store holds a new object), so the wheel's chance to rotate
+    // has passed — refocus the same card's prompt.
+    const pending = pendingSentRef.current;
+    if (pending == null) return;
+    const current = cardStore.getCard(pending.cardId);
+    if (current == null) {
+      pendingSentRef.current = null;
+      return;
+    }
+    if (current === pending.card) return; // server echo not here yet
+    pendingSentRef.current = null;
+    for (const [, cardId] of resolvedCards) {
+      if (cardId === pending.cardId) {
+        promptFocusSeq.current += 1;
+        setPromptFocusRequest({ cardId: pending.cardId, seq: promptFocusSeq.current });
+        return;
       }
     }
   });
