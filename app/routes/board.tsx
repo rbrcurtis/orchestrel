@@ -174,6 +174,34 @@ const BoardLayout = observer(function BoardLayout() {
     };
   }, []);
 
+  // Ferris wheel: when a slot presents a new card and the user isn't typing
+  // anywhere, focus the new card's prompt so they can type immediately.
+  const prevPresentedRef = useRef<Map<number, number> | null>(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, resolvedCards is a fresh Map each render
+  useEffect(() => {
+    const prev = prevPresentedRef.current;
+    prevPresentedRef.current = resolvedCards;
+    if (prev == null) return; // initial mount — nothing presented yet
+    if (focusedCardId != null) return; // user is typing in a prompt
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      (active.tagName === 'INPUT' ||
+        active.tagName === 'TEXTAREA' ||
+        active.tagName === 'SELECT' ||
+        active.isContentEditable)
+    ) {
+      return; // user is typing somewhere else (search, card composer, etc.)
+    }
+    for (const [idx, cardId] of resolvedCards) {
+      if (prev.get(idx) !== cardId) {
+        promptFocusSeq.current += 1;
+        setPromptFocusRequest({ cardId, seq: promptFocusSeq.current });
+        break;
+      }
+    }
+  });
+
   function selectCard(id: number | null, opts?: { focusPrompt?: boolean }) {
     setNewCardColumn(null);
     if (!isDesktop) {

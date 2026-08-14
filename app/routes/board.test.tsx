@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StoreProvider } from '~/stores/context';
@@ -25,6 +25,8 @@ beforeEach(() => {
   }
   (globalThis as unknown as { ResizeObserver: { new (callback?: ResizeObserverCallback): FakeResizeObserver } }).ResizeObserver =
     FakeResizeObserver;
+  // jsdom has no scroll implementation — SessionView's transcript scroller calls it
+  Element.prototype.scrollTo = vi.fn();
 
   localStorage.clear();
 });
@@ -88,6 +90,10 @@ function providerConfig() {
 function renderBoard(opts?: { openSavedCard?: boolean }) {
   const store = new RootStore();
   store.subscribe = vi.fn();
+  // No real server in tests — stub emit so mounted SessionViews don't open a socket
+  (store.ws as unknown as { emit: (e: string, d: unknown) => Promise<unknown> }).emit = vi
+    .fn()
+    .mockResolvedValue(undefined);
   store.projects.hydrate([makeProject(42, 'Orchestrel')]);
   store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);
 
@@ -169,5 +175,43 @@ describe('Board new card shortcuts', () => {
 
     expect(e.defaultPrevented).toBe(false);
     expect(editor).toBe(document.activeElement);
+  });
+});
+
+function reviewCard(id: number, updatedAt: string): Card {
+  return { ...makeCard(), id, title: `Card ${id}`, column: 'review', updatedAt, sessionId: `sess-${id}` };
+}
+
+describe('ferris wheel prompt focus', () => {
+  it('focuses the new card prompt when the hotseat rotates after a send', async () => {
+    const { store } = renderBoard();
+
+    act(() => {
+      store.cards.hydrate(
+        [reviewCard(1, '2026-04-24T00:00:00.000Z'), reviewCard(2, '2026-04-25T00:00:00.000Z')],
+        true,
+      );
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+    expect(screen.getByText('Card 1')).toBeTruthy();
+
+    // Sending blurs the prompt — that releases the focus lock so the wheel can turn
+    fireEvent.blur(textarea);
+
+    // The sent card moves review → running; the wheel rotates to the next review card
+    act(() => {
+      store.cards.hydrate(
+        [{ ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running' }, reviewCard(2, '2026-04-25T00:00:00.000Z')],
+        true,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Card 2')).toBeTruthy();
+      expect(screen.queryByText('Card 1')).toBeNull();
+      expect(document.activeElement).toBe(textarea);
+    });
   });
 });
