@@ -275,6 +275,46 @@ describe('flash', () => {
     expect(result.current.slots[0]).toEqual({ type: 'empty' });
   });
 
+  it('releaseHotseat advances a resolver-driven hotseat (slot already empty)', async () => {
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const { result } = renderHook(() => useSlots(1, cards));
+    expect(result.current.resolvedCards.get(0)).toBe(1);
+
+    act(() => result.current.releaseHotseat());
+
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(2);
+    });
+  });
+
+  it('does not skip a released card when new cards arrive later', async () => {
+    // Releasing while the card is the only eligible choice must not suppress it
+    // once alternatives show up — the suppression is single-shot.
+    const review = makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' });
+    const { result, rerender } = renderHook(({ cards }: { cards: Card[] }) => useSlots(1, cards), {
+      initialProps: { cards: [review] },
+    });
+
+    act(() => result.current.releaseHotseat());
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(1);
+    });
+
+    rerender({
+      cards: [
+        review,
+        makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      ],
+    });
+
+    await waitFor(() => {
+      expect(result.current.resolvedCards.get(0)).toBe(1);
+    });
+  });
+
   it('clearFlash resets flashSlot to null', () => {
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const { result } = renderHook(() => useSlots(2, cards));

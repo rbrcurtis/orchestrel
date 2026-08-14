@@ -240,4 +240,27 @@ describe('ferris wheel prompt focus', () => {
 
     await waitFor(() => expect(document.activeElement).toBe(textarea));
   });
+
+  it('advances the wheel when Escape is pressed from the focused prompt', async () => {
+    const { store } = renderBoard();
+
+    act(() => {
+      store.cards.hydrate(
+        [reviewCard(1, '2026-04-24T00:00:00.000Z'), { ...reviewCard(2, '2026-04-25T00:00:00.000Z'), column: 'running' }],
+        true,
+      );
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+    expect(screen.getByText('Card 1')).toBeTruthy();
+
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Card 2')).toBeTruthy();
+      expect(screen.queryByText('Card 1')).toBeNull();
+      expect(document.activeElement?.tagName).toBe('TEXTAREA');
+    });
+  });
 });

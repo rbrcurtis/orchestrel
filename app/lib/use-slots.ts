@@ -419,7 +419,10 @@ export function useSlots(
       }
     }
     prevResolvedRef.current = new Map(resolvedCards);
-    if (suppressedHotseatCardId != null && resolvedCards.get(0) !== suppressedHotseatCardId) {
+    // Suppression is single-shot: it only steers the resolution right after a
+    // release. If it lingered, a card released while it was the only eligible
+    // choice would be skipped much later when new cards arrive.
+    if (suppressedHotseatCardId != null) {
       setSuppressedHotseatCardId(null);
     }
   });
@@ -480,11 +483,16 @@ export function useSlots(
         ? slots[0].cardId
         : resolvedCards.get(0) ?? null;
     const next = applyReleaseHotseat(slots);
-    if (next === slots) return;
-    setSlots(next);
-    writeLocalStorage(SLOTS_KEY, next);
-    setSuppressedHotseatCardId(displayedHotseatCardId);
-    setFlashSlot(0);
+    if (next !== slots) {
+      setSlots(next);
+      writeLocalStorage(SLOTS_KEY, next);
+      setFlashSlot(0);
+    }
+    // Suppress even when slot 0 was already resolver-driven (empty) — that's
+    // what makes Escape advance the wheel instead of being a no-op.
+    if (displayedHotseatCardId != null) {
+      setSuppressedHotseatCardId(displayedHotseatCardId);
+    }
   }
 
   function unpinSlot(index: number) {

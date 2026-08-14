@@ -492,9 +492,18 @@ function PromptInput({
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Escape' && isRunning) {
-      e.preventDefault();
-      onStop();
+    if (e.key === 'Escape') {
+      if (isRunning) {
+        e.preventDefault();
+        onStop();
+      } else {
+        // Not running: Escape releases the prompt and activates the ferris
+        // wheel. Blur first, then re-dispatch from the body so the board's
+        // global Escape handler runs its release logic (it skips events
+        // targeted at inputs).
+        ref.current?.blur();
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      }
       return;
     }
     if (e.key === 'c' && e.ctrlKey && !e.shiftKey && !e.metaKey) {
