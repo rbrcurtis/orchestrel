@@ -65,7 +65,22 @@ export function LazyTranscript({
 
   const startIndex = Math.max(0, items.length - visibleCount);
   const visibleItems = items.slice(startIndex);
-  const latestUserIndex = items.findLastIndex((entry) => entry.kind === 'user');
+
+  // Group rows into chunks led by a user message. The user row sticks to the
+  // top while its chunk is visible; the next chunk's user row pushes the
+  // previous one off as you scroll, in either direction.
+  const segments = useMemo(() => {
+    const segs: { index: number; entry: ConversationEntry }[][] = [];
+    let current: { index: number; entry: ConversationEntry }[] | null = null;
+    visibleItems.forEach((entry, i) => {
+      if (entry.kind === 'user' || !current) {
+        current = [];
+        segs.push(current);
+      }
+      current.push({ index: startIndex + i, entry });
+    });
+    return segs;
+  }, [visibleItems, startIndex]);
   const hasOlder = startIndex > 0;
   hasOlderRef.current = hasOlder;
   itemsLenRef.current = items.length;
@@ -244,22 +259,23 @@ export function LazyTranscript({
               </button>
             </div>
           )}
-          {visibleItems.map((row, i) => {
-            const index = startIndex + i;
-            return (
-              <div
-                key={index}
-                data-message-row
-                className={index === latestUserIndex ? 'sticky top-0 z-10 bg-card/95 py-1 backdrop-blur-sm' : undefined}
-              >
-                <MessageBlock
-                  entry={row}
-                  index={index}
-                  accentColor={accentColor}
-                />
-              </div>
-            );
-          })}
+          {segments.map((rows) => (
+            <div key={rows[0].index} className="space-y-1">
+              {rows.map(({ index, entry }, j) => (
+                <div
+                  key={index}
+                  data-message-row
+                  className={j === 0 && entry.kind === 'user' ? 'sticky top-0 z-10 bg-card/95 py-1 backdrop-blur-sm' : undefined}
+                >
+                  <MessageBlock
+                    entry={entry}
+                    index={index}
+                    accentColor={accentColor}
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </ScrollArea>
 
