@@ -43,9 +43,23 @@ export class OrcdServer {
     });
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     for (const client of this.clients) client.socket.destroy();
-    this.server?.close();
+    await Promise.all(this.store.values().map(async (session) => {
+      await session.dispose().catch((err: unknown) => {
+        console.error(`[orcd] failed to dispose session ${session.id.slice(0, 8)}:`, err);
+      });
+      this.store.remove(session.id);
+    }));
+    await new Promise<void>((resolve) => {
+      if (!this.server) {
+        console.log('[orcd] listener already stopped');
+        resolve();
+        return;
+      }
+      this.server.close(() => resolve());
+    });
+    this.server = null;
     console.log('[orcd] stopped');
   }
 
@@ -126,6 +140,9 @@ export class OrcdServer {
       case 'cancel':
         this.handleCancel(action);
         break;
+      case 'close':
+        this.handleClose(action);
+        break;
       case 'compact':
         this.handleCompact(client, action);
         break;
@@ -188,6 +205,21 @@ export class OrcdServer {
   }
 
   private handleCreate(client: ClientState, action: OrcdAction & { action: 'create' }): void {
+    const existing = action.sessionId ? this.store.get(action.sessionId) : undefined;
+    if (existing) {
+      if (!client.subscriptions.has(existing.id)) {
+        const cb: SessionEventCallback = (msg) => this.send(client, msg);
+        client.subscriptions.set(existing.id, cb);
+        existing.subscribe(cb);
+      }
+      this.send(client, { type: 'session_created', sessionId: existing.id });
+      existing.sendMessage(action.prompt).finally(() => {
+        console.log(`[orcd] session ${existing.id.slice(0, 8)} follow-up exited (state=${existing.state})`);
+      });
+      console.log(`[orcd] reusing resident session ${existing.id.slice(0, 8)}`);
+      return;
+    }
+
     const providerCfg = this.providers[action.provider];
     if (!providerCfg) {
       console.error(`[orcd] handleCreate: unknown provider ${action.provider}`);
@@ -364,6 +396,18 @@ export class OrcdServer {
     const session = this.store.get(action.sessionId);
     session?.cancel().catch((err: unknown) => {
       console.error(`[orcd] cancel error:`, err);
+    });
+  }
+
+  private handleClose(action: OrcdAction & { action: 'close' }): void {
+    const session = this.store.get(action.sessionId);
+    if (!session) {
+      console.log(`[orcd] close ignored: session ${action.sessionId.slice(0, 8)} not resident`);
+      return;
+    }
+    this.store.remove(action.sessionId);
+    session.dispose().catch((err: unknown) => {
+      console.error(`[orcd] close error for session ${action.sessionId.slice(0, 8)}:`, err);
     });
   }
 

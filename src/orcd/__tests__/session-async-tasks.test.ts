@@ -31,6 +31,7 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
       return () => subscribers.delete(cb);
     }),
     abort: vi.fn(async () => undefined),
+    dispose: vi.fn(async () => undefined),
     compact: vi.fn(async () => ({ ok: true })),
     prepareBgCompaction: vi.fn(async () => null),
     applyBgCompaction: vi.fn(() => undefined),
@@ -327,7 +328,7 @@ describe('OrcdSession Pi runtime loop', () => {
     expect(runtime.prompt).toHaveBeenCalledWith('continue', { streamingBehavior: 'followUp' });
   });
 
-  it('delegates setEffort, cancel, and compact to the active Pi runtime session', async () => {
+  it('delegates setEffort, cancel, compact, and disposal to the active Pi runtime session', async () => {
     const runtime = createRuntimeSession([], 'session-delegate');
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
@@ -342,10 +343,13 @@ describe('OrcdSession Pi runtime loop', () => {
     await session.setEffort('max');
     await session.cancel();
     await expect(session.compact()).resolves.toEqual({ ok: true });
+    await session.dispose();
+    await session.dispose();
 
     expect(runtime.setEffort).toHaveBeenCalledWith('max');
-    expect(runtime.abort).toHaveBeenCalledTimes(1);
+    expect(runtime.abort).toHaveBeenCalledTimes(2);
     expect(runtime.compact).toHaveBeenCalledTimes(1);
+    expect(runtime.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('creates a Pi runtime session when compacting an inactive session', async () => {

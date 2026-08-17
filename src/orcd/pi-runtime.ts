@@ -39,6 +39,7 @@ export interface PiRuntimeSession {
   prompt(text: string, opts?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void>;
   subscribe(cb: (event: unknown) => void): () => void;
   abort(): Promise<void>;
+  dispose(): Promise<void>;
   compact(instructions?: string): Promise<unknown>;
   /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
   prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal): Promise<CompactionResult | null>;
@@ -251,6 +252,14 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
 
     async abort() {
       await session.abort();
+    },
+
+    async dispose() {
+      try {
+        await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' });
+      } finally {
+        session.dispose();
+      }
     },
 
     async compact(instructions) {

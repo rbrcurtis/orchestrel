@@ -161,16 +161,20 @@ class CardService {
       if (cw) data.contextWindow = cw;
     }
 
-    // Kill session when card leaves running/review — but NOT when archiving.
-    // Archiving while a session is running lets the agent finish (e.g. a final
-    // fire-and-forget command); the session_exit handler keeps the card archived.
-    const liveColumns = new Set<string>(['running', 'review']);
-    if (data.column && data.column !== 'archive' && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
+    // Done and archive are terminal ownership boundaries: release the resident
+    // Pi runtime even when no turn is active, so its MCP/browser processes close.
+    if (data.column && data.column !== card.column) {
       const initState = await import('../init-state');
       const client = initState.getClientByNode(card.nodeName);
-      if (card.sessionId && client?.isActive(card.sessionId)) {
-        console.log(`[session:${id}] stopping: card moving ${card.column} → ${data.column}`);
-        client.cancel(card.sessionId);
+      if (card.sessionId && (data.column === 'done' || data.column === 'archive')) {
+        console.log(`[session:${id}] closing: card moving ${card.column} → ${data.column}`);
+        client?.close(card.sessionId);
+      } else {
+        const liveColumns = new Set<string>(['running', 'review']);
+        if (card.sessionId && client?.isActive(card.sessionId) && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
+          console.log(`[session:${id}] stopping: card moving ${card.column} → ${data.column}`);
+          client.cancel(card.sessionId);
+        }
       }
     }
 
@@ -185,9 +189,9 @@ class CardService {
     const card = await Card.findOneByOrFail({ id });
     const initState = await import('../init-state');
     const client = initState.getClientByNode(card.nodeName);
-    if (card.sessionId && client?.isActive(card.sessionId)) {
-      console.log(`[session:${id}] stopping: card deleted`);
-      client.cancel(card.sessionId);
+    if (card.sessionId) {
+      console.log(`[session:${id}] closing: card deleted`);
+      client?.close(card.sessionId);
     }
     await card.remove();
   }
@@ -331,8 +335,12 @@ class CardService {
       return;
     }
 
+    const initState = await import('../init-state');
     const now = new Date().toISOString();
     for (const c of filtered) {
+      if (c.sessionId) {
+        initState.getClientByNode(c.nodeName)?.close(c.sessionId);
+      }
       c.column = 'archive' as Column;
       c.updatedAt = now;
     }

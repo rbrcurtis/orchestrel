@@ -45,6 +45,7 @@ export class OrcdSession {
   private readonly scheduledJobPollMs: number;
 
   private piSession: PiRuntimeSession | null = null;
+  private disposePromise: Promise<void> | null = null;
   private initEmitted = false;
   private running = false;
   // Per-run() exit bookkeeping. A run is identified by runEpoch so a forced
@@ -541,7 +542,7 @@ export class OrcdSession {
   }
 
   /**
-   * Cancel the running session.
+   * Cancel the running turn without disposing its reusable Pi runtime.
    */
   async cancel(): Promise<void> {
     this.state = 'stopped';
@@ -565,6 +566,21 @@ export class OrcdSession {
       console.log(`[orcd:${this.id.slice(0, 8)}] cancel: run loop wedged after abort; forcing session_exit`);
       await this.finalizeExit(epoch);
     }
+  }
+
+  /** Shut down extensions and permanently release this session's runtime. */
+  async dispose(): Promise<void> {
+    if (this.disposePromise) return this.disposePromise;
+    this.disposePromise = (async () => {
+      await this.cancel();
+      this.currentUnsubscribe?.();
+      this.currentUnsubscribe = null;
+      const piSession = this.piSession;
+      this.piSession = null;
+      if (piSession) await piSession.dispose();
+      this.subscribers.clear();
+    })();
+    return this.disposePromise;
   }
 
   async compact(): Promise<unknown> {

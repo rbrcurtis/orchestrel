@@ -45,9 +45,12 @@ export class SessionStore {
     }
   }
 
+  values(): OrcdSession[] {
+    return [...new Set(this.sessions.values())];
+  }
+
   list(): SessionInfo[] {
-    const unique = new Set<OrcdSession>(this.sessions.values());
-    return [...unique].map((s) => ({
+    return this.values().map((s) => ({
       id: s.id,
       state: s.state,
       cwd: s.cwd,

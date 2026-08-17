@@ -106,6 +106,51 @@ describe('OrcdServer prompt passthrough', () => {
   });
 });
 
+describe('OrcdServer session lifecycle', () => {
+  it('routes a resumed create through the resident session', () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'resident-session',
+    });
+    server.store.add(session);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    server['handleAction'](client as never, {
+      action: 'create',
+      prompt: 'continue',
+      cwd: '/tmp',
+      provider: 'test',
+      model: 'test-model',
+      sessionId: session.id,
+    });
+
+    expect(server.store.get(session.id)).toBe(session);
+    expect(sendSpy).toHaveBeenCalledWith('continue');
+  });
+
+  it('removes and disposes a closed resident session', () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'closed-session',
+    });
+    server.store.add(session);
+    const disposeSpy = vi.spyOn(session, 'dispose').mockResolvedValue();
+
+    server['handleAction'](client as never, { action: 'close', sessionId: session.id });
+
+    expect(server.store.get(session.id)).toBeUndefined();
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('OrcdServer subscriptions', () => {
   it('does not replay the full buffer on duplicate live subscribes without a cursor', () => {
     const server = createServer();

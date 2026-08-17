@@ -10,8 +10,18 @@ async function main() {
     { provider: config.defaultProvider, model: config.defaultModel, ...(config.defaultThinkingLevel ? { thinkingLevel: config.defaultThinkingLevel } : {}) },
   );
   await server.start();
-  const shutdown = () => { console.log('[orcd] shutting down...'); server.stop(); process.exit(0); };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) {
+      console.log('[orcd] shutdown already in progress');
+      return;
+    }
+    shuttingDown = true;
+    console.log('[orcd] shutting down...');
+    await server.stop();
+    process.exit(0);
+  };
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
 }
 main().catch((err) => { console.error('[orcd] fatal:', err); process.exit(1); });

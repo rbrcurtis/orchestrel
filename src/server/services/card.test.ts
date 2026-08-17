@@ -5,6 +5,7 @@ import { Project, ProjectSubscriber } from '../models/Project'
 import { DEFAULT_SENTINEL } from '../../shared/ws-protocol'
 
 const mockCancel = vi.fn()
+const mockClose = vi.fn()
 const mockIsActive = vi.fn(() => true)
 const mockCapabilities = {
   name: 'local',
@@ -30,6 +31,7 @@ const mockOtherNodeClient = {
   isActive: mockIsActive,
   getHistory: mockGetHistory,
   cancel: mockCancel,
+  close: mockClose,
   capabilities: { ...mockCapabilities, name: 'other' },
   isConnected: () => true,
   pathValidate: mockOtherPathValidate,
@@ -38,6 +40,7 @@ const mockNodeClient = {
   isActive: mockIsActive,
   getHistory: mockGetHistory,
   cancel: mockCancel,
+  close: mockClose,
   capabilities: mockCapabilities,
   isConnected: () => true,
   pathValidate: mockPathValidate,
@@ -193,19 +196,27 @@ describe('CardService', () => {
     expect(noWt.worktreeBranch).toBeNull()
   })
 
-  it('does not cancel a live session when archiving a running card, but does when moving back to backlog', async () => {
+  it('closes resident sessions on done or archive and only cancels non-terminal moves', async () => {
     const { cardService } = await import('./card')
     mockCancel.mockClear()
+    mockClose.mockClear()
+    mockIsActive.mockReturnValue(true)
 
-    // Archiving a running card must let the session keep running (final
-    // fire-and-forget commands) — the worktree is cleaned up on session_exit.
     const archived = await cardService.createCard({ title: 'Archive live', description: 'd', column: 'running' })
     archived.sessionId = 'sess-live'
     await archived.save()
     await cardService.updateCard(archived.id, { column: 'archive' })
-    expect(mockCancel).not.toHaveBeenCalled()
+    expect(mockClose).toHaveBeenCalledWith('sess-live')
 
-    // Moving out of running to a non-live column still kills the session.
+    const done = await cardService.createCard({ title: 'Done idle', description: 'd', column: 'review' })
+    done.sessionId = 'sess-idle'
+    await done.save()
+    mockIsActive.mockReturnValueOnce(false)
+    await cardService.updateCard(done.id, { column: 'done' })
+    expect(mockClose).toHaveBeenCalledWith('sess-idle')
+
+    mockIsActive.mockReset()
+    mockIsActive.mockReturnValue(true)
     const stopped = await cardService.createCard({ title: 'Stop live', description: 'd', column: 'running' })
     stopped.sessionId = 'sess-live-2'
     await stopped.save()

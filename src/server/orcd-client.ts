@@ -283,11 +283,15 @@ export class OrcdClient {
     this.send({ action: 'message', sessionId, prompt });
   }
 
-  /**
-   * Cancel (abort) a session.
-   */
+  /** Cancel the current turn but retain its reusable session runtime. */
   cancel(sessionId: string): void {
     this.send({ action: 'cancel', sessionId });
+    this.activeSessions.delete(sessionId);
+  }
+
+  /** Permanently close a session and all resources owned by its runtime. */
+  close(sessionId: string): void {
+    this.send({ action: 'close', sessionId });
     this.activeSessions.delete(sessionId);
   }
 
