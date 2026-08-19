@@ -1,7 +1,7 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
 import { createHash } from 'node:crypto';
-import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
+import { DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, ModelRuntime, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
+import type { AgentSession, AgentSessionEvent, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
 import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
@@ -116,9 +116,9 @@ function usesBuiltInProvider(provider: NonNullable<CreatePiRuntimeSessionOpts['p
   return provider.type === 'anthropic' && !provider.baseUrl && !provider.apiKey && !provider.authToken;
 }
 
-function setRuntimeApiKey(authStorage: PiAuthStorage, providerId: string, apiKey: string | undefined): void {
+async function setRuntimeApiKey(modelRuntime: ModelRuntime, providerId: string, apiKey: string | undefined): Promise<void> {
   if (!apiKey) return;
-  authStorage.setRuntimeApiKey(providerId, apiKey);
+  await modelRuntime.setRuntimeApiKey(providerId, apiKey);
 }
 
 function registerOrchestrelProvider(
@@ -164,10 +164,13 @@ async function getSessionPath(cwd: string, sessionId: string): Promise<string | 
 
 export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): Promise<PiRuntimeSession> {
   const agentDir = getAgentDir();
-  const authStorage = AuthStorage.create(`${agentDir}/auth.json`);
-  const modelRegistry = ModelRegistry.create(authStorage, `${agentDir}/models.json`);
+  const modelRuntime = await ModelRuntime.create({
+    authPath: `${agentDir}/auth.json`,
+    modelsPath: `${agentDir}/models.json`,
+  });
+  const modelRegistry = new ModelRegistry(modelRuntime);
   const providerId = opts.provider && usesBuiltInProvider(opts.provider) ? opts.provider.type : opts.providerId;
-  if (opts.provider) setRuntimeApiKey(authStorage, providerId, opts.provider.apiKey || opts.provider.authToken);
+  if (opts.provider) await setRuntimeApiKey(modelRuntime, providerId, opts.provider.apiKey || opts.provider.authToken);
   if (opts.provider && providerId === opts.providerId) {
     registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider, isAdaptiveEffort(opts.effort));
   }
@@ -206,8 +209,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   const result = await createAgentSession({
     cwd: opts.cwd,
     agentDir,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     resourceLoader,
     sessionManager,
     model: model as Model<Api>,

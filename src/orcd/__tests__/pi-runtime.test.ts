@@ -12,7 +12,7 @@ const mockBindExtensions = vi.fn();
 const mockFind = vi.fn();
 const mockCreateAgentSession = vi.fn();
 const mockSetRuntimeApiKey = vi.fn();
-const mockAuthStorageCreate = vi.fn();
+const mockModelRuntimeCreate = vi.fn();
 const mockModelRegistryCreate = vi.fn();
 const mockSessionManagerCreate = vi.fn();
 const mockSessionManagerList = vi.fn();
@@ -23,11 +23,13 @@ const mockDefaultResourceLoader = vi.fn();
 const mockAppendCustomEntry = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
-  AuthStorage: {
-    create: mockAuthStorageCreate,
+  ModelRuntime: {
+    create: mockModelRuntimeCreate,
   },
-  ModelRegistry: {
-    create: mockModelRegistryCreate,
+  ModelRegistry: class {
+    constructor(runtime: unknown) {
+      return mockModelRegistryCreate(runtime);
+    }
   },
   SessionManager: {
     create: mockSessionManagerCreate,
@@ -36,8 +38,16 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
   },
   createAgentSession: mockCreateAgentSession,
   createEventBus: mockCreateEventBus,
-  DefaultResourceLoader: mockDefaultResourceLoader,
+  DefaultResourceLoader: class {
+    constructor(opts: Record<string, unknown>) {
+      return mockDefaultResourceLoader(opts);
+    }
+  },
   getAgentDir: mockGetAgentDir,
+  DEFAULT_COMPACTION_SETTINGS: { reserveTokens: 16_384, keepRecentTokens: 20_000 },
+  findCutPoint: vi.fn(),
+  generateSummary: vi.fn(),
+  stripFrontmatter: (content: string) => content,
 }));
 
 vi.mock('@earendil-works/pi-ai', () => ({}));
@@ -67,10 +77,11 @@ describe('createPiRuntimeSession', () => {
 
     mockGetAgentDir.mockReturnValue('/home/ryan/.pi/agent');
     mockCreateEventBus.mockImplementation(() => ({ kind: 'event-bus' }));
-    mockDefaultResourceLoader.mockImplementation(function (this: Record<string, unknown>, opts: Record<string, unknown>) {
-      Object.assign(this, opts, { reload: vi.fn().mockResolvedValue(undefined) });
-    });
-    mockAuthStorageCreate.mockReturnValue({ kind: 'auth-storage', setRuntimeApiKey: mockSetRuntimeApiKey });
+    mockDefaultResourceLoader.mockImplementation((opts: Record<string, unknown>) => ({
+      ...opts,
+      reload: vi.fn().mockResolvedValue(undefined),
+    }));
+    mockModelRuntimeCreate.mockResolvedValue({ kind: 'model-runtime', setRuntimeApiKey: mockSetRuntimeApiKey });
     mockFind.mockReturnValue({ provider: 'anthropic', id: 'claude-sonnet-4-6' });
     mockModelRegistryCreate.mockReturnValue({ find: mockFind, registerProvider: vi.fn() });
     mockSessionManagerCreate.mockReturnValue({ kind: 'session-manager-create' });
@@ -95,16 +106,18 @@ describe('createPiRuntimeSession', () => {
 
     expect(session.id).toBe('pi-session-1');
     expect(mockGetAgentDir).toHaveBeenCalledOnce();
-    const authStorage = { kind: 'auth-storage', setRuntimeApiKey: mockSetRuntimeApiKey };
-    expect(mockAuthStorageCreate).toHaveBeenCalledWith('/home/ryan/.pi/agent/auth.json');
-    expect(mockModelRegistryCreate).toHaveBeenCalledWith(authStorage, '/home/ryan/.pi/agent/models.json');
+    const modelRuntime = { kind: 'model-runtime', setRuntimeApiKey: mockSetRuntimeApiKey };
+    expect(mockModelRuntimeCreate).toHaveBeenCalledWith({
+      authPath: '/home/ryan/.pi/agent/auth.json',
+      modelsPath: '/home/ryan/.pi/agent/models.json',
+    });
+    expect(mockModelRegistryCreate).toHaveBeenCalledWith(modelRuntime);
     expect(mockFind).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
     expect(mockSessionManagerCreate).toHaveBeenCalledWith('/repo');
     expect(mockCreateAgentSession).toHaveBeenCalledWith({
       cwd: '/repo',
       agentDir: '/home/ryan/.pi/agent',
-      authStorage,
-      modelRegistry: { find: mockFind, registerProvider: expect.any(Function) },
+      modelRuntime,
       resourceLoader: expect.any(Object),
       sessionManager: { kind: 'session-manager-create' },
       model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
@@ -379,13 +392,12 @@ describe('createPiRuntimeSession', () => {
 
   it('persists the original slash command as display metadata before sending its expansion', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
-    mockDefaultResourceLoader.mockImplementation(function (this: Record<string, unknown>, opts: Record<string, unknown>) {
-      Object.assign(this, opts, {
-        reload: vi.fn().mockResolvedValue(undefined),
-        getSkills: () => ({ skills: [] }),
-        getPrompts: () => ({ prompts: [{ name: 'merge', content: 'Merge the current branch now.' }] }),
-      });
-    });
+    mockDefaultResourceLoader.mockImplementation((opts: Record<string, unknown>) => ({
+      ...opts,
+      reload: vi.fn().mockResolvedValue(undefined),
+      getSkills: () => ({ skills: [] }),
+      getPrompts: () => ({ prompts: [{ name: 'merge', content: 'Merge the current branch now.' }] }),
+    }));
     mockCreateAgentSession.mockImplementation(async (opts: { resourceLoader: unknown }) => ({
       session: makeSession({ resourceLoader: opts.resourceLoader }),
     }));

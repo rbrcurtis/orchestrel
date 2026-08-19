@@ -11,12 +11,12 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
   findCutPoint: (...a: unknown[]) => findCutPoint(...a),
   generateSummary: (...a: unknown[]) => generateSummary(...a),
   DEFAULT_COMPACTION_SETTINGS: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
-  AuthStorage: { create: () => ({ setRuntimeApiKey: vi.fn() }) },
-  ModelRegistry: { create: () => ({
-    registerProvider: vi.fn(),
-    find: () => ({ id: 'm', api: 'anthropic-messages' }),
-    getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} })),
-  }) },
+  ModelRuntime: { create: async () => ({ setRuntimeApiKey: vi.fn() }) },
+  ModelRegistry: class {
+    registerProvider = vi.fn();
+    find = () => ({ id: 'm', api: 'anthropic-messages' });
+    getApiKeyAndHeaders = vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} }));
+  },
   SessionManager: { create: () => ({}), open: () => ({}), list: vi.fn(async () => []) },
   createEventBus: () => ({}),
   DefaultResourceLoader: class {
@@ -33,6 +33,7 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
     },
   })),
   getAgentDir: () => '/tmp/agent',
+  stripFrontmatter: (content: string) => content,
 }));
 
 import { createPiRuntimeSession } from '../pi-runtime';
