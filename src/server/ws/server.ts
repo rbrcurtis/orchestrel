@@ -76,9 +76,15 @@ export function wsServerPlugin(): Plugin {
                 next: import('express').NextFunction,
               ) => {
                 if (err && typeof err === 'object' && 'status' in err) {
-                  const e = err as { status: number; message?: string; fields?: Record<string, unknown> };
+                  const e = err as { status: number; code?: string; message?: string; fields?: Record<string, unknown> };
                   console.warn(`[rest:error] status=${e.status} msg=${e.message ?? 'Validation error'}`);
-                  res.status(e.status).json({ error: e.message ?? 'Validation error', fields: e.fields });
+                  res.status(e.status).json({
+                    error: {
+                      code: e.code ?? (e.fields ? 'validation_error' : 'request_failed'),
+                      message: e.message ?? 'Validation error',
+                      ...(e.fields ? { details: e.fields } : {}),
+                    },
+                  });
                   return;
                 }
                 next(err);

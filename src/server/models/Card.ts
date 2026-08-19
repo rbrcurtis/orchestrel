@@ -3,6 +3,7 @@ import {
   PrimaryGeneratedColumn,
   Column,
   Index,
+  VersionColumn,
   BaseEntity,
   EventSubscriber,
   type EntitySubscriberInterface,
@@ -94,6 +95,9 @@ export class Card extends BaseEntity {
 
   @Column({ name: 'updated_at', type: 'text' })
   updatedAt!: string;
+
+  @VersionColumn({ type: 'integer', default: 1 })
+  version!: number;
 }
 
 @EventSubscriber()

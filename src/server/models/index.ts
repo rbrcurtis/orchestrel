@@ -5,6 +5,7 @@ import { mkdirSync } from 'fs';
 import { Card, CardSubscriber } from './Card';
 import { Project, ProjectSubscriber } from './Project';
 import { User, ProjectUser } from './User';
+import { ApiIdempotency } from './ApiIdempotency';
 
 const DB_DIR = join(process.cwd(), 'data');
 mkdirSync(DB_DIR, { recursive: true });
@@ -12,7 +13,7 @@ mkdirSync(DB_DIR, { recursive: true });
 export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
   database: join(DB_DIR, 'orchestrel.db'),
-  entities: [Card, Project, User, ProjectUser],
+  entities: [Card, Project, User, ProjectUser, ApiIdempotency],
   subscribers: [CardSubscriber, ProjectSubscriber],
   synchronize: false,
 });
@@ -67,6 +68,15 @@ export async function initDatabase(): Promise<void> {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+    await runner.query(`
+      CREATE TABLE IF NOT EXISTS api_idempotency (
+        request_key TEXT PRIMARY KEY,
+        operation TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `);
     try {
       await runner.query(`ALTER TABLE projects ADD COLUMN node_name TEXT NOT NULL DEFAULT 'local'`);
     } catch (err) {
@@ -102,6 +112,11 @@ export async function initDatabase(): Promise<void> {
       await runner.query(`ALTER TABLE cards ADD COLUMN pending_initial_files TEXT NOT NULL DEFAULT '[]'`);
     } catch (err) {
       console.log(`[db:migrate] cards.pending_initial_files column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
+    try {
+      await runner.query(`ALTER TABLE cards ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+    } catch (err) {
+      console.log(`[db:migrate] cards.version column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
     await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
     await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
