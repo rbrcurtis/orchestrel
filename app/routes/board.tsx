@@ -16,6 +16,7 @@ import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
+import { dispatchTypeFocus, isTypeFocusKey, isTypingContext } from '~/lib/type-focus';
 import type { Card } from '../../src/shared/ws-protocol';
 
 const NAV_ITEMS = [
@@ -125,6 +126,8 @@ const BoardLayout = observer(function BoardLayout() {
 
   const maxColumns = useMaxColumns(panelRef);
   const [focusedCardId, setFocusedCardId] = useState<number | null>(null);
+  // Last card whose prompt had focus — the "focused session" for type-to-focus.
+  const lastPromptCardRef = useRef<number | null>(null);
   const [promptFocusRequest, setPromptFocusRequest] = useState<{ cardId: number; seq: number } | null>(null);
   const promptFocusSeq = useRef(0);
   // After a send, the wheel may rotate (the presentation effect below focuses
@@ -179,7 +182,11 @@ const BoardLayout = observer(function BoardLayout() {
   }, [cardStore]);
 
   useEffect(() => {
-    const onFocus = (e: Event) => setFocusedCardId((e as CustomEvent<{ cardId: number }>).detail.cardId);
+    const onFocus = (e: Event) => {
+      const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
+      lastPromptCardRef.current = cardId;
+      setFocusedCardId(cardId);
+    };
     const onBlur = () => setFocusedCardId(null);
     window.addEventListener('orchestrel:prompt-focus', onFocus);
     window.addEventListener('orchestrel:prompt-blur', onBlur);
@@ -278,6 +285,18 @@ const BoardLayout = observer(function BoardLayout() {
 
   // Keyboard shortcuts
   useEffect(() => {
+    // Cards currently presented in a slot (or the mobile overlay) — only these
+    // have a mounted prompt that type-to-focus can land on.
+    const displayedCardIds = new Set<number>();
+    columnSlots.forEach((slot, idx) => {
+      const id =
+        slot.type === 'manual'
+          ? slot.cardId
+          : (resolvedCards.get(idx) ?? (slot.type === 'pinned' ? (slot.cardId ?? null) : null));
+      if (id != null) displayedCardIds.add(id);
+    });
+    if (mobileCardId != null) displayedCardIds.add(mobileCardId);
+
     function handleKeyDown(e: KeyboardEvent) {
       if (e.repeat) return;
 
@@ -290,6 +309,21 @@ const BoardLayout = observer(function BoardLayout() {
       const target = e.target instanceof HTMLElement ? e.target : null;
       const tag = target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+
+      if (isTypeFocusKey(e) && !isTypingContext(e.target)) {
+        const slot0 = columnSlots[0];
+        const hotseatId =
+          slot0?.type === 'manual'
+            ? slot0.cardId
+            : (resolvedCards.get(0) ?? (slot0?.type === 'pinned' ? (slot0.cardId ?? null) : null));
+        let id = lastPromptCardRef.current;
+        if (id == null || !displayedCardIds.has(id)) id = hotseatId;
+        if (id != null && displayedCardIds.has(id)) {
+          e.preventDefault();
+          dispatchTypeFocus(id, e.key);
+        }
+        return;
+      }
 
       if (e.key === '/') {
         e.preventDefault();
@@ -307,7 +341,7 @@ const BoardLayout = observer(function BoardLayout() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat, setNewCardColumn]);
+  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat, setNewCardColumn, mobileCardId]);
 
   // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;

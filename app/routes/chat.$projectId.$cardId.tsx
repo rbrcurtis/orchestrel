@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { InlineEdit } from '~/components/InlineEdit';
 import { SessionView } from '~/components/SessionView';
 import { useCardStore, useProjectStore } from '~/stores/context';
+import { dispatchTypeFocus, isTypeFocusKey, isTypingContext } from '~/lib/type-focus';
 
 const ChatCardView = observer(function ChatCardView() {
   const { projectId: projectIdParam, cardId: cardIdParam } = useParams();
@@ -24,6 +25,21 @@ const ChatCardView = observer(function ChatCardView() {
       navigate(project ? `/chat/${project.id}` : '/chat', { replace: true });
     }
   }, [card, cardStore.hydrated, navigate, numericCardRef, project]);
+
+  // Type-to-focus: this page presents a single session — bare alphanumerics
+  // focus the prompt and carry the typed character.
+  const cardId = card?.id;
+  useEffect(() => {
+    if (cardId == null) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.repeat || !isTypeFocusKey(e)) return;
+      if (isTypingContext(e.target)) return;
+      e.preventDefault();
+      dispatchTypeFocus(cardId!, e.key);
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [cardId]);
 
   if (!project || !card || card.projectId !== project.id) return null;
 

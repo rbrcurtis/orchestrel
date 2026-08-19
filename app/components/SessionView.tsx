@@ -11,6 +11,7 @@ import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/store
 import type { FileRef } from '../../src/shared/ws-protocol';
 import { FileAttachments, FilePickerButton } from './FileAttachments';
 import { uploadFiles } from '~/lib/file-attachments';
+import { TYPE_FOCUS_EVENT, type TypeFocusDetail } from '~/lib/type-focus';
 
 type Props = {
   cardId: number;
@@ -461,6 +462,27 @@ function PromptInput({
       setText('');
     }
   }, [storageKey]);
+
+  // Type-to-focus: board/chat global shortcuts dispatch this when the user
+  // starts typing while this session is presented but its prompt is not
+  // focused. Focus and apply the typed character so typing just continues.
+  useEffect(() => {
+    function handler(e: Event) {
+      const { cardId: id, char } = (e as CustomEvent<TypeFocusDetail>).detail;
+      if (id !== cardId) return;
+      const ta = ref.current;
+      if (!ta) return;
+      ta.focus();
+      // Continue at the end of any existing draft.
+      const next = ta.value + char;
+      updateText(next);
+      requestAnimationFrame(() => {
+        ta.selectionStart = ta.selectionEnd = next.length;
+      });
+    }
+    window.addEventListener(TYPE_FOCUS_EVENT, handler);
+    return () => window.removeEventListener(TYPE_FOCUS_EVENT, handler);
+  }); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally no deps, closes over current state
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
