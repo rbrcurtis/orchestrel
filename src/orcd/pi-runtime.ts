@@ -108,7 +108,9 @@ function modelName(alias: string, model: ModelDef): string {
 }
 
 function modelApi(type: ProviderType): Api {
-  return type === 'bedrock' ? 'bedrock-converse-stream' : 'anthropic-messages';
+  if (type === 'bedrock') return 'bedrock-converse-stream';
+  if (type === 'google') return 'google-generative-ai';
+  return 'anthropic-messages';
 }
 
 function usesBuiltInProvider(provider: NonNullable<CreatePiRuntimeSessionOpts['provider']>): boolean {
@@ -137,7 +139,7 @@ function registerOrchestrelProvider(
       id: model.modelID,
       name: modelName(alias, model),
       api,
-      reasoning: provider.type === 'anthropic',
+      reasoning: provider.type !== 'bedrock',
       input: ['text', 'image'],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: model.contextWindow,

@@ -317,6 +317,37 @@ describe('createPiRuntimeSession', () => {
     expect(mockFind).toHaveBeenCalledWith('trackable', 'claude-sonnet-4-6');
   });
 
+  it('uses the native Google API for Gemini-compatible providers', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const registry = { find: mockFind, registerProvider: vi.fn() };
+    mockModelRegistryCreate.mockReturnValue(registry);
+
+    await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'gemini',
+      modelId: 'pro',
+      provider: {
+        type: 'google',
+        label: 'Gemini',
+        baseUrl: 'http://127.0.0.1:9877/v1beta',
+        apiKey: 'proxy-key',
+        models: {
+          pro: { label: 'Gemini 3.1 Pro', modelID: 'gemini-3.1-pro-preview', contextWindow: 1048576 },
+        },
+      },
+    });
+
+    expect(registry.registerProvider).toHaveBeenCalledWith('gemini', expect.objectContaining({
+      api: 'google-generative-ai',
+      baseUrl: 'http://127.0.0.1:9877/v1beta',
+      models: [expect.objectContaining({
+        id: 'gemini-3.1-pro-preview',
+        api: 'google-generative-ai',
+      })],
+    }));
+    expect(mockFind).toHaveBeenCalledWith('gemini', 'gemini-3.1-pro-preview');
+  });
+
   it('registers adaptive thinking (forceAdaptiveThinking + xhigh) when effort is adaptive', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     const registry = { find: mockFind, registerProvider: vi.fn() };

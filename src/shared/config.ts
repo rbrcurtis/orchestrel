@@ -10,7 +10,7 @@ export interface ModelDef {
   contextWindow: number;
 }
 
-export type ProviderType = 'anthropic' | 'bedrock';
+export type ProviderType = 'anthropic' | 'bedrock' | 'google';
 
 export interface ProviderDef {
   type?: ProviderType;

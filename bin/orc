@@ -476,7 +476,11 @@ function syncModelsJson(config, adaptiveProviderId) {
   const providers = {};
   for (const [id, provider] of Object.entries(config.providers)) {
     if (!provider.baseUrl) continue;
-    const api = provider.type === 'bedrock' ? 'bedrock-converse-stream' : 'anthropic-messages';
+    const api = provider.type === 'bedrock'
+      ? 'bedrock-converse-stream'
+      : provider.type === 'google'
+        ? 'google-generative-ai'
+        : 'anthropic-messages';
     const apiKey = provider.apiKey || provider.authToken;
     providers[id] = {
       name: provider.label ?? id,
