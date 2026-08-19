@@ -25,6 +25,19 @@ describe('worktree-ops', () => {
     expect((await stat(res.path)).isDirectory()).toBe(true);
   });
 
+  it('removes an incomplete worktree and rejects when setup fails', async () => {
+    repo = await tempRepo();
+    const path = join(repo, '.worktrees', 'feat-failed-setup');
+
+    await expect(prepareWorktree({
+      projectPath: repo,
+      branch: 'feat-failed-setup',
+      setupCommands: 'exit 23',
+    })).rejects.toThrow();
+
+    await expect(stat(path)).rejects.toThrow();
+  });
+
   it('removes a worktree', async () => {
     repo = await tempRepo();
     const res = await prepareWorktree({ projectPath: repo, branch: 'feat-y', sourceBranch: undefined, setupCommands: '' });

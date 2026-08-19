@@ -56,8 +56,9 @@ export async function prepareWorktree(opts: {
       try {
         await runSetupCommands(wtPath, opts.setupCommands);
       } catch (err) {
-        // Setup failure must not block the session — the worktree exists and the agent can run.
-        console.error(`[worktree:${opts.branch}] setup failed (continuing):`, err instanceof Error ? err.message : String(err));
+        console.error(`[worktree:${opts.branch}] setup failed; removing incomplete worktree:`, err instanceof Error ? err.message : String(err));
+        removeWorktree(opts.projectPath, wtPath);
+        throw err;
       }
     }
     copyOpencodeConfig(opts.projectPath, wtPath);
