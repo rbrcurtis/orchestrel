@@ -23,8 +23,9 @@ beforeEach(() => {
     disconnect = vi.fn();
     constructor(_callback?: ResizeObserverCallback) {}
   }
-  (globalThis as unknown as { ResizeObserver: { new (callback?: ResizeObserverCallback): FakeResizeObserver } }).ResizeObserver =
-    FakeResizeObserver;
+  (
+    globalThis as unknown as { ResizeObserver: { new (callback?: ResizeObserverCallback): FakeResizeObserver } }
+  ).ResizeObserver = FakeResizeObserver;
   // jsdom has no scroll implementation — SessionView's transcript scroller calls it
   Element.prototype.scrollTo = vi.fn();
 
@@ -166,12 +167,12 @@ describe('Board new card shortcuts', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
   });
 
-  it('does not hijack slash while focus is in an editor field', () => {
+  it('does not hijack the search shortcut while focus is in an editor field', () => {
     renderBoard({ openSavedCard: true });
     const editor = screen.getByPlaceholderText('Add a description...');
     editor.focus();
 
-    const e = keyDown(editor, { key: '/' });
+    const e = keyDown(editor, { key: '?' });
 
     expect(e.defaultPrevented).toBe(false);
     expect(editor).toBe(document.activeElement);
@@ -187,10 +188,7 @@ describe('ferris wheel prompt focus', () => {
     const { store } = renderBoard();
 
     act(() => {
-      store.cards.hydrate(
-        [reviewCard(1, '2026-04-24T00:00:00.000Z'), reviewCard(2, '2026-04-25T00:00:00.000Z')],
-        true,
-      );
+      store.cards.hydrate([reviewCard(1, '2026-04-24T00:00:00.000Z'), reviewCard(2, '2026-04-25T00:00:00.000Z')], true);
     });
 
     const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
@@ -203,7 +201,10 @@ describe('ferris wheel prompt focus', () => {
     // The sent card moves review → running; the wheel rotates to the next review card
     act(() => {
       store.cards.hydrate(
-        [{ ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running' }, reviewCard(2, '2026-04-25T00:00:00.000Z')],
+        [
+          { ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running' },
+          reviewCard(2, '2026-04-25T00:00:00.000Z'),
+        ],
         true,
       );
     });
@@ -232,10 +233,7 @@ describe('ferris wheel prompt focus', () => {
 
     // Server echoes the card update; no other card is eligible, wheel keeps card 1
     act(() => {
-      store.cards.hydrate(
-        [{ ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running', promptsSent: 1 }],
-        true,
-      );
+      store.cards.hydrate([{ ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running', promptsSent: 1 }], true);
     });
 
     await waitFor(() => expect(document.activeElement).toBe(textarea));
@@ -246,7 +244,10 @@ describe('ferris wheel prompt focus', () => {
 
     act(() => {
       store.cards.hydrate(
-        [reviewCard(1, '2026-04-24T00:00:00.000Z'), { ...reviewCard(2, '2026-04-25T00:00:00.000Z'), column: 'running' }],
+        [
+          reviewCard(1, '2026-04-24T00:00:00.000Z'),
+          { ...reviewCard(2, '2026-04-25T00:00:00.000Z'), column: 'running' },
+        ],
         true,
       );
     });

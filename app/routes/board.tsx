@@ -325,7 +325,7 @@ const BoardLayout = observer(function BoardLayout() {
         return;
       }
 
-      if (e.key === '/') {
+      if (e.key === '?') {
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -549,11 +549,12 @@ const BoardLayout = observer(function BoardLayout() {
                 ? slot.cardId
                 : slot.type === 'pinned'
                   ? (resolvedCards.get(idx) ?? slot.cardId ?? null)
-                  : resolvedCards.get(idx) ?? null;
+                  : (resolvedCards.get(idx) ?? null);
             const slotCard = displayedCardId != null ? cardStore.getCard(displayedCardId) : undefined;
             const slotProject = slotCard?.projectId ? projectStore.getProject(slotCard.projectId) : null;
             const pinProject = typeof pinProjectId === 'number' ? projectStore.getProject(pinProjectId) : null;
-            const borderColor = pinProjectId === 'all' ? (slotProject?.color ?? null) : (pinProject?.color ?? slotProject?.color ?? null);
+            const borderColor =
+              pinProjectId === 'all' ? (slotProject?.color ?? null) : (pinProject?.color ?? slotProject?.color ?? null);
             return (
               <ColumnSlot
                 key={idx}
@@ -572,7 +573,11 @@ const BoardLayout = observer(function BoardLayout() {
                 closeSlot={closeSlot}
                 unpinSlot={unpinSlot}
                 onCardCreated={onCardCreated}
-                promptFocusSeq={displayedCardId != null && promptFocusRequest?.cardId === displayedCardId ? promptFocusRequest.seq : null}
+                promptFocusSeq={
+                  displayedCardId != null && promptFocusRequest?.cardId === displayedCardId
+                    ? promptFocusRequest.seq
+                    : null
+                }
               />
             );
           })}
@@ -733,7 +738,12 @@ const ColumnSlot = observer(function ColumnSlot({
           <div className="flex flex-col flex-1">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
               {typeof pinProjectId === 'number' && (
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => setCreatingCard(true)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 shrink-0"
+                  onClick={() => setCreatingCard(true)}
+                >
                   <Plus className="size-4" />
                 </Button>
               )}
@@ -748,21 +758,23 @@ const ColumnSlot = observer(function ColumnSlot({
                   />
                   All Projects
                 </Badge>
-              ) : (() => {
-                const p = projectStore.getProject(pinProjectId);
-                return p ? (
-                  <Badge
-                    variant="secondary"
-                    className={`text-xs shrink-0 ${p.color ? 'animate-review-glow' : ''}`}
-                    style={{
-                      ...(p.color ? { borderLeft: `3px solid ${p.color}` } : {}),
-                      ...(p.color ? ({ '--glow-color': p.color } as React.CSSProperties) : {}),
-                    }}
-                  >
-                    {p.name}
-                  </Badge>
-                ) : null;
-              })()}
+              ) : (
+                (() => {
+                  const p = projectStore.getProject(pinProjectId);
+                  return p ? (
+                    <Badge
+                      variant="secondary"
+                      className={`text-xs shrink-0 ${p.color ? 'animate-review-glow' : ''}`}
+                      style={{
+                        ...(p.color ? { borderLeft: `3px solid ${p.color}` } : {}),
+                        ...(p.color ? ({ '--glow-color': p.color } as React.CSSProperties) : {}),
+                      }}
+                    >
+                      {p.name}
+                    </Badge>
+                  ) : null;
+                })()
+              )}
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => unpinSlot(index)}>
                 <X className="size-4" />
               </Button>

@@ -1,6 +1,7 @@
 // Type-to-focus: when a session is presented but its prompt isn't focused,
-// typing an alphanumeric focuses the prompt and inserts that character, so
-// the user can just keep typing. '/' stays reserved for search.
+// typing an alphanumeric or '/' focuses the prompt and inserts that character,
+// so the user can just keep typing (including slash commands). '?' stays
+// reserved for search.
 
 export const TYPE_FOCUS_EVENT = 'orchestrel:type-focus-prompt';
 
@@ -11,7 +12,7 @@ export function dispatchTypeFocus(cardId: number, char: string) {
 }
 
 export function isTypeFocusKey(e: KeyboardEvent) {
-  return !e.ctrlKey && !e.metaKey && !e.altKey && /^[a-zA-Z0-9]$/.test(e.key);
+  return !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '/' || /^[a-zA-Z0-9]$/.test(e.key));
 }
 
 /** True when the keypress belongs to something already taking text input —
