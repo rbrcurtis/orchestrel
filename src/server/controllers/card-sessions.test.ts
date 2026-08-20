@@ -272,22 +272,25 @@ describe('orcd message router', () => {
     expect(mockCards[0].column).toBe('review');
   });
 
-  it('does not resurrect an archived card when an assistant turn starts', async () => {
+  it('does not resurrect a done or archived card when an assistant turn starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
-    mockCards[0].column = 'archive';
-    mockRepo.save.mockClear();
 
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 0,
-      event: { type: 'message_start', message: { role: 'assistant' } },
-    });
+    for (const column of ['done', 'archive']) {
+      mockCards[0].column = column;
+      mockRepo.save.mockClear();
 
-    expect(mockCards[0].column).toBe('archive');
-    expect(mockRepo.save).not.toHaveBeenCalled();
+      await handler!({
+        type: 'stream_event',
+        sessionId: 'sess-abc',
+        eventIndex: 0,
+        event: { type: 'message_start', message: { role: 'assistant' } },
+      });
+
+      expect(mockCards[0].column).toBe(column);
+      expect(mockRepo.save).not.toHaveBeenCalled();
+    }
   });
 
   it('ignores a user message_start (only assistant turns flip to running)', async () => {
@@ -307,7 +310,7 @@ describe('orcd message router', () => {
     expect(mockCards[0].column).toBe('review');
   });
 
-  it('surfaces non-archive cards in review on session_exit after a pending-background turn completed', async () => {
+  it('surfaces active-column cards in review on session_exit after a pending-background turn completed', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
@@ -323,7 +326,7 @@ describe('orcd message router', () => {
     });
     expect(mockCards[0].column).toBe('review');
 
-    mockCards[0].column = 'done';
+    mockCards[0].column = 'backlog';
     mockRepo.save.mockClear();
 
     await handler!({
@@ -334,6 +337,34 @@ describe('orcd message router', () => {
 
     expect(mockCards[0].column).toBe('review');
     expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+  });
+
+  it('leaves done cards parked when their pending-background sessions exit', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    mockCards[0].column = 'running';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'turn_complete',
+      sessionId: 'sess-abc',
+      eventIndex: 3,
+      hasPendingAsyncTasks: true,
+    });
+
+    mockCards[0].column = 'done';
+    mockRepo.save.mockClear();
+
+    await handler!({
+      type: 'session_exit',
+      sessionId: 'sess-abc',
+      state: 'completed',
+    });
+
+    expect(mockCards[0].column).toBe('done');
+    expect(mockRepo.save).not.toHaveBeenCalled();
   });
 
   it('leaves archived cards archived when pending-background sessions exit', async () => {

@@ -196,32 +196,34 @@ describe('CardService', () => {
     expect(noWt.worktreeBranch).toBeNull()
   })
 
-  it('closes resident sessions on done or archive and only cancels non-terminal moves', async () => {
+  it('keeps mid-turn sessions alive on done/archive, closes idle ones, and only cancels non-terminal moves', async () => {
     const { cardService } = await import('./card')
     mockCancel.mockClear()
     mockClose.mockClear()
     mockIsActive.mockReturnValue(true)
 
-    const archived = await cardService.createCard({ title: 'Archive live', description: 'd', column: 'running' })
-    archived.sessionId = 'sess-live'
-    await archived.save()
-    await cardService.updateCard(archived.id, { column: 'archive' })
-    expect(mockClose).toHaveBeenCalledWith('sess-live')
+    // Mid-turn (running → archive): keep the session alive so the turn finishes.
+    const midTurn = await cardService.createCard({ title: 'Archive mid-turn', description: 'd', column: 'running' })
+    midTurn.sessionId = 'sess-live'
+    await midTurn.save()
+    await cardService.updateCard(midTurn.id, { column: 'archive' })
+    expect(mockClose).not.toHaveBeenCalled()
+    expect(mockCancel).not.toHaveBeenCalled()
 
-    const done = await cardService.createCard({ title: 'Done idle', description: 'd', column: 'review' })
-    done.sessionId = 'sess-idle'
-    await done.save()
-    mockIsActive.mockReturnValueOnce(false)
-    await cardService.updateCard(done.id, { column: 'done' })
+    // Idle (review → done): release the resident runtime.
+    const idle = await cardService.createCard({ title: 'Done idle', description: 'd', column: 'review' })
+    idle.sessionId = 'sess-idle'
+    await idle.save()
+    await cardService.updateCard(idle.id, { column: 'done' })
     expect(mockClose).toHaveBeenCalledWith('sess-idle')
 
-    mockIsActive.mockReset()
-    mockIsActive.mockReturnValue(true)
+    // Non-terminal move (running → backlog): cancel, don't close.
     const stopped = await cardService.createCard({ title: 'Stop live', description: 'd', column: 'running' })
     stopped.sessionId = 'sess-live-2'
     await stopped.save()
     await cardService.updateCard(stopped.id, { column: 'backlog' })
     expect(mockCancel).toHaveBeenCalledWith('sess-live-2')
+    expect(mockClose).toHaveBeenCalledTimes(1)
   })
 
   it('rejects relative import paths before calling a node', async () => {

@@ -30,10 +30,9 @@ async function cardAndClient(cardId: number) {
 export async function submitCardPrompt(cardId: number, message: string, files?: FileRef[]): Promise<Card> {
   if (!message.trim()) throw new CardExecutionError(422, 'invalid_prompt', 'Prompt message must not be empty');
 
+  // A prompt reopens a card from any column, including done/archive: the
+  // explicit prompt is what pulls it back into play.
   const { card, client } = await cardAndClient(cardId);
-  if (card.column === 'done' || card.column === 'archive') {
-    throw new CardExecutionError(409, 'card_not_promptable', `Card ${cardId} is ${card.column}`);
-  }
 
   const prompt = buildPromptWithFiles(message, files);
   card.promptsSent = (card.promptsSent ?? 0) + 1;

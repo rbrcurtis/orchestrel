@@ -163,12 +163,19 @@ class CardService {
 
     // Done and archive are terminal ownership boundaries: release the resident
     // Pi runtime even when no turn is active, so its MCP/browser processes close.
+    // Exception: a mid-turn move (column still 'running') keeps the session
+    // alive so fire-and-forget prompts ("update memories") can finish; the card
+    // stays parked in done/archive when the turn ends (see handleSessionExit).
     if (data.column && data.column !== card.column) {
       const initState = await import('../init-state');
       const client = initState.getClientByNode(card.nodeName);
       if (card.sessionId && (data.column === 'done' || data.column === 'archive')) {
-        console.log(`[session:${id}] closing: card moving ${card.column} → ${data.column}`);
-        client?.close(card.sessionId);
+        if (card.column === 'running') {
+          console.log(`[session:${id}] keeping session alive: card moving ${card.column} → ${data.column} mid-turn`);
+        } else {
+          console.log(`[session:${id}] closing: card moving ${card.column} → ${data.column}`);
+          client?.close(card.sessionId);
+        }
       } else {
         const liveColumns = new Set<string>(['running', 'review']);
         if (card.sessionId && client?.isActive(card.sessionId) && liveColumns.has(card.column) && !liveColumns.has(data.column)) {

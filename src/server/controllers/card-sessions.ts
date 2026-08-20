@@ -235,9 +235,12 @@ export function initOrcdRouter(
 async function handleTurnStart(cardId: number): Promise<void> {
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
-  // Move to running only from a non-running, non-archive column: already-running
-  // is a no-op, and archive means the card was intentionally pulled off the board.
-  if (card && card.column !== 'running' && card.column !== 'archive') {
+  // Move to running only from a non-running, non-terminal column: already-
+  // running is a no-op, and done/archive mean the card was parked there on
+  // purpose — only an explicit prompt (which sets running itself) may pull it
+  // back. Without this, a mid-turn drag to done would snap back on the next
+  // assistant message.
+  if (card && card.column !== 'running' && card.column !== 'done' && card.column !== 'archive') {
     const from = card.column;
     card.column = 'running';
     card.updatedAt = new Date().toISOString();
@@ -286,12 +289,27 @@ async function handleSessionExit(
       card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await repo.save(card);
-    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive' && card.column !== 'review') {
+    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive' && card.column !== 'done' && card.column !== 'review') {
       // Background/async work that kept the session alive after the turn
       // finished — surface the card in review so Ryan sees the new output.
       card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await repo.save(card);
+    }
+  }
+
+  // A card moved to done/archive mid-turn kept its session alive to finish the
+  // work, and the board:changed reaper deferred killing its worktree processes
+  // for that reason. The session has now exited — anything still running in the
+  // worktree is an orphan, so reap it based on the card's current column.
+  if (card && card.column !== 'running' && card.column !== 'review' && card.worktreeBranch && card.projectId) {
+    const { Project } = await import('../models/Project');
+    const proj = await Project.findOneBy({ id: card.projectId });
+    if (proj) {
+      const { resolveWorkDir } = await import('../../shared/worktree');
+      const wt = resolveWorkDir(card.worktreeBranch, proj.path);
+      const reaped = reapWorktreeProcesses(wt);
+      console.log(`[reaper] card ${cardId} session exit in ${card.column}: reaped ${reaped} process(es) under ${wt}`);
     }
   }
 
@@ -622,6 +640,17 @@ export function registerProcessReaper(bus: MessageBus = messageBus): void {
     // frequency; intentionally silent.)
     // oxlint-disable-next-line orchestrel/log-before-early-return
     if (newColumn === 'running' || newColumn === 'review') return;
+
+    // A live session means the card was parked here mid-turn (e.g. a fire-and-
+    // forget prompt moved to done/archive without waiting for the reply). Its
+    // processes are still in use — reaping them would kill the running turn.
+    // handleSessionExit reaps based on the column once the session ends.
+    const client = await clientForCard(card);
+    if (card.sessionId && client?.isActive(card.sessionId)) {
+      console.log(`[reaper] card ${card.id} → ${newColumn}: live session ${card.sessionId.slice(0, 8)}, deferring to session_exit`);
+      return;
+    }
+
     if (!card.worktreeBranch || !card.projectId) {
       console.log(`[reaper] card ${card.id} → ${newColumn}: no worktree, skipping`);
       return;
