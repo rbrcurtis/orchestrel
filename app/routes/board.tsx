@@ -17,7 +17,7 @@ import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
 import { dispatchTypeFocus, isTypeFocusKey, isTypingContext } from '~/lib/type-focus';
-import type { Card } from '../../src/shared/ws-protocol';
+import type { Card, Column } from '../../src/shared/ws-protocol';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -297,13 +297,55 @@ const BoardLayout = observer(function BoardLayout() {
     });
     if (mobileCardId != null) displayedCardIds.add(mobileCardId);
 
+    const slot0 = columnSlots[0];
+    const hotseatId =
+      slot0?.type === 'manual'
+        ? slot0.cardId
+        : (resolvedCards.get(0) ?? (slot0?.type === 'pinned' ? (slot0.cardId ?? null) : null));
+
     function handleKeyDown(e: KeyboardEvent) {
       if (e.repeat) return;
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
-        e.preventDefault();
-        setNewCardColumn('backlog');
-        return;
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'n') {
+          e.preventDefault();
+          setNewCardColumn('backlog');
+          return;
+        }
+        // Ctrl+A/Ctrl+D (Control only — Cmd+A must keep select-all on Mac):
+        // move the focused card to archive/done and re-enter the ferris
+        // wheel. Works from inside the prompt textarea, so it runs before
+        // the typing-context early return below.
+        if (e.ctrlKey && !e.metaKey && (key === 'a' || key === 'd')) {
+          const column = (key === 'a' ? 'archive' : 'done') as Column;
+          let id = focusedCardId;
+          if (id == null || !displayedCardIds.has(id)) id = lastPromptCardRef.current;
+          if (id == null || !displayedCardIds.has(id)) id = hotseatId;
+          if (id == null || !displayedCardIds.has(id)) return;
+          const card = cardStore.getCard(id);
+          if (!card || card.column === column) return;
+          e.preventDefault();
+          void cardStore.updateCard({ id, column });
+          // Release the slot holding the card so the resolver rotates to the
+          // next review/running card.
+          for (let i = 0; i < columnSlots.length; i++) {
+            const slot = columnSlots[i];
+            const displayed =
+              slot.type === 'manual'
+                ? slot.cardId
+                : (resolvedCards.get(i) ?? (slot.type === 'pinned' ? (slot.cardId ?? null) : null));
+            if (displayed !== id) continue;
+            if (i === 0) releaseHotseat();
+            else closeSlot(i);
+            break;
+          }
+          // Drop the focus lock and blur the prompt so the wheel's
+          // presentation effect can focus the next card's prompt.
+          setFocusedCardId(null);
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          return;
+        }
       }
 
       const target = e.target instanceof HTMLElement ? e.target : null;
@@ -311,11 +353,6 @@ const BoardLayout = observer(function BoardLayout() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
 
       if (isTypeFocusKey(e) && !isTypingContext(e.target)) {
-        const slot0 = columnSlots[0];
-        const hotseatId =
-          slot0?.type === 'manual'
-            ? slot0.cardId
-            : (resolvedCards.get(0) ?? (slot0?.type === 'pinned' ? (slot0.cardId ?? null) : null));
         let id = lastPromptCardRef.current;
         if (id == null || !displayedCardIds.has(id)) id = hotseatId;
         if (id != null && displayedCardIds.has(id)) {
@@ -341,7 +378,7 @@ const BoardLayout = observer(function BoardLayout() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat, setNewCardColumn, mobileCardId]);
+  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat, closeSlot, setNewCardColumn, mobileCardId, focusedCardId, cardStore]);
 
   // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;

@@ -179,6 +179,19 @@ describe('Board new card shortcuts', () => {
   });
 });
 
+/** Make the stubbed ws echo card:update back like the server does, so optimistic updates stick. */
+function stubCardUpdateEcho(store: RootStore) {
+  (store.ws as unknown as { emit: (e: string, d: unknown) => Promise<unknown> }).emit = vi
+    .fn()
+    .mockImplementation((event: string, data: { id?: number } & Partial<Card>) => {
+      if (event === 'card:update' && data.id != null) {
+        const card = store.cards.getCard(data.id);
+        return Promise.resolve(card ? { ...card, ...data } : undefined);
+      }
+      return Promise.resolve(undefined);
+    });
+}
+
 function reviewCard(id: number, updatedAt: string): Card {
   return { ...makeCard(), id, title: `Card ${id}`, column: 'review', updatedAt, sessionId: `sess-${id}` };
 }
@@ -237,6 +250,65 @@ describe('ferris wheel prompt focus', () => {
     });
 
     await waitFor(() => expect(document.activeElement).toBe(textarea));
+  });
+
+  it('moves the focused card to done with Ctrl+D and re-enters the ferris wheel', async () => {
+    const { store } = renderBoard();
+    stubCardUpdateEcho(store);
+
+    act(() => {
+      store.cards.hydrate([reviewCard(1, '2026-04-24T00:00:00.000Z'), reviewCard(2, '2026-04-25T00:00:00.000Z')], true);
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+
+    fireEvent.keyDown(textarea, { key: 'd', ctrlKey: true });
+
+    await waitFor(() => {
+      expect(store.cards.getCard(1)?.column).toBe('done');
+      expect(screen.getByText('Card 2')).toBeTruthy();
+      expect(screen.queryByText('Card 1')).toBeNull();
+    });
+    await waitFor(() => expect(document.activeElement?.tagName).toBe('TEXTAREA'));
+  });
+
+  it('moves the focused card to archive with Ctrl+A', async () => {
+    const { store } = renderBoard();
+    stubCardUpdateEcho(store);
+
+    act(() => {
+      store.cards.hydrate([reviewCard(1, '2026-04-24T00:00:00.000Z')], true);
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+
+    fireEvent.keyDown(textarea, { key: 'a', ctrlKey: true });
+
+    await waitFor(() => expect(store.cards.getCard(1)?.column).toBe('archive'));
+    await waitFor(() => {
+      expect(screen.queryByText('Card 1')).toBeNull();
+      expect(screen.getByText('Select a card')).toBeTruthy();
+    });
+  });
+
+  it('does not hijack Cmd+A so select-all keeps working on Mac', async () => {
+    const { store } = renderBoard();
+    stubCardUpdateEcho(store);
+
+    act(() => {
+      store.cards.hydrate([reviewCard(1, '2026-04-24T00:00:00.000Z')], true);
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+
+    const e = keyDown(textarea, { key: 'a', metaKey: true });
+
+    expect(e.defaultPrevented).toBe(false);
+    expect(store.cards.getCard(1)?.column).toBe('review');
+    expect(screen.getByText('Card 1')).toBeTruthy();
   });
 
   it('advances the wheel when Escape is pressed from the focused prompt', async () => {
