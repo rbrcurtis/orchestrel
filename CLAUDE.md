@@ -43,6 +43,13 @@ Provider config lives in each node's `orcd.yaml`. Each provider has `label`, opt
 
 **Provider-specific behavior lives outside orcd, in Pi extensions (layer 5).** Claude Max OAuth and its Claude Code request reshaping are NOT in orcd's application code. The `claude-max` Pi extension lives in the pi-agent config repo (github.com/rbrcurtis/pi-agent, checked out at `~/.pi/agent`) under `extensions/claude-max/` and is auto-discovered by Pi and self-registers the `oauth` block + `streamSimple` reshaper that augments the `anthropic` provider. orcd imports nothing from it. Setting `oauth: claude-max` on a provider in `config.yaml` depends on that extension being installed; without it the provider has no working auth.
 
+### Slash Commands
+
+Two independent kinds of slash commands, expanded at different layers:
+
+- **Skill/prompt commands** (`/merge`, `/qa`, any Pi skill or prompt template) — expanded by orcd (layer 3) in `src/orcd/inline-commands.ts`, anywhere in the message, before the model sees the text.
+- **App commands** (`/done`, `/archive`) — addressed to Orchestrel, never to the model. Parsed by `parseAppCommands` (`src/shared/slash-commands.ts`) inside `submitCardPrompt` (works for both the ws `agent:send` and REST prompt endpoints): the command is stripped, the remaining text is sent as the prompt, then the card is moved through `cardService.updateCard` — the same path as a drag, so a mid-turn move keeps the session alive and the card parks in done/archive when the session exits. A command-only message moves the card without prompting. `/done` appends at the end of the done column (position-sorted); if both appear, the last command wins. App commands take precedence over a same-named skill/prompt.
+
 ## Code Style
 
 - TypeScript strict mode

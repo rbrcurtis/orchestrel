@@ -2,6 +2,7 @@
 import { readFileSync } from 'fs';
 import { stripFrontmatter } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, PromptTemplate } from '@earendil-works/pi-coding-agent';
+import { maskCodeRegions } from '../shared/slash-commands';
 
 // Orchestrel-only: Pi expands a skill/prompt slash-command ONLY when it is the
 // first thing in the message (see AgentSession.prompt → _expandSkillCommand /
@@ -116,24 +117,4 @@ export function expandInlineCommands(session: AgentSession, text: string): strin
   }
   if (last === 0) return text; // nothing expanded
   return out + text.slice(last);
-}
-
-// Replace the contents of inline `code` spans and fenced ``` blocks with spaces
-// of equal length. Same length in → same length out, so match indices from the
-// masked string map 1:1 onto the original text.
-function maskCodeRegions(text: string): string {
-  const chars = text.split('');
-  // Fenced blocks first (```...```), then inline spans (`...`).
-  maskPattern(chars, /```[\s\S]*?```/g, text);
-  maskPattern(chars, /`[^`\n]*`/g, chars.join(''));
-  return chars.join('');
-}
-
-function maskPattern(chars: string[], re: RegExp, source: string): void {
-  for (const m of source.matchAll(re)) {
-    const start = m.index;
-    for (let i = start; i < start + m[0].length; i++) {
-      if (chars[i] !== '\n') chars[i] = ' ';
-    }
-  }
 }

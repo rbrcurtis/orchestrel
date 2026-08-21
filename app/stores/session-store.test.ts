@@ -320,3 +320,35 @@ describe('SessionStore evictSession', () => {
     expect(store.getSession(9)?.active).toBe(true);
   });
 });
+
+describe('SessionStore sendMessage app slash commands', () => {
+  it('echoes only what the model receives and marks the session running', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+
+    await store.sendMessage(1, 'great! /merge /archive');
+
+    const s = store.getSession(1)!;
+    expect(s.accumulator.conversation.at(-1)).toMatchObject({ kind: 'user', content: 'great! /merge' });
+    expect(s.status).toBe('running');
+    expect(s.promptsSent).toBe(1);
+    // The raw message goes to the server; it strips the command and moves the card.
+    expect(emit).toHaveBeenCalledWith('agent:send', { cardId: 1, message: 'great! /merge /archive', files: undefined });
+  });
+
+  it('skips the transcript echo and running state for a command-only message', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+
+    await store.sendMessage(2, '/archive');
+
+    const s = store.getSession(2)!;
+    expect(s.accumulator.conversation).toHaveLength(0);
+    expect(s.active).toBe(false);
+    expect(s.status).toBe('stopped');
+    expect(s.promptsSent).toBe(0);
+    expect(emit).toHaveBeenCalledWith('agent:send', { cardId: 2, message: '/archive', files: undefined });
+  });
+});

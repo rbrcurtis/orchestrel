@@ -1,5 +1,6 @@
 import { makeAutoObservable, observable, runInAction, autorun, type IReactionDisposer } from 'mobx';
 import type { AgentStatus, FileRef } from '../../src/shared/ws-protocol';
+import { parseAppCommands } from '../../src/shared/slash-commands';
 import type { WsClient } from '../lib/ws-client';
 import type { SdkMessage, HistoryMessage } from '../lib/sdk-types';
 import { MessageAccumulator } from '../lib/message-accumulator';
@@ -256,15 +257,24 @@ export class SessionStore {
   async sendMessage(cardId: number, message: string, files?: FileRef[]): Promise<void> {
     const s = this.getOrCreate(cardId);
 
-    // Add optimistic user message
-    s.accumulator.addUserMessage(message, true);
+    // App slash commands (/done, /archive) are addressed to Orchestrel, not the
+    // model — the backend strips them and moves the card after sending. Echo only
+    // what the model will receive so the bubble matches the transcript history.
+    // A command-only message prompts nothing, so skip the echo and the optimistic
+    // running flip; the card move arrives via the card:updated event.
+    const { text } = parseAppCommands(message);
+    const hasPrompt = text.trim().length > 0 || (files?.length ?? 0) > 0;
 
-    // Optimistically set status to running
-    runInAction(() => {
-      s.active = true;
-      s.status = 'running';
-      s.promptsSent = (s.promptsSent ?? 0) + 1;
-    });
+    if (hasPrompt) {
+      s.accumulator.addUserMessage(text, true);
+
+      // Optimistically set status to running
+      runInAction(() => {
+        s.active = true;
+        s.status = 'running';
+        s.promptsSent = (s.promptsSent ?? 0) + 1;
+      });
+    }
 
     try {
       await this.ws().emit('agent:send', { cardId, message, files });

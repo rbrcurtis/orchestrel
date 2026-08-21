@@ -3,6 +3,7 @@ import { buildPromptWithFiles } from '../sessions/manager';
 import { clearCreatePending, markCreatePending, trackSession } from '../controllers/card-sessions';
 import { ensureWorktree } from '../sessions/worktree';
 import { windowForCard } from '../config/capabilities';
+import { parseAppCommands, type AppSlashColumn } from '../../shared/slash-commands';
 import type { FileRef } from '../../shared/ws-protocol';
 
 export class CardExecutionError extends Error {
@@ -28,8 +29,43 @@ async function cardAndClient(cardId: number) {
 }
 
 export async function submitCardPrompt(cardId: number, message: string, files?: FileRef[]): Promise<Card> {
-  if (!message.trim()) throw new CardExecutionError(422, 'invalid_prompt', 'Prompt message must not be empty');
+  // App slash commands (/done, /archive) are addressed to Orchestrel, not the
+  // model: strip them from the prompt, send what remains, then move the card.
+  // A message of only app commands moves the card without prompting. The move
+  // goes through cardService.updateCard — the same path as a drag — so a
+  // mid-turn move keeps the session alive and the card parks when it exits.
+  const { text, column } = parseAppCommands(message);
+  const hasPrompt = text.trim().length > 0 || (files?.length ?? 0) > 0;
 
+  if (!hasPrompt) {
+    if (!column) throw new CardExecutionError(422, 'invalid_prompt', 'Prompt message must not be empty');
+    console.log(`[session:${cardId}] app command /${column}: moving card without prompting`);
+    return moveCardToColumn(cardId, column);
+  }
+
+  const card = await sendPrompt(cardId, text, files);
+  if (column) {
+    console.log(`[session:${cardId}] app command /${column}: moving card after prompt`);
+    return moveCardToColumn(cardId, column);
+  }
+  return card;
+}
+
+// Move a card exactly like a drag would: cardService.updateCard applies the
+// session lifecycle (mid-turn done/archive moves keep the session alive) and
+// the save fires the board:changed handlers (worktree cleanup, reaper).
+async function moveCardToColumn(cardId: number, column: AppSlashColumn): Promise<Card> {
+  const data: Partial<Card> = { column };
+  // The done column sorts by position; append the card at the end.
+  if (column === 'done') {
+    const last = await Card.findOne({ where: { column: 'done' }, order: { position: 'DESC' } });
+    data.position = (last?.position ?? -1) + 1;
+  }
+  const { cardService } = await import('./card');
+  return cardService.updateCard(cardId, data);
+}
+
+async function sendPrompt(cardId: number, message: string, files?: FileRef[]): Promise<Card> {
   // A prompt reopens a card from any column, including done/archive: the
   // explicit prompt is what pulls it back into play.
   const { card, client } = await cardAndClient(cardId);

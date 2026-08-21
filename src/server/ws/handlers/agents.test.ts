@@ -32,6 +32,7 @@ const mockClient = {
   compact: mockCompact,
   isActive: mockIsActive,
   cancel: mockCancel,
+  isConnected: () => true,
 };
 vi.mock('../../init-state', () => ({
   getOrcdClient: () => mockClient,
@@ -86,6 +87,7 @@ describe('handleAgentStop', () => {
     const { handleAgentStop } = await import('./agents');
     const callback = vi.fn();
     mockFindOneBy.mockResolvedValue({ id: 42, sessionId: 'sess-abc' });
+    mockIsActive.mockReturnValue(true);
 
     await handleAgentStop({ cardId: 42 }, callback);
 
@@ -93,14 +95,14 @@ describe('handleAgentStop', () => {
     expect(mockCancel).toHaveBeenCalledWith('sess-abc');
   });
 
-  it('does not cancel when the card has no session', async () => {
+  it('rejects when the card has no active session', async () => {
     const { handleAgentStop } = await import('./agents');
     const callback = vi.fn();
     mockFindOneBy.mockResolvedValue({ id: 42, sessionId: null });
 
     await handleAgentStop({ cardId: 42 }, callback);
 
-    expect(callback).toHaveBeenCalledWith({});
+    expect(callback).toHaveBeenCalledWith({ error: 'Card 42 has no active turn' });
     expect(mockCancel).not.toHaveBeenCalled();
   });
 });
