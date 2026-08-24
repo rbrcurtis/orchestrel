@@ -1,9 +1,12 @@
+import { readFileSync, rmSync } from 'fs';
+import { resolve, sep } from 'path';
 import { Card } from '../models/Card';
 import { buildPromptWithFiles } from '../sessions/manager';
 import { clearCreatePending, markCreatePending, trackSession } from '../controllers/card-sessions';
 import { ensureWorktree } from '../sessions/worktree';
 import { windowForCard } from '../config/capabilities';
 import { parseAppCommands, type AppSlashColumn } from '../../shared/slash-commands';
+import type { OrcdClient } from '../orcd-client';
 import type { FileRef } from '../../shared/ws-protocol';
 
 export class CardExecutionError extends Error {
@@ -65,12 +68,35 @@ async function moveCardToColumn(cardId: number, column: AppSlashColumn): Promise
   return cardService.updateCard(cardId, data);
 }
 
+// Prompt uploads land in the backend's /tmp, but the agent runs on the card's
+// node. Stage the bytes there — same mechanism as initial card attachments —
+// so the path embedded in the prompt exists wherever the session runs.
+async function stagePromptFiles(client: OrcdClient, cardId: number, files: FileRef[]): Promise<FileRef[]> {
+  const uploadRoot = `${resolve('/tmp/orchestrel-uploads')}${sep}`;
+  const stagedRoot = `${resolve('/tmp/orchestrel-attachments')}${sep}`;
+  const staged: FileRef[] = [];
+  for (const f of files) {
+    const path = resolve(f.path);
+    if (path.startsWith(stagedRoot)) {
+      staged.push(f);
+      continue;
+    }
+    if (!path.startsWith(uploadRoot)) {
+      throw new CardExecutionError(422, 'invalid_attachment', `Invalid attachment path: ${f.path}`);
+    }
+    staged.push(await client.stageFile({ cardId, file: f, bytes: readFileSync(path) }));
+    rmSync(path, { force: true });
+  }
+  return staged;
+}
+
 async function sendPrompt(cardId: number, message: string, files?: FileRef[]): Promise<Card> {
   // A prompt reopens a card from any column, including done/archive: the
   // explicit prompt is what pulls it back into play.
   const { card, client } = await cardAndClient(cardId);
 
-  const prompt = buildPromptWithFiles(message, files);
+  const staged = files?.length ? await stagePromptFiles(client, cardId, files) : [];
+  const prompt = buildPromptWithFiles(message, staged);
   card.promptsSent = (card.promptsSent ?? 0) + 1;
 
   if (card.sessionId && client.isActive(card.sessionId)) {
