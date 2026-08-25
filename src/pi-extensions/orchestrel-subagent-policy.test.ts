@@ -17,6 +17,7 @@ type Request = {
 const trackablePolicy: OrchestrelSubagentPolicy = {
   parentProvider: 'trackable',
   parentModel: 'trackable/auto',
+  parentModels: ['auto', 'claude-sonnet-4-6', 'claude-opus-4-6', 'gpt-5.6-sol'],
   agents: {
     Explore: { model: 'trackable/claude-opus-4-6', source: 'lightweight tier' },
   },
@@ -124,6 +125,35 @@ describe('Orchestrel subagent policy extension', () => {
     });
   });
 
+  it('accepts bare same-provider model names and rejects unknown ones', () => {
+    const bus = createEventBus();
+    loadPolicyFactory(bus, trackablePolicy);
+
+    expect(request(bus, {
+      agentType: 'Explore', requestedModel: 'auto',
+      parentProvider: 'trackable', parentModel: 'trackable/auto',
+    }).decision).toEqual({ model: 'trackable/auto', source: 'explicit' });
+
+    expect(request(bus, {
+      agentType: 'Explore', requestedModel: 'claude-opus-4-6',
+      parentProvider: 'trackable', parentModel: 'trackable/auto',
+    }).decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'explicit' });
+
+    expect(request(bus, {
+      agentType: 'Explore', requestedModel: 'gpt-5.4',
+      parentProvider: 'trackable', parentModel: 'trackable/auto',
+    }).decision).toEqual({
+      error: 'Subagent model "gpt-5.4" is not allowed. This session uses provider "trackable".',
+    });
+
+    expect(request(bus, {
+      agentType: 'Explore', requestedModel: 'trackable/gpt-5.4',
+      parentProvider: 'trackable', parentModel: 'trackable/auto',
+    }).decision).toEqual({
+      error: 'Subagent model "trackable/gpt-5.4" is not allowed. This session uses provider "trackable".',
+    });
+  });
+
   it('keeps concurrent policies isolated across resource loaders and event buses', async () => {
     const trackable = createEventBus();
     const chatgpt = createEventBus();
@@ -146,6 +176,7 @@ describe('Orchestrel subagent policy extension', () => {
       eventBus: chatgpt,
       extensionFactories: [createOrchestrelSubagentPolicyExtension({
         parentProvider: 'chatgpt', parentModel: 'chatgpt/gpt-5.5',
+        parentModels: ['gpt-5.5', 'gpt-5.4-nano'],
         agents: { Explore: { model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' } },
         allowCrossProvider: false,
       })],

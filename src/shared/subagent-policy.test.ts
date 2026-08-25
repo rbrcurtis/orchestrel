@@ -24,6 +24,7 @@ describe('buildSubagentPolicy', () => {
     })).toMatchObject({
       parentProvider: 'chatgpt',
       parentModel: 'chatgpt/gpt-5.5',
+      parentModels: ['main', 'gpt-5.5', 'mini', 'gpt-5.4-mini', 'nano', 'gpt-5.4-nano'],
       agents: {
         'general-purpose': { model: 'chatgpt/gpt-5.4-mini', source: 'subagent tier' },
         Explore: { model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' },
@@ -75,6 +76,20 @@ describe('subagent policy serialization', () => {
     expect(parseSubagentPolicy(serializeSubagentPolicy(policy))).toEqual(policy);
     expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, allowCrossProvider: true }))).toThrow(
       'allowCrossProvider must be false',
+    );
+  });
+
+  it('rejects missing, empty, and malformed parentModels', () => {
+    const policy = buildSubagentPolicy('kimi', 'main-id', { models: { main: model('main-id') } });
+
+    expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, parentModels: undefined }))).toThrow(
+      'subagent policy parentModels must be a non-empty array',
+    );
+    expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, parentModels: [] }))).toThrow(
+      'subagent policy parentModels must be a non-empty array',
+    );
+    expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, parentModels: ['main', 42] }))).toThrow(
+      'subagent policy parentModels[1] must be a non-empty string',
     );
   });
 

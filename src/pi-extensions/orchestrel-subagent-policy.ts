@@ -83,9 +83,13 @@ function register(
 
     if (req.requestedModel) {
       const slash = req.requestedModel.indexOf('/');
-      const provider = slash > 0 ? req.requestedModel.slice(0, slash) : '';
-      req.decision = provider === policy.parentProvider
-        ? { model: req.requestedModel, source: 'explicit' }
+      const provider = slash > 0 ? req.requestedModel.slice(0, slash) : policy.parentProvider;
+      const modelId = slash > 0 ? req.requestedModel.slice(slash + 1) : req.requestedModel;
+      // Accept both qualified and bare names, but only models this session's
+      // provider actually offers — the LLM sometimes drops the provider
+      // prefix or invents model ids.
+      req.decision = provider === policy.parentProvider && policy.parentModels.includes(modelId)
+        ? { model: `${policy.parentProvider}/${modelId}`, source: 'explicit' }
         : {
           error: `Subagent model "${req.requestedModel}" is not allowed. This session uses provider "${policy.parentProvider}".`,
         };

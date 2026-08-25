@@ -15,6 +15,8 @@ interface AgentPolicy {
 export interface OrchestrelSubagentPolicy {
   parentProvider: string;
   parentModel: string;
+  /** Every model this session's provider offers, by config key and modelID. */
+  parentModels: string[];
   agents: Record<string, AgentPolicy>;
   allowCrossProvider: false;
 }
@@ -74,9 +76,12 @@ export function buildSubagentPolicy(
     agents[name] = { model: `${providerId}/${model.modelID}`, source: 'agent override' };
   }
 
+  const parentModels = [...new Set(Object.entries(provider.models).flatMap(([key, model]) => [key, model.modelID]))];
+
   return {
     parentProvider: providerId,
     parentModel: `${providerId}/${parentModelId}`,
+    parentModels,
     agents,
     allowCrossProvider: false,
   };
@@ -117,6 +122,15 @@ export function parseSubagentPolicy(value: string): OrchestrelSubagentPolicy {
     parsed.parentProvider,
     'subagent policy parentModel',
   );
+  if (!Array.isArray(parsed.parentModels) || parsed.parentModels.length === 0) {
+    throw new Error('subagent policy parentModels must be a non-empty array');
+  }
+  const parentModels = parsed.parentModels.map((value, index) => {
+    if (typeof value !== 'string' || !value) {
+      throw new Error(`subagent policy parentModels[${index}] must be a non-empty string`);
+    }
+    return value;
+  });
   if (parsed.allowCrossProvider !== false) throw new Error('allowCrossProvider must be false');
   if (!isRecord(parsed.agents)) throw new Error('subagent policy agents must be an object');
 
@@ -134,6 +148,7 @@ export function parseSubagentPolicy(value: string): OrchestrelSubagentPolicy {
   return {
     parentProvider: parsed.parentProvider,
     parentModel,
+    parentModels,
     agents,
     allowCrossProvider: false,
   };
