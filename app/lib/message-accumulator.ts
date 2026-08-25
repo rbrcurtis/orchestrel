@@ -414,12 +414,34 @@ export class MessageAccumulator {
   }
 
   private handleUserMessage(msg: SdkUserMessage): void {
+    let text = '';
     for (const block of msg.message.content) {
-      if (block.type !== 'tool_result' || !block.tool_use_id) continue;
-      const result = textFromToolResultContent(block.content);
-      this.attachToolOutput(block.tool_use_id, result);
-      this.completeBlockingSubagent(block.tool_use_id, result, block.is_error ?? false);
+      if (block.type === 'tool_result' && block.tool_use_id) {
+        const result = textFromToolResultContent(block.content);
+        this.attachToolOutput(block.tool_use_id, result);
+        this.completeBlockingSubagent(block.tool_use_id, result, block.is_error ?? false);
+      } else if (block.type === 'text' && block.text) {
+        text += block.text;
+      }
     }
+    if (text) this.mergeUserEcho(displayUserContent(text));
+  }
+
+  // The server broadcasts every submitted prompt to all viewers of the card.
+  // The sending socket already shows the message optimistically, so fold the
+  // echo into the matching optimistic entry instead of appending a duplicate.
+  private mergeUserEcho(content: string): void {
+    for (let i = this.conversation.length - 1; i >= 0; i--) {
+      const e = this.conversation[i];
+      if (e.kind !== 'user') continue;
+      if (e.optimistic && e.content === content) {
+        this.conversation[i] = { ...e, optimistic: false };
+        return;
+      }
+      // Never merge across an earlier user turn — an unmatched echo belongs here
+      break;
+    }
+    this.addUserMessage(content);
   }
 
   private handleToolExecutionUpdate(msg: SdkToolExecutionUpdate): void {

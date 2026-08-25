@@ -296,3 +296,25 @@ describe('MessageAccumulator serialize/hydrate', () => {
     expect(acc.conversation[0]).toMatchObject({ kind: 'user', content: 'second' });
   });
 });
+
+describe('user prompt echo broadcast', () => {
+  const echo = (text: string): SdkMessage => ({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text }] },
+  });
+
+  it('folds the server echo into the sender optimistic message instead of duplicating', () => {
+    const acc = new MessageAccumulator();
+    acc.addUserMessage('hello', true);
+    acc.handleMessage(echo('hello'));
+    expect(acc.conversation.length).toBe(1);
+    expect(acc.conversation[0]).toMatchObject({ kind: 'user', content: 'hello', optimistic: false });
+  });
+
+  it('appends the echo for a viewer that has no optimistic message', () => {
+    const acc = new MessageAccumulator();
+    acc.handleMessage(echo('hello'));
+    expect(acc.conversation.length).toBe(1);
+    expect(acc.conversation[0]).toMatchObject({ kind: 'user', content: 'hello' });
+  });
+});

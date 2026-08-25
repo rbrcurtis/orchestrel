@@ -61,6 +61,7 @@ export interface SdkUserMessage {
       tool_use_id?: string;
       content?: unknown;
       is_error?: boolean;
+      text?: string;
     }>;
   };
 }

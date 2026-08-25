@@ -1,5 +1,6 @@
 import { readFileSync, rmSync } from 'fs';
 import { resolve, sep } from 'path';
+import { messageBus } from '../bus';
 import { Card } from '../models/Card';
 import { buildPromptWithFiles } from '../sessions/manager';
 import { clearCreatePending, markCreatePending, trackSession } from '../controllers/card-sessions';
@@ -54,6 +55,20 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
   return card;
 }
 
+// Everyone viewing the card must see the prompt, not just the socket that sent
+// it: the sender echoes it optimistically client-side, but other viewers have
+// nothing until the next history load without this broadcast.
+function broadcastUserPrompt(cardId: number, text: string): void {
+  if (!text.trim()) {
+    console.log(`[session:${cardId}] skipping prompt broadcast — empty text`);
+    return;
+  }
+  messageBus.publish(`card:${cardId}:sdk`, {
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text }] },
+  });
+}
+
 // Move a card exactly like a drag would: cardService.updateCard applies the
 // session lifecycle (mid-turn done/archive moves keep the session alive) and
 // the save fires the board:changed handlers (worktree cleanup, reaper).
@@ -105,6 +120,7 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
     if (card.column !== 'running') card.column = 'running';
     card.updatedAt = new Date().toISOString();
     await card.save();
+    broadcastUserPrompt(cardId, message);
     console.log(`[session:${cardId}] prompt accepted by active session ${card.sessionId.slice(0, 8)}`);
     return card;
   }
@@ -136,6 +152,7 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
     trackSession(cardId, sessionId);
     card.updatedAt = new Date().toISOString();
     await card.save();
+    broadcastUserPrompt(cardId, message);
     console.log(`[session:${cardId}] prompt started session ${sessionId.slice(0, 8)}`);
     return card;
   } catch (err) {

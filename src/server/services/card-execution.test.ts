@@ -42,6 +42,8 @@ const mockClient = {
 
 vi.mock('../init-state', () => ({
   getClientByNode: () => mockClient,
+  getMessageBus: () => null,
+  setMessageBus: () => {},
 }));
 
 vi.mock('./card', () => ({
@@ -139,5 +141,27 @@ describe('submitCardPrompt app slash commands', () => {
 
     await expect(submitCardPrompt(42, '   ')).rejects.toMatchObject({ code: 'invalid_prompt' });
     expect(mockUpdateCard).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts the submitted prompt to the card room so other viewers see it', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+    const { messageBus } = await import('../bus');
+    mockFindOneBy.mockResolvedValue(activeCard());
+    mockIsActive.mockReturnValue(true);
+
+    const received: unknown[] = [];
+    const handler = (p: unknown) => received.push(p);
+    messageBus.subscribe('card:42:sdk', handler);
+    try {
+      await submitCardPrompt(42, 'great! /archive');
+    } finally {
+      messageBus.unsubscribe('card:42:sdk', handler);
+    }
+
+    // Stripped text only: the broadcast must match the sender's optimistic
+    // echo exactly, or the sender dedupes against nothing and doubles up.
+    expect(received).toEqual([
+      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'great!' }] } },
+    ]);
   });
 });
