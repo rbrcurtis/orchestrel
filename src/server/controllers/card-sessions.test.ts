@@ -593,6 +593,7 @@ describe('reconcileRunningCards', () => {
     mockCards[0].promptsSent = 1;
     mockRepo.save.mockClear();
     const client = {
+      nodeName: 'local',
       list: vi.fn(async () => ({
         type: 'session_list',
         sessions: [{ id: 'sess-abc', state: 'stopped', cwd: '/tmp' }],
@@ -620,6 +621,7 @@ describe('reconcileRunningCards', () => {
     mockCards[0].promptsSent = 0;
     mockRepo.save.mockClear();
     const client = {
+      nodeName: 'local',
       list: vi.fn(async () => ({
         type: 'session_list',
         sessions: [{ id: 'sess-abc', state: 'stopped', cwd: '/tmp' }],
@@ -647,6 +649,7 @@ describe('reconcileRunningCards', () => {
     mockCards[0].promptsSent = 0;
     mockRepo.save.mockClear();
     const client = {
+      nodeName: 'local',
       list: vi.fn(async () => ({
         type: 'session_list',
         sessions: [],
@@ -683,6 +686,7 @@ describe('reconcileRunningCards', () => {
     mockCards[0].sessionId = null;
     mockEnsureWorktree.mockRejectedValue(new Error('bun: command not found'));
     const client = {
+      nodeName: 'local',
       list: vi.fn(async () => ({
         type: 'session_list',
         sessions: [],
@@ -716,6 +720,7 @@ describe('reconcileRunningCards', () => {
     mockRepo.save.mockClear();
 
     const client = {
+      nodeName: 'local',
       onMessage: vi.fn((h: (msg: unknown) => void | Promise<void>) => { earlyHandler = h; }),
       offMessage: vi.fn(),
       list: vi.fn(async () => ({
@@ -741,6 +746,34 @@ describe('reconcileRunningCards', () => {
 
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'early output' });
     expect(mockCards[0].sessionId).toBe('sess-new');
+  });
+
+  it('ignores cards belonging to another node', async () => {
+    const { reconcileRunningCards } = await import('./card-sessions');
+    const bus = new MessageBus();
+    const exitSpy = vi.fn();
+    bus.on('card:42:exit', exitSpy);
+    mockCards[0].column = 'running';
+    mockCards[0].sessionId = 'sess-abc';
+    mockRepo.save.mockClear();
+    // Node 'max' reconcile must not touch a 'local' card just because its
+    // session is absent from max's session list.
+    const client = {
+      nodeName: 'max',
+      list: vi.fn(async () => ({
+        type: 'session_list',
+        sessions: [],
+      })),
+      markActive: vi.fn(),
+      create: vi.fn(async () => 'sess-new'),
+    };
+
+    await reconcileRunningCards(client as never, bus);
+
+    expect(mockCards[0].column).toBe('running');
+    expect(mockRepo.save).not.toHaveBeenCalled();
+    expect(client.create).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -830,6 +863,27 @@ describe('registerAutoStart', () => {
     });
 
     await new Promise((r) => setTimeout(r, 10));
+    expect(mockCreate).toHaveBeenCalled();
+    expect(mockCards[0].sessionId).toBe('sess-new');
+  });
+
+  it('starts a session when the card insert commits after the first lookup', async () => {
+    const { registerAutoStart } = await import('./card-sessions');
+    const bus = new MessageBus();
+    registerAutoStart(bus);
+    mockCards[0].sessionId = null;
+    mockIsActive.mockReturnValue(false);
+    // afterInsert publishes board:changed before the insert transaction
+    // commits; the first re-read sees nothing, the retry sees the row.
+    mockRepo.findOneBy.mockResolvedValueOnce(null).mockResolvedValueOnce(mockCards[0]);
+
+    bus.publish('board:changed', {
+      card: mockCards[0],
+      oldColumn: null,
+      newColumn: 'running',
+    });
+
+    await new Promise((r) => setTimeout(r, 400));
     expect(mockCreate).toHaveBeenCalled();
     expect(mockCards[0].sessionId).toBe('sess-new');
   });

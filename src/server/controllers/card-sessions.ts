@@ -349,7 +349,7 @@ export async function reconcileRunningCards(
   const allCards = await r.find();
   const cardBySession = new Map<string, Card>();
   for (const c of allCards) {
-    if (c.sessionId) cardBySession.set(c.sessionId, c);
+    if (c.sessionId && c.nodeName === client.nodeName) cardBySession.set(c.sessionId, c);
   }
 
   for (const sess of runningSessions) {
@@ -362,7 +362,10 @@ export async function reconcileRunningCards(
 
   // Reconcile running-column cards whose session is no longer alive in orcd.
   // Cards with no sessionId are still in the pre-session starting window and stay in running.
-  const runningCards = allCards.filter((c) => c.column === 'running');
+  // Only reconcile cards that belong to this node. Another node's session
+  // list never contains this node's sessions, so unfiltered cards get
+  // wrongly moved to review (or started on the wrong node).
+  const runningCards = allCards.filter((c) => c.column === 'running' && c.nodeName === client.nodeName);
   if (runningCards.length === 0) {
     console.log(`[reconcile] no running cards to reconcile`);
     return;
@@ -459,7 +462,14 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
         return;
       }
 
-      const fullCard = await repo().findOneBy({ id: card.id });
+      // afterInsert publishes board:changed before the insert transaction
+      // commits, so the re-read can race the insert and see nothing. Retry
+      // once after the commit lands before declaring the card gone.
+      let fullCard = await repo().findOneBy({ id: card.id });
+      if (!fullCard) {
+        await new Promise((r) => setTimeout(r, 300));
+        fullCard = await repo().findOneBy({ id: card.id });
+      }
       if (!fullCard) {
         console.log(`[oc:auto-start] card #${card.id} vanished before auto-start`);
         return;
