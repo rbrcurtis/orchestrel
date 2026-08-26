@@ -21,43 +21,45 @@ export function isCompactCommand(prompt: string): boolean {
 // Like skill/prompt expansion, they are recognized anywhere in the message,
 // never inside code regions, and only at start-of-string or after whitespace.
 
-export type AppSlashColumn = Extract<Column, 'done' | 'archive'>;
+export type AppSlashAction = Extract<Column, 'done' | 'archive' | 'ready'> | 'delete';
 
-export const APP_SLASH_COMMANDS: ReadonlyArray<{ name: string; column: AppSlashColumn }> = [
-  { name: 'done', column: 'done' },
-  { name: 'archive', column: 'archive' },
+export const APP_SLASH_COMMANDS: ReadonlyArray<{ name: string; action: AppSlashAction }> = [
+  { name: 'done', action: 'done' },
+  { name: 'archive', action: 'archive' },
+  { name: 'ready', action: 'ready' },
+  { name: 'delete', action: 'delete' },
 ];
 
 // Same positional rule as skill/prompt expansion (start-of-string or whitespace
-// before the slash). The lookahead rejects longer tokens (/done-x, /archive2)
+// before the slash). The lookahead rejects longer tokens (/done-x, /delete2)
 // and path continuations (/done/foo) so pasted paths are never consumed.
-const APP_COMMAND_RE = /(^|\s)\/(done|archive)(?![\w/-])/g;
+const APP_COMMAND_RE = /(^|\s)\/(done|archive|ready|delete)(?![\w/-])/g;
 
 export interface ParsedAppCommands {
   /** The message with every app command removed. */
   text: string;
-  /** The column of the LAST app command in the message, or null when none. */
-  column: AppSlashColumn | null;
+  /** The action of the LAST app command in the message, or null when none. */
+  action: AppSlashAction | null;
 }
 
 export function parseAppCommands(message: string): ParsedAppCommands {
-  if (!message.includes('/')) return { text: message, column: null };
+  if (!message.includes('/')) return { text: message, action: null };
 
   const masked = maskCodeRegions(message);
-  let column: AppSlashColumn | null = null;
+  let action: AppSlashAction | null = null;
   let out = '';
   let last = 0;
   for (const m of masked.matchAll(APP_COMMAND_RE)) {
-    column = m[2] as AppSlashColumn;
+    action = m[2] as AppSlashAction;
     const idx = m.index ?? 0;
     out += message.slice(last, idx);
     last = idx + m[0].length;
   }
-  if (column === null) return { text: message, column: null };
+  if (action === null) return { text: message, action: null };
   out += message.slice(last);
   // Removal can leave doubled separators ("great  thanks") and stray edges.
   const text = out.replace(/[ \t]{2,}/g, ' ').trim();
-  return { text, column };
+  return { text, action };
 }
 
 // Replace the contents of inline `code` spans and fenced ``` blocks with spaces

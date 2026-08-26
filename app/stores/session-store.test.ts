@@ -351,4 +351,20 @@ describe('SessionStore sendMessage app slash commands', () => {
     expect(s.promptsSent).toBe(0);
     expect(emit).toHaveBeenCalledWith('agent:send', { cardId: 2, message: '/archive', files: undefined });
   });
+
+  it('skips the echo and running state for /delete even with surrounding text', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+
+    await store.sendMessage(3, 'cleanup /delete');
+
+    const s = store.getSession(3)!;
+    expect(s.accumulator.conversation).toHaveLength(0);
+    expect(s.active).toBe(false);
+    expect(s.status).toBe('stopped');
+    expect(s.promptsSent).toBe(0);
+    // The raw message goes to the server; it strips the command and deletes the card.
+    expect(emit).toHaveBeenCalledWith('agent:send', { cardId: 3, message: 'cleanup /delete', files: undefined });
+  });
 });

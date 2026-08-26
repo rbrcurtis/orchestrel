@@ -98,7 +98,8 @@ export interface CardPromptBody {
 
 export interface CardActionResponse {
   accepted: boolean
-  card: CardResponse
+  /** Absent when the action deleted the card (e.g. the /delete prompt command). */
+  card?: CardResponse
 }
 
 export interface CardSuggestTitleBody {

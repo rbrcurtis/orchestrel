@@ -138,6 +138,9 @@ export class CardsController extends Controller {
       const started = body.initialPrompt !== undefined
         ? await submitCardPrompt(card.id, body.initialPrompt)
         : card
+      // An initial prompt of only app commands (e.g. /delete) removes the card
+      // it was supposed to start — nothing left to return.
+      if (!started) throw httpError(422, 'invalid_initial_prompt', 'initialPrompt cannot be an app command')
       return toCardResponse(started)
     })
     this.setStatus(201)
@@ -173,7 +176,8 @@ export class CardsController extends Controller {
   ): Promise<CardActionResponse> {
     const result = await runIdempotent(idempotencyKey, `prompt-card-${id}`, body, async () => {
       const card = await submitCardPrompt(id, body.message)
-      return { accepted: true, card: toCardResponse(card) }
+      // A /delete command removes the card — nothing left to serialize.
+      return card ? { accepted: true, card: toCardResponse(card) } : { accepted: true }
     })
     this.setStatus(202)
     this.setHeader('Location', `/api/cards/${id}`)

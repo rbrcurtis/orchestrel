@@ -7,6 +7,7 @@ const mockMessage = vi.fn();
 const mockCreate = vi.fn();
 const mockTrackSession = vi.fn();
 const mockUpdateCard = vi.fn();
+const mockDeleteCard = vi.fn();
 
 vi.mock('../models/Card', () => ({
   Card: {
@@ -47,7 +48,10 @@ vi.mock('../init-state', () => ({
 }));
 
 vi.mock('./card', () => ({
-  cardService: { updateCard: (...args: unknown[]) => mockUpdateCard(...args) },
+  cardService: {
+    updateCard: (...args: unknown[]) => mockUpdateCard(...args),
+    deleteCard: (...args: unknown[]) => mockDeleteCard(...args),
+  },
 }));
 
 function activeCard() {
@@ -75,6 +79,7 @@ describe('submitCardPrompt app slash commands', () => {
     mockCreate.mockReset();
     mockTrackSession.mockReset();
     mockUpdateCard.mockReset();
+    mockDeleteCard.mockReset();
     mockUpdateCard.mockImplementation(async (id: number) => ({ id }));
   });
 
@@ -123,6 +128,44 @@ describe('submitCardPrompt app slash commands', () => {
     await submitCardPrompt(42, 'ship it /done');
 
     expect(mockUpdateCard).toHaveBeenCalledWith(42, { column: 'done', position: 0 });
+  });
+
+  it('appends /ready moves after the last card in the ready column', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+    mockFindOneBy.mockResolvedValue(activeCard());
+    mockIsActive.mockReturnValue(true);
+    mockFindOne.mockResolvedValue({ position: 7 });
+
+    await submitCardPrompt(42, 'one more pass /ready');
+
+    expect(mockFindOne).toHaveBeenCalledWith({ where: { column: 'ready' }, order: { position: 'DESC' } });
+    expect(mockUpdateCard).toHaveBeenCalledWith(42, { column: 'ready', position: 8 });
+  });
+
+  it('deletes the card without prompting on a command-only /delete', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+
+    const result = await submitCardPrompt(42, '/delete');
+
+    expect(result).toBeNull();
+    expect(mockDeleteCard).toHaveBeenCalledWith(42);
+    expect(mockMessage).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockFindOneBy).not.toHaveBeenCalled();
+    expect(mockUpdateCard).not.toHaveBeenCalled();
+  });
+
+  it('discards surrounding text on /delete instead of prompting', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+
+    await submitCardPrompt(42, 'wait no /delete');
+
+    expect(mockDeleteCard).toHaveBeenCalledWith(42);
+    // No prompt: a session started right before deletion would be killed
+    // instantly, and the text is gone with the card anyway.
+    expect(mockMessage).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockUpdateCard).not.toHaveBeenCalled();
   });
 
   it('sends a normal prompt untouched and never moves the card', async () => {
