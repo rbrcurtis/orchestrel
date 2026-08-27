@@ -66,8 +66,8 @@ export const SessionView = observer(function SessionView({
   const isStopping = sessionStore.stoppingCards.has(cardId);
 
   // The agent runs on the card's node. When that node is offline the session
-  // can't be driven — render the transcript read-only (it still paints from the
-  // conversation cache) and disable all action affordances.
+  // can't be driven — keep the loaded transcript read-only and disable all action
+  // affordances.
   const nodeOffline = !!card && !config.nodeByName(card.nodeName)?.connected;
 
   const [notification, setNotification] = useState<string | null>(null);
@@ -85,8 +85,6 @@ export const SessionView = observer(function SessionView({
   // immediately (avoiding the race where messages arrive before sessionId is known).
   // Called again once sessionId is available to actually load history.
   useEffect(() => {
-    sessionStore.hydrateFromCache(cardId).catch(() => {});
-    sessionStore.startPersisting(cardId);
     const sid = sessionStoreId ?? sessionId;
     if (sid && session?.historyLoaded) return; // history already loaded — nothing to do
     sessionStore.loadHistory(cardId, sid ?? undefined);
@@ -97,13 +95,12 @@ export const SessionView = observer(function SessionView({
     sessionStore.requestStatus(cardId);
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Release this card's in-memory conversation when the view unmounts / switches
-  // away. The transcript is persisted to IndexedDB, so this only frees RAM; the
-  // store rehydrates from cache on reopen. Keyed on cardId alone so it fires only
-  // on a real card change, not when sessionId resolves mid-session.
+  // Release an inactive card's conversation when the view unmounts / switches
+  // away. It reloads from authoritative server history when reopened. Keyed on
+  // cardId alone so it fires only on a real card change, not when sessionId resolves.
   useEffect(() => {
     return () => {
-      sessionStore.evictSession(cardId).catch(() => {});
+      sessionStore.evictSession(cardId);
     };
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 

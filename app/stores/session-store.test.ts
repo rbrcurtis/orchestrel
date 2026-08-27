@@ -3,13 +3,6 @@ import { SessionStore } from './session-store';
 import type { SdkMessage } from '../lib/sdk-types';
 import type { WsClient } from '../lib/ws-client';
 
-vi.mock('../lib/conversation-cache', () => ({
-  readConversation: vi.fn(),
-  writeConversation: vi.fn(() => Promise.resolve()),
-}));
-
-import { readConversation, writeConversation } from '../lib/conversation-cache';
-
 function startBlockingSubagent(store: SessionStore, cardId: number): void {
   store.ingestSdkMessage(cardId, {
     type: 'stream_event',
@@ -266,56 +259,23 @@ describe('SessionStore subagent lifecycle', () => {
   });
 });
 
-describe('SessionStore hydrateFromCache', () => {
-  it('paints cached conversation when history not yet loaded', async () => {
-    vi.mocked(readConversation).mockResolvedValue([{ kind: 'user', content: 'cached' }]);
-    const store = new SessionStore();
-
-    await store.hydrateFromCache(1);
-
-    const s = store.getSession(1);
-    expect(s?.cacheHydrated).toBe(true);
-    expect(s?.accumulator.conversation).toEqual([
-      expect.objectContaining({ kind: 'user', content: 'cached' }),
-    ]);
-  });
-
-  it('does not clobber already-loaded history', async () => {
-    vi.mocked(readConversation).mockResolvedValue([{ kind: 'user', content: 'cached' }]);
-    const store = new SessionStore();
-    store.ingestHistory(1, []); // sets historyLoaded = true
-    store.getSession(1)!.accumulator.addUserMessage('live');
-
-    await store.hydrateFromCache(1);
-
-    expect(store.getSession(1)?.accumulator.conversation).toEqual([
-      expect.objectContaining({ kind: 'user', content: 'live' }),
-    ]);
-  });
-});
-
 describe('SessionStore evictSession', () => {
-  it('drops an inactive session from memory and flushes it to the cache', async () => {
-    vi.mocked(writeConversation).mockClear();
+  it('drops an inactive session so it reloads from server history', () => {
     const store = new SessionStore();
     store.ingestHistory(7, []);
-    store.getSession(7)!.accumulator.addUserMessage('keep me');
+    store.getSession(7)!.accumulator.addUserMessage('server owns this');
 
-    await store.evictSession(7);
+    store.evictSession(7);
 
-    // RAM copy is gone, but the transcript was written to IndexedDB on the way out.
     expect(store.getSession(7)).toBeUndefined();
-    expect(writeConversation).toHaveBeenCalledWith(7, [
-      expect.objectContaining({ kind: 'user', content: 'keep me' }),
-    ]);
   });
 
-  it('never evicts an active (running) session', async () => {
+  it('never evicts an active session because it still receives streamed messages', () => {
     const store = new SessionStore();
     store.ingestSdkMessage(9, { type: 'assistant' } as SdkMessage); // flips session active
     expect(store.getSession(9)?.active).toBe(true);
 
-    await store.evictSession(9);
+    store.evictSession(9);
 
     expect(store.getSession(9)?.active).toBe(true);
   });

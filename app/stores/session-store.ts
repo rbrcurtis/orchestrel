@@ -1,10 +1,9 @@
-import { makeAutoObservable, observable, runInAction, autorun, type IReactionDisposer } from 'mobx';
+import { makeAutoObservable, observable, runInAction } from 'mobx';
 import type { AgentStatus, FileRef } from '../../src/shared/ws-protocol';
 import { parseAppCommands } from '../../src/shared/slash-commands';
 import type { WsClient } from '../lib/ws-client';
 import type { SdkMessage, HistoryMessage } from '../lib/sdk-types';
 import { MessageAccumulator } from '../lib/message-accumulator';
-import { readConversation, writeConversation } from '../lib/conversation-cache';
 
 export interface SessionState {
   active: boolean;
@@ -14,7 +13,6 @@ export interface SessionState {
   turnsCompleted: number;
   accumulator: MessageAccumulator;
   historyLoaded: boolean;
-  cacheHydrated: boolean;
   contextTokens: number;
   contextWindow: number;
   bgcInProgress: boolean;
@@ -30,7 +28,6 @@ function defaultSession(): SessionState {
     turnsCompleted: 0,
     accumulator: new MessageAccumulator(),
     historyLoaded: false,
-    cacheHydrated: false,
     contextTokens: 0,
     contextWindow: 200_000,
     bgcInProgress: false,
@@ -44,14 +41,12 @@ export class SessionStore {
   stoppingCards = observable.set<number>();
   private stopIntervals = new Map<number, NodeJS.Timeout>();
   private loadingCards = new Set<number>();
-  private persistDisposers = new Map<number, IReactionDisposer>();
   private _ws: WsClient | null = null;
 
   constructor() {
-    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | 'persistDisposers' | '_ws'>(this, {
+    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws'>(this, {
       stopIntervals: false,
       loadingCards: false,
-      persistDisposers: false,
       _ws: false,
     });
   }
@@ -73,56 +68,14 @@ export class SessionStore {
     return this.sessions.get(cardId);
   }
 
-  async hydrateFromCache(cardId: number): Promise<void> {
-    const s = this.getOrCreate(cardId);
-    if (s.historyLoaded || s.cacheHydrated) return;
-    const entries = await readConversation(cardId);
-    if (!entries || entries.length === 0) return;
-    runInAction(() => {
-      // loadHistory may have won the race while we awaited the cache read
-      if (s.historyLoaded) return;
-      s.accumulator.hydrate(entries);
-      s.cacheHydrated = true;
-    });
-  }
-
-  startPersisting(cardId: number): void {
-    if (this.persistDisposers.has(cardId)) return;
-    const s = this.getOrCreate(cardId);
-    const dispose = autorun(
-      () => {
-        const entries = s.accumulator.serialize();
-        if (entries.length === 0) return;
-        writeConversation(cardId, entries).catch(() => {});
-      },
-      { delay: 1000 },
-    );
-    this.persistDisposers.set(cardId, dispose);
-  }
-
-  // Release a card's in-memory conversation when its view unmounts. The full
-  // transcript lives in IndexedDB (writeConversation), so dropping it from RAM is
-  // safe — hydrateFromCache repopulates it instantly on reopen. Without this the
-  // sessions map grows unbounded as the user browses cards. Active (running)
-  // sessions are never evicted: they keep accumulating streamed messages off-screen.
-  async evictSession(cardId: number): Promise<void> {
+  // Release an inactive card's conversation when its view unmounts. Reopening the
+  // card reloads authoritative history from the server. Active off-screen sessions
+  // remain subscribed so their streamed messages are not lost.
+  evictSession(cardId: number): void {
     const s = this.sessions.get(cardId);
-    if (!s) return;
-    if (s.active) return;
-
-    // Snapshot before dropping, then do all synchronous store mutations inside the
-    // auto-action (before the first await) so MobX sees them as a single action.
-    const entries = s.accumulator.serialize();
-    const dispose = this.persistDisposers.get(cardId);
-    if (dispose) {
-      dispose();
-      this.persistDisposers.delete(cardId);
-    }
+    if (!s || s.active) return;
     this.sessions.delete(cardId);
     this.subscribedCards.delete(cardId);
-
-    // Final flush so the latest state is in IndexedDB before the RAM copy is gone.
-    if (entries.length > 0) await writeConversation(cardId, entries).catch(() => {});
   }
 
   // ── Incoming server messages ────────────────────────────────────────────────
