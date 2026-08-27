@@ -37,6 +37,8 @@ const mockClient = {
 vi.mock('../../init-state', () => ({
   getOrcdClient: () => mockClient,
   getClientByNode: () => mockClient,
+  getMessageBus: () => null,
+  setMessageBus: vi.fn(),
 }));
 
 describe('handleAgentCompact', () => {
