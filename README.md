@@ -121,6 +121,15 @@ Both apps include iOS Share Extensions for text, URLs, images, and files up to 2
 
 The Share Extensions use a responder-chain handoff to launch their containing apps, which is intended for the current private distribution workflow rather than public App Store review. Abandoned native inbox entries are cleaned up after seven days.
 
+## Desktop Apps
+
+The Electron wrappers live in `desktop/` and build two macOS apps:
+
+- Orchestrel opens the full hosted application.
+- Orc Chat opens project 19 in the hosted chat application.
+
+Run `npm install`, then `npm run start:orchestrel` or `npm run start:orc-chat` from `desktop/`. Run `npm run build` to package both apps.
+
 ## Tech Stack
 
 | Layer | Technology |

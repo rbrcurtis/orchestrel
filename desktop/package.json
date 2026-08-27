@@ -1,0 +1,21 @@
+{
+  "name": "orchestrel-desktop",
+  "version": "1.0.0",
+  "description": "Desktop apps for Orchestrel.",
+  "main": "src/main.js",
+  "private": true,
+  "author": "Ryan Curtis",
+  "license": "MIT",
+  "scripts": {
+    "start": "npm run start:orchestrel",
+    "start:orchestrel": "ORCHESTREL_TARGET=orchestrel electron .",
+    "start:orc-chat": "ORCHESTREL_TARGET=orc-chat electron .",
+    "build": "npm run build:orchestrel && npm run build:orc-chat",
+    "build:orchestrel": "electron-builder --config electron-builder.orchestrel.yml",
+    "build:orc-chat": "electron-builder --config electron-builder.orc-chat.yml"
+  },
+  "devDependencies": {
+    "electron": "^30.5.1",
+    "electron-builder": "^24.13.3"
+  }
+}

@@ -85,7 +85,10 @@ const ChatLayout = observer(function ChatLayout() {
         >
           {sidebarOpen ? <PanelLeftClose className="size-4" /> : <PanelLeft className="size-4" />}
         </Button>
-        <h1 className="text-lg font-bold text-foreground">Orchestrel Chat</h1>
+        <h1 className="flex items-center gap-2 text-lg font-bold text-foreground">
+          <img src="/icon-192.png" alt="" className="size-7 rounded-md" />
+          Orchestrel Chat
+        </h1>
         <span className="flex-1" />
         <Button
           variant="outline"

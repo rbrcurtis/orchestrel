@@ -1,0 +1,13 @@
+appId: com.orchestrel.desktop
+productName: Orchestrel
+directories:
+  output: dist/Orchestrel
+files:
+  - src/**/*
+  - package.json
+mac:
+  icon: assets/orchestrel.icns
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip

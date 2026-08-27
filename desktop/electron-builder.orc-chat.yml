@@ -1,0 +1,13 @@
+appId: com.orchestrel.orcchat
+productName: Orc Chat
+directories:
+  output: dist/Orc Chat
+files:
+  - src/**/*
+  - package.json
+mac:
+  icon: assets/orc-chat.icns
+  category: public.app-category.social-networking
+  target:
+    - dmg
+    - zip

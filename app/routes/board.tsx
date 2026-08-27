@@ -378,7 +378,18 @@ const BoardLayout = observer(function BoardLayout() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [activeModal, isDesktop, columnSlots, resolvedCards, releaseHotseat, closeSlot, setNewCardColumn, mobileCardId, focusedCardId, cardStore]);
+  }, [
+    activeModal,
+    isDesktop,
+    columnSlots,
+    resolvedCards,
+    releaseHotseat,
+    closeSlot,
+    setNewCardColumn,
+    mobileCardId,
+    focusedCardId,
+    cardStore,
+  ]);
 
   // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;
@@ -387,7 +398,10 @@ const BoardLayout = observer(function BoardLayout() {
     <div className="h-dvh overflow-hidden flex flex-col bg-background">
       <header className="shrink-0 px-3 sm:px-8 py-3 border-b border-border flex flex-nowrap items-center justify-between gap-2 sm:gap-3">
         <div className="flex flex-1 min-w-0 items-center gap-2 sm:gap-4">
-          <h1 className="text-xl font-bold text-foreground hidden sm:block">Orchestrel</h1>
+          <h1 className="hidden sm:flex items-center gap-2 text-xl font-bold text-foreground">
+            <img src="/icon-192.png" alt="" className="size-7 rounded-md" />
+            Orchestrel
+          </h1>
           {/* Mobile: dropdown nav */}
           <Select value={location.pathname} onValueChange={(v) => navigate(v)}>
             <SelectTrigger size="sm" className="sm:hidden">
