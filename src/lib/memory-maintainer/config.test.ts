@@ -1,4 +1,5 @@
 import type { MemoryConfig } from '../../shared/config';
+import { describe, expect, it } from 'vitest';
 import { routeProject } from './config';
 
 const MEMORY: MemoryConfig = {
