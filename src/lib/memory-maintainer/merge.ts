@@ -60,46 +60,51 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
   const db = getDb();
   const startedAt = new Date().toISOString();
   const runId = insertRun(db, 'weekly', startedAt);
-  const entries = collectWeekEntries(memory.stageDir);
-  const groups = groupByServer(entries);
-  const { runtime, model } = await buildModel(cfg, memory);
-  const mergedOps: StagedOp[] = [];
 
-  for (const group of groups) {
-    const [project] = group.key.split('@');
-    const first = group.entries[0];
-    const server: MemoryServer = { apiUrl: first.apiUrl, apiKey: '', project };
-    // apiKey is not recoverable from staging files; look it up from config.
-    const cfgEntry = memory.projects[project];
-    if (!cfgEntry) continue;
-    server.apiKey = cfgEntry.apiKey;
-    const stores = group.entries.flatMap((e) => e.ops).filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
-    if (stores.length === 0) continue;
-    const prompt = `Merge these memory candidates from one week of sessions (${group.entries.length} sessions, ${stores.length} candidates):\n\n${stores.map((s) => `- ${s.title}: ${s.text}`).join('\n')}\n\nGroup near-duplicates into one durable memory. Recurring themes across 2+ sessions become durable memories with a short evidence note. Search existing memories first; update instead of creating duplicates.`;
-    const ops = await consolidate({
-      excerpt: { sessionId: `merge-${group.key}`, cwd: '', startedAt: '', text: prompt, tokenEstimate: 0 },
-      server,
-      runtime,
-      model,
-      maxTurns: memory.maxTurns,
-      mode: 'stage',
-    });
-    mergedOps.push(...ops);
+  try {
+    const entries = collectWeekEntries(memory.stageDir);
+    const groups = groupByServer(entries);
+    const { runtime, model } = await buildModel(cfg, memory);
+    const mergedOps: StagedOp[] = [];
+
+    for (const group of groups) {
+      const [project] = group.key.split('@');
+      // apiKey and project slug are not recoverable from staging files; look them up from config.
+      const cfgEntry = memory.projects[project];
+      if (!cfgEntry) continue;
+      const first = group.entries[0];
+      const server: MemoryServer = { apiUrl: first.apiUrl, apiKey: cfgEntry.apiKey, project: cfgEntry.project };
+      const stores = group.entries.flatMap((e) => e.ops).filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
+      if (stores.length === 0) continue;
+      const prompt = `Merge these memory candidates from one week of sessions (${group.entries.length} sessions, ${stores.length} candidates):\n\n${stores.map((s) => `- ${s.title}: ${s.text}`).join('\n')}\n\nGroup near-duplicates into one durable memory. Recurring themes across 2+ sessions become durable memories with a short evidence note. Search existing memories first; update instead of creating duplicates.`;
+      const ops = await consolidate({
+        excerpt: { sessionId: `merge-${group.key}`, cwd: '', startedAt: '', text: prompt, tokenEstimate: 0 },
+        server,
+        runtime,
+        model,
+        maxTurns: memory.maxTurns,
+        mode: 'stage',
+      });
+      mergedOps.push(...ops);
+    }
+
+    const stagingFile = appendStaging(
+      memory.stageDir,
+      {
+        project: 'merge',
+        apiUrl: 'merge',
+        sessionId: `merge-${new Date().toISOString().slice(0, 10)}`,
+        source: 'merge',
+        ops: mergedOps,
+      },
+      `merge-${new Date().toISOString().slice(0, 10)}.json`,
+    );
+
+    const summary: MergeSummary = { groups: groups.length, ops: mergedOps.length, stagingFile };
+    finishRun(db, runId, 'done', JSON.stringify(summary));
+    return summary;
+  } catch (err) {
+    finishRun(db, runId, 'failed', JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+    throw err;
   }
-
-  const stagingFile = appendStaging(
-    memory.stageDir,
-    {
-      project: 'merge',
-      apiUrl: 'merge',
-      sessionId: `merge-${new Date().toISOString().slice(0, 10)}`,
-      source: 'merge',
-      ops: mergedOps,
-    },
-    `merge-${new Date().toISOString().slice(0, 10)}.json`,
-  );
-
-  const summary: MergeSummary = { groups: groups.length, ops: mergedOps.length, stagingFile };
-  finishRun(db, runId, 'done', JSON.stringify(summary));
-  return summary;
 }
