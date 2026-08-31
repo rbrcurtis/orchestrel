@@ -101,3 +101,23 @@ providers:
   #     Explore: main
   #   models:
   #     main: { label: "Qwen3 Coder", modelID: qwen3-coder-next, contextWindow: 262144 }
+
+# Memory maintainer (optional). Omit to disable. See
+# docs/specs/2026-08-31-memory-maintainer-design.md
+memory:
+  mode: stage                 # stage = write proposals to data/memory-staging/ + Telegram alert; write = apply to the API
+  provider: max               # provider id from providers map (orcd.yaml)
+  model: assistant            # alias in providers.<provider>.models
+  maxTurns: 30                # agent loop cap per session
+  excerptTokens: 24000        # token cap for the session excerpt fed to the agent
+  settleMs: 600000            # session must be idle this long (ms) before processing
+  stageDir: data/memory-staging
+  telegram:                   # optional; without it, alerts are logged only
+    botToken: ${TELEGRAM_BOT_TOKEN}
+    chatId: ${TELEGRAM_CHAT_ID}
+  projects:                   # only listed projects are maintained
+    trackable:
+      match: ["/home/ryan/Code/trackable", "/home/ryan/Code/transcription"]
+      apiUrl: https://memory.trackable.io
+      apiKey: ${TRACKABLE_MEMORY_API_KEY}
+      project: trackable
