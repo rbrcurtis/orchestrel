@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "tsoa:generate": "tsoa spec-and-routes",
     "orcd": "tsx src/orcd/index.ts",
+    "memory-maintainer": "tsx src/lib/memory-maintainer/cli.ts",
     "prepare": "husky"
   },
   "dependencies": {
