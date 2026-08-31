@@ -25,6 +25,8 @@ interface SessionEntry {
 const TOOL_ARGS_CAP = 200;
 const TOOL_RESULT_CAP = 400;
 
+export const SECRETS_PATTERN = /sk-[A-Za-z0-9]{20,}|Bearer\s+\S+|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+
 export function buildExcerpt(path: string, maxTokens: number): Excerpt {
   let sessionId = '';
   let cwd = '';
@@ -49,16 +51,16 @@ export function buildExcerpt(path: string, maxTokens: number): Excerpt {
     const role = entry.message.role;
     const content = entry.message.content;
     if (role === 'user') {
-      parts.push(`USER: ${contentText(content)}`);
+      parts.push(redact(`USER: ${contentText(content)}`));
     } else if (role === 'assistant') {
       for (const block of contentBlocks(content)) {
-        if (block.type === 'text') parts.push(`ASSISTANT: ${block.text}`);
-        else if (block.type === 'toolCall') parts.push(`TOOL CALL: ${block.name}(${truncate(JSON.stringify(block.arguments), TOOL_ARGS_CAP)})`);
+        if (block.type === 'text') parts.push(redact(`ASSISTANT: ${block.text}`));
+        else if (block.type === 'toolCall') parts.push(`TOOL CALL: ${block.name}(${truncate(redact(JSON.stringify(block.arguments)), TOOL_ARGS_CAP)})`);
         // thinking blocks intentionally dropped
       }
     } else if (role === 'toolResult') {
       const rc = entry.message as SessionEntry['message'] & { toolName?: string; content?: unknown };
-      parts.push(`TOOL RESULT ${rc.toolName ?? ''}: ${truncate(contentText(content), TOOL_RESULT_CAP)}`);
+      parts.push(`TOOL RESULT ${rc.toolName ?? ''}: ${truncate(redact(contentText(content)), TOOL_RESULT_CAP)}`);
     }
   }
 
@@ -92,16 +94,22 @@ function contentText(content: unknown): string {
   return parts.join('\n');
 }
 
+function redact(s: string): string {
+  return s.replace(SECRETS_PATTERN, '[redacted]');
+}
+
 function truncate(s: string, cap: number): string {
   return s.length <= cap ? s : `${s.slice(0, cap)}…`;
 }
 
 function trimToBudget(parts: string[], maxTokens: number): string {
   const charBudget = maxTokens * 4;
+  // The joined output adds a newline per extra kept part; count it so
+  // tokenEstimate never exceeds maxTokens when the parts fit exactly.
   let total = 0;
   let start = parts.length;
   for (let i = parts.length - 1; i >= 0; i--) {
-    const next = total + parts[i].length;
+    const next = total + parts[i].length + (total === 0 ? 0 : 1);
     if (next > charBudget) break;
     total = next;
     start = i;

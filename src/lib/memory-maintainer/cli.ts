@@ -12,8 +12,6 @@ async function main(): Promise<void> {
     '--status': Boolean,
   });
 
-  const cfg = loadConfig();
-
   if (args['--status']) {
     const db = getDb();
     const rows = db
@@ -22,6 +20,8 @@ async function main(): Promise<void> {
     console.table(rows);
     return;
   }
+
+  const cfg = loadConfig();
 
   if (args['--weekly']) {
     const summary = await runMerge(cfg);

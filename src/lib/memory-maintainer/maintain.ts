@@ -41,6 +41,11 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
 
   try {
     const sweep = sweepSessions(memory);
+    if (sweep.files.length === 0) {
+      const summary: MaintainSummary = { runId, projects: [], stagingFiles: [], durationMs: Date.now() - started };
+      finishRun(db, runId, 'done', JSON.stringify(summary));
+      return summary;
+    }
     const byProject = new Map<string, typeof sweep.files>();
     for (const f of sweep.files) {
       const list = byProject.get(f.projectKey) ?? [];

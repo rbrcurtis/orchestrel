@@ -63,6 +63,11 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
 
   try {
     const entries = collectWeekEntries(memory.stageDir);
+    if (entries.length === 0) {
+      const summary: MergeSummary = { groups: 0, ops: 0, stagingFile: '' };
+      finishRun(db, runId, 'done', JSON.stringify(summary));
+      return summary;
+    }
     const groups = groupByServer(entries);
     const { runtime, model } = await buildModel(cfg, memory);
     const mergedOps: StagedOp[] = [];

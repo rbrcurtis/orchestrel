@@ -61,4 +61,18 @@ describe('buildExcerpt', () => {
     expect(ex.text).not.toContain('fix the pipeline retry bug');
     expect(ex.text).toContain('Z'.repeat(4990));
   });
+
+  it('redacts secret-like strings from every emitted part', () => {
+    const SECRET = 'sk-abcdefghijklmnopqrstuvwxyz123456';
+    const lines = [
+      ...LINES,
+      {
+        type: 'message', id: 'u3', timestamp: '2026-08-31T00:00:06Z',
+        message: { role: 'user', content: [{ type: 'text', text: `use ${SECRET} as the key` }] },
+      },
+    ];
+    const ex = buildExcerpt(writeFixture('secret.jsonl', lines), 1000);
+    expect(ex.text).not.toContain(SECRET);
+    expect(ex.text).toContain('[redacted]');
+  });
 });

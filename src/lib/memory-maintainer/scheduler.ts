@@ -58,6 +58,7 @@ function schedule(fn: () => void, nextMs: () => number): void {
 function stopTimers(): void {
   for (const t of timers) clearTimeout(t);
   timers.length = 0;
+  started = false;
 }
 
 /** Milliseconds until the next fire. Exported for tests. */

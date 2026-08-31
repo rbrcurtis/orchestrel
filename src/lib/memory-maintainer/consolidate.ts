@@ -7,7 +7,7 @@ import { Type } from '@earendil-works/pi-ai';
 import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { MemoryConfig, OrchestrelConfig, ProviderDef } from '../../shared/config';
-import type { Excerpt } from './excerpt';
+import { SECRETS_PATTERN, type Excerpt } from './excerpt';
 import { deleteMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
 import type { MemoryServer, StagedOp } from './memory-api';
 
@@ -131,7 +131,7 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
 async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'write', ops: StagedOp[]): Promise<ToolResultMessage> {
   try {
     const args = call.arguments as Record<string, unknown>;
-    const text = (s: string): string => (mode === 'write' && secretsPattern.test(s) ? '[redacted]' : s);
+    const text = (s: string): string => (SECRETS_PATTERN.test(s) ? '[redacted]' : s);
     switch (call.name) {
       case 'search_memory': {
         const hits = await searchMemories(server, String(args.query), Number(args.limit ?? 10));
@@ -173,8 +173,6 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
     return toolResult(call, `error: ${err instanceof Error ? err.message : String(err)}`, true);
   }
 }
-
-const secretsPattern = /sk-[A-Za-z0-9]{20,}|Bearer\s+\S+|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 
 function toolResult(call: ToolCall, text: string, isError = false): ToolResultMessage {
   return {
