@@ -156,7 +156,7 @@ function CardFields({
                   onBlur={onDescriptionBlur}
                   onPaste={onPaste}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
                       onSave?.();
                     }

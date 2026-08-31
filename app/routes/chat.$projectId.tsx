@@ -58,9 +58,11 @@ export const NewChatComposer = observer(function NewChatComposer({
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key !== 'Enter' || e.shiftKey) return;
-    e.preventDefault();
-    handleSubmit();
+    // Enter and Shift+Enter add a line; Cmd/Ctrl+Enter submits.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleSubmit();
+    }
   }
 
   return (
@@ -82,7 +84,7 @@ export const NewChatComposer = observer(function NewChatComposer({
             )}
           </FileAttachments>
           <div className="flex items-center gap-3 border-t border-border/70 px-2 pt-3">
-            <p className="text-xs text-muted-foreground">Enter sends • Shift+Enter adds a line</p>
+            <p className="text-xs text-muted-foreground">Enter adds a line • Cmd/Ctrl+Enter sends</p>
             <span className="flex-1" />
             <Button onClick={handleSubmit} disabled={(!description.trim() && files.length === 0) || creating} className="gap-2 rounded-full px-5">
               {creating ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
