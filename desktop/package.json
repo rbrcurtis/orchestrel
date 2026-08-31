@@ -15,7 +15,7 @@
     "build:orc-chat": "electron-builder --config electron-builder.orc-chat.yml"
   },
   "devDependencies": {
-    "electron": "^30.5.1",
-    "electron-builder": "^24.13.3"
+    "electron": "^44.1.0",
+    "electron-builder": "^26.15.3"
   }
 }
