@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Send, Square, Play, AlertCircle, X, WifiOff } from 'lucide-react';
 import { Button } from '~/components/ui/button';
@@ -185,7 +185,7 @@ export const SessionView = observer(function SessionView({
 
   const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
 
-  async function handleSend(message: string, files?: FileRef[]) {
+  const handleSend = useCallback(async (message: string, files?: FileRef[]) => {
     setNotification(null); // a new prompt clears any stale session error
     try {
       await sessionStore.sendMessage(cardId, message, files);
@@ -195,16 +195,27 @@ export const SessionView = observer(function SessionView({
       setNotification(err instanceof Error ? err.message : String(err));
       return false;
     }
-  }
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps -- sessionStore is a stable singleton
 
-  function handleStop() {
+  const handleStop = useCallback(() => {
     sessionStore.stopSession(cardId);
     setIsStarting(false);
-  }
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps -- sessionStore is a stable singleton
 
-  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive'; summarizeThreshold?: number }) {
-    await cardStore.updateCard({ id: cardId, ...data });
-  }
+  const handleUpdateCard = useCallback(
+    async (data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive'; summarizeThreshold?: number }) => {
+      await cardStore.updateCard({ id: cardId, ...data });
+    },
+    [cardId], // eslint-disable-line react-hooks/exhaustive-deps -- cardStore is a stable singleton
+  );
+
+  const canCompact = !!sessionId || sessionActive;
+  const onCompact = useCallback(() => sessionStore.compactSession(cardId), [cardId]); // eslint-disable-line react-hooks/exhaustive-deps -- sessionStore is a stable singleton
+  const onContinue = useCallback(() => handleSend('Continue'), [handleSend]);
+
+  const nodeName = card?.nodeName ?? '';
+  const providers = useMemo(() => config.providersEntriesForNode(nodeName), [config, nodeName]);
+  const models = useMemo(() => config.getModelsForNode(nodeName, providerID), [config, nodeName, providerID]);
 
   function handlePanelMouseDown(e: React.MouseEvent) {
     mouseDownPos.current = { x: e.clientX, y: e.clientY };
@@ -246,96 +257,24 @@ export const SessionView = observer(function SessionView({
 
       {/* Status bar — above prompt input */}
       {(isStreaming || visibleConversation.length > 0) && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0 min-w-0 overflow-hidden">
-          <StatusBadge
-            status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
-          />
-          {nodeOffline && (
-            <span className="text-[11px] text-amber-500 shrink-0" title={`Node ${card?.nodeName} is offline`}>
-              node offline / reconnecting
-            </span>
-          )}
-
-          <select
-            value={providerID}
-            disabled={nodeOffline}
-            onChange={(e) => {
-              const newProvider = e.target.value;
-              const defaultModel = config.defaultModelForNode(card?.nodeName ?? '', newProvider);
-              handleUpdateCard({ provider: newProvider, model: defaultModel });
-            }}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {config.providersEntriesForNode(card?.nodeName ?? '').map(([id, p]) => (
-              <option key={id} value={id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={model}
-            disabled={nodeOffline}
-            onChange={(e) => handleUpdateCard({ model: e.target.value })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {config.getModelsForNode(card?.nodeName ?? '', providerID).map(([alias, m]) => (
-              <option key={alias} value={alias}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={String(summarizeThreshold)}
-            disabled={nodeOffline}
-            onChange={(e) => handleUpdateCard({ summarizeThreshold: parseFloat(e.target.value) })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="0">Off</option>
-            <option value="0.1">10%</option>
-            <option value="0.2">20%</option>
-            <option value="0.3">30%</option>
-            <option value="0.4">40%</option>
-            <option value="0.5">50%</option>
-            <option value="0.6">60%</option>
-            <option value="0.7">70%</option>
-            <option value="0.8">80%</option>
-            <option value="0.9">90%</option>
-          </select>
-          <select
-            value={thinkingLevel}
-            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' | 'adaptive' })}
-            className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto"
-          >
-            <option value="off">Off</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="adaptive">Adaptive</option>
-          </select>
-          {isStreaming ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 px-2 text-xs text-muted-foreground"
-              onClick={handleStop}
-              disabled={isStopping || nodeOffline}
-            >
-              <Square className="size-3 fill-current" />
-              {isStopping ? 'Stopping...' : 'Stop'}
-            </Button>
-          ) : sessionId ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 px-2 text-xs text-muted-foreground"
-              onClick={() => handleSend('Continue')}
-              disabled={nodeOffline}
-            >
-              <Play className="size-3 fill-current" />
-              Continue
-            </Button>
-          ) : null}
-        </div>
+        <SessionStatusBar
+          status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
+          nodeOffline={nodeOffline}
+          nodeName={nodeName}
+          providerID={providerID}
+          model={model}
+          summarizeThreshold={summarizeThreshold}
+          thinkingLevel={thinkingLevel}
+          isStreaming={isStreaming}
+          hasSessionId={!!sessionId}
+          isStopping={isStopping}
+          onUpdateCard={handleUpdateCard}
+          onStop={handleStop}
+          onContinue={onContinue}
+          providers={providers}
+          models={models}
+          defaultModelForNode={config.defaultModelForNode}
+        />
       )}
 
       {/* Subagent activity feed */}
@@ -352,7 +291,7 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting || nodeOffline}
         onSend={handleSend}
         onStop={handleStop}
-        onCompact={!!sessionId || sessionActive ? (bgcInProgress || compactInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
+        onCompact={canCompact && !bgcInProgress && !compactInProgress ? onCompact : undefined}
         onPromptSent={onPromptSent}
         sendPending={false}
         contextPercent={contextPercent}
@@ -360,6 +299,137 @@ export const SessionView = observer(function SessionView({
         textareaRef={textareaRef}
         keepFocusAfterSend={keepFocusAfterSend}
       />
+    </div>
+  );
+});
+
+// --- Status bar (memoized: per-message SessionView re-renders must not
+// rebuild the badge + four selects while agents stream; option lists are
+// memoized upstream in SessionView) ---
+
+const SessionStatusBar = memo(function SessionStatusBar({
+  status,
+  nodeOffline,
+  nodeName,
+  providerID,
+  model,
+  summarizeThreshold,
+  thinkingLevel,
+  isStreaming,
+  hasSessionId,
+  isStopping,
+  onUpdateCard,
+  onStop,
+  onContinue,
+  providers,
+  models,
+  defaultModelForNode,
+}: {
+  status: string;
+  nodeOffline: boolean;
+  nodeName: string;
+  providerID: string;
+  model: string;
+  summarizeThreshold: number;
+  thinkingLevel: string;
+  isStreaming: boolean;
+  hasSessionId: boolean;
+  isStopping: boolean;
+  onUpdateCard: (data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive'; summarizeThreshold?: number }) => void;
+  onStop: () => void;
+  onContinue: () => void;
+  providers: Array<[string, { label: string }]>;
+  models: Array<[string, { label: string }]>;
+  defaultModelForNode: (nodeName: string, providerID: string) => string;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0 min-w-0 overflow-hidden">
+      <StatusBadge status={status} />
+      {nodeOffline && (
+        <span className="text-[11px] text-amber-500 shrink-0" title={`Node ${nodeName} is offline`}>
+          node offline / reconnecting
+        </span>
+      )}
+
+      <select
+        value={providerID}
+        disabled={nodeOffline}
+        onChange={(e) => {
+          const newProvider = e.target.value;
+          const defaultModel = defaultModelForNode(nodeName, newProvider);
+          onUpdateCard({ provider: newProvider, model: defaultModel });
+        }}
+        className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {providers.map(([id, p]) => (
+          <option key={id} value={id}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+      <select
+        value={model}
+        disabled={nodeOffline}
+        onChange={(e) => onUpdateCard({ model: e.target.value })}
+        className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {models.map(([alias, m]) => (
+          <option key={alias} value={alias}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+      <select
+        value={String(summarizeThreshold)}
+        disabled={nodeOffline}
+        onChange={(e) => onUpdateCard({ summarizeThreshold: parseFloat(e.target.value) })}
+        className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <option value="0">Off</option>
+        <option value="0.1">10%</option>
+        <option value="0.2">20%</option>
+        <option value="0.3">30%</option>
+        <option value="0.4">40%</option>
+        <option value="0.5">50%</option>
+        <option value="0.6">60%</option>
+        <option value="0.7">70%</option>
+        <option value="0.8">80%</option>
+        <option value="0.9">90%</option>
+      </select>
+      <select
+        value={thinkingLevel}
+        onChange={(e) => onUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' | 'adaptive' })}
+        className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto"
+      >
+        <option value="off">Off</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="adaptive">Adaptive</option>
+      </select>
+      {isStreaming ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-6 px-2 text-xs text-muted-foreground"
+          onClick={onStop}
+          disabled={isStopping || nodeOffline}
+        >
+          <Square className="size-3 fill-current" />
+          {isStopping ? 'Stopping...' : 'Stop'}
+        </Button>
+      ) : hasSessionId ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-6 px-2 text-xs text-muted-foreground"
+          onClick={onContinue}
+          disabled={nodeOffline}
+        >
+          <Play className="size-3 fill-current" />
+          Continue
+        </Button>
+      ) : null}
     </div>
   );
 });
@@ -410,7 +480,7 @@ function SessionNotification({ message, onDismiss }: { message: string | null; o
 
 // --- Prompt input ---
 
-function PromptInput({
+const PromptInput = memo(function PromptInput({
   cardId,
   isRunning,
   hasSession,
@@ -639,4 +709,4 @@ function PromptInput({
       </FileAttachments>
     </form>
   );
-}
+});

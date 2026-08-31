@@ -150,10 +150,8 @@ export class SessionStore {
   }
 
   handleAgentStatus(data: AgentStatus) {
-    let justEnded = false;
     runInAction(() => {
       const s = this.getOrCreate(data.cardId);
-      const wasActive = s.active;
       s.active = data.active;
       s.status = data.status;
       s.sessionId = data.sessionId;
@@ -172,18 +170,8 @@ export class SessionStore {
           this.stopIntervals.delete(data.cardId);
         }
         this.stoppingCards.delete(data.cardId);
-        // Pi appends the final assistant message to the session .jsonl only as the
-        // run resolves — the same moment orcd emits session_exit. A session:load
-        // during the finishing window therefore reads a transcript missing that
-        // last message (the agent's closing summary). Now that the session has
-        // ended the file is flushed, so reload once on the active→terminal edge to
-        // backfill it. Gated to open cards; idempotent for already-complete ones.
-        if (wasActive && this.subscribedCards.has(data.cardId)) justEnded = true;
       }
     });
-    if (justEnded) {
-      this.loadHistory(data.cardId, data.sessionId).catch(() => {});
-    }
   }
 
   handleSessionExit(cardId: number): void {

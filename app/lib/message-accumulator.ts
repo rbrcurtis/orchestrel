@@ -127,6 +127,13 @@ export class MessageAccumulator {
   private historyPendingResultTimestamp?: number;
   private historyTurnCount = 0;
   private blockingSubagentToolIds = new Map<string, string>();
+  // Stream deltas buffer here and are applied at most once per animation frame
+  // (or per 100ms outside browsers). This collapses the dozens of per-delta
+  // observable mutations + re-renders a long stream would otherwise trigger
+  // into a few, and avoids V8 rope trees from += in a hot loop. Everything is
+  // flushed synchronously at block stop / finalize, so no content is ever lost.
+  private pendingDeltas = new Map<number, { text: string[]; thinking: string[]; input: string[] }>();
+  private flushScheduled = false;
 
   addCompactMarker(label: string, timestamp = Date.now()): void {
     this.finalizeBlocks();
@@ -135,13 +142,15 @@ export class MessageAccumulator {
 
 
   constructor() {
-    makeAutoObservable<this, 'historyPendingResultTimestamp' | 'historyTurnCount' | 'blockingSubagentToolIds'>(this, {
+    makeAutoObservable<this, 'historyPendingResultTimestamp' | 'historyTurnCount' | 'blockingSubagentToolIds' | 'pendingDeltas' | 'flushScheduled'>(this, {
       conversation: observable.shallow,
       currentBlocks: observable.shallow,
       subagents: observable,
       historyPendingResultTimestamp: false,
       historyTurnCount: false,
       blockingSubagentToolIds: false,
+      pendingDeltas: false,
+      flushScheduled: false,
     });
   }
 
@@ -312,6 +321,7 @@ export class MessageAccumulator {
         this.onContentBlockStop(evt);
         break;
       case 'message_start':
+        this.flushPendingDeltas();
         this.currentBlocks = [];
         break;
       case 'message_stop':
@@ -335,16 +345,46 @@ export class MessageAccumulator {
   private onContentBlockDelta(evt: ContentBlockDelta): void {
     const block = this.currentBlocks[evt.index];
     if (!block) return;
+    let pending = this.pendingDeltas.get(evt.index);
+    if (!pending) {
+      pending = { text: [], thinking: [], input: [] };
+      this.pendingDeltas.set(evt.index, pending);
+    }
     switch (evt.delta.type) {
       case 'text_delta':
-        block.content += evt.delta.text;
+        pending.text.push(evt.delta.text);
         break;
       case 'thinking_delta':
-        block.content += evt.delta.thinking;
+        pending.thinking.push(evt.delta.thinking);
         break;
       case 'input_json_delta':
-        block.input = (block.input ?? '') + evt.delta.partial_json;
+        pending.input.push(evt.delta.partial_json);
         break;
+    }
+    this.scheduleFlush();
+  }
+
+  private scheduleFlush(): void {
+    if (this.flushScheduled) return;
+    this.flushScheduled = true;
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => this.flushPendingDeltas());
+    } else {
+      setTimeout(() => this.flushPendingDeltas(), 100);
+    }
+  }
+
+  private flushPendingDeltas(): void {
+    this.flushScheduled = false;
+    if (this.pendingDeltas.size === 0) return;
+    const pending = this.pendingDeltas;
+    this.pendingDeltas = new Map();
+    for (const [index, chunks] of pending) {
+      const block = this.currentBlocks[index];
+      if (!block) continue;
+      if (chunks.text.length > 0) block.content += chunks.text.join('');
+      if (chunks.thinking.length > 0) block.content += chunks.thinking.join('');
+      if (chunks.input.length > 0) block.input = (block.input ?? '') + chunks.input.join('');
     }
   }
 
@@ -352,6 +392,7 @@ export class MessageAccumulator {
     const block = this.currentBlocks[evt.index];
     if (!block) return;
 
+    this.flushPendingDeltas();
     block.complete = true;
     this.trackBlockingSubagent(block);
   }
@@ -377,6 +418,7 @@ export class MessageAccumulator {
   }
 
   private finalizeBlocks(): void {
+    this.flushPendingDeltas();
     if (this.currentBlocks.length > 0) {
       for (const b of this.currentBlocks) b.complete = true;
       this.conversation.push({ kind: 'blocks', blocks: [...this.currentBlocks] });
@@ -558,6 +600,7 @@ export class MessageAccumulator {
   clear(): void {
     this.conversation = [];
     this.currentBlocks = [];
+    this.pendingDeltas = new Map();
     this.clearSubagents();
     this.historyPendingResultTimestamp = undefined;
     this.historyTurnCount = 0;
