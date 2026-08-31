@@ -1,0 +1,105 @@
+/* Weekly merge pass: group the week's staged store ops by memory server set
+ * (apiUrl + project) and run one agent pass per group to merge near-duplicates
+ * and recurring themes into durable memories. Never merges across server sets. */
+import { readdirSync, statSync } from 'fs';
+import { join } from 'path';
+import type { OrchestrelConfig } from '../../shared/config';
+import { buildModel, consolidate } from './consolidate';
+import { finishRun, getDb, insertRun } from './db';
+import { appendStaging, readStagingFile } from './staging';
+import type { StagingEntry } from './staging';
+import type { MemoryServer, StagedOp } from './memory-api';
+
+export interface MergeSummary {
+  groups: number;
+  ops: number;
+  stagingFile: string;
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function collectWeekEntries(stageDir: string): StagingEntry[] {
+  let names: string[];
+  try {
+    names = readdirSync(stageDir).filter((n) => n.endsWith('.json'));
+  } catch {
+    return [];
+  }
+  const cutoff = Date.now() - WEEK_MS;
+  const entries: StagingEntry[] = [];
+  for (const name of names) {
+    const path = join(stageDir, name);
+    let mtime: number;
+    try {
+      mtime = statSync(path).mtimeMs;
+    } catch {
+      continue;
+    }
+    if (mtime < cutoff) continue;
+    const day = readStagingFile(path);
+    if (day) entries.push(...day.entries);
+  }
+  return entries;
+}
+
+export function groupByServer(entries: StagingEntry[]): Array<{ key: string; entries: StagingEntry[] }> {
+  const groups = new Map<string, StagingEntry[]>();
+  for (const e of entries) {
+    const key = `${e.project}@${e.apiUrl}`;
+    const list = groups.get(key) ?? [];
+    list.push(e);
+    groups.set(key, list);
+  }
+  return [...groups.entries()].map(([key, list]) => ({ key, entries: list }));
+}
+
+export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | null> {
+  const memory = cfg.memory;
+  if (!memory) return null;
+
+  const db = getDb();
+  const startedAt = new Date().toISOString();
+  const runId = insertRun(db, 'weekly', startedAt);
+  const entries = collectWeekEntries(memory.stageDir);
+  const groups = groupByServer(entries);
+  const { runtime, model } = await buildModel(cfg, memory);
+  const mergedOps: StagedOp[] = [];
+
+  for (const group of groups) {
+    const [project] = group.key.split('@');
+    const first = group.entries[0];
+    const server: MemoryServer = { apiUrl: first.apiUrl, apiKey: '', project };
+    // apiKey is not recoverable from staging files; look it up from config.
+    const cfgEntry = memory.projects[project];
+    if (!cfgEntry) continue;
+    server.apiKey = cfgEntry.apiKey;
+    const stores = group.entries.flatMap((e) => e.ops).filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
+    if (stores.length === 0) continue;
+    const prompt = `Merge these memory candidates from one week of sessions (${group.entries.length} sessions, ${stores.length} candidates):\n\n${stores.map((s) => `- ${s.title}: ${s.text}`).join('\n')}\n\nGroup near-duplicates into one durable memory. Recurring themes across 2+ sessions become durable memories with a short evidence note. Search existing memories first; update instead of creating duplicates.`;
+    const ops = await consolidate({
+      excerpt: { sessionId: `merge-${group.key}`, cwd: '', startedAt: '', text: prompt, tokenEstimate: 0 },
+      server,
+      runtime,
+      model,
+      maxTurns: memory.maxTurns,
+      mode: 'stage',
+    });
+    mergedOps.push(...ops);
+  }
+
+  const stagingFile = appendStaging(
+    memory.stageDir,
+    {
+      project: 'merge',
+      apiUrl: 'merge',
+      sessionId: `merge-${new Date().toISOString().slice(0, 10)}`,
+      source: 'merge',
+      ops: mergedOps,
+    },
+    `merge-${new Date().toISOString().slice(0, 10)}.json`,
+  );
+
+  const summary: MergeSummary = { groups: groups.length, ops: mergedOps.length, stagingFile };
+  finishRun(db, runId, 'done', JSON.stringify(summary));
+  return summary;
+}
