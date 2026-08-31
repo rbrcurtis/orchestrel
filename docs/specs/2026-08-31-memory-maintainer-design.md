@@ -218,6 +218,6 @@ cwd, timestamps, provider/model.
 - Unit tests per module (vitest; mock at boundaries — `mock.module` for service
   deps, `globalThis.fetch` stub for HTTP, mock ModelRuntime for the agent loop).
 - Sweep/excerpt tested against a committed real session JSONL fixture.
-- Manual end-to-end: `scripts/memory-maintainer.ts --run` over real sessions
+- Manual end-to-end: `bun run src/lib/memory-maintainer/cli.ts --run` over real sessions
   (recent-only), inspect the staging JSON, confirm the Telegram alert fires.
 - Memory API calls verified against a real server in stage mode (search only).
