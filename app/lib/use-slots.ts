@@ -454,11 +454,39 @@ export function useSlots(
       }
     }
 
-    // Force re-render so resolver runs fresh for cleared slots
+    // Only re-render when clearing the sticky actually changes the resolution.
+    // The previous unconditional `setSlots(prev => [...prev])` forced a re-render
+    // on every render while any slot was mid-recalc; under live streaming card
+    // updates that turned a single transition into a re-render storm that fed
+    // the React "Maximum update depth exceeded" loop. Re-running the resolver
+    // here with the cleared sticky tells us whether the display changes at all:
+    // if it does, force exactly one re-render (the next render resolves to the
+    // same result, so the effect settles); if it does not, skip the setState.
     if (stateChanged) {
       setSlots(next);
       writeLocalStorage(SLOTS_KEY, next);
+      return;
+    }
+    const nextResolved = resolvePinnedCards(
+      next,
+      cards,
+      prevResolvedRef.current,
+      projectFilter,
+      lockedSlots.size > 0 ? lockedSlots : undefined,
+      suppressedHotseatCardId,
+    );
+    let resolutionChanged = false;
+    if (nextResolved.size !== resolvedCards.size) {
+      resolutionChanged = true;
     } else {
+      for (const [i, cardId] of nextResolved) {
+        if (resolvedCards.get(i) !== cardId) {
+          resolutionChanged = true;
+          break;
+        }
+      }
+    }
+    if (resolutionChanged) {
       setSlots((prev) => [...prev]);
     }
   });

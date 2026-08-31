@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Send, Square, Play, AlertCircle, X, WifiOff } from 'lucide-react';
 import { Button } from '~/components/ui/button';
@@ -50,9 +50,21 @@ export const SessionView = observer(function SessionView({
   // message in the loaded history, so prepending unconditionally would render it twice.
   const firstUserEntry = conversation.find((entry) => entry.kind === 'user');
   const historyStartsWithPrompt = firstUserEntry?.content.trim() === initialPrompt;
-  const visibleConversation = initialPrompt && !historyStartsWithPrompt
-    ? [{ kind: 'user' as const, content: initialPrompt, timestamp: card ? new Date(card.createdAt).getTime() : undefined }, ...conversation]
-    : conversation;
+  // Stable identity: the prepend path must NOT rebuild this array on every
+  // SessionView render (status flips, context tokens, subagent feed updates all
+  // re-render this observer during streaming). A fresh array each render forces
+  // LazyTranscript and every message block — including the Presence-wrapped
+  // Collapsibles — to re-render, which feeds the React 19 composed-ref loop.
+  const visibleConversation = useMemo(
+    () =>
+      initialPrompt && !historyStartsWithPrompt
+        ? [{ kind: 'user' as const, content: initialPrompt, timestamp: card ? new Date(card.createdAt).getTime() : undefined }, ...conversation]
+        : conversation,
+    // card deliberately excluded: cardStore replaces the card object on every
+    // live update, which would invalidate the memo on every stream event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversation, initialPrompt, historyStartsWithPrompt],
+  );
   const currentBlocks = session?.accumulator.currentBlocks ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
