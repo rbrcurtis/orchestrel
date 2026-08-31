@@ -33,7 +33,10 @@ never writes to any memory API until explicitly switched to write mode.
    `ModelRuntime` (house pattern from `src/orcd/pi-runtime.ts`). Staging review
    is the quality gate; swapping the model is a one-line config change.
 6. **Backlog:** recent-only. Watermark initializes at first run; only sessions
-   newer than the watermark are ever processed. No historical drain.
+   newer than the watermark are ever processed. No historical drain. The recency
+   window (`memory.windowDays`, default 7) implements this decision: sessions
+   older than the window are permanently skipped, never consolidated — even on
+   a first run with an empty watermark.
 7. **Weekly merge pass:** consolidates recurring patterns across the week's
    staged ops, scoped strictly within one memory server set (same `apiUrl` +
    `project`). No cross-server merging.
@@ -79,6 +82,7 @@ memory:
   excerptTokens: 24000   # token cap for the session excerpt
   stageDir: data/memory-staging
   settleMs: 600000       # session must be idle this long before processing (10 min)
+  windowDays: 7          # sessions older than this are permanently skipped (recency window)
   telegram:
     botToken: ${TELEGRAM_BOT_TOKEN}
     chatId: ${TELEGRAM_CHAT_ID}
@@ -148,9 +152,11 @@ weekly merge can group by memory server set without cross-server merging.
 
 **Daily run (`maintain.ts`):**
 1. Sweep: walk sessions dir; skip files whose (path, mtime, size) match the
-   watermark or whose mtime is newer than now − `settleMs`; skip noise (no user
-   message, < 3 assistant turns, config-only sessions). Classify each remaining
-   file by `cwd` → project via config; unconfigured projects' files are dropped.
+   watermark, whose mtime is newer than now − `settleMs`, or whose mtime is
+   older than now − `windowDays`·24h (recency window, decision C); skip noise
+   (no user message, < 3 assistant turns, config-only sessions). Classify each
+   remaining file by `cwd` → project via config; unconfigured projects' files
+   are dropped.
 2. Group by project; for each project (sequential, one at a time):
    - Build excerpt (`excerpt.ts`).
    - Run the consolidation agent (`consolidate.ts`) against that project's

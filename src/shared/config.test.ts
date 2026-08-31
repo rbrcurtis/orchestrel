@@ -65,6 +65,7 @@ describe('memory config', () => {
       maxTurns: 30,
       excerptTokens: 24000,
       settleMs: 600000,
+      windowDays: 7,
     });
     expect(cfg.memory?.projects.trackable).toEqual({
       match: ['/home/ryan/Code/trackable', '/home/ryan/Code/transcription'],

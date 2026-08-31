@@ -111,6 +111,7 @@ memory:
   maxTurns: 30                # agent loop cap per session
   excerptTokens: 24000        # token cap for the session excerpt fed to the agent
   settleMs: 600000            # session must be idle this long (ms) before processing
+  windowDays: 7               # only sessions newer than this many days are ever processed (recency window)
   stageDir: data/memory-staging
   telegram:                   # optional; without it, alerts are logged only
     botToken: ${TELEGRAM_BOT_TOKEN}

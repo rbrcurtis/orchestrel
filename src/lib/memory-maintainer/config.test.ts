@@ -10,6 +10,7 @@ const MEMORY: MemoryConfig = {
   excerptTokens: 24000,
   stageDir: 'data/memory-staging',
   settleMs: 600000,
+  windowDays: 7,
   projects: {
     trackable: {
       match: ['/home/ryan/Code/trackable', '/home/ryan/Code/transcription'],

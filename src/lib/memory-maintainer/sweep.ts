@@ -20,6 +20,7 @@ export interface SessionFile {
 export interface SweepResult {
   files: SessionFile[];
   droppedUnsettled: number;
+  droppedWindow: number;
   droppedUnknownProject: number;
   droppedNoise: number;
 }
@@ -34,7 +35,7 @@ export function sweepSessions(memory: MemoryConfig): SweepResult {
   const db = getDb();
   const now = Date.now();
   const files: SessionFile[] = [];
-  const result: SweepResult = { files, droppedUnsettled: 0, droppedUnknownProject: 0, droppedNoise: 0 };
+  const result: SweepResult = { files, droppedUnsettled: 0, droppedWindow: 0, droppedUnknownProject: 0, droppedNoise: 0 };
 
   let projectDirs: string[];
   try {
@@ -58,6 +59,10 @@ export function sweepSessions(memory: MemoryConfig): SweepResult {
       const st = statSync(path);
       if (st.mtimeMs > now - memory.settleMs) {
         result.droppedUnsettled += 1;
+        continue;
+      }
+      if (st.mtimeMs < now - memory.windowDays * 24 * 60 * 60 * 1000) {
+        result.droppedWindow += 1;
         continue;
       }
       const seen = db
