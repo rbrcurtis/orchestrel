@@ -28,6 +28,25 @@ export interface ProviderDef {
   agents?: Record<string, string>;
 }
 
+export interface MemoryProjectConfig {
+  match: string[];
+  apiUrl: string;
+  apiKey: string;
+  project: string;
+}
+
+export interface MemoryConfig {
+  mode: 'stage' | 'write';
+  provider: string;
+  model: string;
+  maxTurns: number;
+  excerptTokens: number;
+  stageDir: string;
+  settleMs: number;
+  telegram?: { botToken: string; chatId: string };
+  projects: Record<string, MemoryProjectConfig>;
+}
+
 export interface OrchestrelConfig {
   listen: { host: string; port: number };
   authToken: string;
@@ -38,6 +57,7 @@ export interface OrchestrelConfig {
   defaultCwd?: string;
   ringBufferSize: number;
   providers: Record<string, ProviderDef>;
+  memory?: MemoryConfig;
 }
 
 /** Replace `${VAR}` with values from env. Unset vars become empty string. */
@@ -107,6 +127,51 @@ export function parseConfig(
     port: Number(rawListen.port ?? 7420),
   };
 
+  let memory: MemoryConfig | undefined;
+  const rawMemory = raw.memory;
+  if (rawMemory && typeof rawMemory === 'object') {
+    const m = rawMemory as Record<string, unknown>;
+    if (!m.provider || !m.model) {
+      throw new Error('config: memory requires provider and model');
+    }
+    if (!m.projects || typeof m.projects !== 'object') {
+      throw new Error('config: memory requires a projects map');
+    }
+    const projects: Record<string, MemoryProjectConfig> = {};
+    for (const [key, p] of Object.entries(m.projects as Record<string, Record<string, unknown>>)) {
+      if (!Array.isArray(p.match) || p.match.length === 0) {
+        throw new Error(`config: memory project "${key}" requires match paths`);
+      }
+      if (!p.apiUrl || !p.apiKey || !p.project) {
+        throw new Error(`config: memory project "${key}" requires apiUrl, apiKey, project`);
+      }
+      projects[key] = {
+        match: p.match.map((x) => resolveEnvVars(String(x), env)),
+        apiUrl: resolveEnvVars(String(p.apiUrl), env),
+        apiKey: resolveEnvVars(String(p.apiKey), env),
+        project: resolveEnvVars(String(p.project), env),
+      };
+    }
+    memory = {
+      mode: m.mode === 'write' ? 'write' : 'stage',
+      provider: String(m.provider),
+      model: String(m.model),
+      maxTurns: Number(m.maxTurns ?? 30),
+      excerptTokens: Number(m.excerptTokens ?? 24000),
+      stageDir: String(m.stageDir ?? 'data/memory-staging'),
+      settleMs: Number(m.settleMs ?? 600000),
+      ...(m.telegram && typeof m.telegram === 'object'
+        ? {
+            telegram: {
+              botToken: resolveEnvVars(String((m.telegram as Record<string, unknown>).botToken ?? ''), env),
+              chatId: resolveEnvVars(String((m.telegram as Record<string, unknown>).chatId ?? ''), env),
+            },
+          }
+        : {}),
+      projects,
+    };
+  }
+
   return {
     listen,
     authToken: raw.authToken != null ? resolveEnvVars(String(raw.authToken), env) : '',
@@ -117,6 +182,7 @@ export function parseConfig(
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
     ringBufferSize: Number(raw.ringBufferSize ?? 5000),
     providers,
+    ...(memory ? { memory } : {}),
   };
 }
 
