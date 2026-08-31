@@ -164,6 +164,9 @@ export function wsServerPlugin(): Plugin {
             registerProcessReaper();
             console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
+            const { startMemoryMaintainer } = await import('../../lib/memory-maintainer/scheduler');
+            startMemoryMaintainer();
+
             initState.markInitialized();
           },
         )
