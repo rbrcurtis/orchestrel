@@ -11,7 +11,8 @@ import type { MaintainSummary } from '../src/lib/memory-maintainer/maintain';
 import { runMerge } from '../src/lib/memory-maintainer/merge';
 import type { StagingDay } from '../src/lib/memory-maintainer/staging';
 
-function printMutations(stagingFiles: string[]): void {
+function printMutations(stagingFiles: string[], sessionIds: string[]): void {
+  const wanted = new Set(sessionIds);
   for (const file of stagingFiles) {
     let day: StagingDay;
     try {
@@ -19,12 +20,15 @@ function printMutations(stagingFiles: string[]): void {
     } catch {
       continue;
     }
-    const mutations = day.entries.flatMap((e) =>
-      e.ops
-        .filter((op) => op.op === 'update' || op.op === 'delete')
-        .map((op) => ({ ...op, source: e.source.split('/').pop() })),
-    );
-    console.log(`\n${file} — ${day.entries.length} sessions, ${mutations.length} mutation(s) to review:`);
+    const mutations = day.entries
+      .filter((e) => wanted.has(e.sessionId))
+      .flatMap((e) =>
+        e.ops
+          .filter((op) => op.op === 'update' || op.op === 'delete')
+          .map((op) => ({ ...op, source: e.source.split('/').pop() })),
+      );
+    if (mutations.length === 0) continue;
+    console.log(`\n${file} — ${mutations.length} mutation(s) from this run to review:`);
     for (const m of mutations) {
       if (m.op === 'update') {
         console.log(`  UPDATE ${m.id} (${m.source}) — ${m.title || '(title unchanged)'}`);
@@ -61,7 +65,7 @@ async function main(): Promise<void> {
       `  ${p.project}: ${p.sessions} session(s) — ${p.stores} store, ${p.updates} update, ${p.deletes} delete, ${p.skips} skip${p.errors.length ? `, ${p.errors.length} error(s)` : ''}`,
     );
   }
-  printMutations(summary.stagingFiles);
+  printMutations(summary.stagingFiles, summary.projects.flatMap((p) => p.sessionIds));
 }
 
 main().catch((err) => {

@@ -19,6 +19,8 @@ export interface ProjectSummary {
   deletes: number;
   skips: number;
   errors: string[];
+  /** Session ids processed in this run — lets the run script filter staged mutations to this run's work. */
+  sessionIds: string[];
 }
 
 export interface MaintainSummary {
@@ -60,7 +62,7 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
         apiKey: memory.projects[key].apiKey,
         project: memory.projects[key].project,
       };
-      const summary: ProjectSummary = { project: key, sessions: 0, ops: 0, stores: 0, updates: 0, deletes: 0, skips: 0, errors: [] };
+      const summary: ProjectSummary = { project: key, sessions: 0, ops: 0, stores: 0, updates: 0, deletes: 0, skips: 0, errors: [], sessionIds: [] };
       for (const file of files) {
         try {
           const excerpt = buildExcerpt(file.path, memory.excerptTokens);
@@ -74,6 +76,7 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
           });
           stagingFiles.add(stagingFile);
           summary.sessions += 1;
+          summary.sessionIds.push(file.sessionId);
           summary.ops += ops.length;
           for (const op of ops) {
             if (op.op === 'store') summary.stores += 1;
