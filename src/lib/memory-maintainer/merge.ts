@@ -9,6 +9,7 @@ import { finishRun, getDb, insertRun } from './db';
 import { appendStaging, readStagingFile } from './staging';
 import type { StagingEntry } from './staging';
 import type { MemoryServer, StagedOp } from './memory-api';
+import { buildMergePrompt } from './prompts';
 
 export interface MergeSummary {
   groups: number;
@@ -81,7 +82,10 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
       const server: MemoryServer = { apiUrl: first.apiUrl, apiKey: cfgEntry.apiKey, project: cfgEntry.project };
       const stores = group.entries.flatMap((e) => e.ops).filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
       if (stores.length === 0) continue;
-      const prompt = `Merge these memory candidates from one week of sessions (${group.entries.length} sessions, ${stores.length} candidates):\n\n${stores.map((s) => `- ${s.title}: ${s.text}`).join('\n')}\n\nGroup near-duplicates into one durable memory. Recurring themes across 2+ sessions become durable memories with a short evidence note. Search existing memories first; update instead of creating duplicates.`;
+      const prompt = buildMergePrompt(
+        stores.map((s) => ({ title: s.title, text: s.text })),
+        group.entries.length,
+      );
       const ops = await consolidate({
         excerpt: { sessionId: `merge-${group.key}`, cwd: '', startedAt: '', text: prompt, tokenEstimate: 0 },
         server,

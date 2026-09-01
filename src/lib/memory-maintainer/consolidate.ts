@@ -10,6 +10,7 @@ import type { MemoryConfig, OrchestrelConfig, ProviderDef } from '../../shared/c
 import { SECRETS_PATTERN, type Excerpt } from './excerpt';
 import { deleteMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
 import type { MemoryServer, StagedOp } from './memory-api';
+import { SYSTEM_PROMPT } from './prompts';
 
 const ANONYMOUS_API_KEY = 'anonymous';
 
@@ -21,15 +22,6 @@ export interface ConsolidateOpts {
   maxTurns: number;
   mode: 'stage' | 'write';
 }
-
-const SYSTEM_PROMPT = `You consolidate a coding-agent session into durable memory entries.
-Rules:
-- One concept per memory. Use a concise descriptive title.
-- Always search_memory before storing to check for duplicates; update or skip instead.
-- Never store transient content: status checks, "repos clean", merge confirmations, or anything purely about the current moment.
-- Never store secrets, API keys, or tokens.
-- Delete a memory only when it is clearly stale and superseded.
-- When done, reply with a short summary text and no tool calls. Do not loop.`;
 
 export async function buildModel(
   cfg: OrchestrelConfig,
