@@ -72,6 +72,13 @@ const tools: Tool[] = [
     }),
   },
   {
+    name: 'read_memory',
+    description: 'Read the full text of one memory by id. Required before updating a memory.',
+    parameters: Type.Object({
+      id: Type.String(),
+    }),
+  },
+  {
     name: 'store_memory',
     description: 'Store a new memory (one concept).',
     parameters: Type.Object({
@@ -82,7 +89,7 @@ const tools: Tool[] = [
   },
   {
     name: 'update_memory',
-    description: 'Update an existing memory by id. The rewrite must preserve all still-valid facts from the existing text.',
+    description: 'Update an existing memory by id. Requires read_memory(id) first. The rewrite must preserve all still-valid facts from the existing text.',
     parameters: Type.Object({
       id: Type.String(),
       title: Type.Optional(Type.String()),
@@ -94,6 +101,7 @@ const tools: Tool[] = [
 export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   const { excerpt, server, runtime, model, maxTurns, mode } = opts;
   const ops: StagedOp[] = [];
+  const readIds = new Set<string>();
   const messages: Message[] = [
     { role: 'user', content: [{ type: 'text', text: `Session: ${excerpt.sessionId} (${excerpt.cwd})\n\n${excerpt.text}` }], timestamp: Date.now() },
   ];
@@ -104,7 +112,7 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
     const calls = msg.content.filter((b): b is ToolCall => b.type === 'toolCall');
     if (calls.length === 0) break;
     for (const call of calls) {
-      const result = await runTool(call, server, mode, ops);
+      const result = await runTool(call, server, mode, ops, readIds);
       messages.push(result);
     }
   }
@@ -112,7 +120,13 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   return dedupeOps(ops);
 }
 
-async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'write', ops: StagedOp[]): Promise<ToolResultMessage> {
+async function runTool(
+  call: ToolCall,
+  server: MemoryServer,
+  mode: 'stage' | 'write',
+  ops: StagedOp[],
+  readIds: Set<string>,
+): Promise<ToolResultMessage> {
   try {
     const args = call.arguments as Record<string, unknown>;
     const text = (s: string): string => (SECRETS_PATTERN.test(s) ? '[redacted]' : s);
@@ -120,6 +134,13 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
       case 'search_memory': {
         const hits = await searchMemories(server, String(args.query), Number(args.limit ?? 10));
         return toolResult(call, JSON.stringify(hits.map((h) => ({ id: h.id, title: h.title, score: h.score }))));
+      }
+      case 'read_memory': {
+        const id = String(args.id);
+        const existing = await loadMemory(server, id);
+        if (!existing) return toolResult(call, `memory ${id} not found`, true);
+        readIds.add(id);
+        return toolResult(call, `${existing.title}\n\n${existing.text}`);
       }
       case 'store_memory': {
         const title = String(args.title);
@@ -133,19 +154,16 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
       }
       case 'update_memory': {
         const id = String(args.id);
+        if (!readIds.has(id)) {
+          return toolResult(call, `error: call read_memory(${id}) first — you must see the existing text before replacing it`, true);
+        }
         const body = text(String(args.text));
         ops.push({ op: 'update', id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
         if (mode === 'write') {
           const { success } = await updateMemory(server, { id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
           return toolResult(call, JSON.stringify({ success }));
         }
-        // Return the existing text so the model can verify its replacement
-        // preserved every still-valid fact and revise if not (last update wins).
-        const existing = await loadMemory(server, id);
-        return toolResult(
-          call,
-          existing ? `recorded (stage mode). Existing text (verify your replacement kept its still-valid facts):\n${existing.text}` : 'recorded (stage mode) — memory not found',
-        );
+        return toolResult(call, 'recorded (stage mode)');
       }
       default:
         return toolResult(call, `unknown tool ${call.name}`, true);

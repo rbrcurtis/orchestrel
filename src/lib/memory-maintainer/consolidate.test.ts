@@ -31,13 +31,22 @@ describe('consolidate', () => {
   });
 
   it('records store/update/delete as ops in stage mode without calling the API', async () => {
-    // search_memory executes via fetch in stage mode (it must search to dedupe); store/update/delete are recorded only.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ data: [] }), text: () => Promise.resolve('') }));
+    // search + read execute via fetch in stage mode (dedupe + the update read gate); store/update are recorded only.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => ({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(String(url).includes('/load') ? { data: [{ id: '9', title: 'Old', text: 'old text', score: 0 }] } : { data: [] }),
+        text: () => Promise.resolve(''),
+      })),
+    );
     const complete = vi
       .fn()
       .mockResolvedValueOnce(
         assistant([
           toolCall('search_memory', { query: 'retry' }),
+          toolCall('read_memory', { id: '9' }),
           toolCall('store_memory', { title: 'Retry policy', text: 'Use backoff.', tags: ['infra'] }),
           toolCall('update_memory', { id: '9', text: 'new' }),
         ], 'toolUse'),
@@ -60,7 +69,7 @@ describe('consolidate', () => {
     ]);
     // search executed; store/update/delete did NOT hit the API in stage mode
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2); // search + load for the update
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2); // search + read
   });
 
   it('executes search and stops when the model makes no tool calls', async () => {
