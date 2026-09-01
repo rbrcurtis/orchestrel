@@ -40,7 +40,6 @@ describe('consolidate', () => {
           toolCall('search_memory', { query: 'retry' }),
           toolCall('store_memory', { title: 'Retry policy', text: 'Use backoff.', tags: ['infra'] }),
           toolCall('update_memory', { id: '9', text: 'new' }),
-          toolCall('delete_memory', { id: '2', reason: 'stale' }),
         ], 'toolUse'),
       )
       .mockResolvedValueOnce(assistant([{ type: 'text', text: 'done' }], 'stop'));
@@ -58,7 +57,6 @@ describe('consolidate', () => {
     expect(ops).toEqual([
       { op: 'store', title: 'Retry policy', text: 'Use backoff.', tags: ['infra'] },
       { op: 'update', id: '9', text: 'new' },
-      { op: 'delete', id: '2', reason: 'stale' },
     ]);
     // search executed; store/update/delete did NOT hit the API in stage mode
     expect(complete).toHaveBeenCalledTimes(2);

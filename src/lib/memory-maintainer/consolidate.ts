@@ -8,7 +8,7 @@ import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-cod
 import type { ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { MemoryConfig, OrchestrelConfig, ProviderDef } from '../../shared/config';
 import { SECRETS_PATTERN, type Excerpt } from './excerpt';
-import { deleteMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
+import { searchMemories, storeMemory, updateMemory } from './memory-api';
 import type { MemoryServer, StagedOp } from './memory-api';
 import { SYSTEM_PROMPT } from './prompts';
 
@@ -82,19 +82,11 @@ const tools: Tool[] = [
   },
   {
     name: 'update_memory',
-    description: 'Update an existing memory by id.',
+    description: 'Update an existing memory by id. The rewrite must preserve all still-valid facts from the existing text.',
     parameters: Type.Object({
       id: Type.String(),
       title: Type.Optional(Type.String()),
       text: Type.String(),
-    }),
-  },
-  {
-    name: 'delete_memory',
-    description: 'Delete an existing memory by id (stale or superseded only).',
-    parameters: Type.Object({
-      id: Type.String(),
-      reason: Type.Optional(Type.String()),
     }),
   },
 ];
@@ -145,15 +137,6 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
         ops.push({ op: 'update', id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
         if (mode === 'write') {
           const { success } = await updateMemory(server, { id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
-          return toolResult(call, JSON.stringify({ success }));
-        }
-        return toolResult(call, 'recorded (stage mode)');
-      }
-      case 'delete_memory': {
-        const id = String(args.id);
-        ops.push({ op: 'delete', id, ...(args.reason ? { reason: String(args.reason) } : {}) });
-        if (mode === 'write') {
-          const { success } = await deleteMemory(server, id);
           return toolResult(call, JSON.stringify({ success }));
         }
         return toolResult(call, 'recorded (stage mode)');

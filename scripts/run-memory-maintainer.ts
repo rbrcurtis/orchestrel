@@ -20,13 +20,18 @@ function printMutations(stagingFiles: string[], sessionIds: string[]): void {
     } catch {
       continue;
     }
-    const mutations = day.entries
-      .filter((e) => wanted.has(e.sessionId))
-      .flatMap((e) =>
-        e.ops
-          .filter((op) => op.op === 'update' || op.op === 'delete')
-          .map((op) => ({ ...op, source: e.source.split('/').pop() })),
-      );
+    const mutations = [
+      ...new Map(
+        day.entries
+          .filter((e) => wanted.has(e.sessionId))
+          .flatMap((e) =>
+            e.ops
+              .filter((op) => op.op === 'update' || op.op === 'delete')
+              .map((op) => ({ ...op, source: e.source.split('/').pop() })),
+          )
+          .map((m) => [`${m.op}:${m.id}`, m]),
+      ).values(),
+    ];
     if (mutations.length === 0) continue;
     console.log(`\n${file} — ${mutations.length} mutation(s) from this run to review:`);
     for (const m of mutations) {
