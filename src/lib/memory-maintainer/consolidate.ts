@@ -8,7 +8,7 @@ import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-cod
 import type { ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { MemoryConfig, OrchestrelConfig, ProviderDef } from '../../shared/config';
 import { SECRETS_PATTERN, type Excerpt } from './excerpt';
-import { searchMemories, storeMemory, updateMemory } from './memory-api';
+import { loadMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
 import type { MemoryServer, StagedOp } from './memory-api';
 import { SYSTEM_PROMPT } from './prompts';
 
@@ -139,7 +139,13 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
           const { success } = await updateMemory(server, { id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
           return toolResult(call, JSON.stringify({ success }));
         }
-        return toolResult(call, 'recorded (stage mode)');
+        // Return the existing text so the model can verify its replacement
+        // preserved every still-valid fact and revise if not (last update wins).
+        const existing = await loadMemory(server, id);
+        return toolResult(
+          call,
+          existing ? `recorded (stage mode). Existing text (verify your replacement kept its still-valid facts):\n${existing.text}` : 'recorded (stage mode) — memory not found',
+        );
       }
       default:
         return toolResult(call, `unknown tool ${call.name}`, true);
@@ -161,12 +167,14 @@ function toolResult(call: ToolCall, text: string, isError = false): ToolResultMe
 }
 
 function dedupeOps(ops: StagedOp[]): StagedOp[] {
-  const seen = new Set<string>();
-  return ops.filter((op) => {
-    if (op.op === 'skip') return true;
+  // First store of a title wins; last update of an id wins (the model may
+  // revise an update after seeing the existing text via the tool result).
+  const seen = new Map<string, StagedOp>();
+  for (const op of ops) {
+    if (op.op === 'skip') continue;
     const key = op.op === 'store' ? `store:${op.title}` : `${op.op}:${op.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    if (op.op === 'store' && seen.has(key)) continue;
+    seen.set(key, op);
+  }
+  return [...seen.values()];
 }

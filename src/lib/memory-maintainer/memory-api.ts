@@ -69,3 +69,9 @@ export async function deleteMemory(server: MemoryServer, id: string): Promise<{ 
   const data = await request<{ data: { success: boolean } }>(server, 'DELETE', `/api/v1/memories/${id}`);
   return data.data;
 }
+
+export async function loadMemory(server: MemoryServer, id: string): Promise<MemoryHit | null> {
+  const qs = new URLSearchParams({ ids: id });
+  const data = await request<{ data: unknown[] }>(server, 'GET', `/api/v1/memories/load?${qs}`);
+  return (data.data[0] as MemoryHit | undefined) ?? null;
+}

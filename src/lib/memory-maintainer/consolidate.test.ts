@@ -60,7 +60,7 @@ describe('consolidate', () => {
     ]);
     // search executed; store/update/delete did NOT hit the API in stage mode
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2); // search + load for the update
   });
 
   it('executes search and stops when the model makes no tool calls', async () => {
