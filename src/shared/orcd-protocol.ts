@@ -42,6 +42,13 @@ export interface SetEffortAction {
   requestId?: string;
 }
 
+export interface SetSummarizeThresholdAction {
+  action: 'set_summarize_threshold';
+  sessionId: string;
+  summarizeThreshold: number;
+  requestId?: string;
+}
+
 export interface SubscribeAction {
   action: 'subscribe';
   sessionId: string;
@@ -145,6 +152,7 @@ export type OrcdAction =
   | MessageAction
   | WarmAction
   | SetEffortAction
+  | SetSummarizeThresholdAction
   | SubscribeAction
   | UnsubscribeAction
   | ListAction

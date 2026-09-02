@@ -189,6 +189,11 @@ class CardService {
     card.updatedAt = new Date().toISOString();
     await card.save();
 
+    if (data.summarizeThreshold !== undefined && card.sessionId) {
+      const initState = await import('../init-state');
+      initState.getClientByNode(card.nodeName)?.setSummarizeThreshold(card.sessionId, data.summarizeThreshold);
+    }
+
     return card;
   }
 

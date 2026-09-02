@@ -30,7 +30,7 @@ export class OrcdSession {
   readonly model: string;
   readonly provider: string;
   readonly contextWindow: number | undefined;
-  readonly summarizeThreshold: number;
+  summarizeThreshold: number;
   readonly providerConfig: ProviderConfig | undefined;
   readonly buffer: RingBuffer<unknown>;
 
@@ -539,6 +539,11 @@ export class OrcdSession {
     }
     await this.piSession.setEffort(effort);
     console.log(`[orcd:${this.id.slice(0, 8)}] effort → ${effort}`);
+  }
+
+  setSummarizeThreshold(threshold: number): void {
+    this.summarizeThreshold = threshold;
+    console.log(`[orcd:${this.id.slice(0, 8)}] summarize threshold → ${threshold}`);
   }
 
   /**

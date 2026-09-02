@@ -17,7 +17,7 @@ import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
 import { dispatchTypeFocus, isTypeFocusKey, isTypingContext } from '~/lib/type-focus';
-import type { Card, Column } from '../../src/shared/ws-protocol';
+import type { Column } from '../../src/shared/ws-protocol';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -130,10 +130,6 @@ const BoardLayout = observer(function BoardLayout() {
   const lastPromptCardRef = useRef<number | null>(null);
   const [promptFocusRequest, setPromptFocusRequest] = useState<{ cardId: number; seq: number } | null>(null);
   const promptFocusSeq = useRef(0);
-  // After a send, the wheel may rotate (the presentation effect below focuses
-  // the new card) or keep the same card — remember the sent card so the
-  // same-card case can refocus its prompt once the server's update lands.
-  const pendingSentRef = useRef<{ cardId: number; card: Card } | null>(null);
 
   const allCards = Array.from(cardStore.cards.values());
   const {
@@ -172,16 +168,6 @@ const BoardLayout = observer(function BoardLayout() {
   }); // intentionally no deps — selectCard is a local function that closes over current state
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
-      const card = cardStore.getCard(cardId);
-      if (card) pendingSentRef.current = { cardId, card };
-    };
-    window.addEventListener('orchestrel:prompt-sent', handler);
-    return () => window.removeEventListener('orchestrel:prompt-sent', handler);
-  }, [cardStore]);
-
-  useEffect(() => {
     const onFocus = (e: Event) => {
       const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
       lastPromptCardRef.current = cardId;
@@ -196,8 +182,10 @@ const BoardLayout = observer(function BoardLayout() {
     };
   }, []);
 
-  // Ferris wheel: when a slot presents a new card and the user isn't typing
-  // anywhere, focus the new card's prompt so they can type immediately.
+
+  // Ferris wheel: when a slot presents a new card that's ready to prompt
+  // (review), focus its prompt so it's stably selected while the wheel turns.
+  // Running cards never grab focus — the user doesn't want to prompt those.
   const prevPresentedRef = useRef<Map<number, number> | null>(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, resolvedCards is a fresh Map each render
   useEffect(() => {
@@ -217,28 +205,10 @@ const BoardLayout = observer(function BoardLayout() {
     }
     for (const [idx, cardId] of resolvedCards) {
       if (prev.get(idx) !== cardId) {
+        const card = cardStore.getCard(cardId);
+        if (card == null || card.column === 'running') continue;
         promptFocusSeq.current += 1;
         setPromptFocusRequest({ cardId, seq: promptFocusSeq.current });
-        pendingSentRef.current = null;
-        return;
-      }
-    }
-    // No rotation: a prompt was just sent and the server's card update has
-    // landed (the store holds a new object), so the wheel's chance to rotate
-    // has passed — refocus the same card's prompt.
-    const pending = pendingSentRef.current;
-    if (pending == null) return;
-    const current = cardStore.getCard(pending.cardId);
-    if (current == null) {
-      pendingSentRef.current = null;
-      return;
-    }
-    if (current === pending.card) return; // server echo not here yet
-    pendingSentRef.current = null;
-    for (const [, cardId] of resolvedCards) {
-      if (cardId === pending.cardId) {
-        promptFocusSeq.current += 1;
-        setPromptFocusRequest({ cardId: pending.cardId, seq: promptFocusSeq.current });
         return;
       }
     }
@@ -340,10 +310,8 @@ const BoardLayout = observer(function BoardLayout() {
             else closeSlot(i);
             break;
           }
-          // Drop the focus lock and blur the prompt so the wheel's
-          // presentation effect can focus the next card's prompt.
+          // Drop the focus lock so the resolver rotates the slot onward.
           setFocusedCardId(null);
-          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           return;
         }
       }

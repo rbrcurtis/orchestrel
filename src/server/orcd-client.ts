@@ -316,6 +316,11 @@ export class OrcdClient {
     this.send({ action: 'set_effort', sessionId, effort });
   }
 
+  /** Update the automatic background-compaction threshold for a resident session. */
+  setSummarizeThreshold(sessionId: string, summarizeThreshold: number): void {
+    this.send({ action: 'set_summarize_threshold', sessionId, summarizeThreshold });
+  }
+
   /**
    * Compact a session. `mode: 'full'` runs Pi's native blocking compaction
    * (the chat `/compact` command and the UI context wheel); omitting it (or

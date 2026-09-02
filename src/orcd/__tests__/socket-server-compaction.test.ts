@@ -132,6 +132,26 @@ describe('OrcdServer session lifecycle', () => {
     expect(sendSpy).toHaveBeenCalledWith('continue');
   });
 
+  it('updates the summarize threshold on a resident session', () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'threshold-session',
+    });
+    server.store.add(session);
+
+    server['handleAction'](client as never, {
+      action: 'set_summarize_threshold',
+      sessionId: session.id,
+      summarizeThreshold: 0.7,
+    });
+
+    expect(session.summarizeThreshold).toBe(0.7);
+  });
+
   it('removes and disposes a closed resident session', () => {
     const server = createServer();
     const client = createClient();

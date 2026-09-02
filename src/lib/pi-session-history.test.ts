@@ -189,7 +189,7 @@ describe('getPiSessionMessages', () => {
     await expect(getPiSessionMessages('pi-session-1', '/repo')).resolves.toEqual([]);
   });
 
-  it('maps Pi compactionSummary messages to compact_boundary system entries', async () => {
+  it('restores a background-compaction marker from Pi history', async () => {
     const { getPiSessionMessages } = await import('./pi-session-history');
     mockBuildSessionContext.mockReturnValue({
       messages: [
@@ -197,11 +197,22 @@ describe('getPiSessionMessages', () => {
         { role: 'user', content: 'after compact', timestamp: 5 },
       ],
     });
+    mockGetBranch.mockReturnValue([{
+      type: 'compaction',
+      id: 'compact-1',
+      parentId: 'message-1',
+      timestamp: new Date(4).toISOString(),
+      summary: 'condensed history',
+      firstKeptEntryId: 'message-2',
+      tokensBefore: 150000,
+      fromHook: true,
+    }]);
 
     await expect(getPiSessionMessages('pi-session-1', '/repo')).resolves.toEqual([
       {
         type: 'system',
         subtype: 'compact_boundary',
+        source: 'orchestrel-bgc',
         uuid: 'pi-session-1-pi-history-0',
         session_id: 'pi-session-1',
         parent_tool_use_id: null,

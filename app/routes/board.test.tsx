@@ -229,7 +229,7 @@ describe('ferris wheel prompt focus', () => {
     });
   });
 
-  it('refocuses the prompt when the wheel keeps the same card', async () => {
+  it('keeps a focused review card stably selected while the wheel turns', async () => {
     const { store } = renderBoard();
 
     act(() => {
@@ -239,17 +239,63 @@ describe('ferris wheel prompt focus', () => {
     const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
     await waitFor(() => expect(document.activeElement).toBe(textarea));
 
-    // Send via Enter — SessionView dispatches prompt-sent and blurs the prompt
+    // Card 1 flips to running while a new review card arrives — the focus
+    // lock keeps card 1 in the slot (stably selected); the wheel does not rotate.
+    act(() => {
+      store.cards.hydrate(
+        [
+          { ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running' },
+          reviewCard(2, '2026-04-25T00:00:00.000Z'),
+        ],
+        true,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Card 1')).toBeTruthy();
+      expect(screen.queryByText('Card 2')).toBeNull();
+    });
+  });
+
+  it('does not focus a presented running card', async () => {
+    const { store } = renderBoard();
+
+    act(() => {
+      store.cards.hydrate([{ ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running' }], true);
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => {
+      expect(screen.getByText('Card 1')).toBeTruthy();
+      expect(document.activeElement).not.toBe(textarea);
+    });
+  });
+
+  it('keeps a now-running card unfocused when the wheel keeps it', async () => {
+    const { store } = renderBoard();
+
+    act(() => {
+      store.cards.hydrate([reviewCard(1, '2026-04-24T00:00:00.000Z')], true);
+    });
+
+    const textarea = await screen.findByPlaceholderText('Enter a prompt to start a session...');
+    await waitFor(() => expect(document.activeElement).toBe(textarea));
+
+    // Send via Enter — SessionView sends and blurs the prompt
     fireEvent.change(textarea, { target: { value: 'go' } });
     fireEvent.keyDown(textarea, { key: 'Enter' });
     await waitFor(() => expect(document.activeElement).not.toBe(textarea));
 
-    // Server echoes the card update; no other card is eligible, wheel keeps card 1
+    // Server echoes the card update; no other card is eligible, wheel keeps
+    // card 1 — now running, so the prompt must stay unfocused.
     act(() => {
       store.cards.hydrate([{ ...reviewCard(1, '2026-04-24T00:00:00.000Z'), column: 'running', promptsSent: 1 }], true);
     });
 
-    await waitFor(() => expect(document.activeElement).toBe(textarea));
+    await waitFor(() => {
+      expect(store.cards.getCard(1)?.column).toBe('running');
+      expect(document.activeElement).not.toBe(textarea);
+    });
   });
 
   it('moves the focused card to done with Ctrl+D and re-enters the ferris wheel', async () => {
@@ -330,10 +376,11 @@ describe('ferris wheel prompt focus', () => {
 
     fireEvent.keyDown(textarea, { key: 'Escape' });
 
+    // The wheel advances to the running card — running cards are not focused.
     await waitFor(() => {
       expect(screen.getByText('Card 2')).toBeTruthy();
       expect(screen.queryByText('Card 1')).toBeNull();
-      expect(document.activeElement?.tagName).toBe('TEXTAREA');
+      expect(document.activeElement?.tagName).not.toBe('TEXTAREA');
     });
   });
 });

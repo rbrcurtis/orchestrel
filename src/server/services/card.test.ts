@@ -6,6 +6,7 @@ import { DEFAULT_SENTINEL } from '../../shared/ws-protocol'
 
 const mockCancel = vi.fn()
 const mockClose = vi.fn()
+const mockSetSummarizeThreshold = vi.fn()
 const mockIsActive = vi.fn(() => true)
 const mockCapabilities = {
   name: 'local',
@@ -32,6 +33,7 @@ const mockOtherNodeClient = {
   getHistory: mockGetHistory,
   cancel: mockCancel,
   close: mockClose,
+  setSummarizeThreshold: mockSetSummarizeThreshold,
   capabilities: { ...mockCapabilities, name: 'other' },
   isConnected: () => true,
   pathValidate: mockOtherPathValidate,
@@ -41,6 +43,7 @@ const mockNodeClient = {
   getHistory: mockGetHistory,
   cancel: mockCancel,
   close: mockClose,
+  setSummarizeThreshold: mockSetSummarizeThreshold,
   capabilities: mockCapabilities,
   isConnected: () => true,
   pathValidate: mockPathValidate,
@@ -194,6 +197,19 @@ describe('CardService', () => {
 
     const noWt = await cardService.createCard({ title: 'Plain card', description: 'd', column: 'backlog', projectId: proj.id, worktreeBranch: null })
     expect(noWt.worktreeBranch).toBeNull()
+  })
+
+  it('updates the background-compaction threshold on a resident session', async () => {
+    const { cardService } = await import('./card')
+    mockSetSummarizeThreshold.mockClear()
+    const card = await cardService.createCard({ title: 'Live threshold', description: 'd', column: 'review' })
+    card.sessionId = 'sess-threshold'
+    await card.save()
+
+    await cardService.updateCard(card.id, { summarizeThreshold: 0.7 })
+
+    expect(mockSetSummarizeThreshold).toHaveBeenCalledWith('sess-threshold', 0.7)
+    expect((await Card.findOneByOrFail({ id: card.id })).summarizeThreshold).toBe(0.7)
   })
 
   it('keeps mid-turn sessions alive on done/archive, closes idle ones, and only cancels non-terminal moves', async () => {

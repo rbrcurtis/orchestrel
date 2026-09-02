@@ -128,6 +128,9 @@ export class OrcdServer {
       case 'set_effort':
         this.handleSetEffort(action);
         break;
+      case 'set_summarize_threshold':
+        this.handleSetSummarizeThreshold(action);
+        break;
       case 'subscribe':
         this.handleSubscribe(client, action);
         break;
@@ -358,6 +361,11 @@ export class OrcdServer {
     session?.setEffort(action.effort).catch((err: unknown) => {
       console.error(`[orcd] setEffort error:`, err);
     });
+  }
+
+  private handleSetSummarizeThreshold(action: OrcdAction & { action: 'set_summarize_threshold' }): void {
+    const session = this.store.get(action.sessionId);
+    session?.setSummarizeThreshold(action.summarizeThreshold);
   }
 
   private handleSubscribe(client: ClientState, action: OrcdAction & { action: 'subscribe' }): void {
