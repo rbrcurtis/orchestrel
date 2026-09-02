@@ -62,3 +62,20 @@ export function finishRun(db: Database.Database, runId: number, status: string, 
     runId,
   );
 }
+
+const RUN_STALENESS_MS = 6 * 60 * 60 * 1000;
+
+/** True when a run of the same type (other than `ownRunId`) started in the
+ * last 6h is still 'running' — guards against duplicate scheduler instances
+ * (e.g. Vite dev bundles) or CLI + scheduler overlap. */
+export function recentActiveRun(db: Database.Database, runType: string, ownRunId: number): boolean {
+  const rows = db
+    .prepare(
+      `SELECT id, started_at FROM memory_maintainer_runs
+       WHERE run_type = ? AND status = 'running' ORDER BY id DESC LIMIT 1`,
+    )
+    .all(runType) as Array<{ id: number; started_at: string }>;
+  const latest = rows[0];
+  if (!latest || latest.id === ownRunId) return false;
+  return Date.now() - Date.parse(latest.started_at) < RUN_STALENESS_MS;
+}

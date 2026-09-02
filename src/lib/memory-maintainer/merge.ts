@@ -5,7 +5,7 @@ import { readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import type { OrchestrelConfig } from '../../shared/config';
 import { buildModel, consolidate } from './consolidate';
-import { finishRun, getDb, insertRun } from './db';
+import { finishRun, getDb, insertRun, recentActiveRun } from './db';
 import { appendStaging, readStagingFile } from './staging';
 import type { StagingEntry } from './staging';
 import type { MemoryServer, StagedOp } from './memory-api';
@@ -61,6 +61,10 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
   const db = getDb();
   const startedAt = new Date().toISOString();
   const runId = insertRun(db, 'weekly', startedAt);
+  if (recentActiveRun(db, 'weekly', runId)) {
+    finishRun(db, runId, 'skipped', JSON.stringify({ reason: 'another weekly run in progress' }));
+    return { groups: 0, ops: 0, stagingFile: '' };
+  }
 
   try {
     const entries = collectWeekEntries(memory.stageDir);

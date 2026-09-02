@@ -64,6 +64,10 @@ async function main(): Promise<void> {
     console.log('maintainer disabled (no memory config)');
     return;
   }
+  if (summary.skipped) {
+    console.log(`run #${summary.runId} skipped — another daily run already in progress`);
+    return;
+  }
   console.log(`run #${summary.runId} finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   for (const p of summary.projects) {
     console.log(

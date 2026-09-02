@@ -5,7 +5,7 @@
 import type { OrchestrelConfig } from '../../shared/config';
 import { buildModel, consolidate } from './consolidate';
 import { buildExcerpt } from './excerpt';
-import { finishRun, getDb, insertRun, upsertWatermark } from './db';
+import { finishRun, getDb, insertRun, recentActiveRun, upsertWatermark } from './db';
 import { appendStaging } from './staging';
 import { sendTelegramAlert } from './telegram';
 import { sweepSessions } from './sweep';
@@ -28,6 +28,8 @@ export interface MaintainSummary {
   projects: ProjectSummary[];
   stagingFiles: string[];
   durationMs: number;
+  /** True when the run was skipped because another run of the same type is in progress. */
+  skipped?: boolean;
 }
 
 export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummary | null> {
@@ -37,6 +39,10 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
   const db = getDb();
   const startedAt = new Date().toISOString();
   const runId = insertRun(db, 'daily', startedAt);
+  if (recentActiveRun(db, 'daily', runId)) {
+    finishRun(db, runId, 'skipped', JSON.stringify({ reason: 'another daily run in progress' }));
+    return { runId, projects: [], stagingFiles: [], durationMs: 0, skipped: true };
+  }
   const started = Date.now();
   const stagingFiles = new Set<string>();
   const projects: ProjectSummary[] = [];
@@ -110,6 +116,9 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
 }
 
 export function buildAlertText(summary: MaintainSummary, _stageDir: string): string {
+  if (summary.skipped) {
+    return `Memory maintainer: run skipped — another daily run already in progress.`;
+  }
   const lines = summary.projects.map(
     (p) =>
       `${p.project}: ${p.sessions} sessions, ${p.stores} stores, ${p.updates} updates, ${p.deletes} deletes, ${p.skips} skips${p.errors.length ? `, ${p.errors.length} errors` : ''}`,
