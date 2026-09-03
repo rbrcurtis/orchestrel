@@ -206,6 +206,9 @@ function CardFields({
                 provider: resolved?.provider ?? draft.provider,
                 model: resolved?.model ?? config.defaultModelForNode('', draft.provider),
                 thinkingLevel: resolved?.thinkingLevel ?? draft.thinkingLevel,
+                // New cards inherit the project's summarize default (edit flow only
+                // when the card has no session; project change re-applies defaults)
+                summarizeThreshold: proj ? (proj.defaultSummarizeThreshold ?? 0) : draft.summarizeThreshold,
               });
               onColorChange?.(proj?.color ?? null);
             }}
@@ -799,7 +802,7 @@ export const NewCardDetail = observer(function NewCardDetail({
           provider,
           model,
           thinkingLevel,
-          summarizeThreshold: 0,
+          summarizeThreshold: proj.defaultSummarizeThreshold ?? 0,
         };
       }
     }

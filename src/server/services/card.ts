@@ -105,6 +105,7 @@ class CardService {
         providerID = proj.providerID ?? undefined;
         data.model = data.model ?? proj.defaultModel;
         data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
+        data.summarizeThreshold = data.summarizeThreshold ?? proj.defaultSummarizeThreshold ?? 0;
         data.sourceBranch = data.sourceBranch ?? proj.defaultBranch;
         // Mirror the UI's card-create behavior: when the project defaults to
         // worktrees, derive the branch from the title. Explicit null (user

@@ -111,6 +111,7 @@ function makeSyncPayload(column: Column): SyncPayload {
         defaultSandbox: false,
         defaultModel: 'sonnet',
         defaultThinkingLevel: 'high',
+        defaultSummarizeThreshold: 0,
         providerID: 'anthropic',
         nodeName: 'local',
         color: '#00f0ff',

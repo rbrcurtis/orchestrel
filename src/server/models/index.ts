@@ -118,6 +118,11 @@ export async function initDatabase(): Promise<void> {
     } catch (err) {
       console.log(`[db:migrate] cards.version column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
+    try {
+      await runner.query(`ALTER TABLE projects ADD COLUMN default_summarize_threshold REAL NOT NULL DEFAULT 0`);
+    } catch (err) {
+      console.log(`[db:migrate] projects.default_summarize_threshold column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
     await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
     await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
     await runner.query(`UPDATE cards SET pending_initial_files = '[]' WHERE pending_initial_files IS NULL`);

@@ -19,6 +19,7 @@ interface Project {
   defaultWorktree: boolean;
   defaultModel: string;
   defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
+  defaultSummarizeThreshold: number;
   color: string;
   providerID: string;
   nodeName: string;

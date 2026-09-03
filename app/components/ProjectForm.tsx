@@ -33,6 +33,7 @@ interface Project {
   color: string;
   defaultModel: string;
   defaultThinkingLevel: ThinkingOption;
+  defaultSummarizeThreshold: number;
   providerID: string;
   nodeName: string;
   archived: boolean;
@@ -55,6 +56,9 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [defaultModel, setDefaultModel] = useState(project?.defaultModel ?? 'sonnet');
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<ThinkingOption>(
     project?.defaultThinkingLevel ?? 'high',
+  );
+  const [defaultSummarizeThreshold, setDefaultSummarizeThreshold] = useState(
+    project?.defaultSummarizeThreshold ?? 0,
   );
   const config = useConfigStore();
   const [nodeName, setNodeName] = useState(
@@ -119,6 +123,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
       color,
       defaultModel,
       defaultThinkingLevel,
+      defaultSummarizeThreshold,
       providerID,
       nodeName,
       archived,
@@ -305,6 +310,28 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                     <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="high">High</SelectItem>
                     <SelectItem value="adaptive">Adaptive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Default Summarize — new cards in this project inherit this background-compaction threshold */}
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Summarize</label>
+                <Select value={String(defaultSummarizeThreshold)} onValueChange={(val) => setDefaultSummarizeThreshold(parseFloat(val))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper" sideOffset={4}>
+                    <SelectItem value="0">Off</SelectItem>
+                    <SelectItem value="0.1">10%</SelectItem>
+                    <SelectItem value="0.2">20%</SelectItem>
+                    <SelectItem value="0.3">30%</SelectItem>
+                    <SelectItem value="0.4">40%</SelectItem>
+                    <SelectItem value="0.5">50%</SelectItem>
+                    <SelectItem value="0.6">60%</SelectItem>
+                    <SelectItem value="0.7">70%</SelectItem>
+                    <SelectItem value="0.8">80%</SelectItem>
+                    <SelectItem value="0.9">90%</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

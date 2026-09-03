@@ -199,6 +199,33 @@ describe('CardService', () => {
     expect(noWt.worktreeBranch).toBeNull()
   })
 
+  it('inherits the project summarize default when creating a card, unless an explicit value is given', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const proj = await projectService.createProject({
+      name: 'Summarize project',
+      path: '/tmp/summarize-project',
+      defaultSummarizeThreshold: 0.7,
+    })
+
+    const card = await cardService.createCard({ title: 'Defaulted card', description: 'd', column: 'backlog', projectId: proj.id })
+    expect(card.summarizeThreshold).toBe(0.7)
+
+    const explicit = await cardService.createCard({
+      title: 'Explicit card',
+      description: 'd',
+      column: 'backlog',
+      projectId: proj.id,
+      summarizeThreshold: 0.3,
+    })
+    expect(explicit.summarizeThreshold).toBe(0.3)
+
+    // Projects without a default keep cards off, matching pre-existing behavior
+    const plain = await projectService.createProject({ name: 'Plain project', path: '/tmp/plain-project' })
+    const offCard = await cardService.createCard({ title: 'Off card', description: 'd', column: 'backlog', projectId: plain.id })
+    expect(offCard.summarizeThreshold).toBe(0)
+  })
+
   it('updates the background-compaction threshold on a resident session', async () => {
     const { cardService } = await import('./card')
     mockSetSummarizeThreshold.mockClear()
