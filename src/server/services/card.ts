@@ -186,6 +186,7 @@ class CardService {
       }
     }
 
+    const prevThinkingLevel = card.thinkingLevel;
     Object.assign(card, data);
     card.updatedAt = new Date().toISOString();
     await card.save();
@@ -193,6 +194,17 @@ class CardService {
     if (data.summarizeThreshold !== undefined && card.sessionId) {
       const initState = await import('../init-state');
       initState.getClientByNode(card.nodeName)?.setSummarizeThreshold(card.sessionId, data.summarizeThreshold);
+    }
+
+    // Sync a changed thinking level onto the live session so it applies on the
+    // next turn without restarting orcd. Only fires on an actual change; the
+    // session is re-created with the card's effort anyway if it is not resident.
+    if (data.thinkingLevel !== undefined && data.thinkingLevel !== prevThinkingLevel && card.sessionId) {
+      const initState = await import('../init-state');
+      initState.getClientByNode(card.nodeName)?.setEffort(
+        card.sessionId,
+        data.thinkingLevel === 'off' ? 'disabled' : data.thinkingLevel,
+      );
     }
 
     return card;

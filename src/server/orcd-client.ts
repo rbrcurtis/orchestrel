@@ -279,8 +279,8 @@ export class OrcdClient {
   /**
    * Send a follow-up message to an existing session.
    */
-  message(sessionId: string, prompt: string): void {
-    this.send({ action: 'message', sessionId, prompt });
+  message(sessionId: string, prompt: string, effort?: string): void {
+    this.send({ action: 'message', sessionId, prompt, effort });
   }
 
   /** Cancel the current turn but retain its reusable session runtime. */

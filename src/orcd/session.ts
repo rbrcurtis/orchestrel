@@ -364,6 +364,9 @@ export class OrcdSession {
       } else if (this.piSession) {
         log('session running; queueing overlapping prompt as followUp');
         this.probeLeaf('overlap-prompt:before'); // TEMP diagnostic (interleaved chat)
+        // Sync the current effort before queueing so Pi's per-turn snapshot
+        // (prepared when the queued follow-up starts) picks it up.
+        if (opts.effort) await this.piSession.setEffort(opts.effort);
         await this.piSession.prompt(opts.prompt, { streamingBehavior: 'followUp' });
         this.probeLeaf('overlap-prompt:after'); // TEMP diagnostic
       } else {
@@ -378,6 +381,12 @@ export class OrcdSession {
     this.runError = null;
     try {
       const session = await this.getOrCreatePiSession(opts.effort);
+      // A resume reuses the live Pi runtime, which was created with an earlier
+      // effort — sync its thinking level to the current effort so a mid-session
+      // level change applies from this turn (only a fresh session otherwise
+      // honors it). setEffort is a no-op when the level is unchanged; the
+      // adaptive-vs-budget mode stays fixed at session creation (pi-runtime).
+      if (opts.effort) await session.setEffort(opts.effort);
       if (!this.initEmitted) {
         this.initEmitted = true;
         this.emitSessionInit();

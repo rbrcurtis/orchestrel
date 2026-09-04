@@ -216,7 +216,7 @@ export class OrcdServer {
         existing.subscribe(cb);
       }
       this.send(client, { type: 'session_created', sessionId: existing.id });
-      existing.sendMessage(action.prompt).finally(() => {
+      existing.sendMessage(action.prompt, action.effort).finally(() => {
         console.log(`[orcd] session ${existing.id.slice(0, 8)} follow-up exited (state=${existing.state})`);
       });
       console.log(`[orcd] reusing resident session ${existing.id.slice(0, 8)}`);
@@ -351,7 +351,7 @@ export class OrcdServer {
       return;
     }
 
-    session.sendMessage(action.prompt).finally(() => {
+    session.sendMessage(action.prompt, action.effort).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }

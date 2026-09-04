@@ -7,6 +7,7 @@ import { DEFAULT_SENTINEL } from '../../shared/ws-protocol'
 const mockCancel = vi.fn()
 const mockClose = vi.fn()
 const mockSetSummarizeThreshold = vi.fn()
+const mockSetEffort = vi.fn()
 const mockIsActive = vi.fn(() => true)
 const mockCapabilities = {
   name: 'local',
@@ -34,6 +35,7 @@ const mockOtherNodeClient = {
   cancel: mockCancel,
   close: mockClose,
   setSummarizeThreshold: mockSetSummarizeThreshold,
+  setEffort: mockSetEffort,
   capabilities: { ...mockCapabilities, name: 'other' },
   isConnected: () => true,
   pathValidate: mockOtherPathValidate,
@@ -44,6 +46,7 @@ const mockNodeClient = {
   cancel: mockCancel,
   close: mockClose,
   setSummarizeThreshold: mockSetSummarizeThreshold,
+  setEffort: mockSetEffort,
   capabilities: mockCapabilities,
   isConnected: () => true,
   pathValidate: mockPathValidate,
@@ -237,6 +240,21 @@ describe('CardService', () => {
 
     expect(mockSetSummarizeThreshold).toHaveBeenCalledWith('sess-threshold', 0.7)
     expect((await Card.findOneByOrFail({ id: card.id })).summarizeThreshold).toBe(0.7)
+  })
+
+  it('syncs a changed thinking level onto the resident session, mapping off to disabled', async () => {
+    const { cardService } = await import('./card')
+    mockSetEffort.mockClear()
+    const card = await cardService.createCard({ title: 'Live thinking', description: 'd', column: 'review' })
+    card.sessionId = 'sess-effort'
+    await card.save()
+
+    await cardService.updateCard(card.id, { thinkingLevel: 'adaptive' })
+    expect(mockSetEffort).toHaveBeenCalledWith('sess-effort', 'adaptive')
+
+    await cardService.updateCard(card.id, { thinkingLevel: 'off' })
+    expect(mockSetEffort).toHaveBeenCalledWith('sess-effort', 'disabled')
+    expect((await Card.findOneByOrFail({ id: card.id })).thinkingLevel).toBe('off')
   })
 
   it('keeps mid-turn sessions alive on done/archive, closes idle ones, and only cancels non-terminal moves', async () => {

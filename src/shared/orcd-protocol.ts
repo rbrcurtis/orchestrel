@@ -17,6 +17,10 @@ export interface MessageAction {
   action: 'message';
   sessionId: string;
   prompt: string;
+  // Current card effort, so a mid-session thinking-level change applies to
+  // this turn even when no set_effort preceded it (e.g. orcd restarted and
+  // re-instantiated the session after the card was edited).
+  effort?: string;
   requestId?: string;
 }
 
