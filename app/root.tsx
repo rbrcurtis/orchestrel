@@ -1,4 +1,5 @@
 import { isRouteErrorResponse, Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
+import { configure } from 'mobx';
 import { RootStore } from './stores/root-store';
 import { StoreProvider } from './stores/context';
 import { persistStore } from './lib/store-persist';
@@ -73,6 +74,14 @@ if (import.meta.hot) {
     sendLog('vite:beforeFullReload triggered');
   });
 }
+
+// mobx-react-lite wraps every reaction flush in ReactDOM.unstable_batchedUpdates
+// and mobx flushes synchronously at the end of each action. When a live session
+// streams many events per second, a flush can re-render an observer while that
+// observer is already rendering (store invalidated mid-render); React then aborts
+// with "Maximum update depth exceeded". Defer each flush to a microtask so
+// observer renders never nest inside another observer render.
+configure({ reactionScheduler: (f) => queueMicrotask(f) });
 
 // Module-level singleton (survives HMR) — client only
 let rootStore: RootStore | null = null;
