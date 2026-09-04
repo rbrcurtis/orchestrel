@@ -4,6 +4,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { StoreProvider } from '~/stores/context';
 import { RootStore } from '~/stores/root-store';
 import { CardDetail, NewCardDetail } from './CardDetail';
+import type { ProjectFilter } from '~/lib/project-filter';
 import type { Card, Project } from '../../src/shared/ws-protocol';
 
 function makeProject(id: number, name: string, archived = false): Project {
@@ -60,7 +61,7 @@ function providerConfig() {
   };
 }
 
-function renderNewCardDetail(opts?: { initialProjectId?: number; projectFilter?: Set<number>; projects?: Project[] }) {
+function renderNewCardDetail(opts?: { initialProjectId?: number; projectFilter?: ProjectFilter; projects?: Project[] }) {
   const store = new RootStore();
   store.projects.hydrate(opts?.projects ?? [makeProject(42, 'Orchestrel')]);
   store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);
@@ -169,7 +170,7 @@ describe('NewCardDetail description draft persistence', () => {
   it('hides filtered-out projects from the new card project picker', async () => {
     renderNewCardDetail({
       initialProjectId: undefined,
-      projectFilter: new Set([42]),
+      projectFilter: { exclude: false, ids: new Set([42]) },
       projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Hidden Project')],
     });
 
@@ -185,7 +186,7 @@ describe('NewCardDetail description draft persistence', () => {
   it('keeps the initial pinned project visible even when it is outside the active filter', async () => {
     renderNewCardDetail({
       initialProjectId: 99,
-      projectFilter: new Set([42]),
+      projectFilter: { exclude: false, ids: new Set([42]) },
       projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Pinned Project')],
     });
 
@@ -196,6 +197,22 @@ describe('NewCardDetail description draft persistence', () => {
     await waitFor(() => expect(projectSelect.getAttribute('aria-expanded')).toBe('true'));
     expect(screen.getByRole('option', { name: 'Visible Project' })).not.toBeNull();
     expect(screen.getByRole('option', { name: 'Pinned Project' })).not.toBeNull();
+  });
+
+  it('shows non-excluded projects in the picker under an exclude filter', async () => {
+    renderNewCardDetail({
+      initialProjectId: undefined,
+      projectFilter: { exclude: true, ids: new Set([99]) },
+      projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Excluded Project')],
+    });
+
+    const projectSelect = screen.getAllByRole('combobox')[1];
+    projectSelect.focus();
+    fireEvent.keyDown(projectSelect, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(projectSelect.getAttribute('aria-expanded')).toBe('true'));
+    expect(screen.getByRole('option', { name: 'Visible Project' })).not.toBeNull();
+    expect(screen.queryByRole('option', { name: 'Excluded Project' })).toBeNull();
   });
 });
 

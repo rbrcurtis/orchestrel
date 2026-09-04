@@ -22,6 +22,8 @@ import {
 import { Checkbox } from '~/components/ui/checkbox';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '~/components/ui/collapsible';
 import { cn, copyText } from '~/lib/utils';
+import { isProjectHidden } from '~/lib/project-filter';
+import type { ProjectFilter } from '~/lib/project-filter';
 import { slugify } from '../../src/shared/worktree';
 import { DEFAULT_SENTINEL } from '../../src/shared/ws-protocol';
 import type { Column, Project } from '../../src/shared/ws-protocol';
@@ -753,7 +755,7 @@ type NewCardProps = {
   onClose: () => void;
   onColorChange?: (color: string | null) => void;
   initialProjectId?: number;
-  projectFilter?: Set<number>;
+  projectFilter?: ProjectFilter;
   initialDescription?: string;
   initialFiles?: File[];
   initialFileErrors?: string[];
@@ -877,8 +879,7 @@ export const NewCardDetail = observer(function NewCardDetail({
 
   const visibleProjects = projectStore.active.filter((p) => {
     if (initialProjectId != null && p.id === initialProjectId) return true;
-    if (!projectFilter || projectFilter.size === 0) return true;
-    return projectFilter.has(p.id);
+    return !isProjectHidden(projectFilter, p.id);
   });
 
   return (

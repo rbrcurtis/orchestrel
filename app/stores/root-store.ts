@@ -4,9 +4,8 @@ import { CardStore } from './card-store';
 import { ConfigStore } from './config-store';
 import { ProjectStore } from './project-store';
 import { SessionStore } from './session-store';
+import { isProjectHidden, readProjectFilter } from '../lib/project-filter';
 import type { Card, Column, SyncPayload, User } from '../../src/shared/ws-protocol';
-
-const PROJECT_FILTER_KEY = 'dispatcher-project-filter';
 
 function cardHasVisibleProject(store: RootStore, projectId: number | null): boolean {
   return projectId != null && store.projects.getProject(projectId) != null;
@@ -24,19 +23,6 @@ function applySync(store: RootStore, data: SyncPayload): void {
     store.ws.getSubscribedColumns(),
   );
   store.config.hydrateNodes(data.nodes);
-}
-
-/** Read the persisted project filter. Empty set = no filter (show everything). */
-function readProjectFilter(): Set<number> {
-  if (typeof window === 'undefined') return new Set();
-  try {
-    const raw = localStorage.getItem(PROJECT_FILTER_KEY);
-    if (!raw) return new Set();
-    const ids = JSON.parse(raw) as number[];
-    return new Set(ids);
-  } catch {
-    return new Set();
-  }
 }
 
 export class RootStore {
@@ -135,24 +121,20 @@ export class RootStore {
   private handleCardUpdated(data: Card): void {
     if (!cardHasVisibleProject(this, data.projectId)) return;
 
-    const prev = this.cards.getCard(data.id);
-    if (
+    const prev = this.cards.getCard(data.id);    if (
       data.column === 'review' &&
       prev &&
       prev.column !== 'review' &&
       document.visibilityState !== 'visible' &&
       !document.hasFocus() &&
-      Notification.permission === 'granted'
+      Notification.permission === 'granted' &&
+      !isProjectHidden(readProjectFilter(), data.projectId)
     ) {
-      const filter = readProjectFilter();
-      const filtered = filter.size > 0 && (data.projectId == null || !filter.has(data.projectId));
-      if (!filtered) {
-        const n = new Notification(data.title, { body: 'moved to review' });
-        n.onclick = () => {
-          window.focus();
-          window.dispatchEvent(new CustomEvent('orchestrel:focus-card', { detail: { cardId: data.id } }));
-        };
-      }
+      const n = new Notification(data.title, { body: 'moved to review' });
+      n.onclick = () => {
+        window.focus();
+        window.dispatchEvent(new CustomEvent('orchestrel:focus-card', { detail: { cardId: data.id } }));
+      };
     }
     this.cards.handleUpdated(data);
   }

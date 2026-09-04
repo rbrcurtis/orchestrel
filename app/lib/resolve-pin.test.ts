@@ -3,6 +3,9 @@ import { resolvePinnedCards } from './resolve-pin';
 import type { SlotState } from './resolve-pin';
 import type { Card } from '../../src/shared/ws-protocol';
 
+const includeFilter = (ids: number[]) => ({ exclude: false, ids: new Set(ids) });
+const excludeFilter = (ids: number[]) => ({ exclude: true, ids: new Set(ids) });
+
 function makeCard(overrides: Partial<Card> & { id: number }): Card {
   return {
     title: `Card ${overrides.id}`,
@@ -448,7 +451,7 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     // Filter to project 20 only — the "all" slot should skip project 10 card
-    const result = resolvePinnedCards(slots, cards, new Map(), new Set([20]));
+    const result = resolvePinnedCards(slots, cards, new Map(), includeFilter([20]));
     expect(result.get(1)).toBe(2);
   });
 
@@ -461,7 +464,7 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
-    const result = resolvePinnedCards(slots, cards, new Map(), new Set());
+    const result = resolvePinnedCards(slots, cards, new Map(), includeFilter([]));
     expect(result.get(1)).toBe(1); // empty filter = all projects, oldest first
   });
 
@@ -476,7 +479,7 @@ describe('resolvePinnedCards', () => {
     ];
     const prev = new Map([[1, 1]]); // slot 1 was showing card 1 (project 10)
     // Filter to project 20 — card 1 is no longer eligible, card 2 should take over
-    const result = resolvePinnedCards(slots, cards, prev, new Set([20]));
+    const result = resolvePinnedCards(slots, cards, prev, includeFilter([20]));
     expect(result.get(1)).toBe(2);
   });
 
@@ -490,7 +493,7 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     const prev = new Map([[1, 2]]); // slot 1 was showing card 2 (project 20)
-    const result = resolvePinnedCards(slots, cards, prev, new Set([20]));
+    const result = resolvePinnedCards(slots, cards, prev, includeFilter([20]));
     expect(result.get(1)).toBe(2); // sticky — stays because still in filter
   });
 
@@ -589,7 +592,7 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
     ];
-    const result = resolvePinnedCards(slots, cards, new Map(), new Set([20]));
+    const result = resolvePinnedCards(slots, cards, new Map(), includeFilter([20]));
     expect(result.get(0)).toBe(2); // only project 20 is in the filter
   });
 
@@ -598,7 +601,7 @@ describe('resolvePinnedCards', () => {
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
     ];
-    const result = resolvePinnedCards(slots, cards, new Map(), new Set());
+    const result = resolvePinnedCards(slots, cards, new Map(), includeFilter([]));
     expect(result.get(0)).toBe(1); // empty filter = all projects
   });
 
@@ -612,9 +615,48 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
     ];
     // Filter to project 20 only — but real pin to project 10 should still resolve
-    const result = resolvePinnedCards(slots, cards, new Map(), new Set([20]));
+    const result = resolvePinnedCards(slots, cards, new Map(), includeFilter([20]));
     expect(result.get(1)).toBe(1); // real pin unaffected by filter
     expect(result.get(0)).toBe(2); // hotseat respects filter
+  });
+
+  it('"all" pin honors an exclude filter', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    // Exclude project 10 — the "all" slot should skip its card
+    const result = resolvePinnedCards(slots, cards, new Map(), excludeFilter([10]));
+    expect(result.get(1)).toBe(2);
+  });
+
+  it('hotseat honors an exclude filter', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards, new Map(), excludeFilter([10]));
+    expect(result.get(0)).toBe(2); // project 10 is excluded
+  });
+
+  it('"all" pin releases sticky card when its project becomes excluded', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const prev = new Map([[1, 1]]); // slot 1 was showing card 1 (project 10)
+    // Exclude project 10 — card 1 is no longer eligible, card 2 should take over
+    const result = resolvePinnedCards(slots, cards, prev, excludeFilter([10]));
+    expect(result.get(1)).toBe(2);
   });
 
   it('hotseat has sticky behavior', () => {

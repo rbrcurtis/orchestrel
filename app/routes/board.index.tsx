@@ -26,12 +26,13 @@ import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useCardStore, useProjectStore } from '~/stores/context';
 import { StatusRow, ALL_COLUMNS, type ColumnId } from '~/components/StatusRow';
 import { CardOverlay } from '~/components/Card';
+import { isProjectHidden, projectFilterActive, type ProjectFilter } from '~/lib/project-filter';
 import type { Card } from '../../src/shared/ws-protocol';
 import type { SlotState } from '~/lib/resolve-pin';
 
 type BoardContext = {
   search: string;
-  projectFilter: Set<number>;
+  projectFilter: ProjectFilter;
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
@@ -336,13 +337,13 @@ const ActiveBoard = observer(function ActiveBoard() {
 
   const filteredColumns = useMemo(() => {
     const hasSearch = search.length > 0;
-    const hasProject = projectFilter.size > 0;
+    const hasProject = projectFilterActive(projectFilter);
     if (!hasSearch && !hasProject) return columns;
     const q = search.toLowerCase();
     const result = {} as ColumnCards;
     for (const col of ALL_COLUMNS) {
       result[col] = columns[col].filter((c) => {
-        if (hasProject && !projectFilter.has(c.projectId ?? -1)) return false;
+        if (hasProject && isProjectHidden(projectFilter, c.projectId)) return false;
         if (
           hasSearch &&
           !c.title.toLowerCase().includes(q) &&
@@ -360,7 +361,7 @@ const ActiveBoard = observer(function ActiveBoard() {
     if (search.length === 0) return [];
     const q = search.toLowerCase();
     return archiveCards.filter((c) => {
-      if (projectFilter.size > 0 && !projectFilter.has(c.projectId ?? -1)) return false;
+      if (isProjectHidden(projectFilter, c.projectId)) return false;
       return c.title.toLowerCase().includes(q) || Boolean(c.description?.toLowerCase().includes(q));
     });
   }, [archiveCards, search, projectFilter]);
