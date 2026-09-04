@@ -8,6 +8,7 @@ const mockCancel = vi.fn()
 const mockClose = vi.fn()
 const mockSetSummarizeThreshold = vi.fn()
 const mockSetEffort = vi.fn()
+const mockSetModel = vi.fn()
 const mockIsActive = vi.fn(() => true)
 const mockCapabilities = {
   name: 'local',
@@ -36,6 +37,7 @@ const mockOtherNodeClient = {
   close: mockClose,
   setSummarizeThreshold: mockSetSummarizeThreshold,
   setEffort: mockSetEffort,
+  setModel: mockSetModel,
   capabilities: { ...mockCapabilities, name: 'other' },
   isConnected: () => true,
   pathValidate: mockOtherPathValidate,
@@ -47,6 +49,7 @@ const mockNodeClient = {
   close: mockClose,
   setSummarizeThreshold: mockSetSummarizeThreshold,
   setEffort: mockSetEffort,
+  setModel: mockSetModel,
   capabilities: mockCapabilities,
   isConnected: () => true,
   pathValidate: mockPathValidate,
@@ -227,6 +230,19 @@ describe('CardService', () => {
     const plain = await projectService.createProject({ name: 'Plain project', path: '/tmp/plain-project' })
     const offCard = await cardService.createCard({ title: 'Off card', description: 'd', column: 'backlog', projectId: plain.id })
     expect(offCard.summarizeThreshold).toBe(0)
+  })
+
+  it('pushes a provider/model change onto the resident session', async () => {
+    const { cardService } = await import('./card')
+    mockSetModel.mockClear()
+    const card = await cardService.createCard({ title: 'Live model', description: 'd', column: 'review' })
+    card.sessionId = 'sess-model'
+    await card.save()
+
+    await cardService.updateCard(card.id, { model: 'opus' })
+
+    expect(mockSetModel).toHaveBeenCalledWith('sess-model', 'anthropic', 'opus')
+    expect((await Card.findOneByOrFail({ id: card.id })).model).toBe('opus')
   })
 
   it('updates the background-compaction threshold on a resident session', async () => {

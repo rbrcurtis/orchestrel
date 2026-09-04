@@ -37,6 +37,7 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
     applyBgCompaction: vi.fn(() => undefined),
     latestEntryIsCompaction: vi.fn(() => false),
     setEffort: vi.fn(async () => undefined),
+    setModel: vi.fn(async () => undefined),
     getMessages: vi.fn(() => []),
     debugLeafState: vi.fn(() => ({
       tag: 'test',

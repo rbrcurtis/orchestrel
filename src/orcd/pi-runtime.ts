@@ -15,23 +15,27 @@ import type { ProviderAliases } from '../shared/subagent-policy';
 const ANONYMOUS_API_KEY = 'anonymous';
 const DISPLAY_PROMPT_ENTRY = 'orchestrel-display-prompt';
 
+type RuntimeProvider = {
+  type: ProviderType;
+  label?: string;
+  baseUrl: string;
+  apiKey: string;
+  authToken?: string;
+  oauth?: string;
+  models: Record<string, ModelDef>;
+  aliases?: ProviderAliases;
+  agents?: Record<string, string>;
+};
+
 export interface CreatePiRuntimeSessionOpts {
   cwd: string;
   providerId: string;
   modelId: string;
   sessionId?: string;
   effort?: string;
-  provider?: {
-    type: ProviderType;
-    label?: string;
-    baseUrl: string;
-    apiKey: string;
-    authToken?: string;
-    oauth?: string;
-    models: Record<string, ModelDef>;
-    aliases?: ProviderAliases;
-    agents?: Record<string, string>;
-  };
+  provider?: RuntimeProvider;
+  /** All orcd providers, so a live setModel can register the target provider in this session's registry. */
+  providers?: Record<string, RuntimeProvider>;
 }
 
 export interface PiRuntimeSession {
@@ -48,6 +52,8 @@ export interface PiRuntimeSession {
   /** True when the newest entry on the branch is already a compaction. */
   latestEntryIsCompaction(): boolean;
   setEffort(effort: string): Promise<void>;
+  /** Switch provider/model on the live Pi session (same conversation; Pi appends a model_change entry). */
+  setModel(provider: string, model: string): Promise<void>;
   getMessages(): unknown[];
   /**
    * Temporary diagnostic probe for the "chat lost when a background subagent
@@ -175,6 +181,18 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   if (opts.provider) await setRuntimeApiKey(modelRuntime, providerId, opts.provider.apiKey || opts.provider.authToken);
   if (opts.provider && providerId === opts.providerId) {
     registerOrchestrelProvider(modelRegistry, opts.providerId, opts.provider, isAdaptiveEffort(opts.effort));
+  }
+  const registered = new Set<string>();
+  if (opts.provider && providerId === opts.providerId) registered.add(opts.providerId);
+  const adaptive = isAdaptiveEffort(opts.effort);
+  // Live model switches may target another provider in orcd.yaml. Pi's model
+  // registry and auth store are per-session, so register + key the target
+  // provider on first use (mirrors the initial registration above).
+  async function ensureProvider(pId: string, cfg: RuntimeProvider): Promise<void> {
+    if (registered.has(pId)) return;
+    await setRuntimeApiKey(modelRuntime, pId, cfg.apiKey || cfg.authToken);
+    registerOrchestrelProvider(modelRegistry, pId, cfg, adaptive);
+    registered.add(pId);
   }
   const modelId = opts.provider?.models[opts.modelId]?.modelID ?? opts.modelId;
   const model = modelRegistry.find(providerId, modelId);
@@ -330,6 +348,29 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       // switch modes.
       if (!canSetThinkingLevel(session)) return;
       session.setThinkingLevel(effortToThinkingLevel(effort));
+    },
+
+    async setModel(provider, model) {
+      const cfg = opts.providers?.[provider];
+      if (!cfg) throw new Error(`setModel: provider not in orcd config: ${provider}`);
+      // Live switching needs an explicit anthropic-compatible endpoint with its
+      // own credentials. Built-in/OAuth providers (e.g. claude-max) authenticate
+      // through extensions registered at session start and cannot be re-keyed
+      // here — such a switch must start a fresh session instead.
+      const live = cfg.type === 'anthropic' && !cfg.oauth && !!(cfg.baseUrl || cfg.apiKey || cfg.authToken);
+      if (!live) {
+        throw new Error(`setModel: provider ${provider} does not support live switching (needs an anthropic-compatible baseUrl/apiKey and no oauth)`);
+      }
+      await ensureProvider(provider, cfg);
+      const targetModelId = cfg.models[model]?.modelID ?? model;
+      const next = modelRegistry.find(provider, targetModelId);
+      if (!next) throw new Error(`setModel: model not found: ${provider}/${model}`);
+      const agentSession = session as unknown as { setModel(m: Model<Api>): Promise<void> };
+      if (typeof agentSession.setModel !== 'function') {
+        throw new Error('setModel: Pi runtime does not support live model switching');
+      }
+      await agentSession.setModel(next as Model<Api>);
+      console.log(`[orcd] session model → ${provider}/${model}`);
     },
 
     getMessages() {

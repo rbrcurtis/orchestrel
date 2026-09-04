@@ -129,7 +129,7 @@ describe('OrcdServer session lifecycle', () => {
     });
 
     expect(server.store.get(session.id)).toBe(session);
-    expect(sendSpy).toHaveBeenCalledWith('continue');
+    expect(sendSpy).toHaveBeenCalledWith('continue', undefined);
   });
 
   it('updates the summarize threshold on a resident session', () => {
@@ -150,6 +150,55 @@ describe('OrcdServer session lifecycle', () => {
     });
 
     expect(session.summarizeThreshold).toBe(0.7);
+  });
+
+  it('switches the provider/model of a resident session via set_model', () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'model-switch-session',
+    });
+    server.store.add(session);
+
+    server['handleAction'](client as never, {
+      action: 'set_model',
+      sessionId: session.id,
+      provider: 'test',
+      model: 'other-model',
+    });
+
+    expect(session.model).toBe('other-model');
+    expect(session.provider).toBe('test');
+  });
+
+  it('self-heals a stale runtime when a resumed create carries a different model', async () => {
+    const server = createServer();
+    const client = createClient();
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test',
+      sessionId: 'resident-model-change',
+    });
+    server.store.add(session);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    server['handleAction'](client as never, {
+      action: 'create',
+      prompt: 'continue',
+      cwd: '/tmp',
+      provider: 'test',
+      model: 'other-model',
+      sessionId: session.id,
+    });
+
+    // The switch lands (fields update synchronously when no runtime exists),
+    // then the prompt starts after it resolves.
+    expect(session.model).toBe('other-model');
+    await vi.waitFor(() => expect(sendSpy).toHaveBeenCalledWith('continue', undefined));
   });
 
   it('removes and disposes a closed resident session', () => {

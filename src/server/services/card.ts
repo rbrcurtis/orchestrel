@@ -187,6 +187,8 @@ class CardService {
     }
 
     const prevThinkingLevel = card.thinkingLevel;
+    const prevProvider = card.provider;
+    const prevModel = card.model;
     Object.assign(card, data);
     card.updatedAt = new Date().toISOString();
     await card.save();
@@ -194,6 +196,14 @@ class CardService {
     if (data.summarizeThreshold !== undefined && card.sessionId) {
       const initState = await import('../init-state');
       initState.getClientByNode(card.nodeName)?.setSummarizeThreshold(card.sessionId, data.summarizeThreshold);
+    }
+
+    // Sync a changed provider/model onto the live session so it takes effect on
+    // the resident Pi runtime (same conversation) instead of only on the next
+    // fresh session. orcd defers to the next turn if one is streaming.
+    if (card.sessionId && (card.provider !== prevProvider || card.model !== prevModel)) {
+      const initState = await import('../init-state');
+      initState.getClientByNode(card.nodeName)?.setModel(card.sessionId, card.provider, card.model);
     }
 
     // Sync a changed thinking level onto the live session so it applies on the

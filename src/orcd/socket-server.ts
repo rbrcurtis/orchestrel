@@ -131,6 +131,9 @@ export class OrcdServer {
       case 'set_summarize_threshold':
         this.handleSetSummarizeThreshold(action);
         break;
+      case 'set_model':
+        this.handleSetModel(action);
+        break;
       case 'subscribe':
         this.handleSubscribe(client, action);
         break;
@@ -216,9 +219,30 @@ export class OrcdServer {
         existing.subscribe(cb);
       }
       this.send(client, { type: 'session_created', sessionId: existing.id });
-      existing.sendMessage(action.prompt, action.effort).finally(() => {
-        console.log(`[orcd] session ${existing.id.slice(0, 8)} follow-up exited (state=${existing.state})`);
-      });
+      const runPrompt = () =>
+        existing.sendMessage(action.prompt, action.effort).finally(() => {
+          console.log(`[orcd] session ${existing.id.slice(0, 8)} follow-up exited (state=${existing.state})`);
+        });
+      // Self-heal a stale runtime: a card's provider/model may have changed
+      // while this session stayed resident (the UI can't hot-swap it alone).
+      // Switch before prompting so the turn runs the newly selected model;
+      // if the switch is unsupported, log and continue on the old model.
+      if (existing.model !== action.model || existing.provider !== action.provider) {
+        const cfg = this.providers[action.provider];
+        if (cfg) {
+          existing
+            .setModel(action.provider, action.model, cfg)
+            .then(runPrompt)
+            .catch((err: unknown) => {
+              console.error(`[orcd:${existing.id.slice(0, 8)}] set_model on resume failed:`, err instanceof Error ? err.message : String(err));
+              runPrompt();
+            });
+          console.log(`[orcd:${existing.id.slice(0, 8)}] reusing resident session with model switch`);
+          return;
+        }
+        console.error(`[orcd:${existing.id.slice(0, 8)}] set_model on resume: unknown provider ${action.provider}`);
+      }
+      runPrompt();
       console.log(`[orcd] reusing resident session ${existing.id.slice(0, 8)}`);
       return;
     }
@@ -235,6 +259,7 @@ export class OrcdServer {
       model: action.model,
       provider: action.provider,
       providerConfig: providerCfg,
+      providers: this.providers,
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
@@ -289,6 +314,7 @@ export class OrcdServer {
       model: action.model,
       provider: action.provider,
       providerConfig: providerCfg,
+      providers: this.providers,
       sessionId: action.sessionId,
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
@@ -368,6 +394,22 @@ export class OrcdServer {
     session?.setSummarizeThreshold(action.summarizeThreshold);
   }
 
+  private handleSetModel(action: OrcdAction & { action: 'set_model' }): void {
+    const session = this.store.get(action.sessionId);
+    if (!session) {
+      console.warn(`[orcd:${action.sessionId.slice(0, 8)}] set_model: session not resident, ignoring`);
+      return;
+    }
+    const cfg = this.providers[action.provider];
+    if (!cfg) {
+      console.error(`[orcd:${session.id.slice(0, 8)}] set_model: unknown provider ${action.provider}`);
+      return;
+    }
+    session.setModel(action.provider, action.model, cfg).catch((err: unknown) => {
+      console.error(`[orcd:${session.id.slice(0, 8)}] setModel error:`, err instanceof Error ? err.message : String(err));
+    });
+  }
+
   private handleSubscribe(client: ClientState, action: OrcdAction & { action: 'subscribe' }): void {
     const session = this.store.get(action.sessionId);
     if (!session) {
@@ -428,6 +470,7 @@ export class OrcdServer {
         model: action.model,
         provider: action.provider,
         providerConfig: this.providers[action.provider],
+        providers: this.providers,
         sessionId: action.sessionId,
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,

@@ -321,6 +321,11 @@ export class OrcdClient {
     this.send({ action: 'set_summarize_threshold', sessionId, summarizeThreshold });
   }
 
+  /** Switch the provider/model a resident session runs (same conversation). */
+  setModel(sessionId: string, provider: string, model: string): void {
+    this.send({ action: 'set_model', sessionId, provider, model });
+  }
+
   /**
    * Compact a session. `mode: 'full'` runs Pi's native blocking compaction
    * (the chat `/compact` command and the UI context wheel); omitting it (or

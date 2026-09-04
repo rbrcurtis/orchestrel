@@ -53,6 +53,14 @@ export interface SetSummarizeThresholdAction {
   requestId?: string;
 }
 
+export interface SetModelAction {
+  action: 'set_model';
+  sessionId: string;
+  provider: string;
+  model: string;
+  requestId?: string;
+}
+
 export interface SubscribeAction {
   action: 'subscribe';
   sessionId: string;
@@ -157,6 +165,7 @@ export type OrcdAction =
   | WarmAction
   | SetEffortAction
   | SetSummarizeThresholdAction
+  | SetModelAction
   | SubscribeAction
   | UnsubscribeAction
   | ListAction

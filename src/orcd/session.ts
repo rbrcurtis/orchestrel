@@ -27,11 +27,15 @@ export class OrcdSession {
   readonly id: string;
   state: SessionState = 'running';
   readonly cwd: string;
-  readonly model: string;
-  readonly provider: string;
+  model: string;
+  provider: string;
   readonly contextWindow: number | undefined;
   summarizeThreshold: number;
-  readonly providerConfig: ProviderConfig | undefined;
+  providerConfig: ProviderConfig | undefined;
+  /** All orcd providers, so a live model switch can register the target provider's Pi runtime. */
+  readonly providers: Record<string, ProviderConfig> | undefined;
+  /** A model switch requested mid-turn; applied at the next run start (Pi cannot switch mid-stream). */
+  private pendingModel: { provider: string; model: string; providerConfig: ProviderConfig } | null = null;
   readonly buffer: RingBuffer<unknown>;
 
   /** Last known context token count (updated after each result) */
@@ -82,6 +86,7 @@ export class OrcdSession {
     contextWindow?: number;
     summarizeThreshold?: number;
     providerConfig?: ProviderConfig;
+    providers?: Record<string, ProviderConfig>;
     onFork?: (oldId: string, newId: string) => void;
     asyncTaskPollMsForTesting?: number;
     scheduledJobPollMsForTesting?: number;
@@ -94,6 +99,7 @@ export class OrcdSession {
     this.contextWindow = opts.contextWindow;
     this.summarizeThreshold = opts.summarizeThreshold ?? 0;
     this.providerConfig = opts.providerConfig;
+    this.providers = opts.providers;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
     this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
@@ -207,6 +213,7 @@ export class OrcdSession {
       sessionId: this.id,
       effort,
       provider: this.providerConfig,
+      providers: this.providers,
     });
     this.piSession = session;
 
@@ -387,6 +394,7 @@ export class OrcdSession {
       // honors it). setEffort is a no-op when the level is unchanged; the
       // adaptive-vs-budget mode stays fixed at session creation (pi-runtime).
       if (opts.effort) await session.setEffort(opts.effort);
+      await this.applyPendingModel(session);
       if (!this.initEmitted) {
         this.initEmitted = true;
         this.emitSessionInit();
@@ -548,6 +556,48 @@ export class OrcdSession {
     }
     await this.piSession.setEffort(effort);
     console.log(`[orcd:${this.id.slice(0, 8)}] effort → ${effort}`);
+  }
+
+  /**
+   * Switch the provider/model a resident session runs. Applied immediately when
+   * the session is idle or has no live runtime yet; deferred to the next run
+   * start when a turn is streaming, because Pi writes the model_change into the
+   * session tree and must not do that mid-turn. Same-conversation switch: Pi
+   * appends a model_change entry and keeps the transcript.
+   */
+  async setModel(provider: string, model: string, providerConfig: ProviderConfig): Promise<void> {
+    if (provider === this.provider && model === this.model) return;
+    const old = `${this.provider}/${this.model}`;
+    if (!this.piSession) {
+      this.provider = provider;
+      this.model = model;
+      this.providerConfig = providerConfig;
+      console.log(`[orcd:${this.id.slice(0, 8)}] model ${old} → ${provider}/${model} (no runtime yet)`);
+      return;
+    }
+    if (this.running) {
+      this.pendingModel = { provider, model, providerConfig };
+      console.log(`[orcd:${this.id.slice(0, 8)}] model ${old} → ${provider}/${model} deferred to run end`);
+      return;
+    }
+    await this.piSession.setModel(provider, model);
+    this.provider = provider;
+    this.model = model;
+    this.providerConfig = providerConfig;
+    console.log(`[orcd:${this.id.slice(0, 8)}] model ${old} → ${provider}/${model}`);
+  }
+
+  /** Apply a deferred model switch at the start of a fresh run. */
+  private async applyPendingModel(session: PiRuntimeSession): Promise<void> {
+    const pending = this.pendingModel;
+    if (!pending) return;
+    this.pendingModel = null;
+    const old = `${this.provider}/${this.model}`;
+    await session.setModel(pending.provider, pending.model);
+    this.provider = pending.provider;
+    this.model = pending.model;
+    this.providerConfig = pending.providerConfig;
+    console.log(`[orcd:${this.id.slice(0, 8)}] model ${old} → ${pending.provider}/${pending.model} (deferred apply)`);
   }
 
   setSummarizeThreshold(threshold: number): void {
