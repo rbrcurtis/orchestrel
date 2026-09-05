@@ -1,51 +1,63 @@
 // app/lib/project-filter.ts
 //
-// Board project filter: "show only these projects" (include) or "show
-// everything except these" (exclude). An empty `ids` set in either mode means
-// no filtering. Exclude mode is reached by clicking the sole included project
-// a second time (see toggleProjectFilter).
+// Board project filter. Include and exclude sets are independent and coexist:
+// cards are hidden when their project is excluded OR when an include filter is
+// active and their project is not in it. A card of project B is therefore
+// visible with project A excluded and B included ("!A AND B" → only B).
+// An empty include set means "no include restriction"; both sets empty = no
+// filter.
 
 export type ProjectFilter = {
-  /** true = hide the listed projects; false = show only the listed projects. */
-  exclude: boolean;
-  /** Project ids the filter applies to. Empty set = show everything. */
-  ids: Set<number>;
+  /** Projects shown exclusively (empty = all shown, minus exclusions). */
+  include: Set<number>;
+  /** Projects hidden unconditionally. */
+  exclude: Set<number>;
 };
 
 const FILTER_KEY = 'dispatcher-project-filter';
 
 export function makeProjectFilter(): ProjectFilter {
-  return { exclude: false, ids: new Set<number>() };
+  return { include: new Set<number>(), exclude: new Set<number>() };
 }
 
 export function projectFilterActive(f: ProjectFilter | null | undefined): boolean {
-  return !!f && f.ids.size > 0;
+  return !!f && (f.include.size > 0 || f.exclude.size > 0);
 }
 
 /** True when a card in the given project must be hidden by the filter. */
 export function isProjectHidden(f: ProjectFilter | null | undefined, projectId: number | null | undefined): boolean {
-  if (!f || f.ids.size === 0) return false;
-  // Cards without a project: hidden by include filters (they are in no listed
-  // project), visible under exclude filters (they are in no hidden project).
-  if (projectId == null) return !f.exclude;
-  const listed = f.ids.has(projectId);
-  return f.exclude ? listed : !listed;
+  if (!f || (f.include.size === 0 && f.exclude.size === 0)) return false;
+  // Cards without a project: hidden while an include filter is active (they are
+  // in no listed project), never hidden by exclusions alone.
+  if (projectId == null) return f.include.size > 0;
+  return f.exclude.has(projectId) || (f.include.size > 0 && !f.include.has(projectId));
 }
 
-/** Parse persisted JSON (legacy bare arrays mean include mode). */
+/** Parse persisted JSON (legacy shapes migrate: bare arrays and the old
+ * {exclude: boolean, ids} object both become include/exclude sets). */
 export function parseProjectFilter(raw: string | null): ProjectFilter {
   if (!raw) return makeProjectFilter();
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) {
-      return { exclude: false, ids: new Set(parsed.filter((n): n is number => typeof n === 'number')) };
+      // Original format: bare id array = include-only filter.
+      return { include: new Set(parsed.filter((n): n is number => typeof n === 'number')), exclude: new Set() };
     }
     if (parsed && typeof parsed === 'object') {
-      const { exclude, ids } = parsed as { exclude?: unknown; ids?: unknown };
-      return {
-        exclude: exclude === true,
-        ids: new Set(Array.isArray(ids) ? ids.filter((n): n is number => typeof n === 'number') : []),
-      };
+      const o = parsed as Record<string, unknown>;
+      if ('include' in o && Array.isArray(o.include) && Array.isArray(o.exclude)) {
+        return {
+          include: new Set(o.include.filter((n): n is number => typeof n === 'number')),
+          exclude: new Set(o.exclude.filter((n): n is number => typeof n === 'number')),
+        };
+      }
+      if ('ids' in o && Array.isArray(o.ids)) {
+        // Previous format: {exclude: boolean, ids: number[]}.
+        const ids = new Set(o.ids.filter((n): n is number => typeof n === 'number'));
+        return o.exclude === true
+          ? { include: new Set(), exclude: ids }
+          : { include: ids, exclude: new Set() };
+      }
     }
   } catch {
     // fall through to empty filter
@@ -54,7 +66,7 @@ export function parseProjectFilter(raw: string | null): ProjectFilter {
 }
 
 export function serializeProjectFilter(f: ProjectFilter): string {
-  return JSON.stringify({ exclude: f.exclude, ids: [...f.ids] });
+  return JSON.stringify({ include: [...f.include], exclude: [...f.exclude] });
 }
 
 export function readProjectFilter(): ProjectFilter {
@@ -68,26 +80,24 @@ export function writeProjectFilter(f: ProjectFilter): void {
 }
 
 /**
- * Toggle a project row. Clicks follow a tri-state cycle per single project:
- *   click 1 (nothing selected) → show only this project
- *   click 2 (sole included project) → show everything except it
- *   click 3 (sole excluded project) → show everything
- * With multiple projects selected, each click toggles membership in the active
- * set (include mode accumulates; exclude mode accumulates the hidden list).
+ * Toggle a project row. Each project cycles independently, unaffected by the
+ * state of other projects:
+ *   click 1 (none) → included (show only the included projects)
+ *   click 2 (included) → excluded (never shown)
+ *   click 3 (excluded) → none
+ * So excluding one project and then clicking another leaves the first
+ * exclusion in place and adds the second as included — the two coexist.
  */
 export function toggleProjectFilter(prev: ProjectFilter, projectId: number): ProjectFilter {
-  const ids = new Set(prev.ids);
-  if (ids.size === 0) {
-    return { exclude: false, ids: new Set([projectId]) };
+  const include = new Set(prev.include);
+  const exclude = new Set(prev.exclude);
+  if (include.has(projectId)) {
+    include.delete(projectId);
+    exclude.add(projectId);
+  } else if (exclude.has(projectId)) {
+    exclude.delete(projectId);
+  } else {
+    include.add(projectId);
   }
-  if (ids.has(projectId)) {
-    if (ids.size > 1) {
-      ids.delete(projectId);
-      return { exclude: prev.exclude, ids };
-    }
-    // Sole listed project clicked again: include → exclude, exclude → clear.
-    return prev.exclude ? makeProjectFilter() : { exclude: true, ids };
-  }
-  ids.add(projectId);
-  return { exclude: prev.exclude, ids };
+  return { include, exclude };
 }

@@ -3,21 +3,20 @@ import { observer } from 'mobx-react-lite';
 import { useSlots } from '~/lib/use-slots';
 import type { SlotState, PinTarget } from '~/lib/resolve-pin';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router';
-import { Settings, Minus, Plus, Filter, X, Check } from 'lucide-react';
-import { Checkbox as CheckboxPrimitive } from 'radix-ui';
+import { Settings, Minus, Plus, Filter, X } from 'lucide-react';
 import { ProjectPinSelector } from '~/components/ProjectPinSelector';
 import { ScrollArea } from '~/components/ui/scroll-area';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover';
+import { Checkbox } from '~/components/ui/checkbox';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
 import { CardDetail, NewCardDetail } from '~/components/CardDetail';
 import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
 import { dispatchTypeFocus, isTypeFocusKey, isTypingContext } from '~/lib/type-focus';
-import { cn } from '~/lib/utils';
 import {
   makeProjectFilter,
   projectFilterActive,
@@ -369,6 +368,8 @@ const BoardLayout = observer(function BoardLayout() {
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;
   const filterActive = projectFilterActive(projectFilter);
   const filterProjects = section === 'archive' ? projectStore.all : projectStore.active;
+  const includeN = projectFilter.include.size;
+  const excludeN = projectFilter.exclude.size;
 
   return (
     <div className="h-dvh overflow-hidden flex flex-col bg-background">
@@ -409,30 +410,30 @@ const BoardLayout = observer(function BoardLayout() {
                   size="icon"
                   className={`shrink-0 relative ${filterActive ? 'text-foreground' : 'text-muted-foreground'}`}
                   title={
-                    filterActive
-                      ? projectFilter.exclude
-                        ? `Showing all except ${projectFilter.ids.size} project${projectFilter.ids.size === 1 ? '' : 's'}`
-                        : `Filtering to ${projectFilter.ids.size} project${projectFilter.ids.size === 1 ? '' : 's'}`
-                      : 'Filter by project'
+                    !filterActive
+                      ? 'Filter by project'
+                      : excludeN > 0 && includeN > 0
+                        ? `Only ${includeN} project${includeN === 1 ? '' : 's'}, excluding ${excludeN}`
+                        : excludeN > 0
+                          ? `Showing all except ${excludeN} project${excludeN === 1 ? '' : 's'}`
+                          : `Filtering to ${includeN} project${includeN === 1 ? '' : 's'}`
                   }
                 >
                   <Filter className="size-4" />
                   {filterActive && (
                     <span
-                      className={`absolute -top-1 -right-1 flex size-4 min-w-4 items-center justify-center rounded-full px-0.5 text-[10px] leading-none font-semibold tabular-nums ring-2 ring-background ${
-                        projectFilter.exclude
-                          ? 'bg-destructive text-destructive-foreground'
-                          : 'bg-primary text-primary-foreground'
+                      className={`absolute -top-0.5 -right-0.5 size-4 rounded-full text-[10px] font-medium flex items-center justify-center ${
+                        excludeN > 0 ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'
                       }`}
                     >
-                      {projectFilter.ids.size}
+                      {includeN + excludeN}
                     </span>
                   )}
                 </Button>
               </PopoverTrigger>
               <PopoverContent
                 align="start"
-                className="w-64 p-1.5"
+                className="w-52 p-2"
                 // The board moves focus to a card prompt when the filter changes the
                 // presented cards (ferris-wheel focus). Radix non-modal popovers close
                 // on any focus leaving their tree, so without this the dropdown
@@ -440,84 +441,55 @@ const BoardLayout = observer(function BoardLayout() {
                 // still close it — only focus changes are ignored.
                 onFocusOutside={(e) => e.preventDefault()}
               >
-                <div className="flex items-center justify-between gap-2 px-2 py-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Projects
-                  </span>
-                  {filterActive && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Clear project filter"
-                      title="Clear filter"
-                      className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => setProjectFilter(makeProjectFilter())}
-                    >
-                      <X className="size-3.5" />
-                    </Button>
-                  )}
+                <div className="flex items-center justify-between px-2 pb-2">
+                  <span className="text-xs font-medium text-muted-foreground">Projects</span>
+                  {/* Always rendered so the Clear button appearing never changes the
+                      header height and shifts the project list down. */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    tabIndex={filterActive ? undefined : -1}
+                    aria-hidden={!filterActive}
+                    className={`h-auto py-0.5 px-1.5 text-xs text-muted-foreground ${filterActive ? '' : 'invisible'}`}
+                    onClick={() => setProjectFilter(makeProjectFilter())}
+                  >
+                    Clear
+                  </Button>
                 </div>
-
-                <ScrollArea
-                  className="pr-0.5"
-                  style={{
-                    height:
-                      Math.min(filterProjects.length, 8) * 32 + Math.max(0, Math.min(filterProjects.length, 8) - 1) * 2,
-                  }}
-                >
-                  <div className="flex flex-col gap-0.5">
-                    {filterProjects.map((p) => {
-                      const inFilter = projectFilter.ids.has(p.id);
-                      const excluded = projectFilter.exclude && inFilter;
-                      return (
-                        <label
-                          key={p.id}
-                          className={cn(
-                            'flex h-8 cursor-pointer select-none items-center gap-2.5 rounded-md px-2 text-sm transition-colors',
+                <div className="flex flex-col gap-0.5">
+                  {filterProjects.map((p) => {
+                    const included = projectFilter.include.has(p.id);
+                    const excluded = projectFilter.exclude.has(p.id);
+                    return (
+                      <label
+                        key={p.id}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent cursor-pointer ${excluded ? 'text-muted-foreground' : ''}`}
+                      >
+                        {/* Excluded rows get a solid destructive fill. The border uses a
+                            translucent rim (inline style) so the fill reads as a filled
+                            square; tailwind-merge would also drop a data-[state=checked]
+                            override against the checkbox's base bg-primary. */}
+                        <Checkbox
+                          checked={included || excluded}
+                          style={
                             excluded
-                              ? 'bg-destructive/10 hover:bg-destructive/15'
-                              : inFilter
-                                ? 'bg-primary/10 hover:bg-primary/15'
-                                : 'hover:bg-accent',
-                          )}
-                        >
-                          <CheckboxPrimitive.Root
-                            checked={inFilter}
-                            onCheckedChange={() => setProjectFilter((prev) => toggleProjectFilter(prev, p.id))}
-                            className={cn(
-                              'grid size-4 shrink-0 place-items-center rounded-[5px] border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                              excluded
-                                ? 'border-destructive/60 bg-destructive text-destructive-foreground'
-                                : inFilter
-                                  ? 'border-primary bg-primary text-primary-foreground'
-                                  : 'border-input bg-transparent hover:border-foreground/50',
-                            )}
-                          >
-                            {inFilter &&
-                              (excluded ? (
-                                <Minus className="size-3 animate-in zoom-in-75" />
-                              ) : (
-                                <Check className="size-3 animate-in zoom-in-75" />
-                              ))}
-                          </CheckboxPrimitive.Root>
-                          {p.color && (
-                            <span
-                              className="size-2.5 shrink-0 rounded-full ring-1 ring-white/15"
-                              style={{ backgroundColor: p.color }}
-                            />
-                          )}
-                          <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-
-                {!filterActive && (
-                  <p className="px-2 pt-1.5 text-[10px] leading-snug text-muted-foreground/70">
-                    Tip: click a project twice to show everything except it.
-                  </p>
-                )}
+                              ? {
+                                  backgroundColor: 'var(--destructive)',
+                                  borderColor: 'color-mix(in srgb, var(--destructive) 60%, transparent)',
+                                  color: 'var(--destructive-foreground)',
+                                }
+                              : undefined
+                          }
+                          onCheckedChange={() => setProjectFilter((prev) => toggleProjectFilter(prev, p.id))}
+                        />
+                        {p.color && (
+                          <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                        )}
+                        <span className={`text-sm truncate ${excluded ? 'line-through' : ''}`}>{p.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </PopoverContent>
             </Popover>
           )}

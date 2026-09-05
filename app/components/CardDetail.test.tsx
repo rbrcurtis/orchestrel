@@ -170,7 +170,7 @@ describe('NewCardDetail description draft persistence', () => {
   it('hides filtered-out projects from the new card project picker', async () => {
     renderNewCardDetail({
       initialProjectId: undefined,
-      projectFilter: { exclude: false, ids: new Set([42]) },
+      projectFilter: { include: new Set([42]), exclude: new Set<number>() },
       projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Hidden Project')],
     });
 
@@ -186,7 +186,7 @@ describe('NewCardDetail description draft persistence', () => {
   it('keeps the initial pinned project visible even when it is outside the active filter', async () => {
     renderNewCardDetail({
       initialProjectId: 99,
-      projectFilter: { exclude: false, ids: new Set([42]) },
+      projectFilter: { include: new Set([42]), exclude: new Set<number>() },
       projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Pinned Project')],
     });
 
@@ -202,7 +202,7 @@ describe('NewCardDetail description draft persistence', () => {
   it('shows non-excluded projects in the picker under an exclude filter', async () => {
     renderNewCardDetail({
       initialProjectId: undefined,
-      projectFilter: { exclude: true, ids: new Set([99]) },
+      projectFilter: { include: new Set<number>(), exclude: new Set([99]) },
       projects: [makeProject(42, 'Visible Project'), makeProject(99, 'Excluded Project')],
     });
 

@@ -3,8 +3,8 @@ import { resolvePinnedCards } from './resolve-pin';
 import type { SlotState } from './resolve-pin';
 import type { Card } from '../../src/shared/ws-protocol';
 
-const includeFilter = (ids: number[]) => ({ exclude: false, ids: new Set(ids) });
-const excludeFilter = (ids: number[]) => ({ exclude: true, ids: new Set(ids) });
+const includeFilter = (ids: number[]) => ({ include: new Set(ids), exclude: new Set<number>() });
+const excludeFilter = (ids: number[]) => ({ include: new Set<number>(), exclude: new Set<number>(ids) });
 
 function makeCard(overrides: Partial<Card> & { id: number }): Card {
   return {
