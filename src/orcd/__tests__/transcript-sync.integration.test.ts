@@ -31,6 +31,16 @@ it('settles queued identical prompts only after final message replacement is dur
   const replacementStartedGate = new Promise<void>((resolve) => {
     replacementStarted = resolve;
   });
+  let releaseSettled: (() => void) | undefined;
+  let lowLevelIdle = false;
+  let lowLevelIdleAtSettledExtensionStart: boolean | undefined;
+  const settledExtensionGate = new Promise<void>((resolve) => {
+    releaseSettled = resolve;
+  });
+  let settledExtensionStarted: (() => void) | undefined;
+  const settledExtensionStartedGate = new Promise<void>((resolve) => {
+    settledExtensionStarted = resolve;
+  });
   const extension: InlineExtension = {
     name: 'delayed-final-replacement',
     factory: (pi) => {
@@ -48,6 +58,11 @@ it('settles queued identical prompts only after final message replacement is dur
           },
         };
       });
+      pi.on('agent_settled', async () => {
+        lowLevelIdleAtSettledExtensionStart = lowLevelIdle;
+        settledExtensionStarted?.();
+        await settledExtensionGate;
+      });
     },
   };
   const fixture = await createTranscriptSyncFixture(extension);
@@ -63,6 +78,8 @@ it('settles queued identical prompts only after final message replacement is dur
     const session = fixture.runtime.session;
     const streamingFlags: boolean[] = [];
     let queued = false;
+    let lowLevelIdleEventCount: number | undefined;
+    let lowLevelIdleWait: Promise<void> | undefined;
     const agentEndStreamingFlags: Array<{ session: boolean; agent: boolean }> = [];
     let settled = false;
     let settle: (() => void) | undefined;
@@ -73,6 +90,12 @@ it('settles queued identical prompts only after final message replacement is dur
     unsubscribe = session.subscribe((event) => {
       events.push(structuredClone(event));
       streamingFlags.push(session.isStreaming);
+      if (event.type === 'message_update' && !lowLevelIdleWait) {
+        lowLevelIdleWait = session.agent.waitForIdle().then(() => {
+          lowLevelIdle = true;
+          lowLevelIdleEventCount = events.length;
+        });
+      }
       if (event.type === 'message_end' && event.message.role === 'assistant' && textContent(event.message) === 'initial' && !queued) {
         queued = true;
         void session.prompt('same follow-up', { streamingBehavior: 'followUp' });
@@ -91,10 +114,21 @@ it('settles queued identical prompts only after final message replacement is dur
 
     const prompt = session.prompt('initial prompt');
     await replacementStartedGate;
+    expect(lowLevelIdleWait).toBeDefined();
     expect(settled).toBe(false);
     expect(events.some((event) => event.type === 'agent_settled')).toBe(false);
 
     releaseReplacement?.();
+    await settledExtensionStartedGate;
+    await lowLevelIdleWait;
+    expect(lowLevelIdle).toBe(true);
+    expect(lowLevelIdleEventCount).toBeDefined();
+    expect(lowLevelIdleAtSettledExtensionStart).toBe(true);
+    expect(lowLevelIdleEventCount).toBe(events.length);
+    expect(settled).toBe(false);
+    expect(events.some((event) => event.type === 'agent_settled')).toBe(false);
+
+    releaseSettled?.();
     await prompt;
     await settledGate;
 
