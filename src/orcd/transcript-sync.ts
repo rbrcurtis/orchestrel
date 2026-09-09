@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
-import type { AssistantMessage } from '@earendil-works/pi-ai';
+import { parseStreamingJson, type AssistantMessage } from '@earendil-works/pi-ai';
 import { buildContextEntries, sessionEntryToContextMessages, type AgentSessionEvent, type SessionEntry } from '@earendil-works/pi-coding-agent';
 import type {
   ReplayDecision,
@@ -10,6 +10,7 @@ import type {
   TranscriptEvent,
   TranscriptReplicaResult,
   TranscriptState,
+  TranscriptStreamSwitch,
 } from '../shared/transcript-sync';
 
 /* oxlint-disable orchestrel/log-before-early-return -- pure synchronous state reducer has no session logger */
@@ -134,13 +135,13 @@ export function reduceTranscriptState(state: TranscriptState, event: TranscriptE
   }
 
   if (event.type === 'message_started') {
-    next.overlay.push({ lifecycleId: event.lifecycleId, startSequence: event.startSequence, message: event.message, toolJson: {} });
+    next.overlay.push({ lifecycleId: event.lifecycleId, startSequence: event.startSequence, message: event.message, toolInput: {} });
     return next;
   }
 
   if (event.type === 'message_delta') {
     const overlay = next.overlay.find((message) => message.lifecycleId === event.lifecycleId);
-    if (overlay?.message.role === 'assistant') applyAssistantUpdate(overlay.message, overlay.toolJson, event.update);
+    if (overlay?.message.role === 'assistant') applyAssistantUpdate(overlay.message, overlay.toolInput, event.update);
     return next;
   }
 
@@ -160,10 +161,17 @@ export class TranscriptReplica {
   private cursor: TranscriptCursor | undefined;
   private state: TranscriptState = { baseline: [], baselineThrough: 0, overlay: [], events: [] };
 
-  applySnapshot(cursor: TranscriptCursor, state: TranscriptState): TranscriptReplicaResult {
+  applySnapshot(cursor: TranscriptCursor, state: TranscriptState, streamSwitch?: TranscriptStreamSwitch): TranscriptReplicaResult {
     if (state.baselineThrough > cursor.sequence) return { type: 'snapshot_required' };
-    if (this.cursor && this.cursor.streamId === cursor.streamId && this.cursor.sequence > cursor.sequence) return { type: 'duplicate' };
-    if (this.cursor && this.cursor.streamId !== cursor.streamId && this.cursor.sequence >= cursor.sequence) return { type: 'duplicate' };
+    if (!this.cursor || this.cursor.streamId === cursor.streamId) {
+      if (this.cursor && this.cursor.sequence > cursor.sequence) return { type: 'duplicate' };
+      this.cursor = structuredClone(cursor);
+      this.state = structuredClone(state);
+      return { type: 'accepted' };
+    }
+    if (!streamSwitch || streamSwitch.fromStreamId !== this.cursor.streamId || streamSwitch.toStreamId !== cursor.streamId) {
+      return { type: 'snapshot_required' };
+    }
     this.cursor = structuredClone(cursor);
     this.state = structuredClone(state);
     return { type: 'accepted' };
@@ -197,7 +205,11 @@ function normalizeUpdate(event: Extract<AgentSessionEvent, { type: 'message_upda
   };
 }
 
-function applyAssistantUpdate(message: AssistantMessage, toolJson: Record<number, string>, update: TranscriptAssistantUpdate): void {
+function applyAssistantUpdate(
+  message: AssistantMessage,
+  toolInput: Record<number, { raw: string; parsed: Record<string, unknown> }>,
+  update: TranscriptAssistantUpdate,
+): void {
   const event = update.event;
   if (!('contentIndex' in event)) return;
   const index = event.contentIndex;
@@ -215,10 +227,19 @@ function applyAssistantUpdate(message: AssistantMessage, toolJson: Record<number
   if (event.type === 'thinking_end') message.content[index] = { type: 'thinking', thinking: event.content };
   if (event.type === 'toolcall_start' && update.content?.type === 'toolCall') {
     message.content[index] = structuredClone(update.content);
-    toolJson[index] = '';
+    const raw = JSON.stringify(update.content.arguments);
+    toolInput[index] = { raw, parsed: parseStreamingJson(raw) };
   }
-  if (event.type === 'toolcall_delta') toolJson[index] = `${toolJson[index] ?? ''}${event.delta}`;
-  if (event.type === 'toolcall_end') message.content[index] = structuredClone(event.toolCall);
+  if (event.type === 'toolcall_delta') {
+    const initial = update.content?.type === 'toolCall' ? JSON.stringify(update.content.arguments) : '';
+    const previous = toolInput[index]?.raw ?? '';
+    const raw = previous || initial === event.delta ? event.delta : `${previous}${event.delta}`;
+    toolInput[index] = { raw, parsed: parseStreamingJson(raw) };
+  }
+  if (event.type === 'toolcall_end') {
+    message.content[index] = structuredClone(event.toolCall);
+    delete toolInput[index];
+  }
 }
 
 function byteSize(value: unknown): number {

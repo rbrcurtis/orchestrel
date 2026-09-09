@@ -27,11 +27,16 @@ export interface TranscriptEntryProjection {
   messages: AgentMessage[];
 }
 
+export interface TranscriptToolInput {
+  raw: string;
+  parsed: Record<string, unknown>;
+}
+
 export interface TranscriptOverlayMessage {
   lifecycleId: string;
   startSequence: number;
   message: AgentMessage;
-  toolJson: Record<number, string>;
+  toolInput: Record<number, TranscriptToolInput>;
 }
 
 type WithoutPartial<T> = T extends { partial: unknown } ? Omit<T, 'partial'> : T;
@@ -67,3 +72,9 @@ export type TranscriptReplicaResult =
   | { type: 'accepted' }
   | { type: 'duplicate' }
   | { type: 'snapshot_required' };
+
+/** Explicit authorization to replace a replica with a new stream incarnation. */
+export interface TranscriptStreamSwitch {
+  fromStreamId: string | undefined;
+  toStreamId: string;
+}

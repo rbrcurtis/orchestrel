@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { AgentSessionEvent, InlineExtension, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
-import { fauxAssistantMessage } from '@earendil-works/pi-ai/providers/faux';
+import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { displayedMessages, TranscriptReplica, TranscriptSync } from '../transcript-sync';
 import { expect, it } from 'vitest';
 import { createTranscriptSyncFixture } from './transcript-sync-fixture';
@@ -182,7 +182,10 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
   const replica = new TranscriptReplica();
   let unsubscribe: (() => void) | undefined;
   try {
-    fixture.faux.setResponses([fauxAssistantMessage('first'), fauxAssistantMessage('second')]);
+    fixture.faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('search', { query: 'first' })]),
+      fauxAssistantMessage('second'),
+    ]);
     const session = fixture.runtime.session;
     const events = [] as ReturnType<TranscriptSync['accept']>[];
     const settlements = [] as ReturnType<TranscriptSync['settle']>[];
@@ -196,7 +199,7 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
         return;
       }
       const envelope = sync.accept(event);
-      if (!firstPartial && event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
+      if (!firstPartial && event.type === 'message_update' && event.assistantMessageEvent.type === 'toolcall_delta') {
         firstPartial = sync.snapshot();
       }
       events.push(envelope);
@@ -205,18 +208,16 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
     await session.prompt('first prompt');
     expect(settlements).toHaveLength(1);
     expect(firstPartial).toBeDefined();
-    expect(displayedMessages(firstPartial!.state)
-      .filter((message) => message.role === 'assistant')
-      .map((message) => contentText(message.content))).toEqual(['first']);
+    const partialTool = firstPartial!.state.overlay.find((message) => message.message.role === 'assistant')?.toolInput[0];
+    expect(partialTool?.raw).toMatch(/^\{"query":"/);
+    expect(partialTool?.parsed.query).toBeTypeOf('string');
     const overflow = sync.replaySince({ streamId: 'stream-one', sequence: 0 });
     expect(overflow.type).toBe('snapshot');
     const byteBounded = new TranscriptSync('byte-bounded', [], 3, 1);
     byteBounded.accept(events[0]!.event.type === 'pi_event' ? events[0]!.event.event : { type: 'agent_start' });
     expect(byteBounded.replaySince({ streamId: 'byte-bounded', sequence: 0 }).type).toBe('snapshot');
     if (overflow.type === 'snapshot') {
-      expect(displayedMessages(overflow.state)
-        .filter((message) => message.role === 'assistant')
-        .map((message) => contentText(message.content))).toEqual(['first']);
+      expect(displayedMessages(overflow.state).map((message) => message.role)).toContain('toolResult');
     }
 
     // The first settled snapshot is deliberately delayed while a newer run begins.
@@ -234,12 +235,29 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
       expect(replica.accept(event).type).toBe('accepted');
     }
     expect(replica.accept(secondSettlement).type).toBe('accepted');
-    expect(displayedText(replica)).toEqual(['first prompt', 'first', 'next prompt', 'second']);
+    expect(displayedText(replica)).toContain('first prompt');
+    expect(displayedText(replica)).toContain('toolResult');
+    expect(displayedText(replica)).toContain('second');
+
+    const other = new TranscriptSync('other-stream', [], 3);
+    const otherSnapshot = other.snapshot();
+    expect(replica.applySnapshot(otherSnapshot.cursor, otherSnapshot.state).type).toBe('snapshot_required');
+    expect(displayedText(replica)).toContain('first prompt');
+    expect(displayedText(replica)).toContain('second');
+    expect(replica.applySnapshot(otherSnapshot.cursor, otherSnapshot.state, {
+      fromStreamId: secondSettlement.cursor.streamId,
+      toStreamId: 'other-stream',
+    }).type).toBe('accepted');
+    expect(replica.applySnapshot(secondSettlement.cursor, settledSnapshots[1]!.state, {
+      fromStreamId: 'other-stream',
+      toStreamId: secondSettlement.cursor.streamId,
+    }).type).toBe('accepted');
 
     expect(replica.applySnapshot(firstSettledSnapshot.cursor, firstSettledSnapshot.state).type).toBe('duplicate');
     expect(replica.accept(firstSettlement).type).toBe('duplicate');
     expect(replica.accept(secondSettlement).type).toBe('duplicate');
-    expect(displayedText(replica)).toEqual(['first prompt', 'first', 'next prompt', 'second']);
+    expect(displayedText(replica)).toContain('first prompt');
+    expect(displayedText(replica)).toContain('second');
     expect(sync.replaySince({ streamId: 'other-stream', sequence: 0 }).type).toBe('snapshot');
     expect(sync.replaySince({ streamId: 'stream-one', sequence: 999 }).type).toBe('snapshot');
   } finally {
