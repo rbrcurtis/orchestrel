@@ -104,6 +104,7 @@ describe('projectSchema', () => {
       defaultSandbox: false,
       defaultModel: 'sonnet',
       defaultThinkingLevel: 'off',
+      defaultSummarizeThreshold: 0,
       providerID: 'anthropic',
       color: '#ff0000',
       archived: false,

@@ -102,7 +102,7 @@ providers:
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const port = (server.address() as { port: number }).port
     try {
-      await expect(execFileAsync(tsxPath, [resolve(repoRoot, 'bin/orc'), '--import', 'session-123'], {
+      await expect(execFileAsync(tsxPath, [resolve(repoRoot, 'bin/orc'), '--import', 'session-123', '--config', configPath], {
         env: { ...process.env, ORC_API_URL: `http://127.0.0.1:${port}` },
       })).rejects.toMatchObject({ stderr: expect.stringContaining('No project configured for path: /tmp/missing') })
     } finally {
