@@ -227,13 +227,12 @@ function applyAssistantUpdate(
   if (event.type === 'thinking_end') message.content[index] = { type: 'thinking', thinking: event.content };
   if (event.type === 'toolcall_start' && update.content?.type === 'toolCall') {
     message.content[index] = structuredClone(update.content);
-    const raw = JSON.stringify(update.content.arguments);
-    toolInput[index] = { raw, parsed: parseStreamingJson(raw) };
+    toolInput[index] = { raw: '', parsed: {} };
   }
   if (event.type === 'toolcall_delta') {
-    const initial = update.content?.type === 'toolCall' ? JSON.stringify(update.content.arguments) : '';
-    const previous = toolInput[index]?.raw ?? '';
-    const raw = previous || initial === event.delta ? event.delta : `${previous}${event.delta}`;
+    // Pi emits incremental JSON chunks. `partial` retains an empty arguments object
+    // until toolcall_end, so only the normalized delta stream can reconstruct input.
+    const raw = `${toolInput[index]?.raw ?? ''}${event.delta}`;
     toolInput[index] = { raw, parsed: parseStreamingJson(raw) };
   }
   if (event.type === 'toolcall_end') {

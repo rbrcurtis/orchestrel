@@ -183,7 +183,7 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
   let unsubscribe: (() => void) | undefined;
   try {
     fixture.faux.setResponses([
-      fauxAssistantMessage([fauxToolCall('search', { query: 'first' })]),
+      fauxAssistantMessage([fauxToolCall('search', { query: 'first', page: 2 })]),
       fauxAssistantMessage('second'),
     ]);
     const session = fixture.runtime.session;
@@ -199,7 +199,7 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
         return;
       }
       const envelope = sync.accept(event);
-      if (!firstPartial && event.type === 'message_update' && event.assistantMessageEvent.type === 'toolcall_delta') {
+      if (event.type === 'message_update' && event.assistantMessageEvent.type === 'toolcall_delta') {
         firstPartial = sync.snapshot();
       }
       events.push(envelope);
@@ -209,8 +209,10 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
     expect(settlements).toHaveLength(1);
     expect(firstPartial).toBeDefined();
     const partialTool = firstPartial!.state.overlay.find((message) => message.message.role === 'assistant')?.toolInput[0];
-    expect(partialTool?.raw).toMatch(/^\{"query":"/);
-    expect(partialTool?.parsed.query).toBeTypeOf('string');
+    expect(partialTool).toEqual({
+      raw: '{"query":"first","page":2}',
+      parsed: { query: 'first', page: 2 },
+    });
     const overflow = sync.replaySince({ streamId: 'stream-one', sequence: 0 });
     expect(overflow.type).toBe('snapshot');
     const byteBounded = new TranscriptSync('byte-bounded', [], 3, 1);
