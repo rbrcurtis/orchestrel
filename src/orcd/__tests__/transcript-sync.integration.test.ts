@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { AgentSessionEvent, InlineExtension, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { fauxAssistantMessage } from '@earendil-works/pi-ai/providers/faux';
+import { displayedMessages, TranscriptReplica, TranscriptSync } from '../transcript-sync';
 import { expect, it } from 'vitest';
 import { createTranscriptSyncFixture } from './transcript-sync-fixture';
 
@@ -167,3 +168,63 @@ function textContent(message: Extract<AgentSessionEvent, { type: 'message_end' }
   if (message.role !== 'assistant') return '';
   return contentText(message.content);
 }
+
+function displayedText(replica: TranscriptReplica): string[] {
+  return displayedMessages(replica.snapshot().state).map((message) => {
+    if (message.role === 'assistant' || message.role === 'user') return contentText(message.content);
+    return message.role;
+  });
+}
+
+it('replays sequenced snapshots across overflow and delayed settlement without duplicate messages', async () => {
+  const fixture = await createTranscriptSyncFixture({ name: 'transcript-sync', factory: () => {} });
+  const sync = new TranscriptSync('stream-one', [], 3);
+  const replica = new TranscriptReplica();
+  let unsubscribe: (() => void) | undefined;
+  try {
+    fixture.faux.setResponses([fauxAssistantMessage('first'), fauxAssistantMessage('second')]);
+    const session = fixture.runtime.session;
+    const events = [] as ReturnType<TranscriptSync['accept']>[];
+    const settlements = [] as ReturnType<TranscriptSync['settle']>[];
+    let firstPartial: ReturnType<TranscriptSync['snapshot']> | undefined;
+
+    unsubscribe = session.subscribe((event) => {
+      if (event.type === 'agent_settled') {
+        settlements.push(sync.settle(session.sessionManager.getEntries()));
+        return;
+      }
+      const envelope = sync.accept(event);
+      if (!firstPartial && event.type === 'message_update') firstPartial = sync.snapshot();
+      events.push(envelope);
+    });
+
+    await session.prompt('first prompt');
+    expect(settlements).toHaveLength(1);
+    expect(firstPartial).toBeDefined();
+    expect(sync.replaySince({ streamId: 'stream-one', sequence: 0 }).type).toBe('snapshot');
+
+    // The first settled replacement is still in flight when the next live run starts.
+    await session.prompt('next prompt');
+    expect(settlements).toHaveLength(2);
+
+    const firstSnapshot = firstPartial!;
+    const firstSettlement = settlements[0]!;
+    const secondSettlement = settlements[1]!;
+    replica.applySnapshot(firstSnapshot.cursor, firstSnapshot.state);
+    replica.accept(firstSettlement);
+    for (const event of events.filter((event) => event.cursor.sequence > firstSettlement.cursor.sequence)) {
+      replica.accept(event);
+    }
+    replica.accept(secondSettlement);
+    expect(displayedText(replica)).toEqual(['first prompt', 'first', 'next prompt', 'second']);
+
+    replica.accept(firstSettlement);
+    replica.accept(secondSettlement);
+    expect(displayedText(replica)).toEqual(['first prompt', 'first', 'next prompt', 'second']);
+    expect(sync.replaySince({ streamId: 'other-stream', sequence: 0 }).type).toBe('snapshot');
+    expect(sync.replaySince({ streamId: 'stream-one', sequence: 999 }).type).toBe('snapshot');
+  } finally {
+    unsubscribe?.();
+    await fixture.dispose();
+  }
+});
