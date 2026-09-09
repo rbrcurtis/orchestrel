@@ -17,6 +17,7 @@ export interface TranscriptSyncFixture {
   sessionDir: string;
   faux: ReturnType<typeof fauxProvider>;
   runtime: Awaited<ReturnType<typeof createAgentSessionRuntime>>;
+  recreate(sessionFile: string): Promise<Awaited<ReturnType<typeof createAgentSessionRuntime>>>;
   dispose(): Promise<void>;
 }
 
@@ -80,14 +81,26 @@ export async function createTranscriptSyncFixture(extension: InlineExtension): P
     sessionManager: SessionManager.create(cwd, sessionDir),
   });
 
+  let activeRuntime = runtime;
   return {
     cwd,
     agentDir,
     sessionDir,
     faux,
-    runtime,
+    get runtime() {
+      return activeRuntime;
+    },
+    async recreate(sessionFile) {
+      await activeRuntime.dispose();
+      activeRuntime = await createAgentSessionRuntime(createRuntime, {
+        cwd,
+        agentDir,
+        sessionManager: SessionManager.open(sessionFile, sessionDir),
+      });
+      return activeRuntime;
+    },
     async dispose() {
-      await runtime.dispose();
+      await activeRuntime.dispose();
       await rm(dir, { recursive: true, force: true });
     },
   };

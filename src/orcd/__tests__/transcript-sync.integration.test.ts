@@ -1,8 +1,12 @@
-import { readFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createServer, connect, type Socket } from 'node:net';
+import { once } from 'node:events';
 import type { AgentSessionEvent, InlineExtension, SessionEntry } from '@earendil-works/pi-coding-agent';
-import { SessionManager } from '@earendil-works/pi-coding-agent';
+import { buildContextEntries, sessionEntryToContextMessages, SessionManager } from '@earendil-works/pi-coding-agent';
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { displayedMessages, TranscriptReplica, TranscriptSync } from '../transcript-sync';
+import type { ReplayDecision, TranscriptCursor, TranscriptEnvelope, TranscriptEvent, TranscriptState } from '../../shared/transcript-sync';
 import { expect, it } from 'vitest';
 import { createTranscriptSyncFixture } from './transcript-sync-fixture';
 
@@ -175,6 +179,218 @@ function displayedText(replica: TranscriptReplica): string[] {
     return message.role;
   });
 }
+
+interface WireSnapshot {
+  type: 'snapshot';
+  cursor: TranscriptCursor;
+  state: TranscriptState;
+}
+
+interface WireEvents {
+  type: 'events';
+  events: TranscriptEnvelope<TranscriptEvent>[];
+}
+
+type WireMessage = WireSnapshot | WireEvents;
+
+function writeWire(socket: Socket, message: WireMessage): void {
+  if (!socket.destroyed && socket.writable) socket.write(`${JSON.stringify(message)}\n`);
+}
+
+async function createTranscriptWire(sync: TranscriptSync): Promise<{
+  port: number;
+  publish(envelope: TranscriptEnvelope<TranscriptEvent>): void;
+  close(): Promise<void>;
+}> {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    let rest = '';
+    socket.on('data', (chunk: Buffer) => {
+      rest += chunk.toString();
+      let end = rest.indexOf('\n');
+      while (end >= 0) {
+        const line = rest.slice(0, end);
+        rest = rest.slice(end + 1);
+        const cursor = JSON.parse(line) as TranscriptCursor | undefined;
+        const decision: ReplayDecision<TranscriptEvent, TranscriptState> = sync.replaySince(cursor);
+        if (decision.type === 'snapshot') writeWire(socket, { type: 'snapshot', cursor: decision.cursor, state: decision.state });
+        else writeWire(socket, { type: 'events', events: decision.events });
+        end = rest.indexOf('\n');
+      }
+    });
+    socket.on('error', () => undefined);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Expected loopback TCP address');
+  return {
+    port: address.port,
+    publish(envelope) {
+      for (const socket of sockets) writeWire(socket, { type: 'events', events: [envelope] });
+    },
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
+    },
+  };
+}
+
+async function receiveWire(port: number, cursor: TranscriptCursor | undefined, replica: TranscriptReplica): Promise<void> {
+  const socket = connect(port, '127.0.0.1');
+  await once(socket, 'connect');
+  const received = new Promise<void>((resolve, reject) => {
+    let rest = '';
+    socket.on('data', (chunk: Buffer) => {
+      rest += chunk.toString();
+      const end = rest.indexOf('\n');
+      if (end < 0) return;
+      const message = JSON.parse(rest.slice(0, end)) as WireMessage;
+      if (message.type === 'snapshot') expect(replica.applySnapshot(message.cursor, message.state)).toEqual({ type: 'accepted' });
+      else for (const event of message.events) expect(replica.accept(event)).toEqual({ type: 'accepted' });
+      resolve();
+    });
+    socket.on('error', reject);
+  });
+  socket.write(`${JSON.stringify(cursor ?? null)}\n`);
+  await received;
+  socket.destroy();
+}
+
+it('recovers TCP transcript snapshots and retained replays without duplicate display content', async () => {
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let paused: (() => void) | undefined;
+  const pausedGate = new Promise<void>((resolve) => { paused = resolve; });
+  const fixture = await createTranscriptSyncFixture({
+    name: 'pause-stream',
+    factory: (pi) => {
+      pi.on('message_update', async (event) => {
+        if (event.assistantMessageEvent.type !== 'text_delta') return;
+        paused?.();
+        await gate;
+      });
+    },
+  });
+  const sync = new TranscriptSync('tcp-stream', [], 3);
+  const wire = await createTranscriptWire(sync);
+  let unsubscribe: (() => void) | undefined;
+  try {
+    fixture.faux.setResponses([fauxAssistantMessage('abcdef'), fauxAssistantMessage('second')]);
+    unsubscribe = fixture.runtime.session.subscribe((event) => wire.publish(sync.accept(event)));
+    const initial = new TranscriptReplica();
+    await receiveWire(wire.port, undefined, initial);
+    const run = fixture.runtime.session.prompt('first');
+    await pausedGate;
+    const oldCursor = initial.snapshot().cursor;
+    expect(oldCursor).toBeDefined();
+    release?.();
+    await run;
+
+    const overflow = new TranscriptReplica();
+    await receiveWire(wire.port, oldCursor, overflow);
+    expect(displayedText(overflow)).toEqual(['first', 'abcdef']);
+    expect(new Set(displayedText(overflow)).size).toBe(displayedText(overflow).length);
+
+    const retained = new TranscriptReplica();
+    const current = sync.snapshot();
+    expect(retained.applySnapshot({ streamId: current.cursor.streamId, sequence: current.cursor.sequence - 1 }, current.state).type).toBe('accepted');
+    await receiveWire(wire.port, { streamId: current.cursor.streamId, sequence: current.cursor.sequence - 1 }, retained);
+    expect(displayedText(retained)).toEqual(['first', 'abcdef']);
+  } finally {
+    unsubscribe?.();
+    await wire.close();
+    await fixture.dispose();
+  }
+});
+
+it('replaces stale runtime epochs and forks active streams through public runtime APIs', async () => {
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let paused: (() => void) | undefined;
+  const pausedGate = new Promise<void>((resolve) => { paused = resolve; });
+  let pauseActiveResponse = false;
+  const fixture = await createTranscriptSyncFixture({
+    name: 'pause-for-replacement',
+    factory: (pi) => {
+      pi.on('message_update', async (event) => {
+        if (pauseActiveResponse && event.assistantMessageEvent.type === 'text_delta') {
+          paused?.();
+          await gate;
+        }
+      });
+    },
+  });
+  let unsubscribe: (() => void) | undefined;
+  try {
+    fixture.faux.setResponses([fauxAssistantMessage('seed'), fauxAssistantMessage('partial'), fauxAssistantMessage('forked')]);
+    const original = fixture.runtime.session;
+    const oldSync = new TranscriptSync('old-epoch', [] , 10);
+    unsubscribe = original.subscribe((event) => oldSync.accept(event));
+    await original.prompt('persisted');
+    const persistedFile = original.sessionFile;
+    expect(persistedFile).toBeDefined();
+    const recreatedFile = join(fixture.sessionDir, 'recreated.jsonl');
+    await copyFile(persistedFile!, recreatedFile);
+    pauseActiveResponse = true;
+    const run = original.prompt('active');
+    await pausedGate;
+    const oldCursor = oldSync.snapshot().cursor;
+
+    const forkEntry = original.sessionManager.getEntries().find((entry) => entry.type === 'message' && entry.message.role === 'user' && contentText(entry.message.content) === 'persisted');
+    expect(forkEntry).toBeDefined();
+    const fork = fixture.runtime.fork(forkEntry!.id);
+    release?.();
+    await fork;
+    unsubscribe?.();
+    const replacement = fixture.runtime.session;
+    const replacementSync = new TranscriptSync('fork-epoch', replacement.sessionManager.getEntries(), 10);
+    const view = new TranscriptReplica();
+    expect(view.applySnapshot(replacementSync.snapshot().cursor, replacementSync.snapshot().state)).toEqual({ type: 'accepted' });
+    const oldEvents = oldSync.replaySince(undefined);
+    if (oldEvents.type === 'replay') {
+      for (const event of oldEvents.events) expect(view.accept(event)).toEqual({ type: 'snapshot_required' });
+    }
+    await run.catch(() => undefined);
+    expect(displayedText(view)).toEqual([]);
+
+    await fixture.recreate(recreatedFile);
+    const recreated = fixture.runtime.session;
+    const recreatedSync = new TranscriptSync('recreated-epoch', recreated.sessionManager.getEntries(), 10);
+    expect(recreatedSync.replaySince(oldCursor).type).toBe('snapshot');
+    expect(displayedText(new TranscriptReplica())).toEqual([]);
+    expect(displayedMessages(recreatedSync.snapshot().state).map((message) => message.role === 'user' ? contentText(message.content) : message.role === 'assistant' ? contentText(message.content) : message.role)).toEqual(['persisted', 'seed']);
+  } finally {
+    unsubscribe?.();
+    release?.();
+    await fixture.dispose();
+  }
+});
+
+it('projects Pi compaction context while preserving its append-only entry log', async () => {
+  const fixture = await createTranscriptSyncFixture({ name: 'compaction-summary', factory: () => {} });
+  try {
+    fixture.faux.setResponses([fauxAssistantMessage('old answer'), fauxAssistantMessage('new answer')]);
+    await fixture.runtime.session.prompt('old prompt');
+    await fixture.runtime.session.prompt('new prompt');
+    const manager = fixture.runtime.session.sessionManager;
+    const entries = manager.getEntries();
+    const firstKept = entries.find((entry) => entry.type === 'message' && entry.message.role === 'user' && contentText(entry.message.content) === 'new prompt');
+    expect(firstKept).toBeDefined();
+    manager.appendCompaction('synthetic summary', firstKept!.id, 100);
+    const context = buildContextEntries(manager.getEntries());
+    const projected = context.flatMap((entry) => sessionEntryToContextMessages(entry));
+    expect(projected.map((message) => message.role === 'compactionSummary' ? message.summary : message.role === 'user' ? contentText(message.content) : message.role === 'assistant' ? contentText(message.content) : message.role)).toEqual([
+      'synthetic summary', 'new prompt', 'new answer',
+    ]);
+    expect(manager.getEntries()).toHaveLength(entries.length + 1);
+    expect(manager.getEntries().some((entry) => entry.type === 'message' && entry.message.role === 'user' && contentText(entry.message.content) === 'old prompt')).toBe(true);
+  } finally {
+    await fixture.dispose();
+  }
+});
 
 it('replays sequenced snapshots across overflow and delayed settlement without duplicate messages', async () => {
   const fixture = await createTranscriptSyncFixture({ name: 'transcript-sync', factory: () => {} });
