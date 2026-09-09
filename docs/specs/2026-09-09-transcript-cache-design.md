@@ -1,7 +1,7 @@
 # Incremental transcript synchronization and browser cache
 
 Date: 2026-09-09
-Status: Design reviewed in chat; written specification awaiting review
+Status: Original design approved; no-fork revision awaiting review
 
 ## Goal and scope
 
@@ -59,9 +59,10 @@ deterministic identity tied to their source entry or effective session.
 Keep the existing transcript display policy: this work must not silently replace
 Pi's current context view with a different full archival view. Preserve prompt
 normalization, tool outputs, model information, and compaction/turn markers.
-The history projection must expose source-entry provenance explicitly. If the
-current Pi API does not provide that provenance, extend the projection/API;
-do not infer correspondence by matching content or array order.
+Use Pi's public `buildContextEntries()` and `sessionEntryToContextMessages()`
+to project each source entry while retaining its persisted ID. These APIs exist
+in installed Pi 0.84.2. Do not infer correspondence by matching content or array
+order. No Pi fork, private method interception, or extension is required.
 
 Separate two cursor types:
 
@@ -76,17 +77,36 @@ Subscribing must not depend on a successful cache or history read. Establish liv
 delivery before fetching history, but do not claim that subscribe-first alone
 solves overlap.
 
-A node-side synchronization response must identify which completed live records
-are represented in the returned persisted history. This needs explicit provenance
-between live messages and persisted entries, plus a captured stream boundary.
-A latest event index read after file I/O is not proof that the file contains those
-events. Unpersisted content remains a separate live overlay until an authoritative
-record explicitly supersedes it.
+Maintain one orcd-owned display reducer per resident session, attached before
+prompting. In one synchronous SDK subscriber callback, clone the event, update
+the reducer, assign its sequence, and retain/publish that same envelope. Snapshot
+the reducer and sequence together without awaiting. Do not pair a direct read of
+Pi's mutable state with an independently sampled event cursor: agent state can
+advance before AgentSession has delivered all events or persisted the message.
 
-Propagate stable live message/record identity through stream events and associate
-it with the persisted entry at commit. Optimistic prompts also require a request
-identity carried through acceptance and persistence; text equality is not a
-sufficient identity. This adds metadata, not changes to prompt execution.
+The reducer contains a confirmed history baseline and a transient display overlay.
+Give transient records lifecycle IDs scoped to the stream incarnation and their
+message-start sequence. Do not join these IDs to persisted entries by text,
+timestamps, array positions, or WeakMap object identity.
+
+At `agent_settled`, capture the authoritative entry projection synchronously and
+publish an atomic baseline-replacement event that supersedes the overlay through
+that event sequence. Transfer only changed history records and explicit coverage
+metadata; replacement of display ownership does not require downloading the whole
+transcript. Do not merge fresh persisted entries into the active overlay before
+this boundary. Midstream snapshots use the reducer's existing baseline plus its
+complete overlay, not a newly read overlapping history prefix.
+
+Queued prompts remain part of the transient run until settlement. Application
+request IDs identify send attempts and acknowledgements only; this design does
+not require Pi to persist them. Pending/unaccepted sends must remain separate
+from the authoritative transcript. Do not remove them by matching text. The
+implementation must specify acceptance behavior in the UI so a pending indicator
+does not become a second apparent saved message.
+
+A cache-free integration test must prove baseline replacement during delayed
+response delivery: retain events newer than the replacement cursor, and never
+let an older response clear a newer live generation.
 
 Replay must report its epoch, retained sequence range, replay completion, and any
 gap. Preserve ordered delivery when replay and new events overlap. Deduplicate
@@ -94,9 +114,17 @@ by epoch/sequence, never by elapsed time. On a gap, reconcile authoritative hist
 and obtain current in-progress state from the owner rather than invent missing
 text or continuing an incomplete delta sequence.
 
-Stage 1 acceptance requires proving these identities and the persistence boundary
-with the installed Pi integration. Do not proceed to disk caching if this cannot
-be implemented with explicit provenance.
+Stage 1 acceptance requires proving reducer snapshots and settled baseline
+replacement with the installed Pi integration. `agent.waitForIdle()` is not a
+settlement boundary: the spike observed AgentSession still streaming after it
+resolved. `agent_settled` supplies a history reconciliation signal, not permission
+for the backend to infer session exit.
+
+A settled fork replaces the runtime and invalidates the stream incarnation.
+Compaction replaces the context view after its public completion event. During
+an active fork, await the supported abort/replacement operation and its settlement
+before publishing the new baseline; verify this in integration before release.
+Do not alter the user's fork behavior merely to simplify caching.
 
 ### History operations
 
@@ -130,10 +158,11 @@ starts subscription and history synchronization independently. Apply responses
 only to the matching identity and request generation. Coalesce repeated sync
 requests without dropping a required follow-up synchronization.
 
-At the existing terminal transition, keep the final history check but make it
-incremental. Preserve lifecycle ownership and ensure session exit also triggers
-final reconciliation independent of status/event ordering. A result alone is
-not session completion.
+At `agent_settled` and the existing terminal transition, reconcile history
+incrementally. Preserve lifecycle ownership and ensure session exit also triggers
+final reconciliation independent of status/event ordering. Coalesce duplicate
+requests but retain a follow-up request when the history revision changes during
+a read. A result or agent settlement alone is not session exit.
 
 History projection and rendering must support page boundaries explicitly. Tool
 results must remain associated with their tool calls even when they fall on a
@@ -202,7 +231,8 @@ failure/corruption clears only affected cache data and continues via the server.
 
 - Cache-free latest/older/incremental reads preserve the current transcript view.
 - A prompt or reply arriving during a delayed history read remains visible once.
-- Repeated identical prompt text remains distinct through request identities.
+- Repeated identical prompts remain distinct through lifecycle order and durable
+  entry IDs; pending-send acknowledgements do not depend on text matching.
 - Final text, tools, model metadata, and turn/compaction markers match after reload.
 - Forks, branch changes, compaction, and stale responses do not mix histories.
 - Reconnect, daemon restart, ring-buffer overflow, duplicate replay, and
@@ -243,5 +273,23 @@ Browser: `app/lib/ws-client.ts`, `app/lib/sdk-types.ts`,
 `app/stores/root-store.ts`, `app/components/SessionView.tsx`,
 `app/components/LazyTranscript.tsx`, and a dedicated transcript cache module.
 
+## No-fork prototype evidence and remaining gates
+
+Isolated synthetic-provider tests used public Pi 0.84.2 APIs and temporary disk
+sessions, without real model calls or production session changes. They verified
+settled fork history, compaction context projection, async message-end replacement,
+identical queued prompts, durable file reopen at settlement, and a three-event
+replay ring overflowing during an active response. The tests also showed that
+message-end notifications precede entry append and low-level waitForIdle can
+resolve before session settlement.
+
+These are feasibility results, not production protocol acceptance. Actual socket
+loss, daemon termination midstream, fork during active generation, delayed
+incremental baseline delivery, long runs without settlement, and page-boundary
+rendering still require integration verification. Long unsettled runs can retain
+many completed overlay records; Stage 1 must measure and bound that state without
+inventing live-to-entry matches. If this cannot meet the memory target, stop and
+review the design rather than introduce private Pi hooks.
+
 This document does not authorize a shared-branch push or merge. Implementation
-planning follows review of this written specification.
+planning follows review of this revised written specification.
