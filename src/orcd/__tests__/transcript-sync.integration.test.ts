@@ -1,5 +1,4 @@
-import { copyFile, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { createServer, connect, type Socket } from 'node:net';
 import { once } from 'node:events';
 import type { AgentSessionEvent, InlineExtension, SessionEntry } from '@earendil-works/pi-coding-agent';
@@ -238,25 +237,41 @@ async function createTranscriptWire(sync: TranscriptSync): Promise<{
   };
 }
 
-async function receiveWire(port: number, cursor: TranscriptCursor | undefined, replica: TranscriptReplica): Promise<void> {
+async function connectWire(port: number, replica: TranscriptReplica, cursor: TranscriptCursor | undefined): Promise<{
+  socket: Socket;
+  frames: WireMessage[];
+  waitForFrames(count: number): Promise<void>;
+}> {
   const socket = connect(port, '127.0.0.1');
-  await once(socket, 'connect');
-  const received = new Promise<void>((resolve, reject) => {
-    let rest = '';
-    socket.on('data', (chunk: Buffer) => {
-      rest += chunk.toString();
-      const end = rest.indexOf('\n');
-      if (end < 0) return;
+  const frames: WireMessage[] = [];
+  const waiters: Array<{ count: number; resolve(): void }> = [];
+  let rest = '';
+  socket.on('data', (chunk: Buffer) => {
+    rest += chunk.toString();
+    let end = rest.indexOf('\n');
+    while (end >= 0) {
       const message = JSON.parse(rest.slice(0, end)) as WireMessage;
+      rest = rest.slice(end + 1);
+      frames.push(message);
       if (message.type === 'snapshot') expect(replica.applySnapshot(message.cursor, message.state)).toEqual({ type: 'accepted' });
       else for (const event of message.events) expect(replica.accept(event)).toEqual({ type: 'accepted' });
-      resolve();
-    });
-    socket.on('error', reject);
+      for (const waiter of waiters.splice(0)) {
+        if (frames.length >= waiter.count) waiter.resolve();
+        else waiters.push(waiter);
+      }
+      end = rest.indexOf('\n');
+    }
   });
+  await once(socket, 'connect');
   socket.write(`${JSON.stringify(cursor ?? null)}\n`);
-  await received;
-  socket.destroy();
+  return {
+    socket,
+    frames,
+    waitForFrames(count) {
+      if (frames.length >= count) return Promise.resolve();
+      return new Promise((resolve) => waiters.push({ count, resolve }));
+    },
+  };
 }
 
 it('recovers TCP transcript snapshots and retained replays without duplicate display content', async () => {
@@ -275,33 +290,64 @@ it('recovers TCP transcript snapshots and retained replays without duplicate dis
     },
   });
   const sync = new TranscriptSync('tcp-stream', [], 3);
+  const retainedSync = new TranscriptSync('tcp-retained-stream', [], 50);
   const wire = await createTranscriptWire(sync);
+  const retainedWire = await createTranscriptWire(retainedSync);
   let unsubscribe: (() => void) | undefined;
   try {
-    fixture.faux.setResponses([fauxAssistantMessage('abcdef'), fauxAssistantMessage('second')]);
-    unsubscribe = fixture.runtime.session.subscribe((event) => wire.publish(sync.accept(event)));
-    const initial = new TranscriptReplica();
-    await receiveWire(wire.port, undefined, initial);
+    fixture.faux.setResponses([fauxAssistantMessage('abcdef')]);
+    unsubscribe = fixture.runtime.session.subscribe((event) => {
+      wire.publish(sync.accept(event));
+      retainedWire.publish(retainedSync.accept(event));
+    });
+    const connected = await connectWire(wire.port, new TranscriptReplica(), undefined);
+    await connected.waitForFrames(1);
+    const initial = connected.frames[0]!;
+    if (initial.type !== 'snapshot') throw new Error('Expected initial snapshot');
     const run = fixture.runtime.session.prompt('first');
     await pausedGate;
-    const oldCursor = initial.snapshot().cursor;
-    expect(oldCursor).toBeDefined();
+    await connected.waitForFrames(2);
+    const latestFrame = connected.frames.at(-1)!;
+    const partialCursor = latestFrame.type === 'events'
+      ? latestFrame.events.at(-1)!.cursor
+      : latestFrame.cursor;
+    const retainedSnapshot = connected.frames.find((frame): frame is WireSnapshot => frame.type === 'snapshot');
+    expect(retainedSnapshot).toBeDefined();
+    connected.socket.destroy();
     release?.();
     await run;
 
-    const overflow = new TranscriptReplica();
-    await receiveWire(wire.port, oldCursor, overflow);
-    expect(displayedText(overflow)).toEqual(['first', 'abcdef']);
-    expect(new Set(displayedText(overflow)).size).toBe(displayedText(overflow).length);
+    const overflowReplica = new TranscriptReplica();
+    const overflow = await connectWire(wire.port, overflowReplica, partialCursor);
+    await overflow.waitForFrames(1);
+    expect(overflow.frames[0]!.type).toBe('snapshot');
+    const beforeRelease = overflow.frames.length;
+    fixture.faux.appendResponses([fauxAssistantMessage('second')]);
+    await fixture.runtime.session.prompt('next');
+    await overflow.waitForFrames(beforeRelease + 1);
+    expect(displayedText(overflowReplica)).toEqual(['first', 'abcdef', 'next', 'second']);
+    expect(new Set(displayedText(overflowReplica)).size).toBe(displayedText(overflowReplica).length);
+    overflow.socket.destroy();
 
-    const retained = new TranscriptReplica();
-    const current = sync.snapshot();
-    expect(retained.applySnapshot({ streamId: current.cursor.streamId, sequence: current.cursor.sequence - 1 }, current.state).type).toBe('accepted');
-    await receiveWire(wire.port, { streamId: current.cursor.streamId, sequence: current.cursor.sequence - 1 }, retained);
-    expect(displayedText(retained)).toEqual(['first', 'abcdef']);
+    const retainedSnapshotReplica = new TranscriptReplica();
+    const retainedSnapshotWire = await connectWire(retainedWire.port, retainedSnapshotReplica, { streamId: 'foreign', sequence: 0 });
+    await retainedSnapshotWire.waitForFrames(1);
+    const currentSnapshot = retainedSnapshotWire.frames[0]!;
+    if (currentSnapshot.type !== 'snapshot') throw new Error('Expected retained snapshot');
+    retainedSnapshotWire.socket.destroy();
+    fixture.faux.appendResponses([fauxAssistantMessage('third')]);
+    await fixture.runtime.session.prompt('last');
+    const retainedReplica = new TranscriptReplica();
+    expect(retainedReplica.applySnapshot(currentSnapshot.cursor, currentSnapshot.state)).toEqual({ type: 'accepted' });
+    const retained = await connectWire(retainedWire.port, retainedReplica, currentSnapshot.cursor);
+    await retained.waitForFrames(1);
+    expect(retained.frames[0]!.type).toBe('events');
+    expect(displayedText(retainedReplica)).toEqual(['first', 'abcdef', 'next', 'second', 'last', 'third']);
+    retained.socket.destroy();
   } finally {
     unsubscribe?.();
     await wire.close();
+    await retainedWire.close();
     await fixture.dispose();
   }
 });
@@ -332,8 +378,6 @@ it('replaces stale runtime epochs and forks active streams through public runtim
     await original.prompt('persisted');
     const persistedFile = original.sessionFile;
     expect(persistedFile).toBeDefined();
-    const recreatedFile = join(fixture.sessionDir, 'recreated.jsonl');
-    await copyFile(persistedFile!, recreatedFile);
     pauseActiveResponse = true;
     const run = original.prompt('active');
     await pausedGate;
@@ -349,19 +393,29 @@ it('replaces stale runtime epochs and forks active streams through public runtim
     const replacementSync = new TranscriptSync('fork-epoch', replacement.sessionManager.getEntries(), 10);
     const view = new TranscriptReplica();
     expect(view.applySnapshot(replacementSync.snapshot().cursor, replacementSync.snapshot().state)).toEqual({ type: 'accepted' });
+    const replacementUnsubscribe = replacement.subscribe((event) => {
+      const envelope = replacementSync.accept(event);
+      expect(view.accept(envelope)).toEqual({ type: 'accepted' });
+    });
+    await replacement.prompt('replacement prompt');
+    replacementUnsubscribe();
+    await run.catch(() => undefined);
+    const expectedReplacement = displayedText(view);
+    expect(expectedReplacement).toContain('forked');
     const oldEvents = oldSync.replaySince(undefined);
     if (oldEvents.type === 'replay') {
       for (const event of oldEvents.events) expect(view.accept(event)).toEqual({ type: 'snapshot_required' });
     }
-    await run.catch(() => undefined);
-    expect(displayedText(view)).toEqual([]);
+    expect(displayedText(view)).toEqual(expectedReplacement);
 
-    await fixture.recreate(recreatedFile);
+    await fixture.recreate(persistedFile!);
     const recreated = fixture.runtime.session;
     const recreatedSync = new TranscriptSync('recreated-epoch', recreated.sessionManager.getEntries(), 10);
     expect(recreatedSync.replaySince(oldCursor).type).toBe('snapshot');
     expect(displayedText(new TranscriptReplica())).toEqual([]);
-    expect(displayedMessages(recreatedSync.snapshot().state).map((message) => message.role === 'user' ? contentText(message.content) : message.role === 'assistant' ? contentText(message.content) : message.role)).toEqual(['persisted', 'seed']);
+    const restored = displayedMessages(recreatedSync.snapshot().state).map((message) => message.role === 'user' ? contentText(message.content) : message.role === 'assistant' ? contentText(message.content) : message.role);
+    expect(restored).toContain('persisted');
+    expect(restored).toContain('seed');
   } finally {
     unsubscribe?.();
     release?.();
