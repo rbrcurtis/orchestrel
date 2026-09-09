@@ -186,40 +186,59 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
     const session = fixture.runtime.session;
     const events = [] as ReturnType<TranscriptSync['accept']>[];
     const settlements = [] as ReturnType<TranscriptSync['settle']>[];
+    const settledSnapshots = [] as ReturnType<TranscriptSync['snapshot']>[];
     let firstPartial: ReturnType<TranscriptSync['snapshot']> | undefined;
 
     unsubscribe = session.subscribe((event) => {
       if (event.type === 'agent_settled') {
         settlements.push(sync.settle(session.sessionManager.getEntries()));
+        settledSnapshots.push(sync.snapshot());
         return;
       }
       const envelope = sync.accept(event);
-      if (!firstPartial && event.type === 'message_update') firstPartial = sync.snapshot();
+      if (!firstPartial && event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
+        firstPartial = sync.snapshot();
+      }
       events.push(envelope);
     });
 
     await session.prompt('first prompt');
     expect(settlements).toHaveLength(1);
     expect(firstPartial).toBeDefined();
-    expect(sync.replaySince({ streamId: 'stream-one', sequence: 0 }).type).toBe('snapshot');
+    expect(displayedMessages(firstPartial!.state)
+      .filter((message) => message.role === 'assistant')
+      .map((message) => contentText(message.content))).toEqual(['first']);
+    const overflow = sync.replaySince({ streamId: 'stream-one', sequence: 0 });
+    expect(overflow.type).toBe('snapshot');
+    const byteBounded = new TranscriptSync('byte-bounded', [], 3, 1);
+    byteBounded.accept(events[0]!.event.type === 'pi_event' ? events[0]!.event.event : { type: 'agent_start' });
+    expect(byteBounded.replaySince({ streamId: 'byte-bounded', sequence: 0 }).type).toBe('snapshot');
+    if (overflow.type === 'snapshot') {
+      expect(displayedMessages(overflow.state)
+        .filter((message) => message.role === 'assistant')
+        .map((message) => contentText(message.content))).toEqual(['first']);
+    }
 
-    // The first settled replacement is still in flight when the next live run starts.
+    // The first settled snapshot is deliberately delayed while a newer run begins.
     await session.prompt('next prompt');
     expect(settlements).toHaveLength(2);
 
     const firstSnapshot = firstPartial!;
     const firstSettlement = settlements[0]!;
+    const firstSettledSnapshot = settledSnapshots[0]!;
     const secondSettlement = settlements[1]!;
-    replica.applySnapshot(firstSnapshot.cursor, firstSnapshot.state);
-    replica.accept(firstSettlement);
-    for (const event of events.filter((event) => event.cursor.sequence > firstSettlement.cursor.sequence)) {
-      replica.accept(event);
+    expect(replica.applySnapshot(firstSnapshot.cursor, firstSnapshot.state).type).toBe('accepted');
+    expect(replica.accept(firstSettlement).type).toBe('snapshot_required');
+    expect(replica.applySnapshot(firstSettledSnapshot.cursor, firstSettledSnapshot.state).type).toBe('accepted');
+    for (const event of events.filter((event) => event.cursor.sequence > firstSettledSnapshot.cursor.sequence)) {
+      expect(replica.accept(event).type).toBe('accepted');
     }
-    replica.accept(secondSettlement);
+    expect(replica.accept(secondSettlement).type).toBe('accepted');
     expect(displayedText(replica)).toEqual(['first prompt', 'first', 'next prompt', 'second']);
 
-    replica.accept(firstSettlement);
-    replica.accept(secondSettlement);
+    expect(replica.applySnapshot(firstSettledSnapshot.cursor, firstSettledSnapshot.state).type).toBe('duplicate');
+    expect(replica.accept(firstSettlement).type).toBe('duplicate');
+    expect(replica.accept(secondSettlement).type).toBe('duplicate');
     expect(displayedText(replica)).toEqual(['first prompt', 'first', 'next prompt', 'second']);
     expect(sync.replaySince({ streamId: 'other-stream', sequence: 0 }).type).toBe('snapshot');
     expect(sync.replaySince({ streamId: 'stream-one', sequence: 999 }).type).toBe('snapshot');

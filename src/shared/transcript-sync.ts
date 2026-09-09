@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
-import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
+import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai';
 import type { AgentSessionEvent, SessionEntry } from '@earendil-works/pi-coding-agent';
 
 export interface TranscriptCursor {
@@ -31,11 +31,15 @@ export interface TranscriptOverlayMessage {
   lifecycleId: string;
   startSequence: number;
   message: AgentMessage;
+  toolJson: Record<number, string>;
 }
 
 type WithoutPartial<T> = T extends { partial: unknown } ? Omit<T, 'partial'> : T;
 
-export type TranscriptAssistantUpdate = WithoutPartial<AssistantMessageEvent>;
+export interface TranscriptAssistantUpdate {
+  event: WithoutPartial<AssistantMessageEvent>;
+  content?: AssistantMessage['content'][number];
+}
 
 export type TranscriptPassthroughEvent = AgentSessionEvent;
 
@@ -53,6 +57,13 @@ export type TranscriptEvent =
 
 export interface TranscriptState {
   baseline: TranscriptEntryProjection[];
+  /** Sequence through which the baseline projection is authoritative. */
+  baselineThrough: number;
   overlay: TranscriptOverlayMessage[];
   events: TranscriptPassthroughEvent[];
 }
+
+export type TranscriptReplicaResult =
+  | { type: 'accepted' }
+  | { type: 'duplicate' }
+  | { type: 'snapshot_required' };

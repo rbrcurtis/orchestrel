@@ -1,11 +1,14 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
+import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { buildContextEntries, sessionEntryToContextMessages, type AgentSessionEvent, type SessionEntry } from '@earendil-works/pi-coding-agent';
 import type {
   ReplayDecision,
+  TranscriptAssistantUpdate,
   TranscriptCursor,
   TranscriptEntryProjection,
   TranscriptEnvelope,
   TranscriptEvent,
+  TranscriptReplicaResult,
   TranscriptState,
 } from '../shared/transcript-sync';
 
@@ -18,7 +21,8 @@ import type {
  */
 export class TranscriptSync {
   private sequence = 0;
-  private readonly replay: TranscriptEnvelope<TranscriptEvent>[] = [];
+  private replayBytes = 0;
+  private readonly replay: Array<{ envelope: TranscriptEnvelope<TranscriptEvent>; bytes: number }> = [];
   private readonly startSequences: number[] = [];
   private state: TranscriptState;
 
@@ -26,34 +30,24 @@ export class TranscriptSync {
     readonly streamId: string,
     initialEntries: SessionEntry[],
     private readonly replayCapacity: number,
+    private readonly replayByteCapacity = 1_000_000,
   ) {
-    if (replayCapacity < 1) throw new Error('Transcript replay capacity must be positive');
-    this.state = { baseline: projectEntries(initialEntries), overlay: [], events: [] };
+    if (!Number.isSafeInteger(replayCapacity) || replayCapacity < 1) throw new Error('Transcript replay capacity must be a positive integer');
+    if (!Number.isSafeInteger(replayByteCapacity) || replayByteCapacity < 1) {
+      throw new Error('Transcript replay byte capacity must be a positive integer');
+    }
+    this.state = { baseline: projectEntries(initialEntries), baselineThrough: 0, overlay: [], events: [] };
   }
 
   accept(event: AgentSessionEvent): TranscriptEnvelope<TranscriptEvent> {
     const normalized = this.normalize(event);
-    const envelope = {
-      cursor: { streamId: this.streamId, sequence: ++this.sequence },
-      event: structuredClone(normalized),
-    };
-    this.state = reduceTranscriptState(this.state, envelope.event);
-    this.replay.push(envelope);
-    if (this.replay.length > this.replayCapacity) this.replay.shift();
-    return structuredClone(envelope);
+    return this.sequenceEvent(normalized);
   }
 
   settle(entries: SessionEntry[]): TranscriptEnvelope<TranscriptEvent> {
-    const projection = projectEntries(entries);
-    const coveredThrough = this.sequence;
-    const envelope = {
-      cursor: { streamId: this.streamId, sequence: ++this.sequence },
-      event: { type: 'baseline_replaced' as const, entries: projection, coveredThrough },
-    };
-    this.state = reduceTranscriptState(this.state, envelope.event);
-    this.replay.push(envelope);
-    if (this.replay.length > this.replayCapacity) this.replay.shift();
-    return structuredClone(envelope);
+    // Projection and sequencing share this synchronous call stack, so no newer SDK
+    // event can claim a sequence between the authoritative source view and boundary.
+    return this.sequenceEvent({ type: 'baseline_replaced', entries: projectEntries(entries), coveredThrough: this.sequence });
   }
 
   snapshot(): { cursor: TranscriptCursor; state: TranscriptState } {
@@ -63,9 +57,32 @@ export class TranscriptSync {
   replaySince(cursor: TranscriptCursor | undefined): ReplayDecision<TranscriptEvent, TranscriptState> {
     if (!cursor || cursor.streamId !== this.streamId || cursor.sequence > this.sequence) return this.snapshotDecision();
     if (cursor.sequence === this.sequence) return { type: 'replay', events: [] };
-    const oldest = this.replay[0];
+    const oldest = this.replay[0]?.envelope;
     if (!oldest || cursor.sequence < oldest.cursor.sequence - 1) return this.snapshotDecision();
-    return { type: 'replay', events: structuredClone(this.replay.filter((event) => event.cursor.sequence > cursor.sequence)) };
+    const events = this.replay.map((item) => item.envelope).filter((event) => event.cursor.sequence > cursor.sequence);
+    if (events[0]?.cursor.sequence !== cursor.sequence + 1) return this.snapshotDecision();
+    return { type: 'replay', events: structuredClone(events) };
+  }
+
+  private sequenceEvent(event: TranscriptEvent): TranscriptEnvelope<TranscriptEvent> {
+    const envelope = { cursor: { streamId: this.streamId, sequence: ++this.sequence }, event: structuredClone(event) };
+    this.state = reduceTranscriptState(this.state, envelope.event);
+    this.retain(envelope);
+    return structuredClone(envelope);
+  }
+
+  private retain(envelope: TranscriptEnvelope<TranscriptEvent>): void {
+    const bytes = byteSize(envelope);
+    if (bytes > this.replayByteCapacity) {
+      this.replay.length = 0;
+      this.replayBytes = 0;
+      return;
+    }
+    this.replay.push({ envelope, bytes });
+    this.replayBytes += bytes;
+    while (this.replay.length > this.replayCapacity || this.replayBytes > this.replayByteCapacity) {
+      this.replayBytes -= this.replay.shift()!.bytes;
+    }
   }
 
   private cursor(): TranscriptCursor {
@@ -86,8 +103,7 @@ export class TranscriptSync {
     }
 
     if (event.type === 'message_update') {
-      const lifecycleId = this.currentLifecycleId();
-      return { type: 'message_delta', lifecycleId, update: withoutPartial(event.assistantMessageEvent) }; 
+      return { type: 'message_delta', lifecycleId: this.currentLifecycleId(), update: normalizeUpdate(event) };
     }
 
     if (event.type === 'message_end') {
@@ -97,7 +113,6 @@ export class TranscriptSync {
     }
 
     if (event.type === 'entry_appended') return { type: 'entry_appended', entry: event.entry };
-    if (event.type === 'agent_settled') return { type: 'pi_event', event };
     return { type: 'pi_event', event };
   }
 
@@ -106,7 +121,6 @@ export class TranscriptSync {
     if (startSequence === undefined) throw new Error('Received an assistant message event before message_start');
     return `${this.streamId}:${startSequence}`;
   }
-
 }
 
 /** Applies one normalized event to a copied display state for replay recipients. */
@@ -114,16 +128,21 @@ export function reduceTranscriptState(state: TranscriptState, event: TranscriptE
   const next = structuredClone(state);
   if (event.type === 'baseline_replaced') {
     next.baseline = event.entries;
+    next.baselineThrough = event.coveredThrough;
     next.overlay = next.overlay.filter((message) => message.startSequence > event.coveredThrough);
     return next;
   }
 
   if (event.type === 'message_started') {
-    next.overlay.push({ lifecycleId: event.lifecycleId, startSequence: event.startSequence, message: event.message });
+    next.overlay.push({ lifecycleId: event.lifecycleId, startSequence: event.startSequence, message: event.message, toolJson: {} });
     return next;
   }
 
-  if (event.type === 'message_delta') return next;
+  if (event.type === 'message_delta') {
+    const overlay = next.overlay.find((message) => message.lifecycleId === event.lifecycleId);
+    if (overlay?.message.role === 'assistant') applyAssistantUpdate(overlay.message, overlay.toolJson, event.update);
+    return next;
+  }
 
   if (event.type === 'message_ended') {
     const overlay = next.overlay.find((message) => message.lifecycleId === event.lifecycleId);
@@ -136,22 +155,30 @@ export function reduceTranscriptState(state: TranscriptState, event: TranscriptE
   return next;
 }
 
-/** Applies ordered envelopes and ignores duplicate or stale deliveries. */
+/** Applies ordered envelopes. A gap requires an owner snapshot; it is never guessed. */
 export class TranscriptReplica {
   private cursor: TranscriptCursor | undefined;
-  private state: TranscriptState = { baseline: [], overlay: [], events: [] };
+  private state: TranscriptState = { baseline: [], baselineThrough: 0, overlay: [], events: [] };
 
-  applySnapshot(cursor: TranscriptCursor, state: TranscriptState): void {
-    if (this.cursor && (this.cursor.streamId !== cursor.streamId || this.cursor.sequence > cursor.sequence)) return;
+  applySnapshot(cursor: TranscriptCursor, state: TranscriptState): TranscriptReplicaResult {
+    if (state.baselineThrough > cursor.sequence) return { type: 'snapshot_required' };
+    if (this.cursor && this.cursor.streamId === cursor.streamId && this.cursor.sequence > cursor.sequence) return { type: 'duplicate' };
+    if (this.cursor && this.cursor.streamId !== cursor.streamId && this.cursor.sequence >= cursor.sequence) return { type: 'duplicate' };
     this.cursor = structuredClone(cursor);
     this.state = structuredClone(state);
+    return { type: 'accepted' };
   }
 
-  accept(envelope: TranscriptEnvelope<TranscriptEvent>): void {
-    if (!this.cursor || this.cursor.streamId !== envelope.cursor.streamId) return;
-    if (envelope.cursor.sequence <= this.cursor.sequence) return;
+  accept(envelope: TranscriptEnvelope<TranscriptEvent>): TranscriptReplicaResult {
+    if (!this.cursor || this.cursor.streamId !== envelope.cursor.streamId) return { type: 'snapshot_required' };
+    if (envelope.cursor.sequence <= this.cursor.sequence) return { type: 'duplicate' };
+    if (envelope.cursor.sequence !== this.cursor.sequence + 1) return { type: 'snapshot_required' };
+    if (envelope.event.type === 'baseline_replaced' && envelope.event.coveredThrough > this.cursor.sequence) {
+      return { type: 'snapshot_required' };
+    }
     this.state = reduceTranscriptState(this.state, envelope.event);
     this.cursor = structuredClone(envelope.cursor);
+    return { type: 'accepted' };
   }
 
   snapshot(): { cursor: TranscriptCursor | undefined; state: TranscriptState } {
@@ -159,12 +186,43 @@ export class TranscriptReplica {
   }
 }
 
-function withoutPartial(event: Extract<AgentSessionEvent, { type: 'message_update' }>['assistantMessageEvent']): TranscriptEvent extends { type: 'message_delta'; update: infer T } ? T : never {
-  if ('partial' in event) {
-    const { partial: _, ...update } = event;
-    return update as TranscriptEvent extends { type: 'message_delta'; update: infer T } ? T : never;
+function normalizeUpdate(event: Extract<AgentSessionEvent, { type: 'message_update' }>): TranscriptAssistantUpdate {
+  const sdkEvent = event.assistantMessageEvent;
+  if (!('partial' in sdkEvent)) return { event: sdkEvent };
+  const { partial, ...update } = sdkEvent;
+  const index = 'contentIndex' in sdkEvent ? sdkEvent.contentIndex : undefined;
+  return {
+    event: update,
+    ...(index === undefined ? {} : { content: partial.content[index] }),
+  };
+}
+
+function applyAssistantUpdate(message: AssistantMessage, toolJson: Record<number, string>, update: TranscriptAssistantUpdate): void {
+  const event = update.event;
+  if (!('contentIndex' in event)) return;
+  const index = event.contentIndex;
+  if (event.type === 'text_start') message.content[index] = { type: 'text', text: '' };
+  if (event.type === 'text_delta') {
+    const block = message.content[index];
+    if (block?.type === 'text') block.text += event.delta;
   }
-  return event as TranscriptEvent extends { type: 'message_delta'; update: infer T } ? T : never;
+  if (event.type === 'text_end') message.content[index] = { type: 'text', text: event.content };
+  if (event.type === 'thinking_start') message.content[index] = { type: 'thinking', thinking: '' };
+  if (event.type === 'thinking_delta') {
+    const block = message.content[index];
+    if (block?.type === 'thinking') block.thinking += event.delta;
+  }
+  if (event.type === 'thinking_end') message.content[index] = { type: 'thinking', thinking: event.content };
+  if (event.type === 'toolcall_start' && update.content?.type === 'toolCall') {
+    message.content[index] = structuredClone(update.content);
+    toolJson[index] = '';
+  }
+  if (event.type === 'toolcall_delta') toolJson[index] = `${toolJson[index] ?? ''}${event.delta}`;
+  if (event.type === 'toolcall_end') message.content[index] = structuredClone(event.toolCall);
+}
+
+function byteSize(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
 export function projectEntries(entries: SessionEntry[]): TranscriptEntryProjection[] {
