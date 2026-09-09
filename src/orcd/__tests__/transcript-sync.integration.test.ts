@@ -550,6 +550,9 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
         return;
       }
       const envelope = sync.accept(event);
+      if (envelope.event.type === 'message_delta' && 'delta' in envelope.event.update.event) {
+        expect(envelope.event.update.content).toBeUndefined();
+      }
       if (event.type === 'message_update' && event.assistantMessageEvent.type === 'toolcall_delta') {
         firstPartial = sync.snapshot();
       }

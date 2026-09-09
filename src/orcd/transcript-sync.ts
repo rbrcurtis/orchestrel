@@ -126,34 +126,47 @@ export class TranscriptSync {
 
 /** Applies one normalized event to a copied display state for replay recipients. */
 export function reduceTranscriptState(state: TranscriptState, event: TranscriptEvent): TranscriptState {
-  const next = structuredClone(state);
   if (event.type === 'baseline_replaced') {
-    next.baseline = event.entries;
-    next.baselineThrough = event.coveredThrough;
-    next.overlay = next.overlay.filter((message) => message.startSequence > event.coveredThrough);
-    return next;
+    return {
+      baseline: event.entries,
+      baselineThrough: event.coveredThrough,
+      overlay: state.overlay.filter((message) => message.startSequence > event.coveredThrough),
+      events: [],
+    };
   }
 
   if (event.type === 'message_started') {
-    next.overlay.push({ lifecycleId: event.lifecycleId, startSequence: event.startSequence, message: event.message, toolInput: {} });
-    return next;
+    return {
+      ...state,
+      overlay: [...state.overlay, {
+        lifecycleId: event.lifecycleId,
+        startSequence: event.startSequence,
+        message: event.message,
+        toolInput: {},
+      }],
+    };
   }
 
-  if (event.type === 'message_delta') {
-    const overlay = next.overlay.find((message) => message.lifecycleId === event.lifecycleId);
-    if (overlay?.message.role === 'assistant') applyAssistantUpdate(overlay.message, overlay.toolInput, event.update);
-    return next;
+  if (event.type === 'message_delta' || event.type === 'message_ended') {
+    const index = state.overlay.findIndex((message) => message.lifecycleId === event.lifecycleId);
+    if (index < 0) return state;
+    const overlay = state.overlay.slice();
+    const current = overlay[index];
+    if (event.type === 'message_ended') {
+      overlay[index] = { ...current, message: event.message, toolInput: {} };
+    } else if (current.message.role === 'assistant') {
+      // Copy only the changing message. Completed history must not be cloned
+      // for each streamed token, and earlier snapshots must remain immutable.
+      const message = structuredClone(current.message);
+      const toolInput = structuredClone(current.toolInput);
+      applyAssistantUpdate(message, toolInput, event.update);
+      overlay[index] = { ...current, message, toolInput };
+    }
+    return { ...state, overlay };
   }
 
-  if (event.type === 'message_ended') {
-    const overlay = next.overlay.find((message) => message.lifecycleId === event.lifecycleId);
-    if (overlay) overlay.message = event.message;
-    return next;
-  }
-
-  if (event.type === 'entry_appended') return next;
-  next.events.push(event.event);
-  return next;
+  if (event.type === 'entry_appended') return state;
+  return { ...state, events: [...state.events, event.event] };
 }
 
 /** Applies ordered envelopes. A gap requires an owner snapshot; it is never guessed. */
@@ -198,10 +211,12 @@ function normalizeUpdate(event: Extract<AgentSessionEvent, { type: 'message_upda
   const sdkEvent = event.assistantMessageEvent;
   if (!('partial' in sdkEvent)) return { event: sdkEvent };
   const { partial, ...update } = sdkEvent;
-  const index = 'contentIndex' in sdkEvent ? sdkEvent.contentIndex : undefined;
+  // Only toolcall_start needs its block identity. Delta events already carry
+  // their incremental content; retaining partial here stores the growing block
+  // again on every token and makes replay traffic quadratic in message size.
   return {
     event: update,
-    ...(index === undefined ? {} : { content: partial.content[index] }),
+    ...(sdkEvent.type === 'toolcall_start' ? { content: partial.content[sdkEvent.contentIndex] } : {}),
   };
 }
 
