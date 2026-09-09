@@ -240,6 +240,57 @@ an explicit measured bound or an openly documented design blocker.
 
 **Commit:** `docs: record transcript synchronization gate results`
 
+### Task 4 gate result (2026-09-09)
+
+**Blocked. Do not plan browser integration or IndexedDB work from this reducer.**
+
+`src/orcd/__tests__/transcript-sync.integration.test.ts` now runs a real temporary
+Pi 0.84.2 faux-provider session with 16 tool rounds, a 65,536-byte synthetic
+result per round, no settlement until all rounds complete, a 32-envelope/
+262,144-byte replay ring, and no real service calls. One reproducible verbose
+run measured encoded payload bytes as follows:
+
+| Point | Confirmed baseline | Live overlay | Replay | Process `heapUsed` |
+| --- | ---: | ---: | ---: | ---: |
+| Before prompt | 0 | 0 | 0 | 71,780,672 |
+| Before settlement | 0 | 42,029 | 0 (ring overflow) | 54,613,744 |
+| After `settle()` | 27,284 | 2 (empty array) | 27,414 | 55,707,472 |
+
+Heap is recorded separately and is not a bound: V8 GC made the unsettled sample
+smaller than the before-prompt sample. Reducer payload measurements are encoded
+JSON bytes. Pi's public synthetic tool-result path retains an excerpt rather
+than the full 65,536 bytes, so these values are a lower measured case, not a
+large-output memory limit.
+
+Passing evidence: normalized replay is bounded by both its 32-envelope and
+262,144-byte capacities; an oversized replay request returns a snapshot; settled
+replacement removes the overlay; existing recovery tests cover stale runtime
+incarnations, unsubscribe cleanup, fixture disposal, and real temporary-session
+removal. The test keeps this integration coverage because a completed tool loop
+can cause user-visible server RAM growth and neither unit mocks nor static byte
+constants prove Pi event/persistence behavior.
+
+Failing gate: before settlement the overlay holds at least 32 completed user and
+assistant/tool-result records and grows with every round. `TranscriptSync` has no
+sound durable identity for each live record, so it cannot retire completed records
+by joining them to persisted entries. This violates the specification: the
+single-large-active-message exception cannot become an exception for the whole
+completed unsettled run.
+
+Smallest sound next contract: the session owner must write transient normalized
+records to a bounded server spool addressed only by `(streamId, sequence)`, with
+explicit page/range coverage and replacement through a settlement sequence. It
+must page those records to consumers and delete superseded ranges at the
+settlement boundary. It must not infer durable-entry identity by text, timestamps,
+positions, or object identity. This task does not implement that spool or any
+browser code. Test fixtures contain only generated `x` data and temporary files;
+all listeners, sockets, runtimes, and directories are closed in `finally`.
+
+- [x] Generate and measure long unsettled synthetic tool loop.
+- [x] Verify replay envelope and encoded-byte capacity with normalized deltas.
+- [x] Verify settled replacement releases the live overlay; retain runtime-replacement and cleanup coverage from Task 3.
+- [x] Record blocker and stop before downstream browser planning.
+
 ## Following work package, after the gate passes
 
 Write the next executable plan against the verified types rather than provisional

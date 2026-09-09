@@ -291,5 +291,30 @@ many completed overlay records; Stage 1 must measure and bound that state withou
 inventing live-to-entry matches. If this cannot meet the memory target, stop and
 review the design rather than introduce private Pi hooks.
 
+## Stage 1 measured retention gate (2026-09-09)
+
+The public Pi 0.84.2 integration fixture in
+`src/orcd/__tests__/transcript-sync.integration.test.ts` measured a 16-round,
+unsettled faux tool loop with generated 65,536-byte tool outputs. Before
+settlement, its encoded reducer overlay was 42,029 bytes while baseline was zero;
+after `settle()` the overlay was the two-byte empty array and baseline was 27,284
+bytes. The 32-envelope, 262,144-byte normalized replay ring overflowed rather
+than retaining an unbounded run. The process `heapUsed` samples were 71,780,672
+before the prompt, 54,613,744 unsettled, and 55,707,472 after settlement. Heap
+samples are process-wide and GC-dependent, so they are evidence, not a bound.
+
+The gate is blocked. The completed unsettled overlay grows once for each finished
+round because no durable identity can safely connect its transient lifecycle ID
+to a persisted entry. This is not permitted by the single-large-active-message
+exception. Do not begin browser integration, paging, or IndexedDB work on this
+state model.
+
+Before the next package, specify and verify a session-owner transient spool with
+normalized records keyed by `(streamId, sequence)`, bounded pages and explicit
+range coverage, plus deletion/replacement at the settlement sequence. It must
+not use text, timestamps, array positions, or object identity to join live
+records with persisted history. This measurement uses generated data and temporary
+session files only; it makes no model or production-service calls.
+
 This document does not authorize a shared-branch push or merge. Implementation
 planning follows review of this revised written specification.

@@ -7,6 +7,7 @@ import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/provid
 import { displayedMessages, TranscriptReplica, TranscriptSync } from '../transcript-sync';
 import type { ReplayDecision, TranscriptCursor, TranscriptEnvelope, TranscriptEvent, TranscriptState } from '../../shared/transcript-sync';
 import { expect, it } from 'vitest';
+import { Type } from 'typebox';
 import { createTranscriptSyncFixture } from './transcript-sync-fixture';
 
 function contentText(content: string | Array<{ type: string; text?: string }>): string {
@@ -445,6 +446,86 @@ it('projects Pi compaction context while preserving its append-only entry log', 
     await fixture.dispose();
   }
 });
+
+it('measures retained payloads for a long unsettled tool loop and releases the overlay at settlement', async () => {
+  const rounds = 16;
+  const outputBytes = 65_536;
+  let settledStarted: (() => void) | undefined;
+  const settledStartedGate = new Promise<void>((resolve) => { settledStarted = resolve; });
+  let releaseSettlement: (() => void) | undefined;
+  const settlementGate = new Promise<void>((resolve) => { releaseSettlement = resolve; });
+  const output = 'x'.repeat(outputBytes);
+  const fixture = await createTranscriptSyncFixture({
+    name: 'large-tool-loop',
+    factory: (pi) => {
+      pi.registerTool({
+        name: 'large_output',
+        label: 'large output',
+        description: 'Returns deterministic synthetic measurement content.',
+        parameters: Type.Object({ round: Type.Integer() }),
+        async execute() {
+          return { content: [{ type: 'text', text: output }], details: undefined };
+        },
+      });
+      pi.on('agent_settled', async () => {
+        settledStarted?.();
+        await settlementGate;
+      });
+    },
+  });
+  const sync = new TranscriptSync('measurement-stream', [], 32, 262_144);
+  let unsubscribe: (() => void) | undefined;
+  try {
+    fixture.faux.setResponses([
+      ...Array.from({ length: rounds }, (_, round) => fauxAssistantMessage([fauxToolCall('large_output', { round })])),
+      fauxAssistantMessage('complete'),
+    ]);
+    unsubscribe = fixture.runtime.session.subscribe((event) => sync.accept(event));
+    const heapBefore = process.memoryUsage().heapUsed;
+    const run = fixture.runtime.session.prompt('measure tool retention');
+    await settledStartedGate;
+
+    const unsettled = sync.snapshot();
+    const unsettledBytes = encodedBytes(unsettled.state);
+    const replay = sync.replaySince({ streamId: 'measurement-stream', sequence: 0 });
+    const replayBytes = replay.type === 'replay' ? encodedBytes(replay.events) : 0;
+    const heapUnsettled = process.memoryUsage().heapUsed;
+    expect(unsettled.state.baseline).toHaveLength(0);
+    expect(unsettled.state.overlay.length).toBeGreaterThanOrEqual(rounds * 2);
+    // Pi's public tool-result path retains an excerpt per synthetic output.
+    // This still proves every completed tool-loop record remains in the unsettled overlay.
+    expect(unsettledBytes).toBeGreaterThan(encodedBytes(fixture.runtime.session.sessionManager.getEntries()));
+    expect(replay.type).toBe('snapshot');
+    expect(replayBytes).toBe(0);
+
+    releaseSettlement?.();
+    await run;
+    const settled = sync.settle(fixture.runtime.session.sessionManager.getEntries());
+    const afterSettlement = sync.snapshot();
+    const baselineBytes = encodedBytes(afterSettlement.state.baseline);
+    const overlayBytes = encodedBytes(afterSettlement.state.overlay);
+    const retainedReplay = sync.replaySince({ streamId: 'measurement-stream', sequence: settled.cursor.sequence - 1 });
+    const retainedReplayBytes = retainedReplay.type === 'replay' ? encodedBytes(retainedReplay.events) : 0;
+    const heapSettled = process.memoryUsage().heapUsed;
+
+    expect(overlayBytes).toBe(2);
+    expect(afterSettlement.state.overlay).toEqual([]);
+    expect(baselineBytes).toBeGreaterThan(0);
+    expect(retainedReplayBytes).toBeLessThanOrEqual(262_144);
+    // Heap is process-wide and GC-managed; record it without treating a GC cycle as a reducer failure.
+    expect(heapBefore).toBeGreaterThan(0);
+    expect(heapUnsettled).toBeGreaterThan(0);
+    expect(heapSettled).toBeGreaterThan(0);
+  } finally {
+    releaseSettlement?.();
+    unsubscribe?.();
+    await fixture.dispose();
+  }
+});
+
+function encodedBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
 
 it('replays sequenced snapshots across overflow and delayed settlement without duplicate messages', async () => {
   const fixture = await createTranscriptSyncFixture({ name: 'transcript-sync', factory: () => {} });
