@@ -1,5 +1,6 @@
 import { reduceTranscriptState } from '../shared/transcript-reducer';
 import { TranscriptSpool } from './transcript-spool';
+import { collectDisplayPrompts, originalPromptText } from '../lib/display-prompt';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import { buildContextEntries, sessionEntryToContextMessages, type AgentSessionEvent, type SessionEntry } from '@earendil-works/pi-coding-agent';
 import type {
@@ -176,11 +177,39 @@ function byteSize(value: unknown): number {
 }
 
 export function projectEntries(entries: SessionEntry[]): TranscriptEntryProjection[] {
-  return buildContextEntries(entries).map((entry) => ({
-    entryId: entry.id,
-    entry: structuredClone(entry),
-    messages: structuredClone(sessionEntryToContextMessages(entry)),
-  }));
+  // Pi persists expanded skills/templates as the user message. Replace them with the
+  // original invocation so the live snapshot matches paged history. Prompt templates
+  // have no <skill> wrapper, so only the display metadata can recover them.
+  const replacements = collectDisplayPrompts(entries);
+  return buildContextEntries(entries).map((entry) => {
+    const messages = sessionEntryToContextMessages(entry).map((message) => {
+      if (message.role !== 'user') return message;
+      const text = userMessageText(message.content);
+      if (!text) return message;
+      const displayText = originalPromptText(text, replacements);
+      return displayText === text ? message : { ...message, content: displayText };
+    });
+    return {
+      entryId: entry.id,
+      entry: structuredClone(entry),
+      messages: structuredClone(messages),
+    };
+  });
+}
+
+function userMessageText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content
+    .map((block) => isTextBlock(block) ? block.text : '')
+    .join('');
+  return text || undefined;
+}
+
+function isTextBlock(block: unknown): block is { type: 'text'; text: string } {
+  return typeof block === 'object' && block !== null
+    && (block as { type?: unknown }).type === 'text'
+    && typeof (block as { text?: unknown }).text === 'string';
 }
 
 export function displayedMessages(state: TranscriptState): AgentMessage[] {

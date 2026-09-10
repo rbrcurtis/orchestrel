@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { TranscriptHistoryPage, TranscriptHistoryRequest } from '../shared/transcript-history';
-
-const DISPLAY_PROMPT_ENTRY = 'orchestrel-display-prompt';
+import { collectDisplayPrompts, originalPromptText } from './display-prompt';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -121,13 +120,6 @@ function getContextModel(ctx: Record<string, unknown>): string | undefined {
   return getString(model.modelId) ?? getString(model.id) ?? getString(model.name);
 }
 
-function displayPrompt(entry: SessionEntry): { displayText: string; expandedHash: string } | undefined {
-  if (entry.type !== 'custom' || entry.customType !== DISPLAY_PROMPT_ENTRY || !isRecord(entry.data)) return undefined;
-  const displayText = getString(entry.data.displayText);
-  const expandedHash = getString(entry.data.expandedHash);
-  return displayText && expandedHash ? { displayText, expandedHash } : undefined;
-}
-
 function messageText(message: unknown): string | undefined {
   if (!isRecord(message) || message.role !== 'user') return undefined;
   if (typeof message.content === 'string') return message.content;
@@ -136,13 +128,6 @@ function messageText(message: unknown): string | undefined {
     .map((block) => isRecord(block) && block.type === 'text' ? getString(block.text) ?? '' : '')
     .join('');
   return text || undefined;
-}
-
-function collapseLegacySkillBlocks(text: string): string {
-  return text.replace(
-    /<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g,
-    (_block, name: string) => `/${name}`,
-  );
 }
 
 function getMessagesFromManager(manager: {
@@ -157,14 +142,7 @@ function getMessagesFromManager(manager: {
   for (const entry of branch) {
     if (entry.type === 'compaction') backgroundCompaction = entry.fromHook === true;
   }
-  const replacements = new Map<string, string[]>();
-  for (const entry of branch) {
-    const replacement = displayPrompt(entry);
-    if (!replacement) continue;
-    const texts = replacements.get(replacement.expandedHash) ?? [];
-    texts.push(replacement.displayText);
-    replacements.set(replacement.expandedHash, texts);
-  }
+  const replacements = collectDisplayPrompts(branch);
   const messages: unknown[] = [];
   const model = getContextModel(ctx);
   if (model) {
@@ -183,9 +161,7 @@ function getMessagesFromManager(manager: {
     let displayMessage = message;
     const text = messageText(message);
     if (text) {
-      const hash = createHash('sha256').update(text).digest('hex');
-      const displayTexts = replacements.get(hash);
-      const displayText = displayTexts?.shift() ?? collapseLegacySkillBlocks(text);
+      const displayText = originalPromptText(text, replacements);
       if (displayText !== text) displayMessage = { ...(message as Record<string, unknown>), content: displayText };
     }
     const historyMessage = toHistoryMessage(displayMessage, sessionId, idx, backgroundCompaction);
@@ -221,22 +197,14 @@ export async function getPiSessionHistoryPage(
   if (model) records.push({ id: `${sessionId}:init`, message: {
     type: 'system', subtype: 'init', model, session_id: sessionId,
   } });
-  const replacements = new Map<string, string[]>();
-  for (const entry of manager.getBranch()) {
-    const replacement = displayPrompt(entry);
-    if (!replacement) continue;
-    const texts = replacements.get(replacement.expandedHash) ?? [];
-    texts.push(replacement.displayText);
-    replacements.set(replacement.expandedHash, texts);
-  }
+  const replacements = collectDisplayPrompts(manager.getBranch());
   for (const entry of entries) {
     const messages = sessionEntryToContextMessages(entry);
     for (const [part, message] of messages.entries()) {
       const id = `${entry.id}:${part}`;
       const text = messageText(message);
-      const hash = text ? createHash('sha256').update(text).digest('hex') : undefined;
-      const displayText = hash ? replacements.get(hash)?.shift() ?? collapseLegacySkillBlocks(text!) : undefined;
-      const displayed = displayText !== undefined ? { ...message, content: displayText } : message;
+      const displayText = text ? originalPromptText(text, replacements) : undefined;
+      const displayed = displayText !== undefined && displayText !== text ? { ...message, content: displayText } : message;
       const mapped = toHistoryMessage(displayed, sessionId, part, entry.type === 'compaction' && entry.fromHook === true);
       if (isRecord(mapped)) records.push({ id, message: { ...mapped, uuid: id } });
     }
