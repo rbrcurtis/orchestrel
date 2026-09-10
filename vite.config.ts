@@ -49,6 +49,9 @@ export default defineConfig(({ isSsrBuild }) => ({
       'class-variance-authority', 'clsx', 'tailwind-merge',
       'idb-keyval', 'zod', 'react-markdown', 'remark-gfm',
       'socket.io-client',
+      // CJS dep reached through @earendil-works/pi-ai's ESM files; must be
+      // pre-bundled for browser named-export interop.
+      'partial-json',
     ],
   },
   server: {
