@@ -4,6 +4,7 @@ import { RootStore } from './stores/root-store';
 import { StoreProvider } from './stores/context';
 import { persistStore } from './lib/store-persist';
 import { startMemorySampling } from './lib/memory-sampler';
+import { installPlainCopy } from './lib/plain-copy';
 import { ScrollArea, ScrollBar } from './components/ui/scroll-area';
 
 import type { Route } from './+types/root';
@@ -95,6 +96,7 @@ if (typeof window !== 'undefined') {
     persistStore(rootStore.projects, 'orchestrel:projects');
     (globalThis as Record<string, unknown>).__rootStore = rootStore;
     startMemorySampling();
+    installPlainCopy();
   } else {
     rootStore = (globalThis as Record<string, unknown>).__rootStore as RootStore;
   }
