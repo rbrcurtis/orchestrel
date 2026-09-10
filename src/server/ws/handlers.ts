@@ -17,7 +17,7 @@ import {
   handleProjectBrowse,
   handleProjectMkdir,
 } from './handlers/projects';
-import { handleSessionLoad } from './handlers/sessions';
+import { handleSessionLoad, handleHistoryPage, handleTranscriptSnapshot } from './handlers/sessions';
 import { handleAgentSend, handleAgentCompact, handleAgentStop, handleAgentStatus } from './handlers/agents';
 import type { Card, Column, Project } from '../../shared/ws-protocol';
 
@@ -131,6 +131,8 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   socket.on('agent:status', (data, cb) => void handleAgentStatus(data, cb, socket));
 
   // ── Session ──────────────────────────────────────────────────────────────
+  socket.on('session:transcript', (data, cb) => void handleTranscriptSnapshot(data, cb, socket));
+  socket.on('session:history-page', (data, cb) => void handleHistoryPage(data, cb, socket));
   socket.on('session:load', (data, cb) => void handleSessionLoad(data, cb, socket));
 
   socket.on('session:set-model', async (data, callback) => {

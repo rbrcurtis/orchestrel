@@ -265,6 +265,10 @@ export class OrcdSession {
     this.probePrevLeafId = s.leafId;
   }
 
+  getTranscriptSnapshot() {
+    return this.piSession?.getTranscriptSnapshot() ?? null;
+  }
+
   private emitMappedPiEvent(event: unknown): void {
     // TEMP: catch the tree fork the instant it becomes observable.
     this.probeLeaf('event');

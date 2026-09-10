@@ -62,6 +62,8 @@ export type TranscriptEvent =
 
 export interface TranscriptState {
   baseline: TranscriptEntryProjection[];
+  /** Number of older completed live records held in the owner spool. */
+  spooled?: number;
   /** Sequence through which the baseline projection is authoritative. */
   baselineThrough: number;
   overlay: TranscriptOverlayMessage[];

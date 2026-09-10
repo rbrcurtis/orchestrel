@@ -418,6 +418,18 @@ export class OrcdClient {
   /**
    * Get session history (conversation messages) from the remote node's local files.
    */
+  async getTranscriptSnapshot(sessionId: string) {
+    const msg = await this.request({ action: 'get_transcript', sessionId });
+    if (msg.type !== 'transcript_snapshot') throw new Error('Expected transcript snapshot');
+    return msg.snapshot;
+  }
+
+  async getHistoryPage(sessionId: string, cwd: string, page: import('../shared/transcript-history').TranscriptHistoryRequest) {
+    const msg = await this.request({ action: 'get_history_page', sessionId, cwd, page });
+    if (msg.type !== 'history_page') throw new Error('Expected history page reply');
+    return msg.page;
+  }
+
   async getHistory(sessionId: string, cwd: string): Promise<unknown[]> {
     const msg = await this.request({ action: 'get_history', sessionId, cwd } as OrcdAction);
     if (msg.type !== 'history') throw new Error('expected history reply');

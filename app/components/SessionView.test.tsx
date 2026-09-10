@@ -8,6 +8,11 @@ import type { Card } from '../../src/shared/ws-protocol';
 const sessionStore = {
   getSession: vi.fn(),
   loadHistory: vi.fn(),
+  setCacheScope: vi.fn(),
+  hasOlderHistory: vi.fn(() => false),
+  hasNewerHistory: vi.fn(() => false),
+  loadNewerHistory: vi.fn(),
+  loadOlderHistory: vi.fn(),
   evictSession: vi.fn(),
   requestStatus: vi.fn(),
   sendMessage: vi.fn(),

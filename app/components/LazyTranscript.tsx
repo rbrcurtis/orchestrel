@@ -6,6 +6,10 @@ import type { ContentBlock, ConversationEntry } from '~/lib/message-accumulator'
 
 type Props = {
   cardId: number;
+  hasNewerHistory?: boolean;
+  onLoadNewerHistory?: () => Promise<void>;
+  hasOlderHistory?: boolean;
+  onLoadOlderHistory?: () => Promise<void>;
   conversation: ConversationEntry[];
   currentBlocks: ContentBlock[];
   accentColor?: string | null;
@@ -31,6 +35,10 @@ function scrollToBottom(el: HTMLDivElement, behavior: ScrollBehavior = 'auto') {
 
 export function LazyTranscript({
   cardId,
+  hasNewerHistory = false,
+  onLoadNewerHistory,
+  hasOlderHistory = false,
+  onLoadOlderHistory,
   conversation,
   currentBlocks,
   accentColor,
@@ -81,7 +89,7 @@ export function LazyTranscript({
     });
     return segs;
   }, [visibleItems, startIndex]);
-  const hasOlder = startIndex > 0;
+  const hasOlder = startIndex > 0 || hasOlderHistory;
   hasOlderRef.current = hasOlder;
   itemsLenRef.current = items.length;
 
@@ -105,12 +113,16 @@ export function LazyTranscript({
     const el = scrollRef.current;
     if (!el) return;
     if (!hasOlderRef.current || prependAnchorRef.current) return;
+    if (visibleCount >= itemsLenRef.current && hasOlderHistory && onLoadOlderHistory) {
+      void onLoadOlderHistory();
+      return;
+    }
     prependAnchorRef.current = {
       scrollHeight: el.scrollHeight,
       scrollTop: el.scrollTop,
     };
     setVisibleCount((count) => Math.min(itemsLenRef.current, count + ROW_BATCH));
-  }, []);
+  }, [visibleCount, hasOlderHistory, onLoadOlderHistory]);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -139,8 +151,8 @@ export function LazyTranscript({
     onNearBottomChange?.(nearBottom);
     onShowScrollButtonChange(gap >= SCROLL_BUTTON_GAP_PX);
 
-    if (el.scrollTop <= TOP_LOAD_PX) loadOlder();
-  }, [loadOlder, onNearBottomChange, onShowScrollButtonChange]);
+    if (el.scrollTop <= TOP_LOAD_PX && startIndex > 0) loadOlder();
+  }, [loadOlder, onNearBottomChange, onShowScrollButtonChange, startIndex]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -276,6 +288,14 @@ export function LazyTranscript({
               ))}
             </div>
           ))}
+          {hasNewerHistory && (
+            <div className="flex justify-center py-2">
+              <button type="button" onClick={() => void onLoadNewerHistory?.()}
+                className="rounded border border-border bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">
+                Load newer
+              </button>
+            </div>
+          )}
         </div>
       </ScrollArea>
 

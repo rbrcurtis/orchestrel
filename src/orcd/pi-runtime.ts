@@ -1,5 +1,6 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { TranscriptSync } from './transcript-sync';
 import { DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, ModelRuntime, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, AgentSessionEvent, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { Api, Model } from '@earendil-works/pi-ai';
@@ -55,6 +56,7 @@ export interface PiRuntimeSession {
   /** Switch provider/model on the live Pi session (same conversation; Pi appends a model_change entry). */
   setModel(provider: string, model: string): Promise<void>;
   getMessages(): unknown[];
+  getTranscriptSnapshot(): ReturnType<TranscriptSync['snapshot']>;
   /**
    * Temporary diagnostic probe for the "chat lost when a background subagent
    * finishes" bug: reports the SessionManager instance tag + current leaf so we
@@ -250,8 +252,22 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     onError: (err) => console.error(`[orcd] extension error (${err.extensionPath}): ${err.error}`),
   });
 
+  const transcript = new TranscriptSync(randomUUID(), session.sessionManager.getEntries(), 512, 1_048_576);
+  const transcriptListeners = new Set<(event: unknown) => void>();
+  const stopTranscript = session.subscribe((event) => {
+    if (event.type === 'agent_settled' || event.type === 'compaction_end') {
+      const envelope = transcript.settle(session.sessionManager.getEntries());
+      for (const listener of transcriptListeners) listener({ type: 'transcript_event', envelope });
+    } else {
+      const envelope = transcript.accept(event);
+      for (const listener of transcriptListeners) listener({ type: 'transcript_event', envelope });
+      if (event.type === 'message_end') transcript.boundLiveState();
+    }
+  });
+
   return {
     id: session.sessionId,
+    getTranscriptSnapshot() { return transcript.snapshot(); },
 
     async prompt(text, promptOpts) {
       const expanded = expandInlineCommands(session, text);
@@ -268,8 +284,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     },
 
     subscribe(cb) {
+      transcriptListeners.add(cb);
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => cb(event));
-      return typeof unsubscribe === 'function' ? unsubscribe : () => undefined;
+      return () => { transcriptListeners.delete(cb); unsubscribe(); };
     },
 
     async abort() {
@@ -280,6 +297,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       try {
         await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' });
       } finally {
+        stopTranscript();
+        transcriptListeners.clear();
+        transcript.dispose();
         session.dispose();
       }
     },

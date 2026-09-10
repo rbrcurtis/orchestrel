@@ -12,6 +12,7 @@ function cardHasVisibleProject(store: RootStore, projectId: number | null): bool
 }
 
 function applySync(store: RootStore, data: SyncPayload): void {
+  if (store.currentUser && store.currentUser.id !== data.user?.id) store.sessions.clearCacheIdentity();
   store.currentUser = data.user ?? null;
   store.projects.hydrate(data.projects, true, data.users);
   // Replace only the columns we actually subscribed to. Archive (and any other

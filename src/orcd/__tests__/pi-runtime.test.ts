@@ -24,6 +24,8 @@ const mockDefaultResourceLoader = vi.fn();
 const mockAppendCustomEntry = vi.fn();
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
+  buildContextEntries: () => [],
+  sessionEntryToContextMessages: () => [],
   ModelRuntime: {
     create: mockModelRuntimeCreate,
   },
@@ -56,7 +58,7 @@ vi.mock('@earendil-works/pi-ai', () => ({}));
 function makeSession(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'pi-session-1',
-    sessionManager: { appendCustomEntry: mockAppendCustomEntry },
+    sessionManager: { appendCustomEntry: mockAppendCustomEntry, getEntries: () => [] },
     resourceLoader: {
       getSkills: () => ({ skills: [] }),
       getPrompts: () => ({ prompts: [] }),
@@ -462,7 +464,6 @@ describe('createPiRuntimeSession', () => {
     returnedUnsubscribe();
 
     expect(cb).toHaveBeenCalledWith(event);
-    expect(returnedUnsubscribe).toBe(unsubscribe);
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 

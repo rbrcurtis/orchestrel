@@ -164,6 +164,15 @@ export class OrcdServer {
       case 'path_validate':
         this.handlePathValidate(client, action);
         break;
+      case 'get_transcript': {
+        const session = this.store.get(action.sessionId);
+        this.send(client, { type: 'transcript_snapshot', requestId: action.requestId,
+          snapshot: session?.getTranscriptSnapshot() ?? null });
+        break;
+      }
+      case 'get_history_page':
+        void this.handleGetHistoryPage(client, action);
+        break;
       case 'get_history':
         this.handleGetHistory(client, action);
         break;
@@ -524,6 +533,17 @@ export class OrcdServer {
     const { validatePath } = await import('./worktree-ops');
     const res = await validatePath(action.path);
     this.send(client, { type: 'path_validated', requestId: action.requestId, ...res });
+  }
+
+  private async handleGetHistoryPage(client: ClientState, action: OrcdAction & { action: 'get_history_page' }): Promise<void> {
+    try {
+      const { getPiSessionHistoryPage } = await import('../lib/pi-session-history');
+      const page = await getPiSessionHistoryPage(action.sessionId, action.cwd, action.page);
+      this.send(client, { type: 'history_page', requestId: action.requestId, page });
+    } catch (err) {
+      console.error(`[orcd:${action.sessionId}] history page failed`, err);
+      this.send(client, { type: 'error', sessionId: action.sessionId, requestId: action.requestId, error: String(err) });
+    }
   }
 
   private async handleGetHistory(client: ClientState, action: OrcdAction & { action: 'get_history' }): Promise<void> {

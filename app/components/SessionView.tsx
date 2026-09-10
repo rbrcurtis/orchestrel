@@ -41,6 +41,7 @@ export const SessionView = observer(function SessionView({
   const sessionStore = useSessionStore();
   const cardStore = useCardStore();
   const config = useConfigStore();
+  const root = useStore();
 
   const session = sessionStore.getSession(cardId);
   const card = cardStore.getCard(cardId);
@@ -86,9 +87,12 @@ export const SessionView = observer(function SessionView({
   // Called again once sessionId is available to actually load history.
   useEffect(() => {
     const sid = sessionStoreId ?? sessionId;
-    if (sid && session?.historyLoaded) return; // history already loaded — nothing to do
+    if (sid && card && root.currentUser) {
+      sessionStore.setCacheScope(cardId, { userId: root.currentUser.id, nodeName: card.nodeName, sessionId: sid });
+    }
+    if (sid && session?.historyLoaded) return;
     sessionStore.loadHistory(cardId, sid ?? undefined);
-  }, [cardId, sessionStoreId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cardId, sessionStoreId, sessionId, root.currentUser?.id, card?.nodeName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Request status on mount
   useEffect(() => {
@@ -224,6 +228,10 @@ export const SessionView = observer(function SessionView({
         cardId={cardId}
         conversation={visibleConversation}
         currentBlocks={currentBlocks}
+        hasNewerHistory={sessionStore.hasNewerHistory(cardId)}
+        onLoadNewerHistory={() => sessionStore.loadNewerHistory(cardId)}
+        hasOlderHistory={sessionStore.hasOlderHistory(cardId)}
+        onLoadOlderHistory={() => sessionStore.loadOlderHistory(cardId)}
         accentColor={accentColor}
         historyLoaded={historyLoaded}
         isStreaming={isStreaming}

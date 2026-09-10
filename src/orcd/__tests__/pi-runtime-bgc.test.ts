@@ -8,6 +8,8 @@ const getBranch = vi.fn();
 const agentState = { messages: [] as unknown[] };
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
+  buildContextEntries: () => [],
+  sessionEntryToContextMessages: () => [],
   findCutPoint: (...a: unknown[]) => findCutPoint(...a),
   generateSummary: (...a: unknown[]) => generateSummary(...a),
   DEFAULT_COMPACTION_SETTINGS: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
@@ -26,7 +28,7 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
     session: {
       sessionId: 'sess-1',
       agent: { state: agentState, streamFn: undefined },
-      sessionManager: { getBranch, appendCompaction, buildSessionContext },
+      sessionManager: { getBranch, appendCompaction, buildSessionContext, getEntries: () => [] },
       bindExtensions: vi.fn(async () => undefined),
       subscribe: () => () => undefined,
       messages: [],

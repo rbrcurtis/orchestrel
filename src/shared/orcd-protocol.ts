@@ -139,6 +139,20 @@ export interface PathValidateAction {
   path: string;
 }
 
+export interface GetTranscriptAction {
+  action: 'get_transcript';
+  requestId?: string;
+  sessionId: string;
+}
+
+export interface GetHistoryPageAction {
+  action: 'get_history_page';
+  requestId?: string;
+  sessionId: string;
+  cwd: string;
+  page: import('./transcript-history').TranscriptHistoryRequest;
+}
+
 export interface GetHistoryAction {
   action: 'get_history';
   requestId?: string;
@@ -178,6 +192,8 @@ export type OrcdAction =
   | WorktreeRemoveAction
   | PathValidateAction
   | GetHistoryAction
+  | GetHistoryPageAction
+  | GetTranscriptAction
   | FileStageAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
@@ -279,6 +295,18 @@ export interface PathValidatedMessage {
   gitCommonDir: string | null;
 }
 
+export interface TranscriptSnapshotMessage {
+  type: 'transcript_snapshot';
+  requestId?: string;
+  snapshot: { cursor: import('./transcript-sync').TranscriptCursor; state: import('./transcript-sync').TranscriptState } | null;
+}
+
+export interface HistoryPageMessage {
+  type: 'history_page';
+  requestId?: string;
+  page: import('./transcript-history').TranscriptHistoryPage;
+}
+
 export interface HistoryMessage {
   type: 'history';
   requestId?: string;
@@ -312,4 +340,6 @@ export type OrcdMessage =
   | OkMessage
   | PathValidatedMessage
   | HistoryMessage
+  | HistoryPageMessage
+  | TranscriptSnapshotMessage
   | FileStagedMessage;

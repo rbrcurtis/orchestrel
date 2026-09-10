@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
+import type { TranscriptHistoryPage, TranscriptHistoryRequest } from '../shared/transcript-history';
 
 const DISPLAY_PROMPT_ENTRY = 'orchestrel-display-prompt';
 
@@ -202,6 +203,84 @@ function getSessionPaths(sessions: unknown[], sessionId: string): string[] {
     if (typeof session.path === 'string') paths.push(session.path);
   }
   return paths;
+}
+
+export async function getPiSessionHistoryPage(
+  sessionId: string,
+  cwd: string,
+  request: TranscriptHistoryRequest,
+): Promise<TranscriptHistoryPage> {
+  const { SessionManager, sessionEntryToContextMessages } = await import('@earendil-works/pi-coding-agent');
+  const paths = getSessionPaths(await SessionManager.list(cwd), sessionId);
+  if (paths.length !== 1) throw new Error(`Expected one history source for ${sessionId}, found ${paths.length}`);
+  const manager = SessionManager.open(paths[0], undefined, cwd);
+  const entries = manager.buildContextEntries();
+  const records: TranscriptHistoryPage['records'] = [];
+  const ctx = manager.buildSessionContext();
+  const model = getContextModel(ctx as unknown as Record<string, unknown>);
+  if (model) records.push({ id: `${sessionId}:init`, message: {
+    type: 'system', subtype: 'init', model, session_id: sessionId,
+  } });
+  const replacements = new Map<string, string[]>();
+  for (const entry of manager.getBranch()) {
+    const replacement = displayPrompt(entry);
+    if (!replacement) continue;
+    const texts = replacements.get(replacement.expandedHash) ?? [];
+    texts.push(replacement.displayText);
+    replacements.set(replacement.expandedHash, texts);
+  }
+  for (const entry of entries) {
+    const messages = sessionEntryToContextMessages(entry);
+    for (const [part, message] of messages.entries()) {
+      const id = `${entry.id}:${part}`;
+      const text = messageText(message);
+      const hash = text ? createHash('sha256').update(text).digest('hex') : undefined;
+      const displayText = hash ? replacements.get(hash)?.shift() ?? collapseLegacySkillBlocks(text!) : undefined;
+      const displayed = displayText !== undefined ? { ...message, content: displayText } : message;
+      const mapped = toHistoryMessage(displayed, sessionId, part, entry.type === 'compaction' && entry.fromHook === true);
+      if (isRecord(mapped)) records.push({ id, message: { ...mapped, uuid: id } });
+    }
+  }
+  const revision = createHash('sha256').update(JSON.stringify(records)).digest('hex');
+  let start = 0;
+  let end = records.length;
+  let reset = false;
+  if (request.before) {
+    const i = records.findIndex((record) => record.id === request.before);
+    if (request.revision !== revision || i < 0) reset = true;
+    else end = i;
+  }
+  if (request.after) {
+    const i = records.findIndex((record) => record.id === request.after);
+    const prefix = createHash('sha256').update(JSON.stringify(records.slice(0, i + 1))).digest('hex');
+    if (i < 0 || (request.anchorOnly ? request.revision !== revision : request.prefix !== prefix)) reset = true;
+    else start = i + 1;
+  }
+  if (reset) { start = 0; end = records.length; }
+  const page: TranscriptHistoryPage['records'] = [];
+  let bytes = 0;
+  const forward = !!request.after && !reset;
+  if (forward) {
+    for (let i = start; i < end && page.length < 120; i++) {
+      const size = Buffer.byteLength(JSON.stringify(records[i]));
+      if (page.length && bytes + size > 1_048_576) break;
+      page.push(records[i]); bytes += size;
+    }
+    end = start + page.length;
+  } else {
+    for (let i = end - 1; i >= start && page.length < 120; i--) {
+      const size = Buffer.byteLength(JSON.stringify(records[i]));
+      if (page.length && bytes + size > 1_048_576) break;
+      page.unshift(records[i]); bytes += size;
+    }
+    start = end - page.length;
+  }
+  return {
+    sessionId, revision, records: page,
+    before: page[0]?.id ?? null, after: page.at(-1)?.id ?? null,
+    prefix: createHash('sha256').update(JSON.stringify(records.slice(0, end))).digest('hex'),
+    hasOlder: start > 0, hasNewer: end < records.length, reset,
+  };
 }
 
 export async function getPiSessionMessages(sessionId: string, cwd: string): Promise<unknown[]> {

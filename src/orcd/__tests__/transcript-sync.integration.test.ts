@@ -1,10 +1,11 @@
+import { TranscriptReplica } from '../../shared/transcript-reducer';
 import { readFile } from 'node:fs/promises';
 import { createServer, connect, type Socket } from 'node:net';
 import { once } from 'node:events';
 import type { AgentSessionEvent, InlineExtension, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { buildContextEntries, sessionEntryToContextMessages, SessionManager } from '@earendil-works/pi-coding-agent';
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
-import { displayedMessages, TranscriptReplica, TranscriptSync } from '../transcript-sync';
+import { displayedMessages, TranscriptSync } from '../transcript-sync';
 import type { ReplayDecision, TranscriptCursor, TranscriptEnvelope, TranscriptEvent, TranscriptState } from '../../shared/transcript-sync';
 import { expect, it } from 'vitest';
 import { Type } from 'typebox';

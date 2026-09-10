@@ -4,7 +4,61 @@ import type { AppSocket } from '../types';
 import { busRoomBridge } from '../subscriptions';
 import { Card } from '../../models/Card';
 import { Project } from '../../models/Project';
-import { getPiSessionMessages } from '../../../lib/pi-session-history';
+import { getPiSessionMessages, getPiSessionHistoryPage } from '../../../lib/pi-session-history';
+import { userService } from '../../services/user';
+import type { TranscriptHistoryPage, TranscriptHistoryRequest } from '../../../shared/transcript-history';
+
+export async function handleTranscriptSnapshot(
+  data: { cardId: number },
+  callback: (res: AckResponse<import('../../../shared/orcd-protocol').TranscriptSnapshotMessage['snapshot']>) => void,
+  socket: AppSocket,
+): Promise<void> {
+  try {
+    const card = await Card.findOneBy({ id: data.cardId });
+    if (!card?.projectId || !card.sessionId) throw new Error('Session not found');
+    const identity = socket.data.identity;
+    const visible = await userService.visibleProjectIds({ ...identity, role: identity.role === 'admin' ? 'admin' : 'user' });
+    if (visible !== 'all' && !visible.includes(card.projectId)) throw new Error('Session not found');
+    const { getClientByNode } = await import('../../init-state');
+    const client = getClientByNode(card.nodeName);
+    if (!client) throw new Error('Node unavailable');
+    busRoomBridge.joinCard(socket, card.id);
+    client.subscribe(card.sessionId);
+    callback({ data: await client.getTranscriptSnapshot(card.sessionId) });
+  } catch (err) {
+    console.warn('[session:transcript] snapshot failed', err);
+    callback({ error: String(err) });
+  }
+}
+
+export async function handleHistoryPage(
+  data: { cardId: number; page: TranscriptHistoryRequest },
+  callback: (res: AckResponse<TranscriptHistoryPage>) => void,
+  socket: AppSocket,
+): Promise<void> {
+  try {
+    const card = await Card.findOneBy({ id: data.cardId });
+    if (!card?.projectId || !card.sessionId) throw new Error('Session not found');
+    const identity = socket.data.identity;
+    const visible = await userService.visibleProjectIds({ ...identity, role: identity.role === 'admin' ? 'admin' : 'user' });
+    if (visible !== 'all' && !visible.includes(card.projectId)) throw new Error('Session not found');
+    const project = await Project.findOneBy({ id: card.projectId });
+    if (!project) throw new Error('Project not found');
+    const cwd = card.sessionCwd ?? resolveWorkDir(card.worktreeBranch, project.path);
+    const { getClientByNode } = await import('../../init-state');
+    const client = getClientByNode(card.nodeName);
+    busRoomBridge.joinCard(socket, card.id);
+    if (client?.isActive(card.sessionId)) client.subscribe(card.sessionId);
+    const page = card.nodeName === 'local'
+      ? await getPiSessionHistoryPage(card.sessionId, cwd, data.page)
+      : await client?.getHistoryPage(card.sessionId, cwd, data.page);
+    if (!page) throw new Error('Node unavailable');
+    callback({ data: page });
+  } catch (err) {
+    console.warn('[session:history-page] failed', err);
+    callback({ error: String(err) });
+  }
+}
 
 export async function handleSessionLoad(
   data: { cardId: number; sessionId?: string },
