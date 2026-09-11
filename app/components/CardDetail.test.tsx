@@ -128,6 +128,14 @@ describe('NewCardDetail description draft persistence', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('closes when Escape is pressed', () => {
+    const { onClose } = renderNewCardDetail();
+
+    fireEvent.keyDown(screen.getByPlaceholderText('Add a description...'), { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('does not start title suggestion when clicking the close button', () => {
     const { store, onClose } = renderNewCardDetail();
 

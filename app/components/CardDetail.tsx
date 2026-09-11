@@ -882,8 +882,15 @@ export const NewCardDetail = observer(function NewCardDetail({
     return !isProjectHidden(projectFilter, p.id);
   });
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    // Keep the board's global Escape handler from also firing.
+    e.stopPropagation();
+    onClose();
+  }
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" onKeyDown={handleKeyDown}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <Select value={selectedColumn} onValueChange={setSelectedColumn}>
           <SelectTrigger size="sm" className="w-auto gap-1.5 border-border text-xs font-medium uppercase tracking-wide">
