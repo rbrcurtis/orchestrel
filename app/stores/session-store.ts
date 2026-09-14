@@ -49,6 +49,7 @@ export class SessionStore {
   private _ws: WsClient | null = null;
   private cacheScopes = new Map<number, TranscriptCacheScope>();
   private historyPages = new Map<number, TranscriptHistoryPage>();
+  private historyMessages = new Map<number, unknown[]>();
   private messageVersions = new Map<number, number>();
   private replicas = new Map<number, TranscriptReplica>();
   private liveLoading = new Map<number, TranscriptEnvelope<TranscriptEvent>[]>();
@@ -98,6 +99,7 @@ export class SessionStore {
       this.replicas.delete(cardId);
       this.sessions.delete(cardId);
       this.historyPages.delete(cardId);
+      this.historyMessages.delete(cardId);
       this.messageVersions.set(cardId, (this.messageVersions.get(cardId) ?? 0) + 1);
     }
     if (!previous || JSON.stringify(previous) !== JSON.stringify(scope)) {
@@ -111,6 +113,7 @@ export class SessionStore {
     this.replicas.clear();
     this.cacheScopes.clear();
     this.historyPages.clear();
+    this.historyMessages.clear();
     this.sessions.clear();
     this.subscribedCards.clear();
     for (const [id, version] of this.messageVersions) this.messageVersions.set(id, version + 1);
@@ -155,10 +158,24 @@ export class SessionStore {
         console.debug('[transcript] discarded stale older page', cardId);
         return;
       }
-      const records = result.records;
-      const next = result;
-      runInAction(() => this.historyPages.set(cardId, next));
-      this.ingestHistory(cardId, records.map((record) => record.message));
+      const pageMessages = result.records.map((record) => record.message);
+      if (direction === 'older') {
+        // Prepending older pages lets scroll-up accumulate history instead of
+        // replacing the view. Keep the newest anchor so the window still ends
+        // at the record the reader already had.
+        const merged = [...pageMessages, ...(this.historyMessages.get(cardId) ?? [])];
+        runInAction(() => this.historyPages.set(cardId, {
+          ...result, after: page.after, prefix: page.prefix, hasNewer: page.hasNewer,
+        }));
+        this.ingestHistory(cardId, merged);
+      } else {
+        // Appending newer pages keeps the already-loaded older rows.
+        const merged = [...(this.historyMessages.get(cardId) ?? []), ...pageMessages];
+        runInAction(() => this.historyPages.set(cardId, {
+          ...result, before: page.before, hasOlder: page.hasOlder,
+        }));
+        this.ingestHistory(cardId, merged);
+      }
       if (scope && !cached) await writeTranscriptPage(scope, { anchor, revision: result.revision, records: [result] }, null);
     } finally {
       this.loadingCards.delete(cardId);
@@ -198,6 +215,7 @@ export class SessionStore {
     if (!s || s.active) return;
     this.sessions.delete(cardId);
     this.historyPages.delete(cardId);
+    this.historyMessages.delete(cardId);
     this.replicas.delete(cardId);
     this.subscribedCards.delete(cardId);
   }
@@ -268,6 +286,7 @@ export class SessionStore {
   }
 
   ingestHistory(cardId: number, messages: unknown[]): void {
+    this.historyMessages.set(cardId, messages);
     runInAction(() => {
       const s = this.getOrCreate(cardId);
       s.accumulator.clear();
@@ -283,6 +302,7 @@ export class SessionStore {
     const s = this.sessions.get(cardId);
     if (!s) return;
     s.accumulator.clear();
+    this.historyMessages.delete(cardId);
     s.historyLoaded = false;
     s.contextTokens = 0;
     s.contextWindow = 200_000;

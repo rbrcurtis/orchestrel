@@ -61,7 +61,24 @@ export function LazyTranscript({
   const initialBottomLockUntilRef = useRef(0);
   const streamEndLockUntilRef = useRef(0);
   const prevIsStreamingRef = useRef(isStreaming);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement>(null);
+  const topVisibleRef = useRef(false);
+  const bottomVisibleRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const loadingNewerRef = useRef(false);
+  const userScrolledRef = useRef(false);
   const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS);
+  const visibleCountRef = useRef(visibleCount);
+  visibleCountRef.current = visibleCount;
+  const hasOlderHistoryRef = useRef(hasOlderHistory);
+  hasOlderHistoryRef.current = hasOlderHistory;
+  const hasNewerHistoryRef = useRef(hasNewerHistory);
+  hasNewerHistoryRef.current = hasNewerHistory;
+  const onLoadOlderHistoryRef = useRef(onLoadOlderHistory);
+  onLoadOlderHistoryRef.current = onLoadOlderHistory;
+  const onLoadNewerHistoryRef = useRef(onLoadNewerHistory);
+  onLoadNewerHistoryRef.current = onLoadNewerHistory;
 
   const items = useMemo<ConversationEntry[]>(() => {
     if (currentBlocks.length === 0) return conversation;
@@ -112,17 +129,39 @@ export function LazyTranscript({
   const loadOlder = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (!hasOlderRef.current || prependAnchorRef.current) return;
-    if (visibleCount >= itemsLenRef.current && hasOlderHistory && onLoadOlderHistory) {
-      void onLoadOlderHistory();
+    if (!hasOlderRef.current || loadingOlderRef.current) return;
+    // A viewport taller than its content has no scroll gesture to trigger the
+    // observer, so fill it. Otherwise only page older history when the reader
+    // scrolled up themselves — never while pinned to the initial bottom.
+    const overflowing = el.scrollHeight > el.clientHeight + 1;
+    if (overflowing && !userScrolledRef.current) return;
+    const anchor = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
+    // Rows already loaded above the window are revealed first; once the window
+    // covers every loaded row, fetch the next older page. The anchor keeps the
+    // reader's place while either prepend happens.
+    if (visibleCountRef.current >= itemsLenRef.current && hasOlderHistoryRef.current && onLoadOlderHistoryRef.current) {
+      const before = itemsLenRef.current;
+      loadingOlderRef.current = true;
+      prependAnchorRef.current = anchor;
+      void Promise.resolve(onLoadOlderHistoryRef.current()).finally(() => {
+        loadingOlderRef.current = false;
+        // A page that yielded no rows never triggers the visible-count effect,
+        // so release the anchor to allow a later retry.
+        if (itemsLenRef.current === before) prependAnchorRef.current = null;
+      });
       return;
     }
-    prependAnchorRef.current = {
-      scrollHeight: el.scrollHeight,
-      scrollTop: el.scrollTop,
-    };
+    prependAnchorRef.current = anchor;
     setVisibleCount((count) => Math.min(itemsLenRef.current, count + ROW_BATCH));
-  }, [visibleCount, hasOlderHistory, onLoadOlderHistory]);
+  }, []);
+
+  const loadNewer = useCallback(() => {
+    if (!hasNewerHistoryRef.current || loadingNewerRef.current || !onLoadNewerHistoryRef.current) return;
+    loadingNewerRef.current = true;
+    void Promise.resolve(onLoadNewerHistoryRef.current()).finally(() => {
+      loadingNewerRef.current = false;
+    });
+  }, []);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -146,13 +185,14 @@ export function LazyTranscript({
       const scrolledUp = metrics.scrollTop < prev.scrollTop;
       if (heightGrew && !scrolledUp) nearBottom = true;
     }
+    // Only an actual scroll-up (not a programmatic bottom pin or prepend
+    // anchor) unlocks paging older history via the top sentinel.
+    if (prev && metrics.scrollTop < prev.scrollTop) userScrolledRef.current = true;
     scrollMetricsRef.current = metrics;
     nearBottomRef.current = nearBottom;
     onNearBottomChange?.(nearBottom);
     onShowScrollButtonChange(gap >= SCROLL_BUTTON_GAP_PX);
-
-    if (el.scrollTop <= TOP_LOAD_PX && startIndex > 0) loadOlder();
-  }, [loadOlder, onNearBottomChange, onShowScrollButtonChange, startIndex]);
+  }, [onNearBottomChange, onShowScrollButtonChange]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -162,9 +202,43 @@ export function LazyTranscript({
     return () => el.removeEventListener('scroll', updateScrollState);
   }, [cardId, updateScrollState]);
 
+  // Infinite scroll: sentinels at both ends of the transcript fetch the next
+  // page as they enter the viewport, replacing the old load-more buttons.
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const root = scrollRef.current;
+    const top = topSentinelRef.current;
+    const bottom = bottomSentinelRef.current;
+    if (!root || !top || !bottom) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === top) {
+          topVisibleRef.current = entry.isIntersecting;
+          if (entry.isIntersecting) loadOlder();
+        } else if (entry.target === bottom) {
+          bottomVisibleRef.current = entry.isIntersecting;
+          if (entry.isIntersecting) loadNewer();
+        }
+      }
+    }, { root, rootMargin: `${TOP_LOAD_PX}px 0px ${TOP_LOAD_PX}px 0px` });
+    observer.observe(top);
+    observer.observe(bottom);
+    return () => observer.disconnect();
+  }, [loadOlder, loadNewer]);
+
+  // IntersectionObserver only fires on threshold crossings. When a page load
+  // leaves the sentinel in view (transcript still shorter than the viewport, or
+  // another unfilled page), re-run the load until the view overflows or the
+  // history is exhausted.
+  useEffect(() => {
+    if (topVisibleRef.current) loadOlder();
+    if (bottomVisibleRef.current) loadNewer();
+  }, [items.length, visibleCount, hasOlderHistory, hasNewerHistory, loadOlder, loadNewer]);
+
   useEffect(() => {
     setVisibleCount(INITIAL_ROWS);
     nearBottomRef.current = true;
+    userScrolledRef.current = false;
     prevItemsLenRef.current = itemsLenRef.current;
     scrollMetricsRef.current = null;
     prependAnchorRef.current = null;
@@ -260,17 +334,7 @@ export function LazyTranscript({
         className="h-full"
       >
         <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0 max-w-full">
-          {hasOlder && (
-            <div className="flex justify-center py-2">
-              <button
-                type="button"
-                onClick={loadOlder}
-                className="rounded border border-border bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-hover"
-              >
-                Load older
-              </button>
-            </div>
-          )}
+          <div ref={topSentinelRef} className="h-px" data-testid="transcript-top-sentinel" aria-hidden="true" />
           {segments.map((rows) => (
             <div key={rows[0].index} className="space-y-1">
               {rows.map(({ index, entry }, j) => (
@@ -288,14 +352,7 @@ export function LazyTranscript({
               ))}
             </div>
           ))}
-          {hasNewerHistory && (
-            <div className="flex justify-center py-2">
-              <button type="button" onClick={() => void onLoadNewerHistory?.()}
-                className="rounded border border-border bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">
-                Load newer
-              </button>
-            </div>
-          )}
+          <div ref={bottomSentinelRef} className="h-px" data-testid="transcript-bottom-sentinel" aria-hidden="true" />
         </div>
       </ScrollArea>
 

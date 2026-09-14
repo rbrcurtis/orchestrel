@@ -245,3 +245,83 @@ describe('LazyTranscript auto-scroll', () => {
     vi.restoreAllMocks();
   });
 });
+
+// The top sentinel pages older history in automatically. Guarding against the
+// initial mount (viewport at scrollTop 0) matters: without it, every card open
+// would fetch the whole history instead of waiting for a scroll-up.
+describe('LazyTranscript infinite scroll', () => {
+  class FakeIntersectionObserver {
+    static instances: FakeIntersectionObserver[] = [];
+    callback: IntersectionObserverCallback;
+    constructor(callback: IntersectionObserverCallback) {
+      this.callback = callback;
+      FakeIntersectionObserver.instances.push(this);
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    trigger(el: Element, isIntersecting: boolean) {
+      this.callback(
+        [{ target: el, isIntersecting } as IntersectionObserverEntry],
+        this as unknown as IntersectionObserver,
+      );
+    }
+  }
+
+  let rafCallbacks: FrameRequestCallback[];
+
+  beforeEach(() => {
+    rafCallbacks = [];
+    FakeIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafCallbacks.push(callback);
+      return rafCallbacks.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      rafCallbacks[id - 1] = () => {};
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('pages older history only after the reader scrolls up', () => {
+    const onLoadOlderHistory = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(
+      <LazyTranscript
+        cardId={1}
+        conversation={conversation(3)}
+        currentBlocks={[]}
+        accentColor={null}
+        historyLoaded
+        isStreaming={false}
+        showScrollButton={false}
+        hasOlderHistory
+        onLoadOlderHistory={onLoadOlderHistory}
+        onShowScrollButtonChange={vi.fn()}
+      />,
+    );
+    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    viewport.scrollTo = vi.fn() as HTMLDivElement['scrollTo'];
+    act(() => rafCallbacks.splice(0).forEach((callback) => callback(0)));
+    const top = container.querySelector('[data-testid="transcript-top-sentinel"]') as Element;
+    const observer = FakeIntersectionObserver.instances.at(-1)!;
+
+    // Opening the card leaves scrollTop at the top, but the transcript overflows
+    // and is pinned to the bottom: the sentinel must not page yet.
+    setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 });
+    act(() => observer.trigger(top, true));
+    expect(onLoadOlderHistory).not.toHaveBeenCalled();
+
+    // A real scroll-up unlocks paging.
+    setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 600 });
+    act(() => viewport.dispatchEvent(new Event('scroll')));
+    setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 100 });
+    act(() => viewport.dispatchEvent(new Event('scroll')));
+    act(() => observer.trigger(top, true));
+    expect(onLoadOlderHistory).toHaveBeenCalledTimes(1);
+  });
+});

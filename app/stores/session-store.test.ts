@@ -1,7 +1,9 @@
+import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
 import { SessionStore } from './session-store';
-import type { SdkMessage } from '../lib/sdk-types';
+import type { HistoryMessage, SdkMessage } from '../lib/sdk-types';
 import type { WsClient } from '../lib/ws-client';
+import type { TranscriptHistoryPage } from '../../src/shared/transcript-history';
 
 function startBlockingSubagent(store: SessionStore, cardId: number): void {
   store.ingestSdkMessage(cardId, {
@@ -326,5 +328,58 @@ describe('SessionStore sendMessage app slash commands', () => {
     expect(s.promptsSent).toBe(0);
     // The raw message goes to the server; it strips the command and deletes the card.
     expect(emit).toHaveBeenCalledWith('agent:send', { cardId: 3, message: 'cleanup /delete', files: undefined });
+  });
+});
+
+function userHistory(id: string, text: string): HistoryMessage {
+  return {
+    type: 'user',
+    uuid: id,
+    session_id: 'sess-1',
+    parent_tool_use_id: null,
+    timestamp: 1,
+    message: { role: 'user', content: text },
+  };
+}
+
+function historyPage(overrides: Partial<TranscriptHistoryPage> & Pick<TranscriptHistoryPage, 'records'>): TranscriptHistoryPage {
+  return {
+    sessionId: 'sess-1', revision: 'r1', before: null, after: null, prefix: 'p',
+    hasOlder: false, hasNewer: false, reset: false, ...overrides,
+  };
+}
+
+// Paging must grow the loaded window. A regression here replaces the visible
+// transcript with the older page and loses the reader's place.
+describe('SessionStore transcript paging', () => {
+  it('prepends older pages so scrolling up accumulates history', async () => {
+    const latest = historyPage({
+      records: [{ id: 'id3', message: userHistory('id3', 'three') }, { id: 'id4', message: userHistory('id4', 'four') }],
+      before: 'id3', after: 'id4', hasOlder: true,
+    });
+    const older = historyPage({
+      records: [{ id: 'id1', message: userHistory('id1', 'one') }, { id: 'id2', message: userHistory('id2', 'two') }],
+      before: 'id1', after: 'id2', hasNewer: true,
+    });
+    const emit = vi.fn(async (event: string, data: { page?: { before?: string } }) => {
+      if (event !== 'session:history-page') return undefined;
+      return data.page?.before ? older : latest;
+    });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-1' });
+
+    await store.loadHistory(7, 'sess-1');
+    expect(store.hasOlderHistory(7)).toBe(true);
+    expect(emit).toHaveBeenCalledWith('session:history-page', { cardId: 7, page: {} });
+
+    await store.loadOlderHistory(7);
+
+    const contents = store.getSession(7)!.accumulator.conversation
+      .filter((e) => e.kind === 'user')
+      .map((e) => (e.kind === 'user' ? e.content : ''));
+    expect(contents).toEqual(['one', 'two', 'three', 'four']);
+    expect(store.hasOlderHistory(7)).toBe(false);
+    expect(store.hasNewerHistory(7)).toBe(false);
   });
 });
