@@ -1,4 +1,5 @@
 import { makeAutoObservable, observable } from 'mobx';
+import { stripInjectedCommands } from '../../src/shared/slash-commands';
 import type {
   SdkMessage,
   SdkStreamEvent,
@@ -97,9 +98,13 @@ function summarizeToolResult(result: string): string {
 }
 
 function displayUserContent(content: string): string {
-  // Older orcd processes persist Pi's injected skill XML as the user message.
-  // Replace blocks wherever they occur: inline commands may be surrounded by
-  // ordinary prose or accompanied by other commands in the same prompt.
+  // New messages keep the command verbatim and append the expansion after a
+  // marker. Older orcd processes persisted the injected skill XML in place as
+  // the user message, so fall back to collapsing blocks to `/<name>` wherever
+  // they occur: inline commands may sit in ordinary prose or beside other
+  // commands in the same prompt.
+  const stripped = stripInjectedCommands(content);
+  if (stripped !== content) return stripped;
   return content.replace(
     /<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g,
     (_block, name: string) => `/${name}`,

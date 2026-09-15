@@ -1,5 +1,5 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { TranscriptSync } from './transcript-sync';
 import { DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, ModelRuntime, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, AgentSessionEvent, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
@@ -14,7 +14,6 @@ import type { ProviderAliases } from '../shared/subagent-policy';
 // Pi's model registry requires an apiKey when models are defined, but the
 // endpoint ignores it — so any non-empty value works.
 const ANONYMOUS_API_KEY = 'anonymous';
-const DISPLAY_PROMPT_ENTRY = 'orchestrel-display-prompt';
 
 type RuntimeProvider = {
   type: ProviderType;
@@ -270,17 +269,11 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     getTranscriptSnapshot() { return transcript.snapshot(); },
 
     async prompt(text, promptOpts) {
+      // expandInlineCommands keeps `text` verbatim and appends the expansion
+      // after a marker. Disable Pi's own expansion so a leading /command is not
+      // expanded a second time.
       const expanded = expandInlineCommands(session, text);
-      if (expanded !== text) {
-        // Pi persists the expanded skill/template as the user message. Keep the
-        // invocation beside it as non-context metadata so transcript history can
-        // show what Ryan typed without exposing the injected instructions.
-        session.sessionManager.appendCustomEntry(DISPLAY_PROMPT_ENTRY, {
-          displayText: text,
-          expandedHash: createHash('sha256').update(expanded).digest('hex'),
-        });
-      }
-      await session.prompt(expanded, promptOpts);
+      await session.prompt(expanded, { ...promptOpts, expandPromptTemplates: false });
     },
 
     subscribe(cb) {

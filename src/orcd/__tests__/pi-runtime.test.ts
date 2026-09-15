@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { INJECTED_COMMANDS_MARKER } from '../../shared/slash-commands';
 
 const mockPrompt = vi.fn();
 const mockSubscribe = vi.fn();
@@ -422,11 +423,11 @@ describe('createPiRuntimeSession', () => {
 
     await session.prompt('hello', { streamingBehavior: 'steer' });
 
-    expect(mockPrompt).toHaveBeenCalledWith('hello', { streamingBehavior: 'steer' });
+    expect(mockPrompt).toHaveBeenCalledWith('hello', { streamingBehavior: 'steer', expandPromptTemplates: false });
     expect(mockAppendCustomEntry).not.toHaveBeenCalled();
   });
 
-  it('persists the original slash command as display metadata before sending its expansion', async () => {
+  it('keeps the slash command verbatim and appends the expansion after a marker', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     mockDefaultResourceLoader.mockImplementation((opts: Record<string, unknown>) => ({
       ...opts,
@@ -441,12 +442,12 @@ describe('createPiRuntimeSession', () => {
 
     await session.prompt('/merge');
 
-    const expanded = mockPrompt.mock.calls[0][0] as string;
-    expect(expanded).not.toBe('/merge');
-    expect(mockAppendCustomEntry).toHaveBeenCalledWith('orchestrel-display-prompt', {
-      displayText: '/merge',
-      expandedHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-    });
+    const sent = mockPrompt.mock.calls[0][0] as string;
+    expect(sent.startsWith('/merge')).toBe(true);
+    expect(sent).toContain(INJECTED_COMMANDS_MARKER);
+    expect(sent).toContain('Merge the current branch now.');
+    expect(mockPrompt.mock.calls[0][1]).toMatchObject({ expandPromptTemplates: false });
+    expect(mockAppendCustomEntry).not.toHaveBeenCalled();
   });
 
   it('subscribe forwards callback to Pi session events and returns SDK unsubscribe handle', async () => {

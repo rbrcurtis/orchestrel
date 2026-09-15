@@ -13,6 +13,21 @@ export function isCompactCommand(prompt: string): boolean {
   return t === '/compact' || t.startsWith('/compact ');
 }
 
+// ── Injected command content ──────────────────────────────────────────────────
+// orcd keeps the user's slash command VERBATIM in the persisted user message and
+// appends the expanded skill/prompt content after this marker. Replayed history
+// (paged, live snapshot, and cached frontend) strips everything from the marker
+// so the transcript shows exactly what the user typed. A marker is required
+// because prompt templates carry no <skill> wrapper to strip heuristically, and
+// legacy sessions embedded the expansion in place.
+export const INJECTED_COMMANDS_MARKER = '\n\n<!-- orchestrel:injected-commands -->\n';
+
+/** The user's text with any appended injected-command content removed. */
+export function stripInjectedCommands(text: string): string {
+  const i = text.indexOf(INJECTED_COMMANDS_MARKER);
+  return i === -1 ? text : text.slice(0, i).trimEnd();
+}
+
 // ── App slash commands ───────────────────────────────────────────────────────
 // Commands addressed to Orchestrel itself rather than the model. The backend
 // strips them from the prompt before it is sent and applies the card action

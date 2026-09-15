@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MessageAccumulator } from './message-accumulator';
+import { INJECTED_COMMANDS_MARKER } from '../../src/shared/slash-commands';
 import type { SdkMessage } from './sdk-types';
 
 function toolStart(id: string): SdkMessage {
@@ -246,6 +247,25 @@ describe('MessageAccumulator history display', () => {
 
     expect(acc.conversation).toEqual([
       expect.objectContaining({ kind: 'user', content: 'Check /foo(bar), then /push' }),
+    ]);
+  });
+
+  it('strips appended injected commands from cached history', () => {
+    const acc = new MessageAccumulator();
+
+    acc.handleHistoryMessage({
+      type: 'user',
+      uuid: 'msg_injected',
+      session_id: 'sess_1',
+      parent_tool_use_id: null,
+      message: {
+        role: 'user',
+        content: `then /pr(dev) please${INJECTED_COMMANDS_MARKER}Target \`dev\`.`,
+      },
+    });
+
+    expect(acc.conversation).toEqual([
+      expect.objectContaining({ kind: 'user', content: 'then /pr(dev) please' }),
     ]);
   });
 });

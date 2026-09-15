@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { INJECTED_COMMANDS_MARKER } from '../shared/slash-commands';
 
 const mockList = vi.fn();
 const mockOpen = vi.fn();
@@ -134,6 +135,23 @@ describe('getPiSessionMessages', () => {
       message: { role: 'user', content: '/merge' },
     }));
     expect(JSON.stringify(messages)).not.toContain('Merge instructions');
+  });
+
+  it('strips appended injected commands without display metadata', async () => {
+    const { getPiSessionMessages } = await import('./pi-session-history');
+    const raw = 'then /pr(dev) please';
+    mockBuildSessionContext.mockReturnValue({
+      messages: [
+        { role: 'user', content: `${raw}${INJECTED_COMMANDS_MARKER}Target dev.`, timestamp: 1 },
+      ],
+    });
+    mockGetBranch.mockReturnValue([]);
+
+    const messages = await getPiSessionMessages('pi-session-1', '/repo');
+
+    expect(messages[0]).toEqual(expect.objectContaining({
+      message: { role: 'user', content: raw },
+    }));
   });
 
   it('collapses legacy expanded skill blocks embedded among prose and other commands', async () => {
