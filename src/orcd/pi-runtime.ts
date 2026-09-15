@@ -41,6 +41,10 @@ export interface CreatePiRuntimeSessionOpts {
 export interface PiRuntimeSession {
   id: string;
   prompt(text: string, opts?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void>;
+  /** True while a Pi run is active, including a run started by a background-subagent notification. */
+  isStreaming(): boolean;
+  /** Resolve once Pi has no active run. */
+  waitForIdle(): Promise<void>;
   subscribe(cb: (event: unknown) => void): () => void;
   abort(): Promise<void>;
   dispose(): Promise<void>;
@@ -275,6 +279,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       const expanded = expandInlineCommands(session, text);
       await session.prompt(expanded, { ...promptOpts, expandPromptTemplates: false });
     },
+
+    isStreaming() { return session.isStreaming; },
+
+    async waitForIdle() { await session.waitForIdle(); },
 
     subscribe(cb) {
       transcriptListeners.add(cb);

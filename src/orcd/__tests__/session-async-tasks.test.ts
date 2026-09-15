@@ -31,6 +31,8 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
       return () => subscribers.delete(cb);
     }),
     abort: vi.fn(async () => undefined),
+    isStreaming: vi.fn(() => false),
+    waitForIdle: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
     compact: vi.fn(async () => ({ ok: true })),
     prepareBgCompaction: vi.fn(async () => null),
@@ -474,6 +476,47 @@ describe('OrcdSession Pi runtime loop', () => {
       sessionId: 'session-delay',
       state: 'completed',
     });
+  });
+
+  it('waits for a background-notification Pi run to settle before session_exit', async () => {
+    const runtime = createRuntimeSession([
+      asyncLaunchResult('call_settle', 'agent-settle-123', 'Continue after async work'),
+    ], 'session-settle');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-settle',
+      asyncTaskPollMsForTesting: 10,
+    });
+
+    const received: string[] = [];
+    session.subscribe((msg) => received.push(msg.type));
+
+    // The final subagent notification starts a fresh Pi run in the same instant
+    // the async tracker drains. Pi reports streaming until that run settles.
+    let streaming = false;
+    let settle: (() => void) | undefined;
+    runtime.isStreaming = vi.fn(() => streaming);
+    runtime.waitForIdle = vi.fn(() => new Promise<void>((resolve) => { settle = resolve; }));
+
+    const run = session.run({ prompt: 'go' });
+    await vi.waitFor(() => expect(runtime.prompt).toHaveBeenCalled());
+    streaming = true;
+    runtime.emit(taskNotification('agent-settle-123'));
+
+    // Tracker is empty but Pi is still running: orcd must not exit yet, or Pi
+    // would be left streaming with no loop to drain later prompts.
+    await vi.waitFor(() => expect(runtime.waitForIdle).toHaveBeenCalled());
+    expect(received).not.toContain('session_exit');
+
+    streaming = false;
+    settle?.();
+    await run;
+
+    expect(received.at(-1)).toBe('session_exit');
   });
 
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {

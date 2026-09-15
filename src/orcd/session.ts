@@ -165,8 +165,20 @@ export class OrcdSession {
   }
 
   private async waitForAsyncTasks(): Promise<void> {
-    while (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
-      await new Promise((resolve) => setTimeout(resolve, this.asyncTaskPollMs));
+    while (this.state !== 'stopped' && this.state !== 'errored') {
+      if (this.asyncTasks.hasPending()) {
+        await new Promise((resolve) => setTimeout(resolve, this.asyncTaskPollMs));
+        continue;
+      }
+      // A background-subagent notification can start a fresh Pi run in the same
+      // instant the tracker drains. Exiting now would detach orcd mid-run and
+      // leave Pi streaming with no run loop to drain the prompts queued behind
+      // it — so wait for that run to settle too.
+      if (this.piSession?.isStreaming()) {
+        await this.piSession.waitForIdle();
+        continue;
+      }
+      break;
     }
   }
 
@@ -438,8 +450,8 @@ export class OrcdSession {
         for (const cb of this.subscribers) cb(errMsg);
       }
 
-      if (this.state !== 'stopped' && this.state !== 'errored' && this.asyncTasks.hasPending()) {
-        log('waiting for async task notifications before session_exit');
+      if (this.state !== 'stopped' && this.state !== 'errored' && (this.asyncTasks.hasPending() || this.piSession?.isStreaming())) {
+        log('waiting for background work to settle before session_exit');
         await this.waitForAsyncTasks();
       }
 
