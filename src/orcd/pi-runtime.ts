@@ -304,17 +304,30 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
 
     async prepareBgCompaction(keepFraction, currentTokens, signal) {
       const sm = session.sessionManager as unknown as {
-        getBranch(): Array<{ type: string; id: string; message?: unknown }>;
+        getBranch(): Array<{ type: string; id: string; message?: unknown; summary?: string; firstKeptEntryId?: string }>;
       };
       const entries = sm.getBranch();
+      // The live context starts at the previous compaction's kept boundary. Everything before
+      // it is already summarized, so sending it to the summarizer again overflows the model's
+      // window (a 1M-token model gets ~3M tokens after a handful of compactions) and the
+      // splice never lands. Pi's own prepareCompaction starts at the same boundary.
+      let boundaryStart = 0;
+      let previousSummary: string | undefined;
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].type !== 'compaction') continue;
+        previousSummary = entries[i].summary;
+        const keptIdx = entries.findIndex((e) => e.id === entries[i].firstKeptEntryId);
+        boundaryStart = keptIdx >= 0 ? keptIdx : i + 1;
+        break;
+      }
       const keepRecentTokens = currentTokens > 0
         ? Math.floor(currentTokens * keepFraction)
         : DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
-      const cut = findCutPoint(entries as never, 0, entries.length, keepRecentTokens);
+      const cut = findCutPoint(entries as never, boundaryStart, entries.length, keepRecentTokens);
       const firstKeptIdx = cut.firstKeptEntryIndex;
-      if (firstKeptIdx <= 0) return null;
+      if (firstKeptIdx <= boundaryStart) return null;
       const toSummarize = entries
-        .slice(0, firstKeptIdx)
+        .slice(boundaryStart, firstKeptIdx)
         .filter((e) => e.type === 'message' && e.message !== undefined)
         .map((e) => e.message);
       if (toSummarize.length === 0) return null;
@@ -330,7 +343,8 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         headers,
         signal,
         undefined,
-        undefined,
+        // Merge the previous summary so a BGC never drops the history it already compacted.
+        previousSummary,
         effortToThinkingLevel(opts.effort),
         agent.streamFn as never,
       );

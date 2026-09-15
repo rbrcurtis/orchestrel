@@ -76,6 +76,31 @@ describe('pi-runtime BGC', () => {
     expect(generateSummary.mock.calls[0][0]).toEqual([{ role: 'user', content: 'old' }]);
   });
 
+  it('summarizes only the live context after the last compaction and merges the old summary', async () => {
+    const entries = [
+      { type: 'message', id: 'e0', message: { role: 'user', content: 'ancient' } },
+      { type: 'compaction', id: 'c0', summary: 'OLD SUMMARY', firstKeptEntryId: 'e1' },
+      { type: 'message', id: 'e1', message: { role: 'user', content: 'kept' } },
+      { type: 'message', id: 'e2', message: { role: 'user', content: 'old half' } },
+      { type: 'message', id: 'e3', message: { role: 'assistant', content: 'recent' } },
+    ];
+    getBranch.mockReturnValue(entries);
+    findCutPoint.mockReturnValue({ firstKeptEntryIndex: 4, turnStartIndex: -1, isSplitTurn: false });
+    generateSummary.mockResolvedValue('S');
+    const s = await makeSession();
+    const r = await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
+    // Regression: the cut must start at the previous compaction's boundary. Starting at 0
+    // re-feeds already-summarized messages ('ancient'), which overflows the summarizer
+    // window and makes every BGC attempt fail.
+    expect(findCutPoint).toHaveBeenCalledWith(entries, 2, 5, 50_000);
+    expect(generateSummary.mock.calls[0][0]).toEqual([
+      { role: 'user', content: 'kept' },
+      { role: 'user', content: 'old half' },
+    ]);
+    expect(generateSummary.mock.calls[0][7]).toBe('OLD SUMMARY');
+    expect(r?.firstKeptEntryId).toBe('e3');
+  });
+
   it('falls back to default keepRecentTokens when currentTokens is 0 (cold session)', async () => {
     getBranch.mockReturnValue([
       { type: 'message', id: 'e0', message: { role: 'user', content: 'old' } },
