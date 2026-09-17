@@ -155,12 +155,16 @@ function registerOrchestrelProvider(
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: model.contextWindow,
       maxTokens: 64_000,
+      // Send the pi session id upstream so prompt caches key on the session
+      // instead of a fresh id per request. The Kiro proxy reads it.
       // Adaptive thinking (card thinking level = adaptive): let the endpoint
       // decide how much to think instead of capping it with a fixed budget, and
       // advertise xhigh so 'max' effort isn't clamped back to 'high'.
-      ...(adaptive
-        ? { compat: { forceAdaptiveThinking: true }, thinkingLevelMap: { xhigh: 'xhigh' } }
-        : {}),
+      compat: {
+        sendSessionAffinityHeaders: true,
+        ...(adaptive ? { forceAdaptiveThinking: true } : {}),
+      },
+      ...(adaptive ? { thinkingLevelMap: { xhigh: 'xhigh' } } : {}),
     })),
   };
 
