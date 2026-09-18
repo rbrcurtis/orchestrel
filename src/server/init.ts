@@ -85,6 +85,15 @@ export async function initBackend(): Promise<{
     await import('./controllers/card-sessions');
 
   const nodes = loadNodeRegistry();
+
+  // Register the board/session listeners BEFORE the node loop. The loop blocks on each
+  // node's connect + reconcile, so an unreachable node (oni over Tailscale) used to hold
+  // it for minutes and a card that entered running in that window was silently ignored —
+  // it hung in running with no session.
+  registerAutoStart();
+  registerWorktreeCleanup();
+  registerProcessReaper();
+
   for (const node of nodes) {
     let client = initState.getClientByNode(node.name);
     if (!client) {
@@ -115,9 +124,6 @@ export async function initBackend(): Promise<{
     });
   }
 
-  registerAutoStart();
-  registerWorktreeCleanup();
-  registerProcessReaper();
   console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
   startMemoryMaintainer();
