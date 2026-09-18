@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { TranscriptSync } from './transcript-sync';
 import { DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, ModelRuntime, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { AgentSession, AgentSessionEvent, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
-import type { Api, Model } from '@earendil-works/pi-ai';
+import type { AnthropicMessagesCompat, Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
 import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
 import { createOrchestrelSubagentPolicyExtension } from '../pi-extensions/orchestrel-subagent-policy';
@@ -118,6 +118,23 @@ function modelName(alias: string, model: ModelDef): string {
   return model.label || alias;
 }
 
+function modelForThinkingMode(model: Model<Api>, adaptive: boolean): Model<Api> {
+  const current = model.compat as AnthropicMessagesCompat | undefined;
+  if (!adaptive && current?.forceAdaptiveThinking !== true) return model;
+
+  const compat: AnthropicMessagesCompat = { ...current };
+  if (adaptive) compat.forceAdaptiveThinking = true;
+  else delete compat.forceAdaptiveThinking;
+
+  return {
+    ...model,
+    compat,
+    ...(adaptive
+      ? { thinkingLevelMap: { ...model.thinkingLevelMap, xhigh: 'xhigh' as const } }
+      : {}),
+  };
+}
+
 function modelApi(type: ProviderType): Api {
   if (type === 'bedrock') return 'bedrock-converse-stream';
   if (type === 'google') return 'google-generative-ai';
@@ -193,7 +210,8 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   }
   const registered = new Set<string>();
   if (opts.provider && providerId === opts.providerId) registered.add(opts.providerId);
-  const adaptive = isAdaptiveEffort(opts.effort);
+  let currentEffort = opts.effort;
+  let adaptive = isAdaptiveEffort(currentEffort);
   // Live model switches may target another provider in orcd.yaml. Pi's model
   // registry and auth store are per-session, so register + key the target
   // provider on first use (mirrors the initial registration above).
@@ -204,8 +222,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     registered.add(pId);
   }
   const modelId = opts.provider?.models[opts.modelId]?.modelID ?? opts.modelId;
-  const model = modelRegistry.find(providerId, modelId);
-  if (!model) throw new Error(`Pi model not found: ${providerId}/${opts.modelId}`);
+  const foundModel = modelRegistry.find(providerId, modelId);
+  if (!foundModel) throw new Error(`Pi model not found: ${providerId}/${opts.modelId}`);
+  let baseModel = modelForThinkingMode(foundModel as Model<Api>, false);
+  let activeModel = modelForThinkingMode(baseModel, adaptive);
 
   // Legacy managed files were process-global configuration. Remove them before
   // discovery; the policy extension below is isolated to this session's loader.
@@ -241,7 +261,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     modelRuntime,
     resourceLoader,
     sessionManager,
-    model: model as Model<Api>,
+    model: activeModel,
     thinkingLevel: effortToThinkingLevel(opts.effort),
   });
   const session = result.session;
@@ -343,13 +363,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         .filter((e) => e.type === 'message' && e.message !== undefined)
         .map((e) => e.message);
       if (toSummarize.length === 0) return null;
-      const auth = await modelRegistry.getApiKeyAndHeaders(model as Model<Api>);
+      const auth = await modelRegistry.getApiKeyAndHeaders(activeModel);
       const apiKey = 'apiKey' in auth ? (auth as { apiKey?: string }).apiKey : undefined;
       const headers = 'headers' in auth ? (auth as { headers?: Record<string, string> }).headers : undefined;
       const agent = (session as unknown as { agent: { streamFn?: unknown } }).agent;
       const summary = await generateSummary(
         toSummarize as never,
-        model as Model<Api>,
+        activeModel,
         DEFAULT_COMPACTION_SETTINGS.reserveTokens,
         apiKey,
         headers,
@@ -357,7 +377,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         undefined,
         // Merge the previous summary so a BGC never drops the history it already compacted.
         previousSummary,
-        effortToThinkingLevel(opts.effort),
+        effortToThinkingLevel(currentEffort),
         agent.streamFn as never,
       );
       return { summary, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
@@ -381,12 +401,16 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     },
 
     async setEffort(effort) {
-      // Note: 'adaptive' maps to 'high' here — the adaptive/budget distinction
-      // lives in the provider registration made at session creation and can't
-      // be flipped on a live session. A card must start a fresh session to
-      // switch modes.
       if (!canSetThinkingLevel(session)) return;
+      const nextAdaptive = isAdaptiveEffort(effort);
+      if (nextAdaptive !== adaptive) {
+        const next = modelForThinkingMode(baseModel, nextAdaptive);
+        await session.setModel(next);
+        activeModel = next;
+        adaptive = nextAdaptive;
+      }
       session.setThinkingLevel(effortToThinkingLevel(effort));
+      currentEffort = effort;
     },
 
     async setModel(provider, model) {
@@ -408,7 +432,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       if (typeof agentSession.setModel !== 'function') {
         throw new Error('setModel: Pi runtime does not support live model switching');
       }
-      await agentSession.setModel(next as Model<Api>);
+      baseModel = modelForThinkingMode(next as Model<Api>, false);
+      activeModel = modelForThinkingMode(baseModel, adaptive);
+      await agentSession.setModel(activeModel);
       console.log(`[orcd] session model → ${provider}/${model}`);
     },
 

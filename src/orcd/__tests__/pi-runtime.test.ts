@@ -483,6 +483,39 @@ describe('createPiRuntimeSession', () => {
     expect(mockSetThinkingLevel).toHaveBeenCalledWith('off');
   });
 
+  it('switches the live model between budget and adaptive thinking modes', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const baseModel = {
+      provider: 'kimi',
+      id: 'k3',
+      compat: { supportsDeveloperRole: false },
+    };
+    mockFind.mockReturnValue(baseModel);
+    const session = await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'kimi',
+      modelId: 'k3',
+      effort: 'high',
+      provider: {
+        type: 'anthropic',
+        label: 'Kimi',
+        baseUrl: 'https://api.kimi.com/coding/',
+        apiKey: 'sk-kimi-test',
+        models: { k3: { label: 'K3', modelID: 'k3', contextWindow: 1_048_576 } },
+      },
+    });
+
+    await session.setEffort('adaptive');
+    await session.setEffort('low');
+
+    expect(mockSessionSetModel).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      compat: { supportsDeveloperRole: false, forceAdaptiveThinking: true },
+      thinkingLevelMap: { xhigh: 'xhigh' },
+    }));
+    expect(mockSessionSetModel).toHaveBeenNthCalledWith(2, baseModel);
+    expect(mockSetThinkingLevel.mock.calls.map(([level]) => level)).toEqual(['high', 'low']);
+  });
+
   it('compact and setEffort no-op when Pi runtime methods are absent', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     mockCreateAgentSession.mockResolvedValue({
