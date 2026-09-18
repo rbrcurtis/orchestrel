@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Sync Cecil's Orchestrel checkout to origin/main, rebuild, and restart its
+# services. Run by orchestrel-cecil-sync.timer. Install to
+# /usr/local/bin/sync-orchestrel-cecil (see README.md).
+set -ex
+
+export NVM_DIR=/home/cecil/.nvm
+. "$NVM_DIR/nvm.sh"
+nvm use v24.14.1
+export PATH="/home/cecil/.bun/bin:$PATH"
+
+REPO=/home/cecil/Code/orchestrel
+cd "$REPO"
+
+git fetch origin main
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse origin/main)
+if [ "$LOCAL" = "$REMOTE" ]; then
+  echo "already up to date"
+  exit 0
+fi
+
+# Never reset the tree or restart the services under a live card session. The
+# next tick retries once Cecil is idle.
+RUNNING=$(sqlite3 "$REPO/data/orchestrel.db" "select count(*) from cards where column='running'" 2>/dev/null || echo 0)
+if [ "$RUNNING" != "0" ]; then
+  echo "deferring sync: $RUNNING card(s) running"
+  exit 0
+fi
+
+git checkout main 2>/dev/null || git checkout -b main origin/main
+git reset --hard origin/main
+bun install --frozen-lockfile
+bun run build
+sudo systemctl restart orcd-cecil orchestrel-cecil

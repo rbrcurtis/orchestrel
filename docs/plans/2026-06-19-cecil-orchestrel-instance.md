@@ -492,6 +492,11 @@ Expected: prints `already up to date` (or performs a reset+build+restart if behi
 
 ## Task 14: Daily 3am timer
 
+> Update (2026-09-17): the timer now runs every 15 minutes and the script defers
+> while a card is running. The installed files and the source of truth live in
+> `deploy/cecil/` — see `deploy/cecil/README.md`. The snippets below are the
+> original June 2026 versions.
+
 **Files:** Create `/etc/systemd/system/orchestrel-cecil-sync.service`, `/etc/systemd/system/orchestrel-cecil-sync.timer`
 
 - [ ] **Step 1: Write the oneshot sync service**
