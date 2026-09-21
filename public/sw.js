@@ -1,7 +1,8 @@
-// Service worker — network-first for all same-origin assets.
-// Always tries the network so fresh code wins; falls back to cache only when offline.
+// Service worker — stale-while-revalidate for all same-origin assets.
+// Serves the cached copy immediately, then refetches in the background so the
+// next load gets fresh code. Network is used only when nothing is cached.
 
-const CACHE = 'orchestrel-v7';
+const CACHE = 'orchestrel-v8';
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -30,16 +31,22 @@ self.addEventListener('fetch', (e) => {
   // Skip manifest (doesn't need caching, causes CORS errors behind CF Access)
   if (url.pathname === '/manifest.json') return;
 
-  // Network-first: always try the network so fresh code wins; cache the
-  // successful response and only fall back to cache when the network fails.
+  // Stale-while-revalidate: return the cached copy at once, and refresh the
+  // cache in the background. A miss falls through to the network.
   e.respondWith(
-    caches.open(CACHE).then((cache) =>
-      fetch(request)
+    caches.open(CACHE).then(async (cache) => {
+      const cached = await cache.match(request);
+      const refresh = fetch(request)
         .then((res) => {
           if (res.ok && !res.redirected) cache.put(request, res.clone()).catch(() => {});
           return res;
         })
-        .catch(() => cache.match(request).then((cached) => cached || Response.error())),
-    ),
+        .catch(() => undefined);
+      if (cached) {
+        e.waitUntil(refresh);
+        return cached;
+      }
+      return (await refresh) || Response.error();
+    }),
   );
 });
