@@ -2,6 +2,10 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import type { Card, Column, FileRef } from '../../src/shared/ws-protocol';
 import type { WsClient } from '../lib/ws-client';
 
+// Chat and the standard new card view both create cards without requiring the
+// user to type a title, so title generation is best-effort and falls back here.
+export const DEFAULT_NEW_CARD_TITLE = 'New Card';
+
 export class CardStore {
   cards = new Map<number, Card>();
   hydrated = false;
@@ -158,7 +162,7 @@ export class CardStore {
     // The chat composer has no title input, so a card cannot be created without
     // one. Keep this default when title generation is unavailable (for example
     // when the Ray llama gateway is down).
-    let title = 'New Card';
+    let title = DEFAULT_NEW_CARD_TITLE;
 
     try {
       const suggested = await this.suggestTitle(data.description);

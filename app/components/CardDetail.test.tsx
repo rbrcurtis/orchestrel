@@ -147,6 +147,20 @@ describe('NewCardDetail description draft persistence', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('falls back to New Card when title suggestion fails', async () => {
+    const { store } = renderNewCardDetail();
+    store.cards.suggestTitle = vi.fn(async () => {
+      throw new Error('gateway offline');
+    });
+
+    const description = screen.getByPlaceholderText('Add a description...');
+    fireEvent.change(description, { target: { value: 'fix the flaky parser test' } });
+    fireEvent.blur(description);
+
+    await waitFor(() => expect(screen.getByPlaceholderText('Card title')).toHaveProperty('value', 'New Card'));
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('clears the stored description only after a card is created successfully', async () => {
     const { store } = renderNewCardDetail();
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch } from 'lucide-react';
 import { useCardStore, useProjectStore, useSessionStore, useConfigStore } from '~/stores/context';
+import { DEFAULT_NEW_CARD_TITLE } from '~/stores/card-store';
 import { SessionView } from './SessionView';
 import { InlineEdit } from './InlineEdit';
 import { Input } from '~/components/ui/input';
@@ -932,7 +933,11 @@ export const NewCardDetail = observer(function NewCardDetail({
             setSuggestingTitle(true);
             try {
               const title = await cardStore.suggestTitle(draft.description);
-              if (title) setDraft((d) => ({ ...d, title }));
+              // Keep a title the user typed while the suggestion was in flight.
+              setDraft((d) => (d.title.trim() ? d : { ...d, title: title?.trim() || DEFAULT_NEW_CARD_TITLE }));
+            } catch {
+              // Title generation is best-effort; keep the card creatable.
+              setDraft((d) => (d.title.trim() ? d : { ...d, title: DEFAULT_NEW_CARD_TITLE }));
             } finally {
               setSuggestingTitle(false);
             }
