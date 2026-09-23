@@ -169,9 +169,25 @@ const ActiveBoard = observer(function ActiveBoard() {
 
   const lastOverId = useRef<UniqueIdentifier | null>(null);
   const lastPointer = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Crossing a column boundary changes that row's height, which can slide a
+  // different row under the pointer. Without a one-frame cooldown `over` flips
+  // between the two rows on every render: onDragOver moves the card, the layout
+  // moves back, React aborts with "Maximum update depth exceeded" (dnd-kit
+  // #1678). Pin `over` to the active card for one frame after each move so the
+  // layout settles before collisions are recomputed.
+  const recentlyMovedToNewContainer = useRef(false);
+
+  useEffect(() => {
+    if (dragOverride == null) return;
+    const raf = requestAnimationFrame(() => {
+      recentlyMovedToNewContainer.current = false;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [dragOverride]);
 
   const collisionDetection: CollisionDetection = useCallback(
     (args) => {
+      if (recentlyMovedToNewContainer.current) return [{ id: args.active.id }];
       // First try pointerWithin
       const pwCollisions = pointerWithin(args);
       if (pwCollisions.length > 0) {
@@ -212,6 +228,7 @@ const ActiveBoard = observer(function ActiveBoard() {
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(e.active.id);
+    recentlyMovedToNewContainer.current = false;
     // Snapshot the store columns at drag start
     const snap: ColumnCards = { ...storeColumns };
     for (const col of ACTIVE_COLUMNS) {
@@ -245,6 +262,7 @@ const ActiveBoard = observer(function ActiveBoard() {
 
     if (!currentCol || !overCol || currentCol === overCol) return;
 
+    recentlyMovedToNewContainer.current = true;
     setDragOverride((prev) => {
       const cur = prev ?? storeColumns;
       const sourceCards = [...cur[currentCol]];
@@ -278,6 +296,7 @@ const ActiveBoard = observer(function ActiveBoard() {
       setActiveId(null);
       setDragOverride(null);
       snapshotRef.current = null;
+      recentlyMovedToNewContainer.current = false;
       return;
     }
 
@@ -285,6 +304,7 @@ const ActiveBoard = observer(function ActiveBoard() {
       setActiveId(null);
       setDragOverride(null);
       snapshotRef.current = null;
+      recentlyMovedToNewContainer.current = false;
       return;
     }
 
@@ -327,12 +347,14 @@ const ActiveBoard = observer(function ActiveBoard() {
 
     setActiveId(null);
     snapshotRef.current = null;
+    recentlyMovedToNewContainer.current = false;
   }
 
   function handleDragCancel() {
     setDragOverride(null);
     setActiveId(null);
     snapshotRef.current = null;
+    recentlyMovedToNewContainer.current = false;
   }
 
   const filteredColumns = useMemo(() => {
