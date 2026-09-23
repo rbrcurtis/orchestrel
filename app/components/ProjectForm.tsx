@@ -97,7 +97,13 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
     // 'default' tracks whatever the new node's orcd config says
     if (providerID === DEFAULT_SENTINEL) return;
     const providers = Object.keys(config.providersForNode(newNode));
-    const nextProvider = providers.includes(providerID) ? providerID : (providers[0] ?? 'anthropic');
+    // Keep the provider when the new node serves it. Otherwise use the node's own default provider
+    // from its orcd.yaml, and only then whatever else the node happens to offer.
+    let nextProvider = providerID;
+    const nodeDefault = config.nodeDefaultProvider(newNode);
+    if (!providers.includes(providerID)) {
+      nextProvider = nodeDefault && providers.includes(nodeDefault) ? nodeDefault : (providers[0] ?? 'anthropic');
+    }
     setProviderID(nextProvider);
     setDefaultModel(config.defaultModelForNode(newNode, nextProvider));
   }
