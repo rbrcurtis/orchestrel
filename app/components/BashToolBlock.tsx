@@ -29,17 +29,20 @@ export const BashToolBlock = observer(function BashToolBlock({
   output,
   isRunning,
 }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const raw = output ?? streamingOutput ?? '';
   const displayOutput = stripAnsi(raw);
   const firstCommandLine = command.split(/\r?\n/, 1)[0];
 
-  // Auto-scroll to bottom when output grows
+  // Auto-scroll the command's own output pane when it grows. Scroll this
+  // viewport directly — scrollIntoView would also drag the outer transcript,
+  // yanking the reader down even when they scrolled up to review earlier
+  // messages.
   useEffect(() => {
-    if (isRunning && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ block: 'end' });
-    }
+    if (!isRunning) return;
+    const el = viewportRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [displayOutput, isRunning]);
 
   return (
@@ -64,7 +67,11 @@ export const BashToolBlock = observer(function BashToolBlock({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <ScrollArea className="bg-muted border-t border-border" viewportClassName="max-h-[400px]">
+        <ScrollArea
+          className="bg-muted border-t border-border"
+          viewportClassName="max-h-[400px]"
+          viewportRef={viewportRef}
+        >
           <div className="px-3 py-2 min-w-0 max-w-full">
             <div className="flex gap-1.5 min-w-0">
               <span className="text-emerald-400 select-none shrink-0">$</span>
@@ -78,8 +85,6 @@ export const BashToolBlock = observer(function BashToolBlock({
             )}
 
             {isRunning && <span className="inline-block w-1.5 h-3.5 bg-emerald-400/70 animate-pulse mt-0.5" />}
-
-            <div ref={bottomRef} />
           </div>
         </ScrollArea>
       </CollapsibleContent>
