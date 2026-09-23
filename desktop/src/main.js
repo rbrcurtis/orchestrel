@@ -42,10 +42,14 @@ function createWindow() {
     mainWindow.setTitle(currentApp.name);
   });
 
+  // Cmd+R is a hard refresh. The app's service worker is
+  // stale-while-revalidate, so a plain reload can keep serving old bundles.
+  // Drop the HTTP cache, the Cache Storage copies, and the service worker
+  // registration before reloading so the window picks up new code.
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key.toLowerCase() === 'r' && input.meta) {
       event.preventDefault();
-      mainWindow.webContents.reload();
+      void hardReload();
     }
   });
 
@@ -70,6 +74,16 @@ function createWindow() {
       mainWindow.loadURL(currentApp.url);
     }
   });
+}
+
+async function hardReload() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const { session } = mainWindow.webContents;
+  await Promise.all([
+    session.clearCache(),
+    session.clearStorageData({ storages: ['cachestorage', 'serviceworkers'] }),
+  ]);
+  if (!mainWindow.isDestroyed()) mainWindow.webContents.reloadIgnoringCache();
 }
 
 function getTarget() {
