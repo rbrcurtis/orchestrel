@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
 
 interface InlineEditProps {
   value: string;
   onSave: (newValue: string) => Promise<void>;
+  /** Controls rendered between the value and the edit pencil (view mode only). */
+  actions?: ReactNode;
   multiline?: boolean;
   className?: string;
   editClassName?: string;
@@ -17,6 +19,7 @@ interface InlineEditProps {
 export function InlineEdit({
   value,
   onSave,
+  actions,
   multiline = false,
   className = '',
   editClassName = '',
@@ -140,6 +143,17 @@ export function InlineEdit({
         >
           {value || placeholder}
         </span>
+        {!disabled && actions && (
+          // Actions live beside the pencil. Stop click and key events so using
+          // them does not also start an inline edit on the wrapper below.
+          <span
+            className="flex shrink-0 items-center"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {actions}
+          </span>
+        )}
         {!disabled && (
           <Pencil className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
         )}
