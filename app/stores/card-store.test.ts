@@ -73,29 +73,29 @@ describe('CardStore.createChatCard', () => {
     expect(card.title).toBe('Quick fix flaky test');
   });
 
-  it('falls back to New chat when suggested title is empty', async () => {
+  it('falls back to New Card when suggested title is empty', async () => {
     const emit: MockEmit = vi
       .fn()
       .mockResolvedValueOnce('   ')
-      .mockResolvedValueOnce(makeCard({ title: 'New chat' }));
+      .mockResolvedValueOnce(makeCard({ title: 'New Card' }));
 
     const store = new CardStore();
     store.setWs({ emit } as unknown as WsClient);
 
     await store.createChatCard({ description: 'What is this issue?', projectId: 12, model: 'sonnet', thinkingLevel: 'high' });
 
-    expect(emit).toHaveBeenCalledWith('card:create', expect.objectContaining({ title: 'New chat', projectId: 12 }));
+    expect(emit).toHaveBeenCalledWith('card:create', expect.objectContaining({ title: 'New Card', projectId: 12 }));
     expect(emit.mock.calls[1]).toEqual([
       'card:create',
       expect.objectContaining({ description: 'What is this issue?' }),
     ]);
   });
 
-  it('falls back to New chat when suggestTitle fails', async () => {
+  it('falls back to New Card when suggestTitle fails', async () => {
     const emit: MockEmit = vi
       .fn()
       .mockRejectedValueOnce(new Error('suggestion failed'))
-      .mockResolvedValueOnce(makeCard({ title: 'New chat' }));
+      .mockResolvedValueOnce(makeCard({ title: 'New Card' }));
 
     const store = new CardStore();
     store.setWs({ emit } as unknown as WsClient);
@@ -103,7 +103,7 @@ describe('CardStore.createChatCard', () => {
     await store.createChatCard({ description: 'Need idea', projectId: 12, summarizeThreshold: 0.8 });
 
     expect(emit).toHaveBeenCalledWith('card:create', expect.objectContaining({
-      title: 'New chat',
+      title: 'New Card',
       description: 'Need idea',
       projectId: 12,
       summarizeThreshold: 0.8,
@@ -111,6 +111,6 @@ describe('CardStore.createChatCard', () => {
       model: undefined,
       thinkingLevel: undefined,
     }));
-    expect(store.cards.get(501)?.title).toBe('New chat');
+    expect(store.cards.get(501)?.title).toBe('New Card');
   });
 });

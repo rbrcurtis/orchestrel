@@ -155,7 +155,10 @@ export class CardStore {
     summarizeThreshold?: number;
     pendingInitialFiles?: FileRef[];
   }): Promise<Card> {
-    let title = 'New chat';
+    // The chat composer has no title input, so a card cannot be created without
+    // one. Keep this default when title generation is unavailable (for example
+    // when the Ray llama gateway is down).
+    let title = 'New Card';
 
     try {
       const suggested = await this.suggestTitle(data.description);

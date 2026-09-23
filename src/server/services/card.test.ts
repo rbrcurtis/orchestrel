@@ -446,8 +446,11 @@ describe('CardService', () => {
     const title = await cardService.suggestTitle('Fix the HTTP 500 after users reset their passwords')
 
     const request = fetchMock.mock.calls[0]
-    const body = JSON.parse(request?.[1]?.body as string) as { model?: string; prompt?: string }
+    const init = request?.[1] as RequestInit | undefined
+    const body = JSON.parse(init?.body as string) as { model?: string; prompt?: string }
     expect(request?.[0]).toBe('http://localhost:11434/api/generate')
+    // A bounded signal keeps a down/slow gateway from hanging card creation.
+    expect(init?.signal).toBeInstanceOf(AbortSignal)
     expect(body.model).toBe('title')
     expect(body.prompt).toContain('Fix the HTTP 500 after users reset their passwords')
     expect(title).toBe('Fix password reset 500')

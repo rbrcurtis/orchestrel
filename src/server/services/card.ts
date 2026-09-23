@@ -55,11 +55,15 @@ function fallbackTitle(description: string): string {
   return words.join(' ') || 'Imported session';
 }
 
+// Title generation is best-effort: callers fall back to a default title. Bound
+// the request so a down or wedged gateway fails fast instead of blocking card
+// creation on undici's multi-minute headers timeout.
 async function ollamaSuggestTitle(description: string): Promise<string> {
   const { loadTitleGenerationConfig } = await import('../config/nodes');
   const config = loadTitleGenerationConfig();
   const res = await fetch(config.url, {
     method: 'POST',
+    signal: AbortSignal.timeout(8000),
     headers: {
       'Content-Type': 'application/json',
       ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
