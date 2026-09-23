@@ -45,6 +45,23 @@ describe('ConfigStore node capabilities', () => {
     expect(store.providersForNode('oni')).toEqual({});
   });
 
+  it('orders providers by label alphabetically, not by provider id', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([
+      {
+        name: 'local',
+        connected: true,
+        providers: {
+          zed: { label: 'Alpha', models: { auto: { label: 'Auto', modelID: 'auto', contextWindow: 200000 } } },
+          apple: { label: 'zeta', models: { auto: { label: 'Auto', modelID: 'auto', contextWindow: 200000 } } },
+        },
+      },
+    ]);
+
+    // 'Alpha' < 'zeta' case-insensitively, even though the provider ids say the opposite.
+    expect(store.providersEntriesForNode('local').map(([id]) => id)).toEqual(['zed', 'apple']);
+  });
+
   it('returns provider entries and defaults for one node only', () => {
     const store = new ConfigStore();
     store.hydrateNodes([{ name: 'local', connected: true, providers: LOCAL }]);

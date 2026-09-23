@@ -2,6 +2,12 @@ import { makeAutoObservable } from 'mobx';
 import { DEFAULT_SENTINEL } from '../../src/shared/ws-protocol';
 import type { ProvidersMap, ProviderConfig, ModelConfig, NodeInfo } from '../../src/shared/ws-protocol';
 
+/** Alphabetical by label, case-insensitive, with the provider id as the tie-break. */
+function byProviderLabel([aId, a]: [string, ProviderConfig], [bId, b]: [string, ProviderConfig]): number {
+  const byLabel = a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+  return byLabel !== 0 ? byLabel : aId.localeCompare(bId, undefined, { sensitivity: 'base' });
+}
+
 export class ConfigStore {
   nodes: NodeInfo[] = [];
 
@@ -21,8 +27,14 @@ export class ConfigStore {
     return this.nodes.find((n) => n.name === name);
   }
 
+  /**
+   * Providers in alphabetical order. orcd advertises them in config-file order, which differs
+   * per node, and every provider dropdown in the UI reads the list from here, so sorting at this
+   * one accessor keeps all of them consistent.
+   */
   providersForNode(name: string): ProvidersMap {
-    return this.nodeByName(name)?.providers ?? {};
+    const map = this.nodeByName(name)?.providers ?? {};
+    return Object.fromEntries(Object.entries(map).sort(byProviderLabel));
   }
 
   providersEntriesForNode(name: string): [string, ProviderConfig][] {
