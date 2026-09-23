@@ -287,7 +287,7 @@ describe('OrcdServer background compaction', () => {
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
     await server['maybeStartBgc'](session);
-    expect(prepSpy).toHaveBeenCalledWith(0.5, expect.any(Object));
+    expect(prepSpy).toHaveBeenCalledWith(0.3, expect.any(Object));
     expect(applySpy).toHaveBeenCalledWith(result);
   });
 
