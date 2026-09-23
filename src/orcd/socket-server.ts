@@ -608,10 +608,10 @@ export class OrcdServer {
 
   // ── Background compaction ───────────────────────────────────────────────
 
-  private readonly BGC_KEEP_FRACTION = 0.5;
+  private readonly BGC_KEEP_FRACTION = 0.3;
 
   /**
-   * Background compactor. Summarize the oldest ~50% off-band (parallel-safe).
+   * Background compactor. Summarize the oldest ~70% off-band (parallel-safe).
    * If the session is idle, splice the Pi-native compaction entry now; otherwise
    * defer the splice to the next run-end (onBeforeExit) — never mutate the agent
    * message array mid-run. Pi's own auto-compaction is the within-run safety net.
