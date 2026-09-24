@@ -58,6 +58,12 @@ if (DEVELOPMENT) {
   app.use(restRouter);
 
   app.use('/assets', express.static('build/client/assets', { immutable: true, maxAge: '1y' }));
+  // The service worker must never be served from the HTTP cache: a stale sw.js
+  // keeps an obsolete cache name alive.
+  app.use('/sw.js', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile('sw.js', { root: 'build/client' });
+  });
   app.use(express.static('build/client', { maxAge: '1h' }));
 
   app.get('/{*path}', (_req, res) => {

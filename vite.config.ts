@@ -1,8 +1,50 @@
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
+import { execSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { wsServerPlugin } from "./src/server/ws/server";
+
+// public/sw.js ships a `__SW_VERSION__` token in its cache name. Give every
+// server boot and every production build a fresh value so the activate handler
+// purges the previous cache: a cache that holds a bad bundle can never outlive
+// the deploy that fixes it.
+function swVersionPlugin(): Plugin {
+  const version = `${gitSha()}-${Date.now().toString(36)}`;
+
+  return {
+    name: "sw-version",
+
+    // Ryan's instance is served by the Vite dev server, so /sw.js is a static
+    // file from public/ that never touches a build. Inject the token here.
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.split("?")[0] !== "/sw.js") return next();
+        const source = readFileSync(resolve("public/sw.js"), "utf8");
+        res.setHeader("Content-Type", "application/javascript");
+        res.setHeader("Cache-Control", "no-cache");
+        res.end(source.replaceAll("__SW_VERSION__", version));
+      });
+    },
+
+    // Production (cecil) serves build/client, where public/ is copied verbatim.
+    closeBundle() {
+      const file = resolve("build/client/sw.js");
+      if (!existsSync(file)) return;
+      writeFileSync(file, readFileSync(file, "utf8").replaceAll("__SW_VERSION__", version));
+    },
+  };
+}
+
+function gitSha(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+  } catch {
+    return "nogit";
+  }
+}
 
 function pwaLogPlugin(): Plugin {
   return {
@@ -75,5 +117,12 @@ export default defineConfig(({ isSsrBuild }) => ({
       ],
     },
   },
-  plugins: [wsServerPlugin(), pwaLogPlugin(), tailwindcss(), reactRouter(), tsconfigPaths()],
+  plugins: [
+    swVersionPlugin(),
+    wsServerPlugin(),
+    pwaLogPlugin(),
+    tailwindcss(),
+    reactRouter(),
+    tsconfigPaths(),
+  ],
 }));

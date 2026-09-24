@@ -2,7 +2,9 @@
 // Serves the cached copy immediately, then refetches in the background so the
 // next load gets fresh code. Network is used only when nothing is cached.
 
-const CACHE = 'orchestrel-v8';
+// The cache name carries a version id. vite.config.ts (swVersionPlugin)
+// substitutes it on every server boot and every production build.
+const CACHE = 'orchestrel-__SW_VERSION__';
 
 self.addEventListener('install', () => self.skipWaiting());
 
