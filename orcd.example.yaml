@@ -102,6 +102,16 @@ providers:
   #   models:
   #     main: { label: "Qwen3 Coder", modelID: qwen3-coder-next, contextWindow: 262144 }
 
+# /sleep time resolution (optional but recommended). The /sleep app command
+# names a time ("12 hours", "next friday at 10am"); the named model answers with
+# a GNU date phrase that the backend resolves with `date -d`. provider + model
+# refer to the maps above, so the URL and key are never repeated here. The
+# provider must expose an OpenAI-compatible /v1/chat/completions path. Thinking
+# is always disabled for this call, so reasoning models answer in <1s.
+# sleepResolver:
+#   provider: ray
+#   model: gemma4-12b-ctx32768
+
 # Memory maintainer (optional). Omit to disable. See
 # docs/specs/2026-08-31-memory-maintainer-design.md
 memory:

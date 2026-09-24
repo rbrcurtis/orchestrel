@@ -26,6 +26,7 @@ export interface CardResponse {
   thinkingLevel: string
   summarizeThreshold: number
   promptsSent: number
+  sleepUntil: number | null
   turnsCompleted: number
   contextTokens: number
   contextWindow: number

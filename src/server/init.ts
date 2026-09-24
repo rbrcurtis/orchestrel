@@ -128,6 +128,9 @@ export async function initBackend(): Promise<{
 
   startMemoryMaintainer();
 
+  const { startSleepWaker } = await import('./services/sleep');
+  startSleepWaker();
+
   initState.markInitialized();
 
   return { restRouter: router, attachSocketIo };

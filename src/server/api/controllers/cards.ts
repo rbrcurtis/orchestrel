@@ -50,6 +50,7 @@ function toCardResponse(card: Card): CardResponse {
     thinkingLevel: card.thinkingLevel,
     summarizeThreshold: card.summarizeThreshold,
     promptsSent: card.promptsSent,
+    sleepUntil: card.sleepUntil ?? null,
     turnsCompleted: card.turnsCompleted,
     contextTokens: card.contextTokens,
     contextWindow: card.contextWindow,

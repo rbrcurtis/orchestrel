@@ -78,6 +78,11 @@ export class Card extends BaseEntity {
   @Column({ name: 'prompts_sent', type: 'integer', default: 0 })
   promptsSent!: number;
 
+  // Set by the /sleep app command: epoch ms when the card may run again. The
+  // card waits in ready until then; the BE waker moves it back to running.
+  @Column({ name: 'sleep_until', type: 'integer', nullable: true })
+  sleepUntil!: number | null;
+
   @Column({ name: 'turns_completed', type: 'integer', default: 0 })
   turnsCompleted!: number;
 

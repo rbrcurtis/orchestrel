@@ -173,6 +173,9 @@ export function wsServerPlugin(): Plugin {
             const { startMemoryMaintainer } = await import('../../lib/memory-maintainer/scheduler');
             startMemoryMaintainer();
 
+            const { startSleepWaker } = await import('../services/sleep');
+            startSleepWaker();
+
             initState.markInitialized();
           },
         )

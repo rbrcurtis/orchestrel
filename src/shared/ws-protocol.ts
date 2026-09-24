@@ -33,6 +33,7 @@ export const cardSchema = z.object({
   thinkingLevel: z.enum(THINKING_LEVELS),
   summarizeThreshold: z.number(),
   promptsSent: z.number(),
+  sleepUntil: z.number().nullable().optional(),
   turnsCompleted: z.number(),
   contextTokens: z.number(),
   contextWindow: z.number(),

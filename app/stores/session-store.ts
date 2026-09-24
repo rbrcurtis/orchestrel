@@ -369,15 +369,17 @@ export class SessionStore {
   async sendMessage(cardId: number, message: string, files?: FileRef[]): Promise<void> {
     const s = this.getOrCreate(cardId);
 
-    // App slash commands (/done, /archive, /ready, /delete) are addressed to
-    // Orchestrel, not the model — the backend strips them and applies the card
-    // action after sending. Echo only what the model will receive so the bubble
-    // matches the transcript history. A command-only message prompts nothing, so
-    // skip the echo and the optimistic running flip; the card move arrives via
-    // the card:updated event. /delete is terminal: the card is gone, so
-    // surrounding text is discarded too and nothing is echoed.
+    // App slash commands (/done, /archive, /ready, /sleep, /delete) are
+    // addressed to Orchestrel, not the model — the backend strips them and
+    // applies the card action after sending. Echo only what the model will
+    // receive so the bubble matches the transcript history. A command-only
+    // message prompts nothing, so skip the echo and the optimistic running
+    // flip; the card move arrives via the card:updated event. /delete is
+    // terminal and /sleep parks the card, so neither prompts: surrounding text
+    // is discarded with the command and nothing is echoed.
     const { text, action } = parseAppCommands(message);
-    const hasPrompt = action !== 'delete' && (text.trim().length > 0 || (files?.length ?? 0) > 0);
+    const hasPrompt =
+      action !== 'delete' && action !== 'sleep' && (text.trim().length > 0 || (files?.length ?? 0) > 0);
 
     if (hasPrompt) {
       this.messageVersions.set(cardId, (this.messageVersions.get(cardId) ?? 0) + 1);

@@ -36,45 +36,65 @@ export function stripInjectedCommands(text: string): string {
 // Like skill/prompt expansion, they are recognized anywhere in the message,
 // never inside code regions, and only at start-of-string or after whitespace.
 
-export type AppSlashAction = Extract<Column, 'done' | 'archive' | 'ready'> | 'delete';
+// /sleep parks the card in ready until a computed time, so it never prompts —
+// the wake time is an argument, not prompt text (see submitCardPrompt).
+export type AppSlashAction = Extract<Column, 'done' | 'archive' | 'ready'> | 'delete' | 'sleep';
 
 export const APP_SLASH_COMMANDS: ReadonlyArray<{ name: string; action: AppSlashAction }> = [
   { name: 'done', action: 'done' },
   { name: 'archive', action: 'archive' },
   { name: 'ready', action: 'ready' },
+  { name: 'sleep', action: 'sleep' },
   { name: 'delete', action: 'delete' },
 ];
 
 // Same positional rule as skill/prompt expansion (start-of-string or whitespace
 // before the slash). The lookahead rejects longer tokens (/done-x, /delete2)
 // and path continuations (/done/foo) so pasted paths are never consumed.
-const APP_COMMAND_RE = /(^|\s)\/(done|archive|ready|delete)(?![\w/-])/g;
+const APP_COMMAND_RE = /(^|\s)\/(done|archive|ready|sleep|delete)(?![\w/-])/g;
 
 export interface ParsedAppCommands {
   /** The message with every app command removed. */
   text: string;
   /** The action of the LAST app command in the message, or null when none. */
   action: AppSlashAction | null;
+  /** Time phrase of the last /sleep (for example "12 hours"), or null. */
+  sleepPhrase: string | null;
 }
 
 export function parseAppCommands(message: string): ParsedAppCommands {
-  if (!message.includes('/')) return { text: message, action: null };
+  if (!message.includes('/')) return { text: message, action: null, sleepPhrase: null };
 
   const masked = maskCodeRegions(message);
+  const matches = [...masked.matchAll(APP_COMMAND_RE)];
+  if (matches.length === 0) return { text: message, action: null, sleepPhrase: null };
+
   let action: AppSlashAction | null = null;
+  let sleepPhrase: string | null = null;
   let out = '';
   let last = 0;
-  for (const m of masked.matchAll(APP_COMMAND_RE)) {
+  matches.forEach((m, i) => {
+    const start = m.index ?? 0;
+    let end = start + m[0].length;
+    // /sleep carries its argument as the text after the command. It runs to the
+    // next app command, the end of its line, or the end of the message — so
+    // a multi-line message keeps the text below as a prompt while the first
+    // line supplies the phrase, and a bare phrase leaves nothing to prompt.
+    if (m[2] === 'sleep') {
+      const next = matches[i + 1]?.index ?? message.length;
+      const lineEnd = message.indexOf('\n', end);
+      const stop = Math.min(next, lineEnd === -1 ? message.length : lineEnd);
+      sleepPhrase = message.slice(end, stop).trim();
+      end = stop;
+    }
     action = m[2] as AppSlashAction;
-    const idx = m.index ?? 0;
-    out += message.slice(last, idx);
-    last = idx + m[0].length;
-  }
-  if (action === null) return { text: message, action: null };
+    out += message.slice(last, start);
+    last = end;
+  });
   out += message.slice(last);
   // Removal can leave doubled separators ("great  thanks") and stray edges.
   const text = out.replace(/[ \t]{2,}/g, ' ').trim();
-  return { text, action };
+  return { text, action, sleepPhrase: action === 'sleep' ? sleepPhrase : null };
 }
 
 // Replace the contents of inline `code` spans and fenced ``` blocks with spaces

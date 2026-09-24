@@ -186,6 +186,35 @@ describe('submitCardPrompt app slash commands', () => {
     expect(mockUpdateCard).not.toHaveBeenCalled();
   });
 
+  // A prompt is the user saying "run now", so it outranks a pending /sleep; and
+  // a prompt that cannot start a session must not silently cancel the wake time
+  // the user set. Both are single-field state transitions, cheap to pin here.
+  it('clears a pending wake when a prompt pulls the card back to running', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+    const card = { ...activeCard(), column: 'ready', sleepUntil: 1_790_298_759_931 };
+    mockFindOneBy.mockResolvedValue(card);
+    mockIsActive.mockReturnValue(true);
+
+    await submitCardPrompt(42, 'go now please');
+
+    expect(card.column).toBe('running');
+    expect(card.sleepUntil).toBeNull();
+    expect(card.save).toHaveBeenCalled();
+  });
+
+  it('restores the wake time when the prompt cannot start a session', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+    const card = { ...activeCard(), sessionId: null, column: 'ready', sleepUntil: 1_790_298_759_931 };
+    mockFindOneBy.mockResolvedValue(card);
+    mockIsActive.mockReturnValue(false);
+    mockCreate.mockRejectedValue(new Error('node down'));
+
+    await expect(submitCardPrompt(42, 'go')).rejects.toThrow('node down');
+
+    expect(card.column).toBe('ready');
+    expect(card.sleepUntil).toBe(1_790_298_759_931);
+  });
+
   it('broadcasts the submitted prompt to the card room so other viewers see it', async () => {
     const { submitCardPrompt } = await import('./card-execution');
     const { messageBus } = await import('../bus');

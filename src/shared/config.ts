@@ -59,6 +59,18 @@ export interface OrchestrelConfig {
   ringBufferSize: number;
   providers: Record<string, ProviderDef>;
   memory?: MemoryConfig;
+  sleepResolver?: SleepResolverConfig;
+}
+
+/**
+ * Model that names the time for the /sleep app command (see
+ * server/services/sleep.ts). Names a provider + model alias from this file so
+ * the API url, key and model id stay in one place; the baseUrl is used with the
+ * OpenAI-compatible chat completions path.
+ */
+export interface SleepResolverConfig {
+  provider: string;
+  model: string;
 }
 
 /** Replace `${VAR}` with values from env. Unset vars become empty string. */
@@ -174,6 +186,19 @@ export function parseConfig(
     };
   }
 
+  let sleepResolver: SleepResolverConfig | undefined;
+  const rawSleep = raw.sleepResolver;
+  if (rawSleep && typeof rawSleep === 'object') {
+    const s = rawSleep as Record<string, unknown>;
+    if (!s.provider || !s.model) {
+      throw new Error('config: sleepResolver requires provider and model');
+    }
+    sleepResolver = {
+      provider: String(s.provider),
+      model: String(s.model),
+    };
+  }
+
   return {
     listen,
     authToken: raw.authToken != null ? resolveEnvVars(String(raw.authToken), env) : '',
@@ -185,6 +210,7 @@ export function parseConfig(
     ringBufferSize: Number(raw.ringBufferSize ?? 5000),
     providers,
     ...(memory ? { memory } : {}),
+    ...(sleepResolver ? { sleepResolver } : {}),
   };
 }
 

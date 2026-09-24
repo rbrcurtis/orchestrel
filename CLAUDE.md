@@ -48,7 +48,8 @@ Provider config lives in each node's `orcd.yaml`. Each provider has `label`, opt
 Two independent kinds of slash commands, expanded at different layers:
 
 - **Skill/prompt commands** (`/merge`, `/qa`, any Pi skill or prompt template) — expanded by orcd (layer 3) in `src/orcd/inline-commands.ts`, anywhere in the message, before the model sees the text.
-- **App commands** (`/done`, `/archive`) — addressed to Orchestrel, never to the model. Parsed by `parseAppCommands` (`src/shared/slash-commands.ts`) inside `submitCardPrompt` (works for both the ws `agent:send` and REST prompt endpoints): the command is stripped, the remaining text is sent as the prompt, then the card is moved through `cardService.updateCard` — the same path as a drag, so a mid-turn move keeps the session alive and the card parks in done/archive when the session exits. A command-only message moves the card without prompting. `/done` appends at the end of the done column (position-sorted); if both appear, the last command wins. App commands take precedence over a same-named skill/prompt.
+- **App commands** (`/done`, `/archive`, `/sleep`) — addressed to Orchestrel, never to the model. Parsed by `parseAppCommands` (`src/shared/slash-commands.ts`) inside `submitCardPrompt` (works for both the ws `agent:send` and REST prompt endpoints): the command is stripped, the remaining text is sent as the prompt, then the card is moved through `cardService.updateCard` — the same path as a drag, so a mid-turn move keeps the session alive and the card parks in done/archive when the session exits. A command-only message moves the card without prompting. `/done` appends at the end of the done column (position-sorted); if both appear, the last command wins. App commands take precedence over a same-named skill/prompt.
+- **`/sleep <phrase>`** (`/sleep 12 hours`, `/sleep until tuesday at 5pm`) parks the card in `ready` with `cards.sleep_until` set and never prompts — text beside the command is discarded, because a sleeping card must not run. `services/sleep.ts` resolves the phrase in three steps, and every epoch comes from GNU `date -d` on this host, never from model arithmetic: (1) bare durations (`45 minutes`, `1.5 hours`, `2 days`, also `in 2 days`) are exact arithmetic; (2) `normalizePhrase` strips filler (`at`, `on`, `until`, `in`), maps day periods to clock times (morning 09:00, noon 12:00, afternoon 15:00, evening 19:00, night 21:00) and hands phrases that name a day or clock time straight to `date` — this is why `next friday at 10am` and `until tuesday at 5pm` resolve in ~5 ms with no model call, since a small model answers that weekday arithmetic with the wrong day; (3) anything left goes to the `sleepResolver` model in `orcd.yaml`, which only *names* the time (`WAIT: +12 hours` or `WAKE: 2026-09-29 17:00`), with a weekday cross-check and one corrective retry before refusing. `sleepResolver` names a `provider` + `model` pair from the same file, so the API url and key come from the provider entry. A failed phrase leaves the card alone and posts an error line. `startSleepWaker` polls every 15s and moves due cards back to `running` (which auto-starts them via `board:changed`); moving a sleeping card out of `ready` by hand clears the pending wake, and so does an explicit prompt (a prompt means "run now", so it outranks the sleep) — but a prompt that cannot start a session restores the wake time instead of dropping it.
 
 ## Code Style
 
@@ -144,7 +145,8 @@ CREATE TABLE cards (
   pending_prompt TEXT DEFAULT NULL,
   pending_files TEXT DEFAULT NULL,
   summarize_threshold REAL NOT NULL DEFAULT 0,
-  sandbox INTEGER NOT NULL DEFAULT 0
+  sandbox INTEGER NOT NULL DEFAULT 0,
+  sleep_until INTEGER DEFAULT NULL
 );
 
 CREATE TABLE users (

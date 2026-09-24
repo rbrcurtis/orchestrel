@@ -33,13 +33,13 @@ async function cardAndClient(cardId: number) {
 }
 
 export async function submitCardPrompt(cardId: number, message: string, files?: FileRef[]): Promise<Card | null> {
-  // App slash commands (/done, /archive, /ready, /delete) are addressed to
-  // Orchestrel, not the model: strip them from the prompt, send what remains,
+  // App slash commands (/done, /archive, /ready, /sleep, /delete) are addressed
+  // to Orchestrel, not the model: strip them from the prompt, send what remains,
   // then apply the card action. A message of only app commands acts without
   // prompting. The moves go through cardService.updateCard — the same path as a
   // drag — so a mid-turn move keeps the session alive and the card parks when
   // it exits.
-  const { text, action } = parseAppCommands(message);
+  const { text, action, sleepPhrase } = parseAppCommands(message);
 
   // Delete is terminal: the card is removed outright, so there is nothing to
   // prompt first — any remaining text is discarded with it. Returns null to
@@ -49,6 +49,23 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
     const { cardService } = await import('./card');
     await cardService.deleteCard(cardId);
     return null;
+  }
+
+  // /sleep parks the card and never prompts: a sleeping card must not run, so
+  // any text beside the command is discarded (the phrase is the argument, see
+  // parseAppCommands). The card waits in ready until the waker releases it.
+  if (action === 'sleep') {
+    const { resolveSleepUntil } = await import('./sleep');
+    try {
+      const until = await resolveSleepUntil(sleepPhrase ?? '');
+      console.log(`[session:${cardId}] app command /sleep: parked until ${new Date(until).toISOString()} ("${sleepPhrase}")`);
+      return await moveCardToColumn(cardId, 'ready', { sleepUntil: until });
+    } catch (err) {
+      console.warn(`[session:${cardId}] app command /sleep failed:`, err instanceof Error ? err.message : err);
+      const msg = err instanceof Error ? err.message : String(err);
+      broadcastCardError(cardId, `Sleep failed: ${msg}`);
+      throw new CardExecutionError(422, 'sleep_unresolved', msg);
+    }
   }
 
   const hasPrompt = text.trim().length > 0 || (files?.length ?? 0) > 0;
@@ -81,13 +98,20 @@ function broadcastUserPrompt(cardId: number, text: string): void {
   });
 }
 
+// A failed app command has no session to report into, so publish the reason on
+// the card's event stream where the transcript renders it as an error line.
+// Without this the command fails silently and the card just does not move.
+function broadcastCardError(cardId: number, message: string): void {
+  messageBus.publish(`card:${cardId}:sdk`, { type: 'error', message });
+}
+
 // Move a card exactly like a drag would: cardService.updateCard applies the
 // session lifecycle (mid-turn done/archive moves keep the session alive) and
 // the save fires the board:changed handlers (worktree cleanup, reaper). Delete
 // never reaches here — submitCardPrompt short-circuits it before prompting.
 type MoveAction = Extract<AppSlashAction, 'done' | 'archive' | 'ready'>;
-async function moveCardToColumn(cardId: number, column: MoveAction): Promise<Card> {
-  const data: Partial<Card> = { column };
+async function moveCardToColumn(cardId: number, column: MoveAction, extra: Partial<Card> = {}): Promise<Card> {
+  const data: Partial<Card> = { column, ...extra };
   // Position-sorted columns (all but archive) sort by position; append the
   // card at the end.
   if (column === 'done' || column === 'ready') {
@@ -135,6 +159,7 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
     // thinking level before this prompt (see orcd run()).
     client.message(card.sessionId, prompt, card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel);
     if (card.column !== 'running') card.column = 'running';
+    card.sleepUntil = null;
     card.updatedAt = new Date().toISOString();
     await card.save();
     broadcastUserPrompt(cardId, message);
@@ -143,13 +168,19 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
   }
 
   const prevColumn = card.column;
+  // An explicit prompt outranks a pending /sleep: the user wants the card now.
+  // Cleared in the same save that moves the card to running, so there is one
+  // writer — and restored below if the session cannot start, so a failed prompt
+  // does not silently cancel a scheduled wake.
+  const prevSleepUntil = card.sleepUntil ?? null;
   markCreatePending(cardId);
   try {
     if (card.column !== 'running') {
       card.column = 'running';
-      card.updatedAt = new Date().toISOString();
-      await card.save();
     }
+    card.sleepUntil = null;
+    card.updatedAt = new Date().toISOString();
+    await card.save();
 
     const cwd = await ensureWorktree(card, client);
     const window = windowForCard(card);
@@ -174,8 +205,9 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
     return card;
   } catch (err) {
     console.error(`[session:${cardId}] prompt submission failed:`, err);
-    if (card.column !== prevColumn) {
+    if (card.column !== prevColumn || card.sleepUntil !== prevSleepUntil) {
       card.column = prevColumn;
+      card.sleepUntil = prevSleepUntil;
       card.updatedAt = new Date().toISOString();
       await card.save();
     }
