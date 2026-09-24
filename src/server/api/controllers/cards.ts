@@ -51,6 +51,7 @@ function toCardResponse(card: Card): CardResponse {
     summarizeThreshold: card.summarizeThreshold,
     promptsSent: card.promptsSent,
     sleepUntil: card.sleepUntil ?? null,
+    sleepPrompt: card.sleepPrompt ?? null,
     turnsCompleted: card.turnsCompleted,
     contextTokens: card.contextTokens,
     contextWindow: card.contextWindow,

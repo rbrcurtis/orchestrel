@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process';
-import { describe, expect, it } from 'vitest';
-import { durationMs, normalizePhrase, parseModelReply, resolveSleepUntil, weekdayInPhrase } from './sleep';
+import { describe, expect, it, vi } from 'vitest';
+import { durationMs, normalizePhrase, parseModelReply, resolveSleepUntil, splitSleepArgument, weekdayInPhrase } from './sleep';
 
 // The phrase and reply parsers decide when a card runs again. Wrong unit math
 // or a missed reply shape silently parks a card at the wrong time, so these
@@ -49,6 +49,8 @@ describe('normalizePhrase', () => {
   it('turns a day period into a clock time', () => {
     expect(normalizePhrase('saturday morning')).toBe('saturday 09:00');
     expect(normalizePhrase('tomorrow evening')).toBe('tomorrow 19:00');
+    expect(normalizePhrase('midnight')).toBe('00:00');
+    expect(normalizePhrase('tonight')).toBe('21:00');
   });
 
   it('handles tonight and relative-day phrasings', () => {
@@ -98,6 +100,35 @@ describe('weekdayInPhrase', () => {
   });
 });
 
+describe('splitSleepArgument', () => {
+  it('splits the wake prompt off the time phrase', () => {
+    expect(splitSleepArgument('until friday at 1am then check the status of whatever')).toEqual({
+      phrase: 'until friday at 1am',
+      prompt: 'check the status of whatever',
+    });
+  });
+
+  it('keeps a later "then" inside the prompt', () => {
+    expect(splitSleepArgument('2 hours then run tests then report')).toEqual({
+      phrase: '2 hours',
+      prompt: 'run tests then report',
+    });
+  });
+
+  it('takes a prompt written on the next line when there is no "then"', () => {
+    expect(splitSleepArgument('2 hours', 'check the deploy\nand report')).toEqual({
+      phrase: '2 hours',
+      prompt: 'check the deploy\nand report',
+    });
+  });
+
+  it('reports no prompt for a plain sleep', () => {
+    expect(splitSleepArgument('2 hours')).toEqual({ phrase: '2 hours', prompt: null });
+    expect(splitSleepArgument('2 hours then')).toEqual({ phrase: '2 hours', prompt: null });
+    expect(splitSleepArgument('2 hours', '   ')).toEqual({ phrase: '2 hours', prompt: null });
+  });
+});
+
 describe('resolveSleepUntil', () => {
   const now = Date.UTC(2026, 8, 24, 20, 0, 0);
 
@@ -111,6 +142,33 @@ describe('resolveSleepUntil', () => {
     await expect(resolveSleepUntil('yesterday', now)).rejects.toThrow(/past/);
     // A bare duration takes the fast path, so this needs no model call.
     await expect(resolveSleepUntil('400 days', now)).rejects.toThrow(/more than a year/);
+  });
+
+  // A bare clock time or day period names no day, so one that has already
+  // passed means the next one. These phrases used to reach the model, which
+  // meant "/sleep until morning" failed outright whenever the resolver model was
+  // down — for a time the host can work out on its own.
+  it('rolls a bare clock time or day period to its next occurrence', async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error('a bare clock time must not need the model');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const evening = new Date(2026, 8, 24, 18, 0, 0).getTime();
+      await expect(resolveSleepUntil('until morning', evening)).resolves.toBe(new Date(2026, 8, 25, 9, 0, 0).getTime());
+      await expect(resolveSleepUntil('until 5pm', evening)).resolves.toBe(new Date(2026, 8, 25, 17, 0, 0).getTime());
+      await expect(resolveSleepUntil('noon', evening)).resolves.toBe(new Date(2026, 8, 25, 12, 0, 0).getTime());
+      await expect(resolveSleepUntil('midnight', evening)).resolves.toBe(new Date(2026, 8, 25, 0, 0, 0).getTime());
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps a bare clock time that is still ahead today', async () => {
+    const morning = new Date(2026, 8, 24, 8, 0, 0).getTime();
+    await expect(resolveSleepUntil('until 5pm', morning)).resolves.toBe(new Date(2026, 8, 24, 17, 0, 0).getTime());
+    await expect(resolveSleepUntil('morning', morning)).resolves.toBe(new Date(2026, 8, 24, 9, 0, 0).getTime());
   });
 
   // A weekday named in the phrase must be resolved by the host. When this went

@@ -80,12 +80,14 @@ export function weekdayInPhrase(phrase: string): number | null {
 // Conventional hour for a bare day period, so "saturday morning" and the model
 // prompt agree on one answer.
 const PERIOD_TIMES: Record<string, string> = {
+  midnight: '00:00',
   morning: '09:00',
   noon: '12:00',
   midday: '12:00',
   afternoon: '15:00',
   evening: '19:00',
   night: '21:00',
+  tonight: '21:00',
 };
 
 // A phrase only goes to `date` on its own when it names a day or a clock time;
@@ -93,6 +95,11 @@ const PERIOD_TIMES: Record<string, string> = {
 // could resolve to some arbitrary date.
 const DATEABLE_RE =
   /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun|today|tomorrow|next\s+(week|month)|\d{1,2}(?::\d{2})?\s*(am|pm)|\d{1,2}:\d{2})\b/;
+
+// A day already named in the phrase means `date` picked the day itself; only a
+// bare clock time or day period is rolled forward to its next occurrence.
+const DAY_WORD_RE =
+  /\b(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|day|days|week|weeks|month|months|year|years)\b/;
 
 /**
  * Human phrase → the GNU date phrase it means, or null when the mapping is not
@@ -111,12 +118,15 @@ export function normalizePhrase(phrase: string): string | null {
   // "in 3 days 9am" is a GNU relative offset: "+3 days 9am".
   s = s.replace(/^in\s+(\d)/, '+$1');
 
-  const period = /\b(morning|noon|midday|afternoon|evening|night)\b/.exec(s);
+  const period = /\b(midnight|morning|noon|midday|afternoon|evening|night|tonight)\b/.exec(s);
   if (period && !/\d{1,2}(?::\d{2})?\s*(am|pm)\b|\b\d{1,2}:\d{2}\b/.test(s)) {
     s = s.replace(period[0], PERIOD_TIMES[period[1]]);
   }
-  // "tonight 21:00" is not a date phrase; tonight is today's clock time.
-  s = s.replace(/\btonight\b/g, ' ').replace(/\s+/g, ' ').trim();
+  // "tonight at 9pm" already picked a clock time, so the word only adds noise
+  // there; on its own, tonight was mapped to 21:00 above (and the roll-forward
+  // in resolveSleepUntil moves it to the next night once that has passed).
+  if (/\d/.test(s)) s = s.replace(/\btonight\b/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
 
   if (!DATEABLE_RE.test(s)) return null;
   return s;
@@ -227,28 +237,38 @@ function loadSleeper(): SleepEndpoint {
 }
 
 async function askModel(endpoint: SleepEndpoint, messages: ChatMessage[]): Promise<string> {
-  const res = await fetch(endpoint.url, {
-    method: 'POST',
-    signal: AbortSignal.timeout(20_000),
-    headers: {
-      'Content-Type': 'application/json',
-      ...(endpoint.apiKey ? { Authorization: `Bearer ${endpoint.apiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      model: endpoint.model,
-      messages,
-      stream: false,
-      temperature: 0,
-      // Generous: a reasoning model spends its budget thinking first, and an
-      // answer cut off at the cap comes back as empty content.
-      max_tokens: 512,
-      // Always off. Naming a time needs no chain of thought, and for the
-      // reasoning models on the gateway (gemma4) leaving it on costs 5-17s and
-      // an empty answer when the budget runs out mid-thought. Templates that
-      // have no thinking pass ignore this.
-      chat_template_kwargs: { enable_thinking: false },
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(endpoint.url, {
+      method: 'POST',
+      signal: AbortSignal.timeout(20_000),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(endpoint.apiKey ? { Authorization: `Bearer ${endpoint.apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: endpoint.model,
+        messages,
+        stream: false,
+        temperature: 0,
+        // Generous: a reasoning model spends its budget thinking first, and an
+        // answer cut off at the cap comes back as empty content.
+        max_tokens: 512,
+        // Always off. Naming a time needs no chain of thought, and for the
+        // reasoning models on the gateway (gemma4) leaving it on costs 5-17s and
+        // an empty answer when the budget runs out mid-thought. Templates that
+        // have no thinking pass ignore this.
+        chat_template_kwargs: { enable_thinking: false },
+      }),
+    });
+  } catch (err) {
+    // "fetch failed" tells the user nothing; name the model that is missing.
+    console.error(`[sleep] resolver model unreachable at ${endpoint.url}:`, err instanceof Error ? err.message : err);
+    throw new SleepResolutionError(
+      `The sleep time model (${endpoint.model} at ${endpoint.url}) is not reachable. ` +
+        `Try a plain duration like "/sleep 2 hours".`,
+    );
+  }
   if (!res.ok) throw new SleepResolutionError(`Sleep time lookup failed (${res.status})`);
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
   const content = data.choices?.[0]?.message?.content;
@@ -263,6 +283,28 @@ function localStamp(epoch: number): string {
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
+
+// The separator, with optional trailing spaces so a bare "... then" still
+// splits (and yields no prompt) instead of poisoning the time phrase.
+const THEN_RE = /\s+then\b\s*/i;
+
+/**
+ * `/sleep` argument → the time phrase, plus the prompt to send when the time
+ * arrives. "/sleep 2 hours then check the deploy" splits on the first "then";
+ * a prompt written on the lines below instead (parseAppCommands ends the phrase
+ * at the newline) arrives here as `leftover` and is used the same way.
+ */
+export function splitSleepArgument(
+  argument: string,
+  leftover = '',
+): { phrase: string; prompt: string | null } {
+  const arg = argument.trim();
+  const m = THEN_RE.exec(arg);
+  const phrase = m ? arg.slice(0, m.index) : arg;
+  const inline = m ? arg.slice(m.index + m[0].length) : '';
+  const prompt = [inline.trim(), leftover.trim()].filter(Boolean).join('\n').trim();
+  return { phrase: phrase.trim(), prompt: prompt || null };
+}
 
 /** Epoch (ms) when a card that used /sleep may run again. */
 export async function resolveSleepUntil(phrase: string, now = Date.now()): Promise<number> {
@@ -289,6 +331,15 @@ export async function resolveSleepUntil(phrase: string, now = Date.now()): Promi
   if (normalized) {
     const until = await tryDate(normalized);
     if (until !== null && until > now + MIN_AHEAD_MS && until <= now + MAX_AHEAD_MS) return until;
+    // A clock time or day period with no day named that has already passed means
+    // the next one: "until morning" at 6pm is tomorrow 09:00, "until 5pm" at
+    // 6pm is tomorrow 17:00. Deterministic, and it keeps the common phrases off
+    // the model — as long as the gateway is up, one is only needed for the
+    // genuinely odd phrasings.
+    if (!DAY_WORD_RE.test(normalized)) {
+      const rolled = await tryDate(`tomorrow ${normalized}`);
+      if (rolled !== null && rolled > now + MIN_AHEAD_MS && rolled <= now + MAX_AHEAD_MS) return rolled;
+    }
   }
 
   const endpoint = loadSleeper();
@@ -348,6 +399,7 @@ export function startSleepWaker(bus: MessageBus = messageBus, intervalMs = 15_00
     const fresh = await Card.findOneBy({ id: card.id });
     if (!fresh || fresh.sleepUntil == null || fresh.column === 'ready') return;
     fresh.sleepUntil = null;
+    fresh.sleepPrompt = null;
     fresh.updatedAt = new Date().toISOString();
     await fresh.save();
     console.log(`[sleep] card ${card.id} left ready: dropped its pending wake`);
@@ -363,12 +415,38 @@ export function startSleepWaker(bus: MessageBus = messageBus, intervalMs = 15_00
 export async function wakeDueCards(now = Date.now()): Promise<number> {
   const due = await Card.find({ where: { column: 'ready', sleepUntil: LessThanOrEqual(now) } });
   for (const card of due) {
-    // Moving to running fires board:changed, which starts the session.
-    card.column = 'running';
+    const prompt = card.sleepPrompt?.trim() || null;
+    // Clear the schedule before acting on it: a wake prompt that fails must not
+    // re-fire on every tick, and the card must not still look asleep while its
+    // prompt is being sent.
     card.sleepUntil = null;
+    card.sleepPrompt = null;
+
+    if (!prompt) {
+      // Moving to running fires board:changed, which starts the session.
+      card.column = 'running';
+      card.updatedAt = new Date().toISOString();
+      await card.save();
+      console.log(`[sleep] card ${card.id} woke: ready → running`);
+      continue;
+    }
+
     card.updatedAt = new Date().toISOString();
     await card.save();
-    console.log(`[sleep] card ${card.id} woke: ready → running`);
+    console.log(`[sleep] card ${card.id} woke: sending its stored prompt`);
+    try {
+      // Same path as a typed prompt: it starts the session, moves the card to
+      // running, and increments the prompt count. Auto-start skips the move
+      // because the create is already pending.
+      const { submitCardPrompt } = await import('./card-execution');
+      await submitCardPrompt(card.id, prompt);
+    } catch (err) {
+      console.error(`[sleep] card ${card.id} wake prompt failed:`, err instanceof Error ? err.message : err);
+      messageBus.publish(`card:${card.id}:sdk`, {
+        type: 'error',
+        message: `Sleep prompt failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
   return due.length;
 }

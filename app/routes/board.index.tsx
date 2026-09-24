@@ -57,6 +57,7 @@ interface CardItem {
   promptsSent: number;
   turnsCompleted: number;
   sleepUntil?: number | null;
+  sleepPrompt?: string | null;
   createdAt: string;
   updatedAt: string;
   color?: string | null;

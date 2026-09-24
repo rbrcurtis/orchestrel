@@ -52,14 +52,19 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
   }
 
   // /sleep parks the card and never prompts: a sleeping card must not run, so
-  // any text beside the command is discarded (the phrase is the argument, see
-  // parseAppCommands). The card waits in ready until the waker releases it.
+  // text beside the command does not become the prompt — it becomes the prompt
+  // for wake time ("... then check the deploy"), and the waker sends it then.
+  // The card waits in ready until the waker releases it.
   if (action === 'sleep') {
-    const { resolveSleepUntil } = await import('./sleep');
+    const { resolveSleepUntil, splitSleepArgument } = await import('./sleep');
+    const { phrase, prompt } = splitSleepArgument(sleepPhrase ?? '', text);
     try {
-      const until = await resolveSleepUntil(sleepPhrase ?? '');
-      console.log(`[session:${cardId}] app command /sleep: parked until ${new Date(until).toISOString()} ("${sleepPhrase}")`);
-      return await moveCardToColumn(cardId, 'ready', { sleepUntil: until });
+      const until = await resolveSleepUntil(phrase);
+      console.log(
+        `[session:${cardId}] app command /sleep: parked until ${new Date(until).toISOString()} ("${phrase}")` +
+          (prompt ? ` then: ${prompt}` : ''),
+      );
+      return await moveCardToColumn(cardId, 'ready', { sleepUntil: until, sleepPrompt: prompt });
     } catch (err) {
       console.warn(`[session:${cardId}] app command /sleep failed:`, err instanceof Error ? err.message : err);
       const msg = err instanceof Error ? err.message : String(err);

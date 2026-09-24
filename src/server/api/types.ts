@@ -27,6 +27,7 @@ export interface CardResponse {
   summarizeThreshold: number
   promptsSent: number
   sleepUntil: number | null
+  sleepPrompt: string | null
   turnsCompleted: number
   contextTokens: number
   contextWindow: number

@@ -119,6 +119,11 @@ export async function initDatabase(): Promise<void> {
       console.log(`[db:migrate] cards.sleep_until column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
     }
     try {
+      await runner.query(`ALTER TABLE cards ADD COLUMN sleep_prompt TEXT`);
+    } catch (err) {
+      console.log(`[db:migrate] cards.sleep_prompt column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+    }
+    try {
       await runner.query(`ALTER TABLE cards ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
     } catch (err) {
       console.log(`[db:migrate] cards.version column add skipped (likely already exists):`, err instanceof Error ? err.message : err);

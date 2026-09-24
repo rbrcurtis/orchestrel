@@ -186,6 +186,21 @@ describe('submitCardPrompt app slash commands', () => {
     expect(mockUpdateCard).not.toHaveBeenCalled();
   });
 
+  // The wake prompt after "then" is stored on the card rather than sent, so the
+  // split between time phrase and prompt has to hold at the command boundary.
+  it('stores the prompt given after "then" and parks the card', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+    mockFindOneBy.mockResolvedValue(activeCard());
+
+    await submitCardPrompt(42, '/sleep 2 hours then check the deploy');
+
+    const [id, data] = mockUpdateCard.mock.calls[0] as [number, Record<string, unknown>];
+    expect(id).toBe(42);
+    expect(data.column).toBe('ready');
+    expect(data.sleepPrompt).toBe('check the deploy');
+    expect(data.sleepUntil as number).toBeGreaterThan(Date.now());
+  });
+
   // A prompt is the user saying "run now", so it outranks a pending /sleep; and
   // a prompt that cannot start a session must not silently cancel the wake time
   // the user set. Both are single-field state transitions, cheap to pin here.

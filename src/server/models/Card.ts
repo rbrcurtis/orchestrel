@@ -83,6 +83,11 @@ export class Card extends BaseEntity {
   @Column({ name: 'sleep_until', type: 'integer', nullable: true })
   sleepUntil!: number | null;
 
+  // Prompt the /sleep command was given after "then". The waker sends it when
+  // the time arrives, so the card resumes work instead of just starting.
+  @Column({ name: 'sleep_prompt', type: 'text', nullable: true })
+  sleepPrompt!: string | null;
+
   @Column({ name: 'turns_completed', type: 'integer', default: 0 })
   turnsCompleted!: number;
 

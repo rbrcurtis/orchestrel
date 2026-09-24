@@ -20,6 +20,8 @@ interface CardProps {
   color?: string | null;
   /** Epoch ms set by /sleep: the card waits in ready until then. */
   sleepUntil?: number | null;
+  /** Prompt the waker sends when that time arrives. */
+  sleepPrompt?: string | null;
   onClick?: (id: number) => void;
 }
 
@@ -31,7 +33,7 @@ function sleepLabel(until: number): string {
   return `asleep until ${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
 }
 
-export function Card({ id, title, color, sleepUntil, onClick }: CardProps) {
+export function Card({ id, title, color, sleepUntil, sleepPrompt, onClick }: CardProps) {
   const [open, setOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [archivePending, setArchivePending] = useState(false);
@@ -72,7 +74,12 @@ export function Card({ id, title, color, sleepUntil, onClick }: CardProps) {
             <X className="size-3.5" />
           </button>
         </div>
-        {sleepUntil ? <p className="text-[10px] text-muted-foreground/80">{sleepLabel(sleepUntil)}</p> : null}
+        {sleepUntil ? (
+          <p className="text-[10px] text-muted-foreground/80 truncate">
+            {sleepLabel(sleepUntil)}
+            {sleepPrompt ? <span className="text-muted-foreground/60"> · {sleepPrompt}</span> : null}
+          </p>
+        ) : null}
       </div>
 
       <AlertDialog open={open} onOpenChange={setOpen}>

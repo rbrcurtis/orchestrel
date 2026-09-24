@@ -34,6 +34,7 @@ export const cardSchema = z.object({
   summarizeThreshold: z.number(),
   promptsSent: z.number(),
   sleepUntil: z.number().nullable().optional(),
+  sleepPrompt: z.string().nullable().optional(),
   turnsCompleted: z.number(),
   contextTokens: z.number(),
   contextWindow: z.number(),
