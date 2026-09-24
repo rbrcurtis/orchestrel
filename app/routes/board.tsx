@@ -103,7 +103,7 @@ const BoardLayout = observer(function BoardLayout() {
     });
   }, []);
   const searchRef = useRef<HTMLInputElement>(null);
-  const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
+  const { panelRef, initialWidth, onPointerDown } = useResizablePanel();
   const isDesktop = useIsDesktop();
 
   const store = useStore();
@@ -554,7 +554,7 @@ const BoardLayout = observer(function BoardLayout() {
         </ScrollArea>
 
         {/* Resize handle (desktop only) */}
-        <ResizeHandle onMouseDown={onMouseDown} />
+        <ResizeHandle onPointerDown={onPointerDown} />
 
         {/* Mobile: backdrop + single-card overlay */}
         {!isDesktop && (mobileCardId != null || newCardColumn != null) && (
