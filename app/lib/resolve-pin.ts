@@ -9,7 +9,7 @@ export type SlotState =
   | { type: 'manual'; cardId: number }
   | { type: 'empty' };
 
-/** Rank eligible cards: review (oldest updatedAt) → running (oldest updatedAt). */
+/** Rank eligible cards: review (oldest updatedAt) → running (newest updatedAt). */
 function rankCards(eligible: Card[]): Card[] {
   const review = eligible
     .filter((c) => c.column === 'review')
@@ -17,7 +17,7 @@ function rankCards(eligible: Card[]): Card[] {
 
   const running = eligible
     .filter((c) => c.column === 'running')
-    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   return [...review, ...running];
 }
@@ -47,7 +47,7 @@ function rankCards(eligible: Card[]): Card[] {
  *
  * Priority per project:
  *   1. Review cards — oldest updatedAt first
- *   2. Running cards — oldest updatedAt first
+ *   2. Running cards — newest updatedAt first
  */
 export function resolvePinnedCards(
   slots: SlotState[],
@@ -55,7 +55,6 @@ export function resolvePinnedCards(
   currentDisplayed: Map<number, number> = new Map(),
   projectFilter?: ProjectFilter,
   lockedSlots?: Set<number>,
-  suppressedHotseatCardId?: number | null,
 ): Map<number, number> {
   // Build exclusion set: cards already stored in any slot
   const usedCardIds = new Set<number>();
@@ -179,39 +178,15 @@ export function resolvePinnedCards(
         c.projectId != null &&
         (c.column === 'review' || c.column === 'running') &&
         !usedCardIds.has(c.id) &&
-        !claimedByPins.has(c.id) &&
-        c.id !== suppressedHotseatCardId,
+        !claimedByPins.has(c.id),
     );
-    const canUseSuppressedCard =
-      suppressedHotseatCardId == null ||
-      claimedByPins.size > 0 ||
-      eligible.length > 0;
-
-    if (!canUseSuppressedCard) {
-      const suppressedCard = cards.find((c) => c.id === suppressedHotseatCardId);
-      if (
-        suppressedCard &&
-        suppressedCard.projectId != null &&
-        (suppressedCard.column === 'review' || suppressedCard.column === 'running') &&
-        !usedCardIds.has(suppressedCard.id) &&
-        !claimedByPins.has(suppressedCard.id)
-      ) {
-        eligible = [suppressedCard];
-      }
-    }
-
-    const isSuppressed = (cardId: number) =>
-      suppressedHotseatCardId != null &&
-      cardId === suppressedHotseatCardId &&
-      canUseSuppressedCard;
 
     const hotseatEligible = (card: Card) =>
       card.projectId != null &&
       (card.column === 'review' || card.column === 'running') &&
       !usedCardIds.has(card.id) &&
       !claimedByPins.has(card.id) &&
-      !isProjectHidden(projectFilter, card.projectId) &&
-      !isSuppressed(card.id);
+      !isProjectHidden(projectFilter, card.projectId);
 
     // Apply project filter to hotseat only (real pins are unaffected)
     if (projectFilterActive(projectFilter)) {

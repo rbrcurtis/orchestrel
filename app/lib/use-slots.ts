@@ -354,7 +354,6 @@ export function useSlots(
   });
 
   const [flashSlot, setFlashSlot] = useState<number | null>(null);
-  const [suppressedHotseatCardId, setSuppressedHotseatCardId] = useState<number | null>(null);
   const cardsSeenRef = useRef(cards.length > 0);
   if (cards.length > 0) cardsSeenRef.current = true;
 
@@ -409,7 +408,6 @@ export function useSlots(
     prevResolvedRef.current,
     projectFilter,
     lockedSlots.size > 0 ? lockedSlots : undefined,
-    suppressedHotseatCardId,
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, runs every render to detect flash
   useEffect(() => {
@@ -420,12 +418,6 @@ export function useSlots(
       }
     }
     prevResolvedRef.current = new Map(resolvedCards);
-    // Suppression is single-shot: it only steers the resolution right after a
-    // release. If it lingered, a card released while it was the only eligible
-    // choice would be skipped much later when new cards arrive.
-    if (suppressedHotseatCardId != null) {
-      setSuppressedHotseatCardId(null);
-    }
   });
 
   // Event-driven recalc: clear sticky when cards transition between review ↔ running.
@@ -479,20 +471,11 @@ export function useSlots(
   }
 
   function releaseHotseat() {
-    const displayedHotseatCardId =
-      slots[0]?.type === 'manual'
-        ? slots[0].cardId
-        : resolvedCards.get(0) ?? null;
     const next = applyReleaseHotseat(slots);
     if (next !== slots) {
       setSlots(next);
       writeLocalStorage(SLOTS_KEY, next);
       setFlashSlot(0);
-    }
-    // Suppress even when slot 0 was already resolver-driven (empty) — that's
-    // what makes Escape advance the wheel instead of being a no-op.
-    if (displayedHotseatCardId != null) {
-      setSuppressedHotseatCardId(displayedHotseatCardId);
     }
   }
 

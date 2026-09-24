@@ -357,7 +357,7 @@ describe('ferris wheel prompt focus', () => {
     expect(screen.getByText('Card 1')).toBeTruthy();
   });
 
-  it('advances the wheel when Escape is pressed from the focused prompt', async () => {
+  it('Escape from the focused prompt blurs the prompt and keeps the current card', async () => {
     const { store } = renderBoard();
 
     act(() => {
@@ -376,10 +376,11 @@ describe('ferris wheel prompt focus', () => {
 
     fireEvent.keyDown(textarea, { key: 'Escape' });
 
-    // The wheel advances to the running card — running cards are not focused.
+    // Releasing the hotseat no longer forces the wheel to advance: the prompt
+    // blurs and the current review card stays presented (still the best eligible).
     await waitFor(() => {
-      expect(screen.getByText('Card 2')).toBeTruthy();
-      expect(screen.queryByText('Card 1')).toBeNull();
+      expect(screen.getByText('Card 1')).toBeTruthy();
+      expect(screen.queryByText('Card 2')).toBeNull();
       expect(document.activeElement?.tagName).not.toBe('TEXTAREA');
     });
   });

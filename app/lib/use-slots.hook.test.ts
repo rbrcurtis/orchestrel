@@ -243,7 +243,7 @@ describe('flash', () => {
     expect(result.current.flashSlot).toBe(0);
   });
 
-  it('releaseHotseat rotates to the next eligible card when available', async () => {
+  it('releaseHotseat re-picks the released card when it is still the best choice', async () => {
     const stored: SlotState[] = [{ type: 'manual', cardId: 1 }];
     localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
     const cards = [
@@ -255,7 +255,7 @@ describe('flash', () => {
     act(() => result.current.releaseHotseat());
 
     await waitFor(() => {
-      expect(result.current.resolvedCards.get(0)).toBe(2);
+      expect(result.current.resolvedCards.get(0)).toBe(1);
     });
     expect(result.current.slots[0]).toEqual({ type: 'empty' });
     expect(result.current.flashSlot).toBe(0);
@@ -275,7 +275,7 @@ describe('flash', () => {
     expect(result.current.slots[0]).toEqual({ type: 'empty' });
   });
 
-  it('releaseHotseat advances a resolver-driven hotseat (slot already empty)', async () => {
+  it('releaseHotseat keeps a resolver-driven hotseat on its current card', async () => {
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -286,13 +286,13 @@ describe('flash', () => {
     act(() => result.current.releaseHotseat());
 
     await waitFor(() => {
-      expect(result.current.resolvedCards.get(0)).toBe(2);
+      expect(result.current.resolvedCards.get(0)).toBe(1);
     });
   });
 
   it('does not skip a released card when new cards arrive later', async () => {
-    // Releasing while the card is the only eligible choice must not suppress it
-    // once alternatives show up — the suppression is single-shot.
+    // Releasing the hotseat never displaces its current card: the released card
+    // stays eligible and sticky, so later-arriving cards do not bump it.
     const review = makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' });
     const { result, rerender } = renderHook(({ cards }: { cards: Card[] }) => useSlots(1, cards), {
       initialProps: { cards: [review] },
@@ -344,32 +344,34 @@ describe('flash', () => {
     const stored: SlotState[] = [{ type: 'pinned', projectId: 10 }];
     localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
 
-    const runningCard = makeCard({
-      id: 1,
-      projectId: 10,
-      column: 'running',
-      updatedAt: '2026-03-20T01:00:00Z',
-    });
-    const reviewCard = makeCard({
+    // Newest running card is shown first. When the older card becomes review,
+    // review outranks running, so the slot swaps to it and flashes.
+    const staysRunning = makeCard({
       id: 2,
       projectId: 10,
       column: 'running',
       updatedAt: '2026-03-20T02:00:00Z',
     });
+    const becomesReview = makeCard({
+      id: 1,
+      projectId: 10,
+      column: 'running',
+      updatedAt: '2026-03-20T01:00:00Z',
+    });
     const { result, rerender } = renderHook(({ count, cards }) => useSlots(count, cards), {
-      initialProps: { count: 1, cards: [runningCard, reviewCard] },
+      initialProps: { count: 1, cards: [staysRunning, becomesReview] },
     });
 
-    expect(result.current.resolvedCards.get(0)).toBe(1);
+    expect(result.current.resolvedCards.get(0)).toBe(2);
     act(() => result.current.clearFlash());
 
     rerender({
       count: 1,
-      cards: [runningCard, { ...reviewCard, column: 'review' }],
+      cards: [staysRunning, { ...becomesReview, column: 'review' }],
     });
 
     await waitFor(() => {
-      expect(result.current.resolvedCards.get(0)).toBe(2);
+      expect(result.current.resolvedCards.get(0)).toBe(1);
     });
     expect(result.current.flashSlot).toBe(0);
   });

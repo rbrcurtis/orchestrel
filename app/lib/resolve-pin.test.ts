@@ -58,14 +58,14 @@ describe('resolvePinnedCards', () => {
     expect(result.get(1)).toBe(2); // oldest updatedAt first
   });
 
-  it('resolves oldest-updated running card when no review cards', () => {
+  it('resolves newest-updated running card when no review cards', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(1); // oldest updatedAt first
+    expect(result.get(1)).toBe(2); // newest updatedAt first
   });
 
   it('prefers review over running', () => {
@@ -77,7 +77,7 @@ describe('resolvePinnedCards', () => {
     expect(resolvePinnedCards(slots, cards).get(1)).toBe(1);
   });
 
-  it('distributes running cards oldest-first across multiple slots', () => {
+  it('distributes running cards newest-first across multiple slots', () => {
     const slots: SlotState[] = [
       { type: 'empty' },
       { type: 'pinned', projectId: 10 },
@@ -88,8 +88,8 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
     ];
     const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(1); // oldest first
-    expect(result.get(2)).toBe(2);
+    expect(result.get(1)).toBe(2); // newest first
+    expect(result.get(2)).toBe(1);
   });
 
   it('distributes ranked cards across multiple slots for same project', () => {
@@ -687,39 +687,6 @@ describe('resolvePinnedCards', () => {
       makeCard({ id: 1, projectId: 10, column: 'backlog' }),
     ];
     const result = resolvePinnedCards(slots, cards);
-    expect(result.has(0)).toBe(false);
-  });
-
-  it('hotseat skips a suppressed card when another eligible card exists', () => {
-    const slots: SlotState[] = [{ type: 'empty' }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards, new Map(), undefined, undefined, 1);
-    expect(result.get(0)).toBe(2);
-  });
-
-  it('hotseat falls back to the suppressed card when it is the only eligible card', () => {
-    const slots: SlotState[] = [{ type: 'empty' }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards, new Map(), undefined, undefined, 1);
-    expect(result.get(0)).toBe(1);
-  });
-
-  it('hotseat keeps the suppressed card hidden when real pins already claimed the other work', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 20 },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards, new Map(), undefined, undefined, 1);
-    expect(result.get(1)).toBe(2);
     expect(result.has(0)).toBe(false);
   });
 
