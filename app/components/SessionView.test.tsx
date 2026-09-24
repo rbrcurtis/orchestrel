@@ -286,6 +286,42 @@ describe('SessionView prompt submission', () => {
     expect(onPromptSent).not.toHaveBeenCalled();
   });
 
+  it('clears the prompt before the send promise resolves', async () => {
+    setDefaultState({
+      card: { sessionId: null },
+      session: undefined,
+    });
+    let resolveSend: () => void = () => {};
+    sessionStore.sendMessage.mockReturnValue(new Promise<void>((res) => { resolveSend = res; }));
+
+    renderSessionView({ sessionId: null });
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Enter a prompt to start a session...');
+
+    fireEvent.change(textarea, { target: { value: 'Run the ferris wheel' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    // A slow server ack must not keep the prompt in the box.
+    await waitFor(() => expect(textarea.value).toBe(''));
+    resolveSend();
+  });
+
+  it('restores the cleared prompt when the send fails and the field is untouched', async () => {
+    setDefaultState({
+      card: { sessionId: null },
+      session: undefined,
+    });
+    sessionStore.sendMessage.mockRejectedValue(new Error('send failed'));
+
+    renderSessionView({ sessionId: null });
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Enter a prompt to start a session...');
+
+    fireEvent.change(textarea, { target: { value: 'Run the ferris wheel' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => expect(sessionStore.sendMessage).toHaveBeenCalled());
+    await waitFor(() => expect(textarea.value).toBe('Run the ferris wheel'));
+  });
+
   it('blurs the prompt textarea after a successful send by default', async () => {
     setDefaultState({
       card: { sessionId: null },

@@ -445,9 +445,12 @@ function PromptInput({
   const [fileErrors, setFileErrors] = useState<string[]>([]);
   const localRef = useRef<HTMLTextAreaElement>(null);
   const ref = textareaRef ?? localRef;
+  // Mirror of the current text, readable after an optimistic clear.
+  const textRef = useRef(text);
 
   // Sync text to localStorage on every change
   function updateText(val: string) {
+    textRef.current = val;
     setText(val);
     try {
       if (val) localStorage.setItem(storageKey, val);
@@ -459,11 +462,14 @@ function PromptInput({
 
   // Reload draft when switching cards
   useEffect(() => {
+    let stored = '';
     try {
-      setText(localStorage.getItem(storageKey) ?? '');
+      stored = localStorage.getItem(storageKey) ?? '';
     } catch {
-      setText('');
+      /* localStorage unavailable */
     }
+    textRef.current = stored;
+    setText(stored);
   }, [storageKey]);
 
   // Type-to-focus: board/chat global shortcuts dispatch this when the user
@@ -493,6 +499,16 @@ function PromptInput({
     if (!trimmed && files.length === 0) return;
 
     setFileErrors([]);
+
+    // Clear the prompt the moment Enter is pressed, not when the server ack
+    // lands. sendMessage echoes the message and flips the card to running
+    // synchronously, so the log is already updated; waiting on the round trip
+    // leaves the text sitting in the box while the board is under load.
+    // Attachment uploads stay non-optimistic — an upload failure must not drop
+    // files the user can no longer see.
+    const draft = files.length === 0 ? text : '';
+    if (draft) updateText('');
+
     let sent = false;
     if (files.length > 0) {
       try {
@@ -505,7 +521,11 @@ function PromptInput({
     } else {
       sent = await onSend(trimmed);
     }
-    if (!sent) return;
+    if (!sent) {
+      // Put the cleared draft back unless the user already typed something new.
+      if (draft && !textRef.current) updateText(draft);
+      return;
+    }
     updateText('');
     setFiles([]);
     onPromptSent?.();
