@@ -56,6 +56,7 @@ interface CardItem {
   worktreeBranch: string | null;
   promptsSent: number;
   turnsCompleted: number;
+  sleepUntil?: number | null;
   createdAt: string;
   updatedAt: string;
   color?: string | null;

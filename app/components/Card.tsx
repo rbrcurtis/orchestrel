@@ -18,10 +18,20 @@ interface CardProps {
   id: number;
   title: string;
   color?: string | null;
+  /** Epoch ms set by /sleep: the card waits in ready until then. */
+  sleepUntil?: number | null;
   onClick?: (id: number) => void;
 }
 
-export function Card({ id, title, color, onClick }: CardProps) {
+/** "asleep until 17:22" for today, with a weekday for later days. */
+function sleepLabel(until: number): string {
+  const d = new Date(until);
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return `asleep until ${time}`;
+  return `asleep until ${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+}
+
+export function Card({ id, title, color, sleepUntil, onClick }: CardProps) {
   const [open, setOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [archivePending, setArchivePending] = useState(false);
@@ -62,6 +72,7 @@ export function Card({ id, title, color, onClick }: CardProps) {
             <X className="size-3.5" />
           </button>
         </div>
+        {sleepUntil ? <p className="text-[10px] text-muted-foreground/80">{sleepLabel(sleepUntil)}</p> : null}
       </div>
 
       <AlertDialog open={open} onOpenChange={setOpen}>

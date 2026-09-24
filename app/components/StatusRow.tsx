@@ -39,6 +39,7 @@ interface CardItem {
   title: string;
   position: number;
   color?: string | null;
+  sleepUntil?: number | null;
 }
 
 interface StatusRowProps {
@@ -78,6 +79,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
             id={card.id}
             title={card.title}
             color={card.color}
+            sleepUntil={card.sleepUntil}
             onClick={onCardClick}
           />
         ))}
