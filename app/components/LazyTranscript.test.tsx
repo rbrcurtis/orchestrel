@@ -72,7 +72,6 @@ describe('LazyTranscript auto-scroll', () => {
       currentBlocks: [],
       accentColor: null,
       historyLoaded: true,
-      isStreaming: true,
       showScrollButton: false,
       onShowScrollButtonChange: vi.fn(),
     };
@@ -102,13 +101,12 @@ describe('LazyTranscript auto-scroll', () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
-  it('scrolls to the bottom when streaming appends content while already near the bottom', () => {
+  it('scrolls to the bottom when entries append while the reader is near the bottom', () => {
     const props = {
       cardId: 1,
       currentBlocks: [],
       accentColor: null,
       historyLoaded: true,
-      isStreaming: true,
       showScrollButton: false,
       onShowScrollButtonChange: vi.fn(),
     };
@@ -138,7 +136,6 @@ describe('LazyTranscript auto-scroll', () => {
       currentBlocks: [],
       accentColor: null,
       historyLoaded: true,
-      isStreaming: false,
       showScrollButton: false,
       onShowScrollButtonChange: vi.fn(),
     };
@@ -170,7 +167,6 @@ describe('LazyTranscript auto-scroll', () => {
       currentBlocks: [],
       accentColor: null,
       historyLoaded: true,
-      isStreaming: true,
       showScrollButton: false,
       onShowScrollButtonChange: vi.fn(),
     };
@@ -202,7 +198,7 @@ describe('LazyTranscript auto-scroll', () => {
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 1600, behavior: 'auto' });
   });
 
-  it('scrolls to bottom for late content growth right after streaming ends', () => {
+  it('pins to bottom for late content growth well after the initial lock, with no streaming', () => {
     const props = {
       cardId: 1,
       currentBlocks: [],
@@ -213,7 +209,7 @@ describe('LazyTranscript auto-scroll', () => {
     };
 
     const { container, rerender } = render(
-      <LazyTranscript {...props} isStreaming conversation={conversation(3)} />,
+      <LazyTranscript {...props} conversation={conversation(3)} />,
     );
     const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
@@ -221,28 +217,59 @@ describe('LazyTranscript auto-scroll', () => {
     });
     viewport.scrollTo = scrollTo as HTMLDivElement['scrollTo'];
 
-    // At the bottom while streaming.
+    // At the bottom after the initial load settled.
     setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 600 });
     act(() => viewport.dispatchEvent(new Event('scroll')));
     act(flushAnimationFrames);
     scrollTo.mockClear();
 
-    // Move past the 500ms initial bottom lock so it can't mask the stream-end lock.
+    // Move past the 500ms initial bottom lock so it cannot account for the pin.
     const realNow = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(realNow + 600);
 
-    // Turn ends: isStreaming flips false.
-    rerender(<LazyTranscript {...props} isStreaming={false} conversation={conversation(3)} />);
-    act(flushAnimationFrames);
-    scrollTo.mockClear();
-
-    // Late bash output finishes painting after the turn ended.
+    // The cache page renders, then newer turns arrive from the server.
     setViewportMetrics(viewport, { scrollHeight: 1500, clientHeight: 400, scrollTop: 600 });
+    rerender(<LazyTranscript {...props} conversation={conversation(4)} />);
     act(triggerResizeObservers);
     act(flushAnimationFrames);
 
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 1500, behavior: 'auto' });
     vi.restoreAllMocks();
+  });
+
+  it('does not pull the reader down when older history prepends at the top', () => {
+    const props = {
+      cardId: 1,
+      currentBlocks: [],
+      accentColor: null,
+      historyLoaded: true,
+      showScrollButton: false,
+      onShowScrollButtonChange: vi.fn(),
+    };
+
+    const { container, rerender } = render(
+      <LazyTranscript {...props} conversation={conversation(3)} />,
+    );
+    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
+      if (typeof options === 'object') viewport.scrollTop = Number(options.top);
+    });
+    viewport.scrollTo = scrollTo as HTMLDivElement['scrollTo'];
+
+    // Reader sits at the bottom of the loaded page.
+    setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 600 });
+    act(() => viewport.dispatchEvent(new Event('scroll')));
+    act(flushAnimationFrames);
+    scrollTo.mockClear();
+
+    // An older page prepends: same rows, plus earlier ones at the head.
+    setViewportMetrics(viewport, { scrollHeight: 1250, clientHeight: 400, scrollTop: 600 });
+    rerender(
+      <LazyTranscript {...props} conversation={[{ kind: 'user', content: 'Older message' }, ...conversation(3)]} />,
+    );
+    act(flushAnimationFrames);
+
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });
 
@@ -297,7 +324,6 @@ describe('LazyTranscript infinite scroll', () => {
         currentBlocks={[]}
         accentColor={null}
         historyLoaded
-        isStreaming={false}
         showScrollButton={false}
         hasOlderHistory
         onLoadOlderHistory={onLoadOlderHistory}

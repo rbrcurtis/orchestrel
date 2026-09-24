@@ -14,7 +14,6 @@ type Props = {
   currentBlocks: ContentBlock[];
   accentColor?: string | null;
   historyLoaded: boolean;
-  isStreaming: boolean;
   showScrollButton: boolean;
   onNearBottomChange?: (nearBottom: boolean) => void;
   onShowScrollButtonChange: (show: boolean) => void;
@@ -33,6 +32,23 @@ function scrollToBottom(el: HTMLDivElement, behavior: ScrollBehavior = 'auto') {
   });
 }
 
+// Content signature of the transcript's first row. History re-ingests rebuild
+// every row object (cache refresh, page fetches), so row identity cannot tell
+// a head-prepend (older page) apart from a tail-append (new turns) — the
+// first row's content can.
+function headSignature(entry?: ConversationEntry): string | null {
+  if (!entry) return null;
+  switch (entry.kind) {
+    case 'user': return `user:${entry.content}`;
+    case 'blocks': return `blocks:${entry.model ?? ''}:${entry.blocks[0]?.type ?? 'empty'}`;
+    case 'system': return `system:${entry.subtype}`;
+    case 'compact': return `compact:${entry.label ?? ''}`;
+    case 'error': return `error:${entry.message}`;
+    case 'result': return 'result';
+    case 'tool_activity': return 'tool_activity';
+  }
+}
+
 export function LazyTranscript({
   cardId,
   hasNewerHistory = false,
@@ -43,7 +59,6 @@ export function LazyTranscript({
   currentBlocks,
   accentColor,
   historyLoaded,
-  isStreaming,
   showScrollButton,
   onNearBottomChange,
   onShowScrollButtonChange,
@@ -57,10 +72,9 @@ export function LazyTranscript({
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const hasOlderRef = useRef(false);
   const itemsLenRef = useRef(0);
+  const prevHeadSigRef = useRef<string | null>(null);
   const prevHistoryLoadedRef = useRef(false);
   const initialBottomLockUntilRef = useRef(0);
-  const streamEndLockUntilRef = useRef(0);
-  const prevIsStreamingRef = useRef(isStreaming);
   const topSentinelRef = useRef<HTMLDivElement>(null);
   const bottomSentinelRef = useRef<HTMLDivElement>(null);
   const topVisibleRef = useRef(false);
@@ -71,6 +85,8 @@ export function LazyTranscript({
   const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS);
   const visibleCountRef = useRef(visibleCount);
   visibleCountRef.current = visibleCount;
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
   const hasOlderHistoryRef = useRef(hasOlderHistory);
   hasOlderHistoryRef.current = hasOlderHistory;
   const hasNewerHistoryRef = useRef(hasNewerHistory);
@@ -240,6 +256,7 @@ export function LazyTranscript({
     nearBottomRef.current = true;
     userScrolledRef.current = false;
     prevItemsLenRef.current = itemsLenRef.current;
+    prevHeadSigRef.current = headSignature(conversationRef.current[0]);
     scrollMetricsRef.current = null;
     prependAnchorRef.current = null;
     prevHistoryLoadedRef.current = false;
@@ -254,6 +271,7 @@ export function LazyTranscript({
     setVisibleCount(INITIAL_ROWS);
     nearBottomRef.current = true;
     prevItemsLenRef.current = items.length;
+    prevHeadSigRef.current = headSignature(conversationRef.current[0]);
     scrollMetricsRef.current = null;
     prependAnchorRef.current = null;
     initialBottomLockUntilRef.current = Date.now() + 500;
@@ -272,57 +290,54 @@ export function LazyTranscript({
     });
   }, [visibleCount, updateScrollState]);
 
-  // When a turn ends, isStreaming flips false while late content (final bash
-  // output, markdown paint) may still grow the transcript. Hold a short bottom
-  // lock so those late resizes still land at the bottom.
-  useEffect(() => {
-    const wasStreaming = prevIsStreamingRef.current;
-    prevIsStreamingRef.current = isStreaming;
-    if (!wasStreaming || isStreaming) return;
-    if (!nearBottomRef.current) return;
-    streamEndLockUntilRef.current = Date.now() + 800;
-    scheduleScrollToBottom();
-  }, [isStreaming, scheduleScrollToBottom]);
+  // Set by the items-length effect (which runs first): whether the latest
+  // row growth preserved the transcript's head. Prepending older pages
+  // disallows a bottom pin because the prepend-anchor restore keeps the
+  // reader's place instead.
+  const tailGrowthRef = useRef(true);
 
   useEffect(() => {
     const previousLen = prevItemsLenRef.current;
     const nextLen = items.length;
+    const head = headSignature(conversationRef.current[0]);
+    // Older history pages arrive by prepending at the head.
+    const isPrepend = previousLen > 0 && prevHeadSigRef.current !== null && head !== prevHeadSigRef.current;
     prevItemsLenRef.current = nextLen;
+    prevHeadSigRef.current = head;
+    tailGrowthRef.current = !isPrepend;
     if (nextLen <= previousLen) return;
 
     const wasNearBottom = nearBottomRef.current;
 
     setVisibleCount((count) => Math.min(nextLen, count + nextLen - previousLen));
-    const withinStreamEndLock = Date.now() < streamEndLockUntilRef.current;
-    if ((isStreaming || withinStreamEndLock) && wasNearBottom) scheduleScrollToBottom();
-  }, [items.length, isStreaming, scheduleScrollToBottom]);
+    // Bottom-follow is positional, not streaming-shaped: whatever grew the
+    // tail (fresh history page, cache refresh, replay), pin when the reader
+    // is already at the bottom. A reader scrolled up is left alone.
+    if (!isPrepend && wasNearBottom) scheduleScrollToBottom();
+  }, [items.length, scheduleScrollToBottom]);
 
   useEffect(() => {
-    if (!isStreaming || !nearBottomRef.current || items.length === 0) return;
+    if (!tailGrowthRef.current || !nearBottomRef.current || items.length === 0) return;
     scheduleScrollToBottom();
-  }, [currentBlocks, currentBlocks.length, isStreaming, items.length, scheduleScrollToBottom]);
+  }, [currentBlocks, currentBlocks.length, items.length, scheduleScrollToBottom]);
 
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
       if (items.length === 0) return;
-      const withinInitialBottomLock = Date.now() < initialBottomLockUntilRef.current;
-      if (withinInitialBottomLock) {
+      // First paints right after a card change / history load can settle over
+      // several frames; pin unconditionally for a short beat.
+      if (Date.now() < initialBottomLockUntilRef.current) {
         scheduleScrollToBottom();
         return;
       }
-      const withinStreamEndLock = Date.now() < streamEndLockUntilRef.current;
-      if (withinStreamEndLock && nearBottomRef.current) {
-        scheduleScrollToBottom();
-        return;
-      }
-      if (!isStreaming || !nearBottomRef.current) return;
+      if (!nearBottomRef.current) return;
       scheduleScrollToBottom();
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isStreaming, items.length, scheduleScrollToBottom]);
+  }, [items.length, scheduleScrollToBottom]);
 
   useEffect(() => () => cancelScheduledScroll(), [cancelScheduledScroll]);
 

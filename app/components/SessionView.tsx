@@ -234,7 +234,6 @@ export const SessionView = observer(function SessionView({
         onLoadOlderHistory={() => sessionStore.loadOlderHistory(cardId)}
         accentColor={accentColor}
         historyLoaded={historyLoaded}
-        isStreaming={isStreaming}
         showScrollButton={showScrollBtn}
         onShowScrollButtonChange={handleShowScrollButtonChange}
       />
