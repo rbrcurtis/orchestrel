@@ -56,7 +56,7 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
   // for wake time ("... then check the deploy"), and the waker sends it then.
   // The card waits in ready until the waker releases it.
   if (action === 'sleep') {
-    const { resolveSleepUntil, splitSleepArgument } = await import('./sleep');
+    const { resolveSleepUntil, splitSleepArgument, sleepFallbackPrompt, SleepResolutionError } = await import('./sleep');
     const { phrase, prompt } = splitSleepArgument(sleepPhrase ?? '', text);
     try {
       const until = await resolveSleepUntil(phrase);
@@ -68,6 +68,18 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
     } catch (err) {
       console.warn(`[session:${cardId}] app command /sleep failed:`, err instanceof Error ? err.message : err);
       const msg = err instanceof Error ? err.message : String(err);
+      // The resolver model being down is not the user's fault and can still be
+      // acted on: run the card now and let its own model own the wait, rather
+      // than leaving a dead command. A phrase that is simply unreadable keeps
+      // the error — guessing a time there would park the card on a wrong date.
+      if (err instanceof SleepResolutionError && err.unreachable) {
+        console.log(`[session:${cardId}] app command /sleep: resolver down, handing the wait to the session`);
+        broadcastCardError(
+          cardId,
+          `Sleep time not resolved (${msg}) — the card runs now and the agent handles the timing.`,
+        );
+        return sendPrompt(cardId, sleepFallbackPrompt(phrase, prompt), files);
+      }
       broadcastCardError(cardId, `Sleep failed: ${msg}`);
       throw new CardExecutionError(422, 'sleep_unresolved', msg);
     }

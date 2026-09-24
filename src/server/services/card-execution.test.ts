@@ -34,6 +34,17 @@ vi.mock('../config/capabilities', () => ({
   windowForCard: () => 200_000,
 }));
 
+// Hermetic resolver: the fallback test below must not depend on the machine's
+// own config.yaml or on the gateway being up.
+vi.mock('../../shared/config', () => ({
+  loadConfig: () => ({
+    sleepResolver: { provider: 'ray', model: 'gemma' },
+    providers: {
+      ray: { baseUrl: 'http://127.0.0.1:9', models: { gemma: { modelID: 'gemma', contextWindow: 32768 } } },
+    },
+  }),
+}));
+
 const mockClient = {
   isConnected: () => true,
   isActive: mockIsActive,
@@ -188,6 +199,47 @@ describe('submitCardPrompt app slash commands', () => {
 
   // The wake prompt after "then" is stored on the card rather than sent, so the
   // split between time phrase and prompt has to hold at the command boundary.
+  // An unreachable resolver is infrastructure, not a bad phrase: the card must
+  // run and its own model must own the wait, not the command die.
+  it('hands the wait to the session when the resolver model is unreachable', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+    const card = { ...activeCard(), column: 'ready' };
+    mockFindOneBy.mockResolvedValue(card);
+    mockIsActive.mockReturnValue(true);
+    const fetchSpy = vi.fn(() => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:9')));
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await submitCardPrompt(42, '/sleep end of the month then check the deploy');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(fetchSpy).toHaveBeenCalled();
+    const [, text] = mockMessage.mock.calls[0] as [string, string];
+    expect(text).toContain('could not work out the time "end of the month"');
+    expect(text).toContain('check the deploy');
+    expect(mockUpdateCard).not.toHaveBeenCalled();
+  });
+
+  it('keeps the error for a phrase that cannot be read', async () => {
+    const { submitCardPrompt } = await import('./card-execution');
+    mockFindOneBy.mockResolvedValue(activeCard());
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ choices: [{ message: { content: 'no idea, sorry' } }] }),
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await expect(submitCardPrompt(42, '/sleep end of the month')).rejects.toMatchObject({
+        code: 'sleep_unresolved',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('stores the prompt given after "then" and parks the card', async () => {
     const { submitCardPrompt } = await import('./card-execution');
     mockFindOneBy.mockResolvedValue(activeCard());

@@ -24,7 +24,19 @@ import { loadConfig } from '../../shared/config';
 const execFileAsync = promisify(execFile);
 
 /** A phrase the resolver cannot turn into a time. The message reaches the card. */
-export class SleepResolutionError extends Error {}
+export class SleepResolutionError extends Error {
+  constructor(
+    message: string,
+    /**
+     * True when the resolver model could not be reached at all — an
+     * infrastructure failure, not a phrase the user got wrong. The caller can
+     * hand the wait to the card's own session instead of failing the command.
+     */
+    public readonly unreachable = false,
+  ) {
+    super(message);
+  }
+}
 
 const MIN_AHEAD_MS = 30_000;
 const MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
@@ -265,11 +277,18 @@ async function askModel(endpoint: SleepEndpoint, messages: ChatMessage[]): Promi
     // "fetch failed" tells the user nothing; name the model that is missing.
     console.error(`[sleep] resolver model unreachable at ${endpoint.url}:`, err instanceof Error ? err.message : err);
     throw new SleepResolutionError(
-      `The sleep time model (${endpoint.model} at ${endpoint.url}) is not reachable. ` +
-        `Try a plain duration like "/sleep 2 hours".`,
+      `The sleep time model (${endpoint.model} at ${endpoint.url}) is not reachable.`,
+      true,
     );
   }
-  if (!res.ok) throw new SleepResolutionError(`Sleep time lookup failed (${res.status})`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error(`[sleep] resolver model at ${endpoint.url} answered ${res.status}:`, body.slice(0, 200));
+    throw new SleepResolutionError(
+      `The sleep time model (${endpoint.model} at ${endpoint.url}) answered ${res.status}.`,
+      true,
+    );
+  }
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
   const content = data.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) throw new SleepResolutionError('Sleep time lookup returned no answer');
@@ -304,6 +323,23 @@ export function splitSleepArgument(
   const inline = m ? arg.slice(m.index + m[0].length) : '';
   const prompt = [inline.trim(), leftover.trim()].filter(Boolean).join('\n').trim();
   return { phrase: phrase.trim(), prompt: prompt || null };
+}
+
+/**
+ * Prompt handed to the card's own session when the resolver model cannot be
+ * reached. The card runs now and its agent owns the wait, instead of the /sleep
+ * command dying on an infrastructure failure. Left to itself the agent blocks in
+ * `sleep <seconds>`, so the prompt names the deferred mechanism the session
+ * already has (pi-subagents schedules, which orcd counts as pending work and
+ * keeps the session alive for — see shared/scheduled-jobs.ts).
+ */
+export function sleepFallbackPrompt(phrase: string, prompt: string | null): string {
+  const then = prompt?.trim() ? prompt.trim() : 'continue with this card';
+  return (
+    `The /sleep command could not work out the time "${phrase.trim()}" — its time resolver model is unreachable. ` +
+    `Handle the wait yourself: schedule a one-shot job for that time with the Agent tool's schedule parameter, then ${then}. ` +
+    `The session stays alive while the job is pending, so do not block with a long sleep.`
+  );
 }
 
 /** Epoch (ms) when a card that used /sleep may run again. */

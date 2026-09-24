@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process';
 import { describe, expect, it, vi } from 'vitest';
-import { durationMs, normalizePhrase, parseModelReply, resolveSleepUntil, splitSleepArgument, weekdayInPhrase } from './sleep';
+import { durationMs, normalizePhrase, parseModelReply, resolveSleepUntil, sleepFallbackPrompt, splitSleepArgument, weekdayInPhrase } from './sleep';
 
 // The phrase and reply parsers decide when a card runs again. Wrong unit math
 // or a missed reply shape silently parks a card at the wrong time, so these
@@ -126,6 +126,20 @@ describe('splitSleepArgument', () => {
     expect(splitSleepArgument('2 hours')).toEqual({ phrase: '2 hours', prompt: null });
     expect(splitSleepArgument('2 hours then')).toEqual({ phrase: '2 hours', prompt: null });
     expect(splitSleepArgument('2 hours', '   ')).toEqual({ phrase: '2 hours', prompt: null });
+  });
+});
+
+describe('sleepFallbackPrompt', () => {
+  it('names the deferred mechanism instead of leaving the agent to block', () => {
+    const text = sleepFallbackPrompt('end of the month', 'check the deploy');
+    expect(text).toContain('could not work out the time "end of the month"');
+    expect(text).toContain("Agent tool's schedule parameter");
+    expect(text).toContain('check the deploy');
+    expect(text).toContain('do not block with a long sleep');
+  });
+
+  it('still says something useful without a task after "then"', () => {
+    expect(sleepFallbackPrompt('end of the month', null)).toContain('then continue with this card.');
   });
 });
 
