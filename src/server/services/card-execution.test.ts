@@ -199,9 +199,10 @@ describe('submitCardPrompt app slash commands', () => {
 
   // The wake prompt after "then" is stored on the card rather than sent, so the
   // split between time phrase and prompt has to hold at the command boundary.
-  // An unreachable resolver is infrastructure, not a bad phrase: the card must
-  // run and its own model must own the wait, not the command die.
-  it('hands the wait to the session when the resolver model is unreachable', async () => {
+  // An unreachable resolver is infrastructure, not a bad phrase: the command
+  // must fall back to the pre-app-command path, where the stored /sleep prompt
+  // reaches the session and its own model waits.
+  it('passes the command through as a prompt when the resolver model is unreachable', async () => {
     const { submitCardPrompt } = await import('./card-execution');
     const card = { ...activeCard(), column: 'ready' };
     mockFindOneBy.mockResolvedValue(card);
@@ -209,15 +210,16 @@ describe('submitCardPrompt app slash commands', () => {
     const fetchSpy = vi.fn(() => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:9')));
     vi.stubGlobal('fetch', fetchSpy);
     try {
-      await submitCardPrompt(42, '/sleep end of the month then check the deploy');
+      await submitCardPrompt(42, '/sleep middle of next month then check the deploy');
     } finally {
       vi.unstubAllGlobals();
     }
 
     expect(fetchSpy).toHaveBeenCalled();
+    // The message goes through as an ordinary prompt, command included, so orcd
+    // can inject the stored /sleep prompt and the session does the wait itself.
     const [, text] = mockMessage.mock.calls[0] as [string, string];
-    expect(text).toContain('could not work out the time "end of the month"');
-    expect(text).toContain('check the deploy');
+    expect(text).toBe('/sleep middle of next month then check the deploy');
     expect(mockUpdateCard).not.toHaveBeenCalled();
   });
 
@@ -232,7 +234,7 @@ describe('submitCardPrompt app slash commands', () => {
     );
     vi.stubGlobal('fetch', fetchSpy);
     try {
-      await expect(submitCardPrompt(42, '/sleep end of the month')).rejects.toMatchObject({
+      await expect(submitCardPrompt(42, '/sleep middle of next month')).rejects.toMatchObject({
         code: 'sleep_unresolved',
       });
     } finally {
