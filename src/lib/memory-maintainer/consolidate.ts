@@ -33,7 +33,10 @@ export async function buildModel(
   if (!modelDef) throw new Error(`memory: model "${memory.model}" not in provider "${memory.provider}"`);
 
   const agentDir = getAgentDir();
-  const runtime = await ModelRuntime.create({ authPath: `${agentDir}/auth.json`, modelsPath: `${agentDir}/models.json` });
+  const runtime = await ModelRuntime.create({
+    authPath: `${agentDir}/auth.json`,
+    modelsPath: `${agentDir}/models.json`,
+  });
   const registry = new ModelRegistry(runtime);
   registry.registerProvider(memory.provider, toProviderConfig(provider, modelDef.modelID));
   const model = registry.find(memory.provider, modelDef.modelID);
@@ -89,7 +92,8 @@ const tools: Tool[] = [
   },
   {
     name: 'update_memory',
-    description: 'Update an existing memory by id. Requires read_memory(id) first. The rewrite must preserve all still-valid facts from the existing text.',
+    description:
+      'Update an existing memory by id. Requires read_memory(id) first. The rewrite must preserve all still-valid facts from the existing text.',
     parameters: Type.Object({
       id: Type.String(),
       title: Type.Optional(Type.String()),
@@ -103,7 +107,11 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   const ops: StagedOp[] = [];
   const readIds = new Set<string>();
   const messages: Message[] = [
-    { role: 'user', content: [{ type: 'text', text: `Session: ${excerpt.sessionId} (${excerpt.cwd})\n\n${excerpt.text}` }], timestamp: Date.now() },
+    {
+      role: 'user',
+      content: [{ type: 'text', text: `Session: ${excerpt.sessionId} (${excerpt.cwd})\n\n${excerpt.text}` }],
+      timestamp: Date.now(),
+    },
   ];
 
   for (let turn = 0; turn < maxTurns; turn++) {
@@ -145,7 +153,12 @@ async function runTool(
       case 'store_memory': {
         const title = String(args.title);
         const body = text(String(args.text));
-        ops.push({ op: 'store', title, text: body, ...(Array.isArray(args.tags) ? { tags: args.tags.map(String) } : {}) });
+        ops.push({
+          op: 'store',
+          title,
+          text: body,
+          ...(Array.isArray(args.tags) ? { tags: args.tags.map(String) } : {}),
+        });
         if (mode === 'write') {
           const { id } = await storeMemory(server, { title, text: body });
           return toolResult(call, JSON.stringify({ id }));
@@ -155,12 +168,20 @@ async function runTool(
       case 'update_memory': {
         const id = String(args.id);
         if (!readIds.has(id)) {
-          return toolResult(call, `error: call read_memory(${id}) first — you must see the existing text before replacing it`, true);
+          return toolResult(
+            call,
+            `error: call read_memory(${id}) first — you must see the existing text before replacing it`,
+            true,
+          );
         }
         const body = text(String(args.text));
         ops.push({ op: 'update', id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
         if (mode === 'write') {
-          const { success } = await updateMemory(server, { id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
+          const { success } = await updateMemory(server, {
+            id,
+            text: body,
+            ...(args.title ? { title: String(args.title) } : {}),
+          });
           return toolResult(call, JSON.stringify({ success }));
         }
         return toolResult(call, 'recorded (stage mode)');

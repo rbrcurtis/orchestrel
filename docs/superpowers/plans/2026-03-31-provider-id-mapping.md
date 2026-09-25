@@ -13,6 +13,7 @@
 ### Task 1: Extend provider config schema with `ocProviderID`
 
 **Files:**
+
 - Modify: `providers.json` (add `ocProviderID` to `anthropic` provider)
 - Modify: `src/server/config/providers.ts:5-18` (add field to schema, add helper functions)
 - Modify: `src/shared/ws-protocol.ts:94-97` (add field to shared schema so frontend can access it if needed)
@@ -139,6 +140,7 @@ git commit -m "feat: add ocProviderID mapping and getDefaultProviderID to provid
 ### Task 2: Use OC provider ID in the agent factory
 
 **Files:**
+
 - Modify: `src/server/agents/factory.ts:15-21` (resolve OC provider ID before passing to session)
 
 - [ ] **Step 1: Update factory to resolve OC provider ID**
@@ -181,6 +183,7 @@ git commit -m "feat: resolve ocProviderID in agent factory before passing to Ope
 ### Task 3: Replace hardcoded `'anthropic'` defaults with config-driven defaults
 
 **Files:**
+
 - Modify: `src/server/services/session.ts:122,128,253,260,334,340` (replace `'anthropic'` with `getDefaultProviderID()`)
 - Modify: `src/server/services/card.ts:50,54,84` (replace `'anthropic'` with `getDefaultProviderID()`)
 - Modify: `src/server/models/Project.ts:66` (remove TypeORM column default)
@@ -188,6 +191,7 @@ git commit -m "feat: resolve ocProviderID in agent factory before passing to Ope
 - [ ] **Step 1: Update `session.ts`**
 
 Add import at top:
+
 ```typescript
 import { getDefaultProviderID } from '../config/providers';
 ```
@@ -204,6 +208,7 @@ Line 340: `providerID = proj.providerID ?? getDefaultProviderID();`
 - [ ] **Step 2: Update `card.ts`**
 
 Add import at top:
+
 ```typescript
 import { getDefaultProviderID } from '../config/providers';
 ```
@@ -219,12 +224,14 @@ Line 84: `const providerID = proj?.providerID ?? getDefaultProviderID();`
 In `src/server/models/Project.ts`, remove the `default` from the `provider_id` column. TypeORM column defaults are static strings — we can't call a function. Since all project creation paths (the UI form) always send a `providerID`, we don't need a DB default. The `?? getDefaultProviderID()` guards in session.ts and card.ts handle the read-side fallback for any legacy rows.
 
 Change:
+
 ```typescript
 @Column({ name: 'provider_id', type: 'text', default: 'anthropic' })
 providerID!: string;
 ```
 
 To:
+
 ```typescript
 @Column({ name: 'provider_id', type: 'text' })
 providerID!: string;
@@ -270,13 +277,13 @@ Open the UI and start card 557. Check the server logs for `provider=opencode-pro
 
 ## Summary of changes
 
-| File | Change |
-|------|--------|
-| `providers.json` | Add `"ocProviderID": "opencode-proxy"` to `anthropic` provider |
-| `src/server/config/providers.ts` | Add `ocProviderID` to schema, add `getOcProviderID()` and `getDefaultProviderID()` |
-| `src/shared/ws-protocol.ts` | Add `ocProviderID` to shared schema |
-| `src/server/config/providers.test.ts` | Add tests for new helpers |
-| `src/server/agents/factory.ts` | Resolve `ocProviderID` before passing to OpenCode session |
-| `src/server/services/session.ts` | Replace 6x `'anthropic'` with `getDefaultProviderID()` |
-| `src/server/services/card.ts` | Replace 3x `'anthropic'` with `getDefaultProviderID()` |
-| `src/server/models/Project.ts` | Remove hardcoded `default: 'anthropic'` from column definition |
+| File                                  | Change                                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------------------- |
+| `providers.json`                      | Add `"ocProviderID": "opencode-proxy"` to `anthropic` provider                     |
+| `src/server/config/providers.ts`      | Add `ocProviderID` to schema, add `getOcProviderID()` and `getDefaultProviderID()` |
+| `src/shared/ws-protocol.ts`           | Add `ocProviderID` to shared schema                                                |
+| `src/server/config/providers.test.ts` | Add tests for new helpers                                                          |
+| `src/server/agents/factory.ts`        | Resolve `ocProviderID` before passing to OpenCode session                          |
+| `src/server/services/session.ts`      | Replace 6x `'anthropic'` with `getDefaultProviderID()`                             |
+| `src/server/services/card.ts`         | Replace 3x `'anthropic'` with `getDefaultProviderID()`                             |
+| `src/server/models/Project.ts`        | Remove hardcoded `default: 'anthropic'` from column definition                     |

@@ -56,16 +56,30 @@ vi.mock('./SubagentFeed', () => ({
 }));
 
 vi.mock('./LazyTranscript', () => ({
-  LazyTranscript: ({ conversation, scrollToBottomSeq }: { conversation: Array<{ kind: string; content?: string }>; scrollToBottomSeq?: number }) => (
-    <div data-testid="conversation" data-scroll-seq={scrollToBottomSeq ?? 0}>{conversation.map((entry) => entry.kind === 'user' ? entry.content : '').join('\n')}</div>
+  LazyTranscript: ({
+    conversation,
+    scrollToBottomSeq,
+  }: {
+    conversation: Array<{ kind: string; content?: string }>;
+    scrollToBottomSeq?: number;
+  }) => (
+    <div data-testid="conversation" data-scroll-seq={scrollToBottomSeq ?? 0}>
+      {conversation.map((entry) => (entry.kind === 'user' ? entry.content : '')).join('\n')}
+    </div>
   ),
 }));
 
 beforeAll(() => {
   globalThis.ResizeObserver = class {
-    observe() { /* test no-op */ }
-    unobserve() { /* test no-op */ }
-    disconnect() { /* test no-op */ }
+    observe() {
+      /* test no-op */
+    }
+    unobserve() {
+      /* test no-op */
+    }
+    disconnect() {
+      /* test no-op */
+    }
   };
 });
 
@@ -105,10 +119,7 @@ function makeCard(contextTokens: number, contextWindow: number): Card {
   };
 }
 
-function setDefaultState(overrides?: {
-  card?: Partial<Card>;
-  session?: Record<string, unknown> | undefined;
-}) {
+function setDefaultState(overrides?: { card?: Partial<Card>; session?: Record<string, unknown> | undefined }) {
   const card = { ...makeCard(139030, 200000), ...overrides?.card };
   cardStore.getCard.mockReturnValue(card);
 
@@ -292,7 +303,11 @@ describe('SessionView prompt submission', () => {
       session: undefined,
     });
     let resolveSend: () => void = () => {};
-    sessionStore.sendMessage.mockReturnValue(new Promise<void>((res) => { resolveSend = res; }));
+    sessionStore.sendMessage.mockReturnValue(
+      new Promise<void>((res) => {
+        resolveSend = res;
+      }),
+    );
 
     renderSessionView({ sessionId: null });
     const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Enter a prompt to start a session...');
@@ -328,7 +343,11 @@ describe('SessionView prompt submission', () => {
       session: undefined,
     });
     let resolveSend: () => void = () => {};
-    sessionStore.sendMessage.mockReturnValue(new Promise<void>((res) => { resolveSend = res; }));
+    sessionStore.sendMessage.mockReturnValue(
+      new Promise<void>((res) => {
+        resolveSend = res;
+      }),
+    );
 
     renderSessionView({ sessionId: null });
     const textarea = screen.getByPlaceholderText('Enter a prompt to start a session...');

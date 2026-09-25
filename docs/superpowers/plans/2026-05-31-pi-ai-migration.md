@@ -117,6 +117,7 @@
 ### Task 1: Add Pi dependencies and remove Claude SDK dependency
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `pnpm-lock.yaml`
 
@@ -149,6 +150,7 @@ pnpm install
 ```
 
 Expected:
+
 - `pnpm-lock.yaml` updates.
 - No install errors.
 
@@ -162,6 +164,7 @@ pnpm typecheck
 ```
 
 Expected:
+
 - Failures are expected at this point because code still imports Claude SDK.
 - Confirm the failures are Claude SDK import failures, not unrelated syntax breakage.
 
@@ -178,6 +181,7 @@ git commit -m "chore: replace Claude SDK dependency with Pi packages"
 ### Task 2: Update `bin/orc` to wrap `pi`
 
 **Files:**
+
 - Modify: `bin/orc`
 - Modify: `bin/orc.test.ts`
 
@@ -213,6 +217,7 @@ pnpm vitest run bin/orc.test.ts
 ```
 
 Expected:
+
 - Fails because `bin/orc` still prints/launches `cch`.
 
 - [ ] **Step 3: Replace cch constants and usage**
@@ -341,6 +346,7 @@ git commit -m "feat: wrap pi from orc cli"
 ### Task 3: Create Pi provider mapping module
 
 **Files:**
+
 - Create: `src/orcd/pi-provider.ts`
 - Create: `src/orcd/__tests__/pi-provider.test.ts`
 - Modify: `src/orcd/config.ts`
@@ -372,13 +378,17 @@ describe('buildPiProviderRuntimeConfig', () => {
   });
 
   it('keeps auth fields optional for Pi default auth', () => {
-    const cfg = buildPiProviderRuntimeConfig('local', {
-      type: 'openai',
-      baseUrl: '',
-      apiKey: '',
-      models: ['gpt-5'],
-      modelAliasEnv: {},
-    }, 'gpt-5');
+    const cfg = buildPiProviderRuntimeConfig(
+      'local',
+      {
+        type: 'openai',
+        baseUrl: '',
+        apiKey: '',
+        models: ['gpt-5'],
+        modelAliasEnv: {},
+      },
+      'gpt-5',
+    );
     expect(cfg.baseUrl).toBeUndefined();
     expect(cfg.apiKey).toBeUndefined();
     expect(cfg.modelId).toBe('gpt-5');
@@ -451,6 +461,7 @@ git commit -m "feat: add pi provider runtime mapping"
 ### Task 4: Add Pi event boundary mapper
 
 **Files:**
+
 - Create: `src/orcd/pi-events.ts`
 - Create: `src/orcd/__tests__/pi-events.test.ts`
 - Later used by: `src/orcd/session.ts`
@@ -572,6 +583,7 @@ git commit -m "feat: add pi event boundary mapper"
 ### Task 5: Create Pi SDK runtime wrapper
 
 **Files:**
+
 - Create: `src/orcd/pi-runtime.ts`
 - Create: `src/orcd/__tests__/pi-runtime.test.ts`
 
@@ -680,7 +692,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   return {
     id: String(session.sessionId ?? ''),
     prompt: (text, promptOpts) => session.prompt(text, promptOpts),
-    subscribe: (cb) => { session.subscribe(cb); },
+    subscribe: (cb) => {
+      session.subscribe(cb);
+    },
     abort: () => session.abort(),
     compact: (instructions) => session.compact(instructions),
     setEffort: async (effort) => {
@@ -688,7 +702,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         await session.setThinkingLevel(effortToThinkingLevel(effort));
       }
     },
-    getMessages: () => Array.isArray(session.messages) ? session.messages : [],
+    getMessages: () => (Array.isArray(session.messages) ? session.messages : []),
   };
 }
 ```
@@ -717,6 +731,7 @@ git commit -m "feat: add pi sdk runtime wrapper"
 ### Task 6: Replace `OrcdSession` Claude SDK loop with Pi runtime
 
 **Files:**
+
 - Modify: `src/orcd/session.ts`
 - Modify: `src/orcd/__tests__/session-async-tasks.test.ts`
 
@@ -728,8 +743,16 @@ In `src/orcd/__tests__/session-async-tasks.test.ts`, stop mocking `@anthropic-ai
 const subscribers: Array<(event: unknown) => void> = [];
 const prompt = vi.fn(async () => {
   subscribers.forEach((cb) => cb({ type: 'turn_start' }));
-  subscribers.forEach((cb) => cb({ type: 'message_update', message: { usage: { inputTokens: 50, contextWindow: 100 } } }));
-  subscribers.forEach((cb) => cb({ type: 'turn_end', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] }, toolResults: [] }));
+  subscribers.forEach((cb) =>
+    cb({ type: 'message_update', message: { usage: { inputTokens: 50, contextWindow: 100 } } }),
+  );
+  subscribers.forEach((cb) =>
+    cb({
+      type: 'turn_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
+      toolResults: [],
+    }),
+  );
 });
 
 vi.mock('../pi-runtime', () => ({
@@ -924,6 +947,7 @@ git commit -m "feat: run orcd sessions on pi sdk"
 ### Task 7: Replace provider env plumbing in `socket-server.ts`
 
 **Files:**
+
 - Modify: `src/orcd/socket-server.ts`
 - Modify: `src/orcd/__tests__/socket-server-compaction.test.ts`
 
@@ -988,6 +1012,7 @@ git commit -m "refactor: remove claude provider env plumbing from orcd"
 ### Task 8: Replace session history loading with Pi session history
 
 **Files:**
+
 - Create: `src/lib/pi-session-history.ts`
 - Create: `src/lib/pi-session-history.test.ts`
 - Modify: `src/server/ws/handlers/sessions.ts`
@@ -1085,6 +1110,7 @@ git commit -m "feat: load session history from pi storage"
 ### Task 9: Replace compaction with Pi-native compaction
 
 **Files:**
+
 - Modify: `src/lib/session-compactor.ts`
 - Modify: `src/lib/session-compactor.test.ts`
 - Modify: `src/orcd/socket-server.ts`
@@ -1099,6 +1125,7 @@ pnpm exec tsx -e "import('@earendil-works/pi-coding-agent').then(m => console.lo
 ```
 
 Expected:
+
 - Confirm `AgentSession.compact(customInstructions?)` and history/session manager APIs.
 
 - [ ] **Step 2: Replace compactor tests**
@@ -1217,6 +1244,7 @@ git commit -m "feat: use pi-native session compaction"
 ### Task 10: Replace memory upsert Claude JSONL and Claude SDK usage
 
 **Files:**
+
 - Modify: `src/lib/memory-upsert.ts`
 - Modify/add tests for memory upsert
 
@@ -1226,10 +1254,13 @@ Add a test that passes Pi messages and expects a deterministic excerpt:
 
 ```ts
 it('builds memory excerpt from Pi messages', () => {
-  const excerpt = buildMemoryExcerptFromPiMessages([
-    { role: 'user', content: [{ type: 'text', text: 'Remember this project uses Pi.' }] },
-    { role: 'assistant', content: [{ type: 'text', text: 'Noted.' }] },
-  ], 1000);
+  const excerpt = buildMemoryExcerptFromPiMessages(
+    [
+      { role: 'user', content: [{ type: 'text', text: 'Remember this project uses Pi.' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Noted.' }] },
+    ],
+    1000,
+  );
   expect(excerpt).toContain('[user]: Remember this project uses Pi.');
   expect(excerpt).toContain('[assistant]: Noted.');
 });
@@ -1259,7 +1290,8 @@ export function textFromPiContent(content: unknown): string {
     const rec = block as Record<string, unknown>;
     if (rec.type === 'text' && typeof rec.text === 'string') parts.push(rec.text);
     if (rec.type === 'tool_call' && typeof rec.name === 'string') parts.push(`[tool: ${rec.name}]`);
-    if (rec.type === 'tool_result' && typeof rec.text === 'string') parts.push(`[tool result: ${rec.text.slice(0, 500)}]`);
+    if (rec.type === 'tool_result' && typeof rec.text === 'string')
+      parts.push(`[tool result: ${rec.text.slice(0, 500)}]`);
   }
   return parts.join('\n');
 }
@@ -1315,6 +1347,7 @@ git commit -m "feat: build memory upserts from pi session history"
 ### Task 11: Remove Claude-only files and imports
 
 **Files:**
+
 - Remove: `src/shared/agent-sdk-skills.ts`
 - Remove or quarantine: `src/lib/session-repair.ts`
 - Modify: all files found by grep
@@ -1368,6 +1401,7 @@ rg "@anthropic-ai/claude-agent-sdk|pathToClaudeCodeExecutable|\.claude/projects|
 ```
 
 Expected:
+
 - No runtime matches.
 - Test fixture strings are acceptable only if explicitly documenting old data.
 
@@ -1384,6 +1418,7 @@ git commit -m "refactor: remove claude runtime remnants"
 ### Task 12: Update docs and config examples for Pi canonical resources
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `config.example.yaml`
 - Create: `docs/pi-migration.md`
@@ -1463,6 +1498,7 @@ git commit -m "docs: document pi-native resource model"
 ### Task 13: Provider/proxy simplification audit
 
 **Files:**
+
 - Create: `docs/pi-provider-proxy-audit.md`
 - Modify only if conclusions are clear: `src/shared/config.ts`, `src/orcd/config.ts`, `config.example.yaml`
 
@@ -1519,6 +1555,7 @@ Create `docs/pi-provider-proxy-audit.md` with:
 - [ ] **Step 3: Only simplify code if audit finds obvious dead paths**
 
 Safe removals:
+
 - `CLAUDE_CODE_USE_BEDROCK` runtime env plumbing after Pi provider support is confirmed.
 - `ANTHROPIC_AUTH_TOKEN` plumbing if Pi does not use it and provider auth moved to Pi config.
 
@@ -1537,6 +1574,7 @@ git commit -m "docs: audit provider proxy simplification for pi"
 ### Task 14: Full verification
 
 **Files:**
+
 - Potential fixes across touched files
 
 - [ ] **Step 1: Run grep gate**
@@ -1547,6 +1585,7 @@ rg "@anthropic-ai/claude-agent-sdk|pathToClaudeCodeExecutable|cch|\.claude/proje
 ```
 
 Expected:
+
 - No matches.
 
 - [ ] **Step 2: Run typecheck**
@@ -1584,6 +1623,7 @@ bin/orc --print-env
 ```
 
 Expected:
+
 - Prints `piArgs`, `piPath`, provider/model info.
 - Does not print `cchArgs` or `claudeArgs`.
 
@@ -1599,6 +1639,7 @@ pnpm dev
 In another shell, create a test card and run a short prompt from the UI.
 
 Expected:
+
 - Card moves to running.
 - Pi session emits streamed output.
 - Card moves to review only after `session_exit`.

@@ -3,12 +3,20 @@ import { isCompactCommand, parseAppCommands } from './slash-commands';
 
 describe('parseAppCommands', () => {
   it('returns the message unchanged when it has no app commands', () => {
-    expect(parseAppCommands('great! /merge /qa')).toEqual({ text: 'great! /merge /qa', action: null, sleepPhrase: null });
+    expect(parseAppCommands('great! /merge /qa')).toEqual({
+      text: 'great! /merge /qa',
+      action: null,
+      sleepPhrase: null,
+    });
     expect(parseAppCommands('no commands here')).toEqual({ text: 'no commands here', action: null, sleepPhrase: null });
   });
 
   it('strips a trailing /archive and reports the action', () => {
-    expect(parseAppCommands('great! /merge /qa /archive')).toEqual({ text: 'great! /merge /qa', action: 'archive', sleepPhrase: null });
+    expect(parseAppCommands('great! /merge /qa /archive')).toEqual({
+      text: 'great! /merge /qa',
+      action: 'archive',
+      sleepPhrase: null,
+    });
   });
 
   it('reports /delete and strips surrounding text', () => {
@@ -31,13 +39,21 @@ describe('parseAppCommands', () => {
   });
 
   it('lets the last command win', () => {
-    expect(parseAppCommands('/done one more pass then /archive')).toEqual({ text: 'one more pass then', action: 'archive', sleepPhrase: null });
+    expect(parseAppCommands('/done one more pass then /archive')).toEqual({
+      text: 'one more pass then',
+      action: 'archive',
+      sleepPhrase: null,
+    });
     expect(parseAppCommands('/done then /delete')).toEqual({ text: 'then', action: 'delete', sleepPhrase: null });
   });
 
   it('reads the /sleep phrase that follows the command', () => {
     expect(parseAppCommands('/sleep 12 hours')).toEqual({ text: '', action: 'sleep', sleepPhrase: '12 hours' });
-    expect(parseAppCommands('/sleep until tuesday at 5pm')).toEqual({ text: '', action: 'sleep', sleepPhrase: 'until tuesday at 5pm' });
+    expect(parseAppCommands('/sleep until tuesday at 5pm')).toEqual({
+      text: '',
+      action: 'sleep',
+      sleepPhrase: 'until tuesday at 5pm',
+    });
   });
 
   it('ends the /sleep phrase at the next command or line', () => {

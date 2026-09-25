@@ -17,7 +17,10 @@ export async function handleTranscriptSnapshot(
     const card = await Card.findOneBy({ id: data.cardId });
     if (!card?.projectId || !card.sessionId) throw new Error('Session not found');
     const identity = socket.data.identity;
-    const visible = await userService.visibleProjectIds({ ...identity, role: identity.role === 'admin' ? 'admin' : 'user' });
+    const visible = await userService.visibleProjectIds({
+      ...identity,
+      role: identity.role === 'admin' ? 'admin' : 'user',
+    });
     if (visible !== 'all' && !visible.includes(card.projectId)) throw new Error('Session not found');
     const { getClientByNode } = await import('../../init-state');
     const client = getClientByNode(card.nodeName);
@@ -40,7 +43,10 @@ export async function handleHistoryPage(
     const card = await Card.findOneBy({ id: data.cardId });
     if (!card?.projectId || !card.sessionId) throw new Error('Session not found');
     const identity = socket.data.identity;
-    const visible = await userService.visibleProjectIds({ ...identity, role: identity.role === 'admin' ? 'admin' : 'user' });
+    const visible = await userService.visibleProjectIds({
+      ...identity,
+      role: identity.role === 'admin' ? 'admin' : 'user',
+    });
     if (visible !== 'all' && !visible.includes(card.projectId)) throw new Error('Session not found');
     const project = await Project.findOneBy({ id: card.projectId });
     if (!project) throw new Error('Project not found');
@@ -49,9 +55,10 @@ export async function handleHistoryPage(
     const client = getClientByNode(card.nodeName);
     busRoomBridge.joinCard(socket, card.id);
     if (client?.isActive(card.sessionId)) client.subscribe(card.sessionId);
-    const page = card.nodeName === 'local'
-      ? await getPiSessionHistoryPage(card.sessionId, cwd, data.page)
-      : await client?.getHistoryPage(card.sessionId, cwd, data.page);
+    const page =
+      card.nodeName === 'local'
+        ? await getPiSessionHistoryPage(card.sessionId, cwd, data.page)
+        : await client?.getHistoryPage(card.sessionId, cwd, data.page);
     if (!page) throw new Error('Node unavailable');
     callback({ data: page });
   } catch (err) {
@@ -70,9 +77,7 @@ export async function handleSessionLoad(
   try {
     const room = `card:${cardId}`;
     const alreadyJoined = socket.rooms.has(room);
-    console.log(
-      `[session:load] cardId=${cardId} alreadyJoined=${alreadyJoined}`,
-    );
+    console.log(`[session:load] cardId=${cardId} alreadyJoined=${alreadyJoined}`);
 
     let messages: unknown[] = [];
     const card = await Card.findOneBy({ id: cardId });

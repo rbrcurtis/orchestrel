@@ -78,10 +78,7 @@ export function resolveEnvVars(str: string, env: Record<string, string | undefin
   return str.replace(/\$\{(\w+)\}/g, (_, name: string) => env[name] ?? '');
 }
 
-export function parseConfig(
-  yamlStr: string,
-  env: Record<string, string | undefined>,
-): OrchestrelConfig {
+export function parseConfig(yamlStr: string, env: Record<string, string | undefined>): OrchestrelConfig {
   const raw = parseYaml(yamlStr) as Record<string, unknown>;
 
   if (!raw.providers || typeof raw.providers !== 'object') {
@@ -225,9 +222,7 @@ export function loadConfig(): OrchestrelConfig {
   if (cached) return cached;
   const path = configPath();
   if (!existsSync(path)) {
-    throw new Error(
-      `Config not found at ${path}. Copy config.example.yaml to config.yaml and fill in your providers.`,
-    );
+    throw new Error(`Config not found at ${path}. Copy config.example.yaml to config.yaml and fill in your providers.`);
   }
   const content = readFileSync(path, 'utf-8');
   cached = parseConfig(content, process.env as Record<string, string | undefined>);

@@ -1,6 +1,14 @@
 import { execFileSync } from 'child_process';
 import { describe, expect, it, vi } from 'vitest';
-import { durationMs, normalizePhrase, parseModelReply, resolveSleepUntil, sleepFallbackPrompt, splitSleepArgument, weekdayInPhrase } from './sleep';
+import {
+  durationMs,
+  normalizePhrase,
+  parseModelReply,
+  resolveSleepUntil,
+  sleepFallbackPrompt,
+  splitSleepArgument,
+  weekdayInPhrase,
+} from './sleep';
 
 // The phrase and reply parsers decide when a card runs again. Wrong unit math
 // or a missed reply shape silently parks a card at the wrong time, so these

@@ -5,12 +5,15 @@ import { searchMemories, storeMemory, updateMemory, deleteMemory } from './memor
 const SERVER: MemoryServer = { apiUrl: 'http://mem.test', apiKey: 'sek', project: 'trackable' };
 
 function mockFetch(status: number, body: unknown) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    text: () => Promise.resolve('err'),
-    json: () => Promise.resolve(body),
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve('err'),
+      json: () => Promise.resolve(body),
+    }),
+  );
 }
 
 afterEach(() => vi.unstubAllGlobals());

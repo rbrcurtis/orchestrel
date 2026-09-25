@@ -54,7 +54,9 @@ if (sdkEvent.type === 'result' && this.activeQuery) {
       contextWindow: usage.rawMaxTokens,
     };
     for (const cb of this.subscribers) cb(cuMsg);
-  } catch { /* query may have closed between result and this call */ }
+  } catch {
+    /* query may have closed between result and this call */
+  }
 }
 ```
 
@@ -101,12 +103,12 @@ No changes needed here — once context values are in the DB, this path works.
 
 ## Files changed
 
-| File | Change |
-|------|--------|
-| `src/shared/orcd-protocol.ts` | Add `ContextUsageMessage` interface and to union |
-| `src/orcd/session.ts` | Add `ContextUsageMessage` to `SessionEventCallback` type; call `getContextUsage()` after result, broadcast `context_usage` |
-| `src/server/controllers/card-sessions.ts` | Handle `context_usage` msg: save to DB + publish to bus |
-| `app/stores/session-store.ts` | Remove `result.usage` extraction from `ingestSdkMessage()` |
+| File                                      | Change                                                                                                                     |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/orcd-protocol.ts`             | Add `ContextUsageMessage` interface and to union                                                                           |
+| `src/orcd/session.ts`                     | Add `ContextUsageMessage` to `SessionEventCallback` type; call `getContextUsage()` after result, broadcast `context_usage` |
+| `src/server/controllers/card-sessions.ts` | Handle `context_usage` msg: save to DB + publish to bus                                                                    |
+| `app/stores/session-store.ts`             | Remove `result.usage` extraction from `ingestSdkMessage()`                                                                 |
 
 ## Not changing
 

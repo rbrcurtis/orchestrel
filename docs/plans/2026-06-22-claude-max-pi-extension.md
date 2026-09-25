@@ -4,7 +4,7 @@
 
 **Goal:** Move the Claude Max OAuth + Claude Code request-reshaping provider out of orcd's application code into a standalone Pi extension that Pi auto-discovers and self-registers, so orchestrel contains zero provider-specific code.
 
-**Architecture:** A standalone Pi extension (a TypeScript module with a default-exported `ExtensionFactory`) lives at `extensions/claude-max/` in the repo and is symlinked into `~/.pi/agent/extensions/claude-max/`, which `pi-coding-agent`'s `DefaultResourceLoader` discovers automatically (location #2: `agentDir/extensions/`). The extension calls `pi.registerProvider("anthropic", { oauth, streamSimple, baseUrl })` **without** a `models` field, which *augments* the provider orchestrel already registered (per `model-registry.d.ts:92-93`: a no-`models` registration overrides URLs/auth but preserves the model catalog). orchestrel keeps registering the provider's model catalog generically from `config.yaml` and loses its `isClaudeMaxOAuth` branch and all four `claude-code-*.ts` files.
+**Architecture:** A standalone Pi extension (a TypeScript module with a default-exported `ExtensionFactory`) lives at `extensions/claude-max/` in the repo and is symlinked into `~/.pi/agent/extensions/claude-max/`, which `pi-coding-agent`'s `DefaultResourceLoader` discovers automatically (location #2: `agentDir/extensions/`). The extension calls `pi.registerProvider("anthropic", { oauth, streamSimple, baseUrl })` **without** a `models` field, which _augments_ the provider orchestrel already registered (per `model-registry.d.ts:92-93`: a no-`models` registration overrides URLs/auth but preserves the model catalog). orchestrel keeps registering the provider's model catalog generically from `config.yaml` and loses its `isClaudeMaxOAuth` branch and all four `claude-code-*.ts` files.
 
 **Tech Stack:** TypeScript (strict), `@earendil-works/pi-coding-agent` (extension API + `ModelRegistry`), `@earendil-works/pi-ai` (OAuth + stream types), `@anthropic-ai/sdk`, jiti (Pi's TS extension loader), vitest.
 
@@ -14,26 +14,30 @@
 
 Per the design discussion the rule is **purest option, every decision**:
 
-- **A2 — disk discovery.** The extension is auto-discovered from `~/.pi/agent/extensions/`. orchestrel's runtime imports nothing from it. (The repo keeps the *source* under `extensions/claude-max/` and a one-time symlink/install step puts it on Pi's discovery path — that is ops/config, not application code.)
+- **A2 — disk discovery.** The extension is auto-discovered from `~/.pi/agent/extensions/`. orchestrel's runtime imports nothing from it. (The repo keeps the _source_ under `extensions/claude-max/` and a one-time symlink/install step puts it on Pi's discovery path — that is ops/config, not application code.)
 - **B1 — self-contained extension.** orcd registers providers generically from `config.yaml` with no Claude-Max branch. The extension targets the provider by name (`"anthropic"`) and attaches auth + reshaping.
 - **C2 — native Pi provider registration.** Auth uses Pi's `ProviderConfig.oauth` block (`login`/`refreshToken`/`getApiKey`); request reshaping uses `ProviderConfig.streamSimple` (the only typed seam capable of full message/tool/prompt rewriting — `before_provider_request` carries `payload: unknown` and cannot).
 
 ### Credential source of truth
+
 `~/.claude/.credentials.json` stays the source of truth (interop with the `claude` CLI is a hard requirement). The oauth block's `login()` reads that file headlessly (no interactive prompts — orcd is a daemon), `refreshToken()` refreshes against `https://console.anthropic.com/v1/oauth/token` and writes the rotated token back to that file, and `getApiKey()` returns `creds.access`. Pi's own `auth.json` becomes a cache populated from these.
 
 ### Guard is REQUIRED (correction — original plan premise was wrong)
+
 The plan originally assumed `streamSimple` would be attached to "only the `anthropic` provider" so the `if (model.provider !== oauthProviderId) return streamSimpleAnthropic(...)` guard could be dropped. **That is false** (caught in Task 3 code review, verified against pi source). Pi's `registerApiProvider` keys the stream handler **globally by `api`** (`apiProviderRegistry.set(provider.api, …)` in `@earendil-works/pi-ai/dist/api-registry.js`), and `wrapStreamSimple` only checks `model.api`, never `model.provider`. So a `streamSimple` registered for `anthropic-messages` intercepts **every** anthropic-format provider (okkanti/trackable/ray) — which is exactly why the original guard delegated non-matching providers back to `streamSimpleAnthropic`. The guard is **kept**: `makeClaudeCodeStream(PROVIDER_NAME)` takes the provider id and `streamClaudeCodeOAuth` early-returns `streamSimpleAnthropic(model, context, options)` when `model.provider !== oauthProviderId`.
 
 ### Token sourcing (correction to Task 0 spike (b))
+
 The spike noted Pi passes the resolved key via `options.apiKey`. We do **not** rely on that: Pi's `AuthStorage` only auto-refreshes its own `auth.json`, never `~/.claude/.credentials.json`, which must stay canonical for `claude` CLI interop. So `stream.ts` sources the token via `getAccessToken()` in `auth.ts` (reads `~/.claude` fresh, refreshes on expiry with `REFRESH_SKEW_MS=60_000` + single-flight dedupe), matching the original orcd behavior.
 
 ### Spike outcome (Task 0)
 
 Verified against `@earendil-works/pi-coding-agent` (installed version) by source reading + a runtime probe (`ModelRegistry.inMemory(auth)`, register-with-models then re-register-same-name-without-models, then `find()`).
 
-**(a) MODEL_PRESERVED — design (i) AUGMENT holds (expected).** Re-registering the same provider id with NO `models` field does **not** clobber the previously-registered catalog. Probe output: `MODEL_PRESERVED: true`, `PROVIDER_MODEL_COUNT: 1`, `STREAMSIMPLE_INVOKED_AT_REGISTRATION: false`, `RAW_MODEL` still the sonnet model. Source confirms: in `ModelRegistry.applyProviderConfig` (`dist/core/model-registry.js:740-781`) the full-replacement that filters out existing provider models (`this.models = this.models.filter(m => m.provider !== providerName)`, line 742) runs **only** when `config.models?.length > 0`. With no models, control falls to the `else if (config.baseUrl || config.headers)` branch (line 771) which only patches `baseUrl` on existing models. `registerProvider` (line 662) also calls `upsertRegisteredProvider` (line 689) which merges only *defined* keys, preserving prior config. **Design implication:** the extension can call `pi.registerProvider("anthropic", { oauth, streamSimple, baseUrl })` with no `models` and it augments orchestrel's already-registered "anthropic" catalog. Constraint: a models-bearing registration requires `baseUrl` plus `apiKey` or `oauth`, and each model object must include `reasoning`, `input`, `cost`, `contextWindow`, `maxTokens` (the Task-0 probe's minimal `{id,name,api}` shape does not type-check — the real probe used the full shape). The no-models extension registration only requires `api` (because `streamSimple` is present: `validateProviderConfig`, line 702-703).
+**(a) MODEL_PRESERVED — design (i) AUGMENT holds (expected).** Re-registering the same provider id with NO `models` field does **not** clobber the previously-registered catalog. Probe output: `MODEL_PRESERVED: true`, `PROVIDER_MODEL_COUNT: 1`, `STREAMSIMPLE_INVOKED_AT_REGISTRATION: false`, `RAW_MODEL` still the sonnet model. Source confirms: in `ModelRegistry.applyProviderConfig` (`dist/core/model-registry.js:740-781`) the full-replacement that filters out existing provider models (`this.models = this.models.filter(m => m.provider !== providerName)`, line 742) runs **only** when `config.models?.length > 0`. With no models, control falls to the `else if (config.baseUrl || config.headers)` branch (line 771) which only patches `baseUrl` on existing models. `registerProvider` (line 662) also calls `upsertRegisteredProvider` (line 689) which merges only _defined_ keys, preserving prior config. **Design implication:** the extension can call `pi.registerProvider("anthropic", { oauth, streamSimple, baseUrl })` with no `models` and it augments orchestrel's already-registered "anthropic" catalog. Constraint: a models-bearing registration requires `baseUrl` plus `apiKey` or `oauth`, and each model object must include `reasoning`, `input`, `cost`, `contextWindow`, `maxTokens` (the Task-0 probe's minimal `{id,name,api}` shape does not type-check — the real probe used the full shape). The no-models extension registration only requires `api` (because `streamSimple` is present: `validateProviderConfig`, line 702-703).
 
 **(b) How `streamSimple` gets the token — Pi passes the resolved key IN via `options.apiKey`; the stream function does NOT source it itself.** Chain:
+
 - The Agent's `streamFn` resolves auth and injects it: `dist/core/sdk.js:201-222` — calls `modelRegistry.getApiKeyAndHeaders(model)` (line 202), then `streamSimple(model, context, { ...options, apiKey: auth.apiKey, headers: {...auth.headers} })` (lines 212-221).
 - `ModelRegistry.getApiKeyAndHeaders` (`dist/core/model-registry.js:569-600`) resolves the key from `AuthStorage.getApiKey(provider)` (OAuth-backed, line 572) or the provider's configured `apiKey`, returning `{ ok, apiKey, headers }`.
 - pi-ai's `streamSimple` (`@earendil-works/pi-ai/dist/stream.js:31-34`) dispatches to the registered api provider's `streamSimple(model, context, withEnvApiKey(model, options))`; `withEnvApiKey` (lines 8-14) keeps the already-set `options.apiKey` (env fallback only fills it when empty).
@@ -44,6 +48,7 @@ Verified against `@earendil-works/pi-coding-agent` (installed version) by source
 ## File Structure
 
 **Created (extension — NOT application code):**
+
 - `extensions/claude-max/index.ts` — default-exported `ExtensionFactory`; the only Pi entry point. Calls `pi.registerProvider`.
 - `extensions/claude-max/auth.ts` — the `oauth` block (`login`/`refreshToken`/`getApiKey`) reading/refreshing `~/.claude/.credentials.json`. (Relocated + adapted from `src/orcd/claude-code-auth.ts`.)
 - `extensions/claude-max/stream.ts` — `makeClaudeCodeStream` (guard removed). (Relocated from `src/orcd/claude-code-stream.ts`.)
@@ -54,11 +59,13 @@ Verified against `@earendil-works/pi-coding-agent` (installed version) by source
 - `scripts/install-claude-max-extension.sh` — idempotent symlink of `extensions/claude-max` → `~/.pi/agent/extensions/claude-max`.
 
 **Modified:**
+
 - `src/orcd/pi-runtime.ts` — delete the `CLAUDE_MAX_OAUTH` constant, the `isClaudeMaxOAuth` branch in `registerOrchestrelProvider`, and the `makeClaudeCodeStream` import. `usesBuiltInProvider` keeps its `provider.oauth` early-return (still correct: an oauth provider is never the SDK built-in).
-- `src/shared/config.ts` / `src/orcd/config.ts` — unchanged (the `oauth` field stays in config as the human-facing marker; orcd just stops *acting* on it).
+- `src/shared/config.ts` / `src/orcd/config.ts` — unchanged (the `oauth` field stays in config as the human-facing marker; orcd just stops _acting_ on it).
 - `config.example.yaml` — add a comment that `oauth: claude-max` requires the `claude-max` Pi extension installed.
 
 **Deleted:**
+
 - `src/orcd/claude-code-auth.ts`
 - `src/orcd/claude-code-convert.ts`
 - `src/orcd/claude-code-prompt.ts`
@@ -72,6 +79,7 @@ Verified against `@earendil-works/pi-coding-agent` (installed version) by source
 Two integration facts must be confirmed by experiment before building, because they shape the extension's `registerProvider` call.
 
 **Files:**
+
 - Create (throwaway): `src/bin/scratch-verify-pi-augment.ts`
 
 - [ ] **Step 1: Write a probe that registers a provider with models, then re-registers the same name with only `streamSimple`/`baseUrl` and checks both compose.**
@@ -98,11 +106,14 @@ async function main() {
   reg.registerProvider('probe-anthropic', {
     api: 'anthropic-messages',
     baseUrl: 'https://api.anthropic.com',
-    streamSimple: (() => { streamSimpleSeen = true; return undefined as never; }) as never,
+    streamSimple: (() => {
+      streamSimpleSeen = true;
+      return undefined as never;
+    }) as never,
   });
 
   const model = reg.find('probe-anthropic', 'claude-sonnet-4-20250514');
-  console.log('MODEL_PRESERVED:', !!model);          // expect true (catalog survived)
+  console.log('MODEL_PRESERVED:', !!model); // expect true (catalog survived)
   console.log('STREAMSIMPLE_ATTACHED_FIELD:', streamSimpleSeen === false); // registration shouldn't invoke it
   console.log('RAW_MODEL:', JSON.stringify(model));
 }
@@ -138,6 +149,7 @@ git commit -m "docs: record claude-max extension spike outcome"
 ## Task 1: Scaffold the extension package and move the pure conversion module
 
 **Files:**
+
 - Create: `extensions/claude-max/package.json`
 - Create: `extensions/claude-max/prompt.ts` (from `src/orcd/claude-code-prompt.ts`)
 - Create: `extensions/claude-max/convert.ts` (from `src/orcd/claude-code-convert.ts`)
@@ -188,6 +200,7 @@ git commit -m "feat(claude-max-ext): scaffold extension, move prompt+convert mod
 ## Task 2: Move + adapt the auth module to the oauth-block shape
 
 **Files:**
+
 - Create: `extensions/claude-max/auth.ts`
 - Create: `extensions/claude-max/__tests__/auth.test.ts`
 
@@ -312,6 +325,7 @@ git commit -m "feat(claude-max-ext): oauth block over ~/.claude credentials"
 ## Task 3: Move the stream module (drop the global guard) and write the extension entry
 
 **Files:**
+
 - Create: `extensions/claude-max/stream.ts` (from `src/orcd/claude-code-stream.ts`)
 - Create: `extensions/claude-max/index.ts`
 
@@ -325,7 +339,10 @@ let inflight: Promise<OAuthCredentials> | null = null;
 export async function getAccessToken(): Promise<string> {
   const creds = readClaudeCreds();
   if (creds.expires - Date.now() > 60_000) return creds.access;
-  if (!inflight) inflight = claudeMaxOAuth.refreshToken(creds).finally(() => { inflight = null; });
+  if (!inflight)
+    inflight = claudeMaxOAuth.refreshToken(creds).finally(() => {
+      inflight = null;
+    });
   return (await inflight).access;
 }
 ```
@@ -379,6 +396,7 @@ git commit -m "feat(claude-max-ext): stream module + registerProvider entry"
 ## Task 4: Strip Claude-Max logic out of orcd
 
 **Files:**
+
 - Modify: `src/orcd/pi-runtime.ts`
 - Delete: `src/orcd/claude-code-auth.ts`, `claude-code-convert.ts`, `claude-code-prompt.ts`, `claude-code-stream.ts`
 - Delete/move: any `src/orcd/__tests__/claude-code-*.test.ts`
@@ -443,6 +461,7 @@ git commit -m "refactor(orcd): drop Claude-Max provider code; generic registrati
 ## Task 5: Install script + discovery wiring
 
 **Files:**
+
 - Create: `scripts/install-claude-max-extension.sh`
 
 - [ ] **Step 1: Write the idempotent install script.**
@@ -471,7 +490,10 @@ import { discoverAndLoadExtensions } from '@earendil-works/pi-coding-agent/dist/
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 async function main() {
   const res = await discoverAndLoadExtensions([], process.cwd(), getAgentDir());
-  console.log('LOADED:', res.extensions.map((e) => e.name ?? e));
+  console.log(
+    'LOADED:',
+    res.extensions.map((e) => e.name ?? e),
+  );
   console.log('ERRORS:', JSON.stringify(res.errors));
 }
 main();
@@ -530,6 +552,7 @@ Expected: normal behavior; the extension's `streamSimple` did not intercept it (
 ## Task 7: Docs + memory
 
 **Files:**
+
 - Modify: `config.example.yaml`
 - Modify: `CLAUDE.md` (Provider Routing section)
 

@@ -31,28 +31,28 @@ Each agent turn emits multiple `AgentMessage` events — one per logical block. 
 
 ```ts
 type AgentMessage = {
-  type: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'system' | 'turn_end' | 'error'
-  role: 'user' | 'assistant' | 'system'
-  content: string
+  type: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'system' | 'turn_end' | 'error';
+  role: 'user' | 'assistant' | 'system';
+  content: string;
   toolCall?: {
-    id: string
-    name: string
-    params?: Record<string, unknown>
-  }
+    id: string;
+    name: string;
+    params?: Record<string, unknown>;
+  };
   toolResult?: {
-    id: string
-    output: string
-    isError?: boolean
-  }
+    id: string;
+    output: string;
+    isError?: boolean;
+  };
   usage?: {
-    inputTokens: number
-    outputTokens: number
-    cacheRead?: number
-    cacheWrite?: number
-    contextWindow?: number
-  }
-  timestamp: number
-}
+    inputTokens: number;
+    outputTokens: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    contextWindow?: number;
+  };
+  timestamp: number;
+};
 ```
 
 ### Claude SDK mapping
@@ -75,19 +75,19 @@ type AgentMessage = {
 
 ```ts
 abstract class AgentSession extends EventEmitter {
-  abstract sessionId: string | null
-  abstract status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped'
-  abstract promptsSent: number
-  abstract turnsCompleted: number
+  abstract sessionId: string | null;
+  abstract status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
+  abstract promptsSent: number;
+  abstract turnsCompleted: number;
 
   // Optional agent capabilities — set by concrete implementations
-  model?: string
-  thinkingLevel?: string
+  model?: string;
+  thinkingLevel?: string;
 
-  abstract start(prompt: string): Promise<void>
-  abstract sendMessage(content: string): Promise<void>
-  abstract kill(): Promise<void>
-  abstract waitForReady(): Promise<void>
+  abstract start(prompt: string): Promise<void>;
+  abstract sendMessage(content: string): Promise<void>;
+  abstract kill(): Promise<void>;
+  abstract waitForReady(): Promise<void>;
 
   // Events:
   //   'message' → AgentMessage
@@ -106,14 +106,14 @@ abstract class AgentSession extends EventEmitter {
 
 ```ts
 function createAgentSession(opts: {
-  agentType: AgentType
-  agentProfile?: string
-  cwd: string
-  model?: string
-  thinkingLevel?: string
-  sessionId?: string // for resume
-  projectName?: string
-}): AgentSession
+  agentType: AgentType;
+  agentProfile?: string;
+  cwd: string;
+  model?: string;
+  thinkingLevel?: string;
+  sessionId?: string; // for resume
+  projectName?: string;
+}): AgentSession;
 ```
 
 ## ClaudeSession (Phase 1 refactor)
@@ -163,6 +163,7 @@ All client-side references updated: session store, `SessionView`, `CardDetail`, 
 ### SessionView
 
 `MessageBlock` component rewritten to render `AgentMessage` types:
+
 - `text` → rendered text (markdown)
 - `tool_call` → tool name + params display
 - `tool_result` → collapsible output

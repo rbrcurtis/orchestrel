@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AsyncTaskTracker,
-  extractSubagentCompletions,
-  extractSubagentLaunches,
-} from '../async-task-tracker';
+import { AsyncTaskTracker, extractSubagentCompletions, extractSubagentLaunches } from '../async-task-tracker';
 
 // Fixtures mirror pi-subagents' actual structured events: the Agent tool's
 // tool_execution_end details (AgentDetails) and the subagent-notification
@@ -49,7 +45,18 @@ function notificationMessage(
         turnCount: 1,
         totalTokens: 100,
         durationMs: 5000,
-        ...(others.length ? { others: others.map((o) => ({ ...o, description: 'desc', toolUses: 0, turnCount: 0, totalTokens: 0, durationMs: 0 })) } : {}),
+        ...(others.length
+          ? {
+              others: others.map((o) => ({
+                ...o,
+                description: 'desc',
+                toolUses: 0,
+                turnCount: 0,
+                totalTokens: 0,
+                durationMs: 0,
+              })),
+            }
+          : {}),
       },
     },
   };
@@ -75,7 +82,16 @@ describe('extractSubagentLaunches', () => {
       toolName: 'Agent',
       result: {
         content: [{ type: 'text', text: 'DONE' }],
-        details: { displayName: 'Explore', description: 'fg', subagentType: 'Explore', toolUses: 4, tokens: '1k', durationMs: 100, status: 'completed', agentId: 'agent-fg' },
+        details: {
+          displayName: 'Explore',
+          description: 'fg',
+          subagentType: 'Explore',
+          toolUses: 4,
+          tokens: '1k',
+          durationMs: 100,
+          status: 'completed',
+          agentId: 'agent-fg',
+        },
       },
     };
     expect(extractSubagentLaunches(event)).toEqual([]);
@@ -94,16 +110,22 @@ describe('extractSubagentLaunches', () => {
 
 describe('extractSubagentCompletions', () => {
   it('extracts completion from a subagent-notification custom message', () => {
-    expect(extractSubagentCompletions(notificationMessage([{ id: 'agent-123', status: 'completed', resultPreview: 'DONE' }]))).toEqual([
-      { taskId: 'agent-123', status: 'completed', result: 'DONE' },
-    ]);
+    expect(
+      extractSubagentCompletions(
+        notificationMessage([{ id: 'agent-123', status: 'completed', resultPreview: 'DONE' }]),
+      ),
+    ).toEqual([{ taskId: 'agent-123', status: 'completed', result: 'DONE' }]);
   });
 
   it('extracts every agent in a grouped notification via others[]', () => {
-    expect(extractSubagentCompletions(notificationMessage([
-      { id: 'agent-1', status: 'completed' },
-      { id: 'agent-2', status: 'error' },
-    ]))).toEqual([
+    expect(
+      extractSubagentCompletions(
+        notificationMessage([
+          { id: 'agent-1', status: 'completed' },
+          { id: 'agent-2', status: 'error' },
+        ]),
+      ),
+    ).toEqual([
       { taskId: 'agent-1', status: 'completed' },
       { taskId: 'agent-2', status: 'failed' },
     ]);
@@ -140,7 +162,12 @@ describe('extractSubagentCompletions', () => {
   });
 
   it('ignores unrelated custom messages and events', () => {
-    expect(extractSubagentCompletions({ type: 'message_start', message: { role: 'custom', customType: 'other', details: { id: 'a', status: 'completed' } } })).toEqual([]);
+    expect(
+      extractSubagentCompletions({
+        type: 'message_start',
+        message: { role: 'custom', customType: 'other', details: { id: 'a', status: 'completed' } },
+      }),
+    ).toEqual([]);
     expect(extractSubagentCompletions({ type: 'turn_end' })).toEqual([]);
     expect(extractSubagentCompletions('Continue')).toEqual([]);
   });

@@ -17,6 +17,7 @@
 ### Task 1: Add `subagent` and `retry` to type system
 
 **Files:**
+
 - Modify: `src/server/agents/types.ts`
 - Modify: `src/shared/ws-protocol.ts`
 - Modify: `app/stores/session-store.ts`
@@ -27,13 +28,23 @@ In `src/server/agents/types.ts`, add `'retry'` to `SessionStatus` and `'subagent
 
 ```typescript
 // line 5
-export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry'
+export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry';
 
 // line 8 — add 'subagent' to the type union
 export type AgentMessage = {
-  type: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'system' | 'turn_end' | 'error' | 'user' | 'tool_progress' | 'subagent'
+  type:
+    | 'text'
+    | 'tool_call'
+    | 'tool_result'
+    | 'thinking'
+    | 'system'
+    | 'turn_end'
+    | 'error'
+    | 'user'
+    | 'tool_progress'
+    | 'subagent';
   // ... rest unchanged
-}
+};
 ```
 
 - [ ] **Step 2: Update shared Zod schemas**
@@ -49,13 +60,24 @@ export const agentStatusSchema = z.object({
   sessionId: z.string().nullable(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
-})
+});
 
 // line 111 — add 'subagent' to agentMessageSchema
 export const agentMessageSchema = z.object({
-  type: z.enum(['text', 'tool_call', 'tool_result', 'thinking', 'system', 'turn_end', 'error', 'user', 'tool_progress', 'subagent']),
+  type: z.enum([
+    'text',
+    'tool_call',
+    'tool_result',
+    'thinking',
+    'system',
+    'turn_end',
+    'error',
+    'user',
+    'tool_progress',
+    'subagent',
+  ]),
   // ... rest unchanged
-})
+});
 ```
 
 - [ ] **Step 3: Update client-side SessionState status type**
@@ -78,6 +100,7 @@ git commit -m "feat: add subagent and retry types to AgentMessage and SessionSta
 ### Task 2: Update DISPLAY_TYPES and getStatus
 
 **Files:**
+
 - Modify: `src/server/services/session.ts`
 
 - [ ] **Step 1: Add `subagent` to DISPLAY_TYPES**
@@ -86,9 +109,17 @@ In `src/server/services/session.ts`, line 17:
 
 ```typescript
 const DISPLAY_TYPES = new Set([
-  'user', 'text', 'tool_call', 'tool_result', 'tool_progress',
-  'thinking', 'system', 'turn_end', 'error', 'subagent',
-])
+  'user',
+  'text',
+  'tool_call',
+  'tool_result',
+  'tool_progress',
+  'thinking',
+  'system',
+  'turn_end',
+  'error',
+  'subagent',
+]);
 ```
 
 - [ ] **Step 2: Update getStatus to treat retry as active**
@@ -111,6 +142,7 @@ git commit -m "feat: allow subagent messages through DISPLAY_TYPES, treat retry 
 ### Task 3: Rewrite logging in OpenCodeSession
 
 **Files:**
+
 - Modify: `src/server/agents/opencode/session.ts`
 
 This task replaces all `console.log` calls in `session.ts` with structured, grep-friendly logging. Each log line uses the format `[session:${id}] event:detail`.
@@ -145,67 +177,76 @@ Remove the `status: SessionStatus = 'starting'` property declaration (replaced b
 - [ ] **Step 2: Replace logging in start(), sendMessage(), kill()**
 
 In `start()`:
+
 ```typescript
 // Replace: console.log(`[opencode-session:${this.sessionId}] → session.create`)
-this.log('prompt:send length=' + prompt.length)
+this.log('prompt:send length=' + prompt.length);
 // After promptAsync returns:
-this.log('prompt:ack')
+this.log('prompt:ack');
 ```
 
 In `sendMessage()`:
+
 ```typescript
-this.log('prompt:send length=' + content.length)
+this.log('prompt:send length=' + content.length);
 // After promptAsync returns:
-this.log('prompt:ack')
+this.log('prompt:ack');
 ```
 
 In `kill()` — replace both log lines (lines 118 and 121):
+
 ```typescript
 // Line 118: Replace console.log(`[opencode-session:${this.sessionId}] → session.abort`)
-this.log('kill')
+this.log('kill');
 // Line 121: Replace console.error(`[opencode-session:${this.sessionId}] abort error:`, err)
-this.log('kill:error ' + String(err))
+this.log('kill:error ' + String(err));
 ```
 
 - [ ] **Step 3: Replace logging in SSE event loop**
 
 Replace the per-event verbose log at line 162:
+
 ```typescript
 // OLD: console.log(`[opencode-session:${this.sessionId}] SSE event #${eventCount}: ${event.type}`, JSON.stringify(event.properties))
 // NEW: no per-event log — only log specific events below
 ```
 
 Replace SSE connect/disconnect/error logging:
+
 ```typescript
 // In subscribeToEvents(), after SSE connection established:
-this.log('sse:connect')
+this.log('sse:connect');
 
 // In catch block:
-this.log('sse:disconnect reason=' + String(err))
+this.log('sse:disconnect reason=' + String(err));
 
 // In finally:
 // (sseAlive = false already there, no log needed)
 ```
 
 Replace permission logging:
+
 ```typescript
 // Replace: console.log(`[opencode-session:${this.sessionId}] auto-approving permission...`)
-this.log(`permission:approve ${perm.id} type=${perm.type}`)
+this.log(`permission:approve ${perm.id} type=${perm.type}`);
 ```
 
 Replace `session.idle` logging (line 246):
+
 ```typescript
 // OLD: console.log(`[opencode-session:${this.sessionId}] session.idle received!`)
-this.log('session:idle')
+this.log('session:idle');
 ```
 
 Replace `session.error` logging (line 277):
+
 ```typescript
 // OLD: console.error(`[opencode-session:${this.sessionId}] session.error:`, JSON.stringify(event.properties))
-this.log('session:error ' + JSON.stringify(event.properties))
+this.log('session:error ' + JSON.stringify(event.properties));
 ```
 
 Replace the "skipping event" log in the session ID filter:
+
 ```typescript
 // OLD: console.log(`[opencode-session:${this.sessionId}] skipping event for session ${sessionID}`)
 // Keep the filter block intact — Task 4 will replace this entire block with subagent handling
@@ -221,6 +262,7 @@ git commit -m "feat: structured diagnostic logging for session lifecycle"
 ### Task 4: Subagent event forwarding
 
 **Files:**
+
 - Modify: `src/server/agents/opencode/session.ts`
 
 This task adds child session tracking and forwards lightweight subagent messages instead of dropping events.
@@ -228,6 +270,7 @@ This task adds child session tracking and forwards lightweight subagent messages
 - [ ] **Step 1: Add SdkClient children method and child session state**
 
 Extend the `SdkClient` interface:
+
 ```typescript
 session: {
   // ... existing methods ...
@@ -236,6 +279,7 @@ session: {
 ```
 
 Add class properties:
+
 ```typescript
 private childSessions = new Map<string, { title: string; status: string }>()
 private childrenResolvePending = false
@@ -295,43 +339,51 @@ Replace the block at line 186-194 (the `if (sessionID && sessionID !== this.sess
 if (sessionID && sessionID !== this.sessionId) {
   // session.idle for a child = subagent completed
   if (event.type === 'session.idle') {
-    const child = this.childSessions.get(sessionID)
+    const child = this.childSessions.get(sessionID);
     if (child) {
-      child.status = 'idle'
-      this.logChild(sessionID, 'idle')
+      child.status = 'idle';
+      this.logChild(sessionID, 'idle');
       this.emit('message', {
         type: 'subagent',
         role: 'system',
         content: '',
         meta: { subtype: 'completed', childSessionId: sessionID, title: child.title },
         timestamp: Date.now(),
-      } satisfies AgentMessage)
+      } satisfies AgentMessage);
     }
-    continue
+    continue;
   }
 
   // Child retry — log only, don't forward
   if (event.type === 'session.status') {
-    const { status } = event.properties as { status?: { type?: string; attempt?: number; next?: number; message?: string } }
+    const { status } = event.properties as {
+      status?: { type?: string; attempt?: number; next?: number; message?: string };
+    };
     if (status?.type === 'retry') {
-      this.logChild(sessionID, `retry attempt=${status.attempt} next=${status.next}ms`)
+      this.logChild(sessionID, `retry attempt=${status.attempt} next=${status.next}ms`);
     }
-    continue
+    continue;
   }
 
   // Child tool activity — only forward running state
   if (event.type === 'message.part.updated') {
-    const part = (event.properties as { part?: { type?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown> } } }).part
+    const part = (
+      event.properties as {
+        part?: { type?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown> } };
+      }
+    ).part;
     if (part?.type === 'tool' && part.state?.status === 'running' && part.tool) {
       // Resolve child session info if unknown
       if (!this.childSessions.has(sessionID)) {
-        await this.resolveChildren(sessionID)
+        await this.resolveChildren(sessionID);
       }
-      const child = this.childSessions.get(sessionID)
-      if (!child) { continue } // Not our child — truly skip
+      const child = this.childSessions.get(sessionID);
+      if (!child) {
+        continue;
+      } // Not our child — truly skip
 
-      const target = this.extractShortTarget(part.tool, part.state.input ?? {})
-      this.logChild(sessionID, `tool:${part.tool} → ${target} (running)`)
+      const target = this.extractShortTarget(part.tool, part.state.input ?? {});
+      this.logChild(sessionID, `tool:${part.tool} → ${target} (running)`);
       this.emit('message', {
         type: 'subagent',
         role: 'system',
@@ -345,13 +397,13 @@ if (sessionID && sessionID !== this.sessionId) {
           status: 'running',
         },
         timestamp: Date.now(),
-      } satisfies AgentMessage)
+      } satisfies AgentMessage);
     }
-    continue
+    continue;
   }
 
   // All other child events — skip silently
-  continue
+  continue;
 }
 ```
 
@@ -361,20 +413,23 @@ In the `session.status` handler block (after the `busy` check), add retry handli
 
 ```typescript
 if (event.type === 'session.status') {
-  const { status } = event.properties as { sessionID?: string; status?: { type?: string; attempt?: number; message?: string; next?: number } }
+  const { status } = event.properties as {
+    sessionID?: string;
+    status?: { type?: string; attempt?: number; message?: string; next?: number };
+  };
   if (status?.type === 'busy' && this.status !== 'running') {
-    this.status = 'running'
+    this.status = 'running';
     this.emit('message', {
       type: 'system',
       role: 'system',
       content: '',
       meta: { subtype: 'init', model: this.modelID, turn: this.promptsSent },
       timestamp: Date.now(),
-    } satisfies AgentMessage)
+    } satisfies AgentMessage);
   }
   if (status?.type === 'retry') {
-    this.status = 'retry'
-    this.log(`retry attempt=${status.attempt} next=${status.next}ms message="${status.message}"`)
+    this.status = 'retry';
+    this.log(`retry attempt=${status.attempt} next=${status.next}ms message="${status.message}"`);
     this.emit('message', {
       type: 'system',
       role: 'system',
@@ -386,7 +441,7 @@ if (event.type === 'session.status') {
         nextMs: status.next,
       },
       timestamp: Date.now(),
-    } satisfies AgentMessage)
+    } satisfies AgentMessage);
   }
 }
 ```
@@ -408,6 +463,7 @@ git commit -m "feat: forward subagent activity + retry events instead of droppin
 ### Task 5: Add subagent state to SessionStore
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts`
 
 - [ ] **Step 1: Update SessionState type and defaultSession**
@@ -421,6 +477,7 @@ status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped' | 'retry';
 ```
 
 In `defaultSession()`, add:
+
 ```typescript
 subagents: observable.map(),
 ```
@@ -428,11 +485,13 @@ subagents: observable.map(),
 - [ ] **Step 2: Add subagentTimeouts map and cleanup**
 
 Add class property:
+
 ```typescript
 private subagentTimeouts = new Map<string, NodeJS.Timeout>();
 ```
 
 Update `clearConversation`:
+
 ```typescript
 clearConversation(cardId: number): void {
   const s = this.sessions.get(cardId);
@@ -476,12 +535,15 @@ if (msg.type === 'subagent' && msg.meta) {
     const timeoutKey = `${cardId}:${m.childSessionId}`;
     const prev = this.subagentTimeouts.get(timeoutKey);
     if (prev) clearTimeout(prev);
-    this.subagentTimeouts.set(timeoutKey, setTimeout(() => {
-      runInAction(() => {
-        s.subagents.delete(m.childSessionId);
-      });
-      this.subagentTimeouts.delete(timeoutKey);
-    }, 2000));
+    this.subagentTimeouts.set(
+      timeoutKey,
+      setTimeout(() => {
+        runInAction(() => {
+          s.subagents.delete(m.childSessionId);
+        });
+        this.subagentTimeouts.delete(timeoutKey);
+      }, 2000),
+    );
   }
   return; // Don't add subagent messages to conversation
 }
@@ -514,6 +576,7 @@ git commit -m "feat: track subagent state in SessionStore with auto-cleanup"
 ### Task 6: Create SubagentFeed component
 
 **Files:**
+
 - Create: `app/components/SubagentFeed.tsx`
 
 - [ ] **Step 1: Create the component**
@@ -574,11 +637,13 @@ git commit -m "feat: SubagentFeed component — stacked rows for child session a
 ### Task 7: Integrate into SessionView + retry StatusBadge
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx`
 
 - [ ] **Step 1: Import SubagentFeed**
 
 Add import at top:
+
 ```typescript
 import { SubagentFeed } from './SubagentFeed';
 ```
@@ -586,6 +651,7 @@ import { SubagentFeed } from './SubagentFeed';
 - [ ] **Step 2: Extract subagents from session state**
 
 After the existing state extractions (around line 38), add:
+
 ```typescript
 const subagents = session?.subagents ?? new Map();
 ```
@@ -595,8 +661,10 @@ const subagents = session?.subagents ?? new Map();
 In the JSX return, between the status bar section (ending ~line 278) and the `<PromptInput` (starting ~line 281), insert:
 
 ```tsx
-{/* Subagent activity feed */}
-<SubagentFeed subagents={subagents} />
+{
+  /* Subagent activity feed */
+}
+<SubagentFeed subagents={subagents} />;
 ```
 
 - [ ] **Step 4: Update StatusBadge for retry state**
@@ -634,19 +702,21 @@ useEffect(() => {
 In the status bar section, after the `<StatusBadge>`, add retry info display. Extract retry metadata from the last system message:
 
 ```typescript
-const retryInfo = sessionStatus === 'retry'
-  ? conversation.findLast(m => m.type === 'system' && m.meta?.subtype === 'retry')
-  : null;
+const retryInfo =
+  sessionStatus === 'retry' ? conversation.findLast((m) => m.type === 'system' && m.meta?.subtype === 'retry') : null;
 ```
 
 Then in the status bar JSX, after `<StatusBadge>`:
+
 ```tsx
-{retryInfo && (
-  <span className="text-[11px] text-neon-amber truncate">
-    {String(retryInfo.meta?.message ?? 'Waiting...')}
-    {retryInfo.meta?.attempt != null && ` (attempt ${retryInfo.meta.attempt})`}
-  </span>
-)}
+{
+  retryInfo && (
+    <span className="text-[11px] text-neon-amber truncate">
+      {String(retryInfo.meta?.message ?? 'Waiting...')}
+      {retryInfo.meta?.attempt != null && ` (attempt ${retryInfo.meta.attempt})`}
+    </span>
+  );
+}
 ```
 
 - [ ] **Step 7: Commit**
@@ -669,6 +739,7 @@ sudo systemctl restart orchestrel.service
 - [ ] **Step 2: Test subagent visibility**
 
 Open `localhost:6194`. Start a card in Running with a project and a prompt that triggers subagent usage (e.g. "explore the codebase and implement X"). Verify:
+
 - Subagent rows appear in the feed between status bar and prompt input
 - Each row shows green dot + title + tool activity text
 - Activity text updates as subagent tools change

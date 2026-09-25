@@ -13,6 +13,7 @@
 ### Task 1: Install Dependencies and Update Shared Protocol
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `src/shared/ws-protocol.ts`
 
@@ -229,8 +230,14 @@ export interface ClientToServerEvents {
   'agent:status': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
 
   // Session
-  'session:load': (data: { cardId: number; sessionId?: string }, ack: (res: AckResponse<{ messages: unknown[] }>) => void) => void;
-  'session:set-model': (data: { cardId: number; provider: string; model: string }, ack: (res: AckResponse) => void) => void;
+  'session:load': (
+    data: { cardId: number; sessionId?: string },
+    ack: (res: AckResponse<{ messages: unknown[] }>) => void,
+  ) => void;
+  'session:set-model': (
+    data: { cardId: number; provider: string; model: string },
+    ack: (res: AckResponse) => void,
+  ) => void;
 
   // Queue
   'queue:reorder': (data: { cardId: number; newPosition: number }, ack: (res: AckResponse) => void) => void;
@@ -265,6 +272,7 @@ git commit -m "feat: install socket.io, rewrite protocol with typed events"
 ### Task 2: Server Core — Auth Middleware, Init State, Delete ConnectionManager
 
 **Files:**
+
 - Modify: `src/server/ws/auth.ts`
 - Modify: `src/server/init-state.ts`
 - Delete: `src/server/ws/connections.ts`
@@ -332,10 +340,7 @@ export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 /** Socket.IO middleware — validates CF Access JWT and attaches user identity to socket.data */
-export async function socketAuthMiddleware(
-  socket: AppSocket,
-  next: (err?: Error) => void,
-): Promise<void> {
+export async function socketAuthMiddleware(socket: AppSocket, next: (err?: Error) => void): Promise<void> {
   try {
     const req = socket.request;
     const auth = await validateCfAccess(req);
@@ -359,39 +364,50 @@ export async function socketAuthMiddleware(
 Replace the `wss` / `setWss` exports with `io` / `setIo` for the Socket.IO `Server` instance. Keep everything else (SessionManager, httpServer, initialized flag) as-is. Remove the `attachUpgradeHandler` function — Socket.IO manages its own upgrade listener.
 
 ```typescript
-import type { Server as HttpServer } from 'http'
-import type { Http2SecureServer } from 'http2'
-import type { Server as IoServer } from 'socket.io'
+import type { Server as HttpServer } from 'http';
+import type { Http2SecureServer } from 'http2';
+import type { Server as IoServer } from 'socket.io';
 
-type AnyHttpServer = HttpServer | Http2SecureServer
+type AnyHttpServer = HttpServer | Http2SecureServer;
 
 /** SessionManager — survives Vite restarts. */
-import type { SessionManager } from './sessions/manager'
-let _sessionManager: SessionManager | null = null
-export function getSessionManager(): SessionManager | null { return _sessionManager }
-export function setSessionManager(sm: SessionManager): void { _sessionManager = sm }
+import type { SessionManager } from './sessions/manager';
+let _sessionManager: SessionManager | null = null;
+export function getSessionManager(): SessionManager | null {
+  return _sessionManager;
+}
+export function setSessionManager(sm: SessionManager): void {
+  _sessionManager = sm;
+}
 
 /** True after IO server, bus listeners, and SessionManager are initialized. */
-export let initialized = false
-export function markInitialized() { initialized = true }
+export let initialized = false;
+export function markInitialized() {
+  initialized = true;
+}
 
 /** Cached Socket.IO Server — reused across Vite restarts. */
-export let io: IoServer | null = null
-export function setIo(instance: IoServer) { io = instance }
+export let io: IoServer | null = null;
+export function setIo(instance: IoServer) {
+  io = instance;
+}
 
 /** httpServer from server.js — arrives via process event, persists across restarts. */
-let _httpServer: AnyHttpServer | null = null
+let _httpServer: AnyHttpServer | null = null;
 const _httpServerReady = new Promise<AnyHttpServer>((resolve) => {
-  if (_httpServer) { resolve(_httpServer); return }
+  if (_httpServer) {
+    resolve(_httpServer);
+    return;
+  }
   process.once('orchestrel:httpServer', (server: AnyHttpServer) => {
-    _httpServer = server
-    resolve(server)
-  })
-})
+    _httpServer = server;
+    resolve(server);
+  });
+});
 
 export function getHttpServer(): Promise<AnyHttpServer> {
-  if (_httpServer) return Promise.resolve(_httpServer)
-  return _httpServerReady
+  if (_httpServer) return Promise.resolve(_httpServer);
+  return _httpServerReady;
 }
 ```
 
@@ -439,6 +455,7 @@ export type AppServer = IoServer<ClientToServerEvents, ServerToClientEvents, Rec
 ```
 
 **Files:**
+
 - Create: `src/server/ws/types.ts`
 - Modify: `src/server/ws/handlers/cards.ts`
 - Modify: `src/server/ws/handlers/projects.ts`
@@ -463,7 +480,18 @@ import type { AckResponse, Card } from '../../../shared/ws-protocol';
 import { cardService } from '../../services/card';
 
 export async function handleCardCreate(
-  data: { title: string; description?: string; column?: string; projectId?: number | null; model?: string; provider?: string; thinkingLevel?: string; useWorktree?: boolean; sourceBranch?: 'main' | 'dev' | null; archiveOthers?: boolean },
+  data: {
+    title: string;
+    description?: string;
+    column?: string;
+    projectId?: number | null;
+    model?: string;
+    provider?: string;
+    thinkingLevel?: string;
+    useWorktree?: boolean;
+    sourceBranch?: 'main' | 'dev' | null;
+    archiveOthers?: boolean;
+  },
   callback: (res: AckResponse<Card>) => void,
 ): Promise<void> {
   try {
@@ -488,10 +516,7 @@ export async function handleCardUpdate(
   }
 }
 
-export async function handleCardDelete(
-  data: { id: number },
-  callback: (res: AckResponse) => void,
-): Promise<void> {
+export async function handleCardDelete(data: { id: number }, callback: (res: AckResponse) => void): Promise<void> {
   try {
     await cardService.deleteCard(data.id);
     callback({});
@@ -567,17 +592,18 @@ export async function handleProjectUpdate(
           const clientIdentity = clientSocket.data.identity;
           if (clientSocket.id === socket.id || clientIdentity?.role === 'admin') continue;
 
-          const visible = await userService.visibleProjectIds(clientIdentity as import('../../services/user').UserIdentity);
+          const visible = await userService.visibleProjectIds(
+            clientIdentity as import('../../services/user').UserIdentity,
+          );
           const { cardService } = await import('../../services/card');
-          const [syncCards, syncProjects] = await Promise.all([
-            cardService.listCards(),
-            projectService.listProjects(),
-          ]);
+          const [syncCards, syncProjects] = await Promise.all([cardService.listCards(), projectService.listProjects()]);
 
-          const filteredCards = visible === 'all' ? syncCards
-            : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
-          const filteredProjects = visible === 'all' ? syncProjects
-            : syncProjects.filter((p) => (visible as number[]).includes(p.id));
+          const filteredCards =
+            visible === 'all'
+              ? syncCards
+              : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+          const filteredProjects =
+            visible === 'all' ? syncProjects : syncProjects.filter((p) => (visible as number[]).includes(p.id));
 
           clientSocket.emit('sync', {
             cards: filteredCards as unknown as import('../../../shared/ws-protocol').Card[],
@@ -593,10 +619,7 @@ export async function handleProjectUpdate(
   }
 }
 
-export async function handleProjectDelete(
-  data: { id: number },
-  callback: (res: AckResponse) => void,
-): Promise<void> {
+export async function handleProjectDelete(data: { id: number }, callback: (res: AckResponse) => void): Promise<void> {
   try {
     await projectService.deleteProject(data.id);
     callback({});
@@ -641,7 +664,11 @@ import { registerCardSession } from '../../controllers/oc';
 import { buildPromptWithFiles } from '../../sessions/manager';
 
 export async function handleAgentSend(
-  data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
+  data: {
+    cardId: number;
+    message: string;
+    files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }>;
+  },
   callback: (res: AckResponse) => void,
 ): Promise<void> {
   const { cardId, message, files } = data;
@@ -700,10 +727,7 @@ export async function handleAgentCompact(
   }
 }
 
-export async function handleAgentStop(
-  data: { cardId: number },
-  callback: (res: AckResponse) => void,
-): Promise<void> {
+export async function handleAgentStop(data: { cardId: number }, callback: (res: AckResponse) => void): Promise<void> {
   const { cardId } = data;
   console.log(`[session:${cardId}] agent:stop received`);
   callback({});
@@ -781,9 +805,7 @@ export async function handleSessionLoad(
   try {
     const room = `card:${cardId}`;
     const alreadyJoined = socket.rooms.has(room);
-    console.log(
-      `[session:load] cardId=${cardId} sessionId=${sessionId ?? 'none'} alreadyJoined=${alreadyJoined}`,
-    );
+    console.log(`[session:load] cardId=${cardId} sessionId=${sessionId ?? 'none'} alreadyJoined=${alreadyJoined}`);
 
     let messages: unknown[] = [];
     if (sessionId) {
@@ -844,7 +866,7 @@ export async function handleQueueReorder(
         useWorktree: false as unknown as boolean,
       },
     });
-    const queuedOnly = queued.filter(c => c.queuePosition != null);
+    const queuedOnly = queued.filter((c) => c.queuePosition != null);
 
     if (newPosition < 1 || newPosition > queuedOnly.length) {
       callback({ error: `Position must be between 1 and ${queuedOnly.length}` });
@@ -900,6 +922,7 @@ git commit -m "feat: refactor all server handlers to socket.io event pattern"
 Replace `ClientSubscriptions` with a `BusRoomBridge` that forwards `MessageBus` events to Socket.IO rooms. Board-level events (`board:changed`, project updates, system errors) use global listeners registered once. Card-specific events (sdk, status, context, exit, updated) use lazily-created listeners tied to card rooms.
 
 **Files:**
+
 - Rewrite: `src/server/ws/subscriptions.ts`
 - Rewrite: `src/server/ws/subscriptions.test.ts`
 
@@ -1035,57 +1058,60 @@ export const busRoomBridge = {
 - [ ] **Step 2: Rewrite subscriptions.test.ts**
 
 ```typescript
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { MessageBus } from '../bus'
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MessageBus } from '../bus';
 
 // We test the bus-to-room bridge concept:
 // bus events should be forwarded to socket.io rooms via emit
 
 describe('BusRoomBridge', () => {
   it('board:changed emits card:updated to column rooms', () => {
-    const bus = new MessageBus()
-    const emitToRoom = vi.fn()
+    const bus = new MessageBus();
+    const emitToRoom = vi.fn();
     const io = {
       to: vi.fn(() => ({ emit: emitToRoom })),
       emit: vi.fn(),
       sockets: { adapter: { rooms: new Map() } },
-    }
+    };
 
     // Simulate global listener registration
     bus.on('board:changed', (payload) => {
       const { card, oldColumn, newColumn, id } = payload as {
-        card: unknown; oldColumn: string | null; newColumn: string | null; id?: number;
-      }
+        card: unknown;
+        oldColumn: string | null;
+        newColumn: string | null;
+        id?: number;
+      };
       if (!card) {
-        if (id) io.emit('card:deleted', { id })
-        return
+        if (id) io.emit('card:deleted', { id });
+        return;
       }
-      const rooms: string[] = []
-      if (oldColumn) rooms.push(`col:${oldColumn}`)
-      if (newColumn && newColumn !== oldColumn) rooms.push(`col:${newColumn}`)
-      if (rooms.length) io.to(rooms).emit('card:updated', card)
-    })
+      const rooms: string[] = [];
+      if (oldColumn) rooms.push(`col:${oldColumn}`);
+      if (newColumn && newColumn !== oldColumn) rooms.push(`col:${newColumn}`);
+      if (rooms.length) io.to(rooms).emit('card:updated', card);
+    });
 
-    const card = { id: 1, title: 'Test', column: 'running' }
-    bus.publish('board:changed', { card, oldColumn: 'ready', newColumn: 'running' })
+    const card = { id: 1, title: 'Test', column: 'running' };
+    bus.publish('board:changed', { card, oldColumn: 'ready', newColumn: 'running' });
 
-    expect(io.to).toHaveBeenCalledWith(['col:ready', 'col:running'])
-    expect(emitToRoom).toHaveBeenCalledWith('card:updated', card)
-  })
+    expect(io.to).toHaveBeenCalledWith(['col:ready', 'col:running']);
+    expect(emitToRoom).toHaveBeenCalledWith('card:updated', card);
+  });
 
   it('board:changed with deletion emits card:deleted to all', () => {
-    const bus = new MessageBus()
-    const io = { emit: vi.fn(), to: vi.fn() }
+    const bus = new MessageBus();
+    const io = { emit: vi.fn(), to: vi.fn() };
 
     bus.on('board:changed', (payload) => {
-      const { card, id } = payload as { card: unknown; id?: number }
-      if (!card && id) io.emit('card:deleted', { id })
-    })
+      const { card, id } = payload as { card: unknown; id?: number };
+      if (!card && id) io.emit('card:deleted', { id });
+    });
 
-    bus.publish('board:changed', { card: null, oldColumn: 'running', newColumn: null, id: 42 })
-    expect(io.emit).toHaveBeenCalledWith('card:deleted', { id: 42 })
-  })
-})
+    bus.publish('board:changed', { card: null, oldColumn: 'running', newColumn: null, id: 42 });
+    expect(io.emit).toHaveBeenCalledWith('card:deleted', { id: 42 });
+  });
+});
 ```
 
 - [ ] **Step 3: Run tests**
@@ -1111,6 +1137,7 @@ git commit -m "feat: replace ClientSubscriptions with room-based BusRoomBridge"
 This task wires everything together: the Socket.IO `connection` event handler that registers per-socket events, the Vite plugin that creates the IO server in dev mode, and the production init path.
 
 **Files:**
+
 - Rewrite: `src/server/ws/handlers.ts`
 - Rewrite: `src/server/ws/server.ts`
 - Modify: `src/server/init.ts`
@@ -1163,16 +1190,16 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
       const visible = await userService.visibleProjectIds(identity as import('../services/user').UserIdentity);
 
       const [allCards, allProjects] = await Promise.all([
-        cardService.listCards(columns.length > 0 ? columns as Column[] : undefined),
+        cardService.listCards(columns.length > 0 ? (columns as Column[]) : undefined),
         projectService.listProjects(),
       ]);
 
-      const cards = visible === 'all'
-        ? allCards
-        : allCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
-      const projects = visible === 'all'
-        ? allProjects
-        : allProjects.filter((p) => (visible as number[]).includes(p.id));
+      const cards =
+        visible === 'all'
+          ? allCards
+          : allCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+      const projects =
+        visible === 'all' ? allProjects : allProjects.filter((p) => (visible as number[]).includes(p.id));
 
       let users: Array<{ id: number; email: string; role: string }> | undefined;
       if (identity.role === 'admin') {
@@ -1484,13 +1511,12 @@ export async function initBackend(): Promise<{
   restRouter: ExpressRouter;
   attachSocketIo: (httpServer: HttpServer) => void;
 }> {
-  const [{ initDatabase }, { registerSocketEvents }, { busRoomBridge }, { socketAuthMiddleware }] =
-    await Promise.all([
-      import('./models/index'),
-      import('./ws/handlers'),
-      import('./ws/subscriptions'),
-      import('./ws/auth'),
-    ]);
+  const [{ initDatabase }, { registerSocketEvents }, { busRoomBridge }, { socketAuthMiddleware }] = await Promise.all([
+    import('./models/index'),
+    import('./ws/handlers'),
+    import('./ws/subscriptions'),
+    import('./ws/auth'),
+  ]);
 
   await initDatabase();
 
@@ -1560,15 +1586,12 @@ export async function initBackend(): Promise<{
 
   // --- Socket.IO creation deferred to attachSocketIo ---
   function attachSocketIo(httpServer: HttpServer) {
-    const io = new IoServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
-      httpServer,
-      {
-        serveClient: false,
-        pingInterval: 10_000,
-        pingTimeout: 5_000,
-        cors: { origin: true, credentials: true },
-      },
-    );
+    const io = new IoServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
+      serveClient: false,
+      pingInterval: 10_000,
+      pingTimeout: 5_000,
+      cors: { origin: true, credentials: true },
+    });
     io.use(socketAuthMiddleware);
     io.on('connection', (socket) => registerSocketEvents(socket, io));
     busRoomBridge.init(io);
@@ -1722,6 +1745,7 @@ git commit -m "feat: wire socket.io server, event registration, vite plugin, pro
 Replace the hand-rolled `WsClient` with a Socket.IO client wrapper. Update all stores to use `emitWithAck` instead of `mutate` with requestIds. Update the reconnect button in `SessionView.tsx`.
 
 **Files:**
+
 - Rewrite: `app/lib/ws-client.ts`
 - Modify: `app/stores/root-store.ts`
 - Modify: `app/stores/card-store.ts`
@@ -1955,7 +1979,9 @@ export class CardStore {
     makeAutoObservable<this, '_ws'>(this, { _ws: false });
   }
 
-  setWs(ws: WsClient) { this._ws = ws; }
+  setWs(ws: WsClient) {
+    this._ws = ws;
+  }
   private ws(): WsClient {
     if (!this._ws) throw new Error('WsClient not set');
     return this._ws;
@@ -2127,7 +2153,9 @@ export class ProjectStore {
     makeAutoObservable<this, '_ws'>(this, { _ws: false });
   }
 
-  setWs(ws: WsClient) { this._ws = ws; }
+  setWs(ws: WsClient) {
+    this._ws = ws;
+  }
   private ws(): WsClient {
     if (!this._ws) throw new Error('WsClient not set');
     return this._ws;
@@ -2285,7 +2313,9 @@ export class SessionStore {
     });
   }
 
-  setWs(ws: WsClient) { this._ws = ws; }
+  setWs(ws: WsClient) {
+    this._ws = ws;
+  }
   private ws(): WsClient {
     if (!this._ws) throw new Error('WsClient not set');
     return this._ws;
@@ -2440,13 +2470,9 @@ export class SessionStore {
       if (s) s.historyLoaded = false;
 
       const sid = s?.sessionId;
-      this.loadHistory(cardId, sid).catch((err) =>
-        console.warn('[ws] resubscribe failed for card', cardId, err),
-      );
+      this.loadHistory(cardId, sid).catch((err) => console.warn('[ws] resubscribe failed for card', cardId, err));
 
-      this.requestStatus(cardId).catch((err) =>
-        console.warn('[ws] status request failed for card', cardId, err),
-      );
+      this.requestStatus(cardId).catch((err) => console.warn('[ws] status request failed for card', cardId, err));
     }
   }
 }
@@ -2457,12 +2483,14 @@ export class SessionStore {
 Change the `wsClient` reference from `useStore().ws` and replace the `.connected` polling and `.forceReconnect()` calls.
 
 Find in SessionView.tsx the block around lines 595-606:
+
 ```typescript
 const { ws: wsClient } = useStore();
 const [wsConnected, setWsConnected] = useState(wsClient.connected);
 ```
 
 Replace with:
+
 ```typescript
 const { ws: wsClient } = useStore();
 const [wsConnected, setWsConnected] = useState(wsClient.connected);
@@ -2492,6 +2520,7 @@ git commit -m "feat: socket.io client, update all stores and components"
 ### Task 7: Cleanup, Build Check, Manual Verification
 
 **Files:**
+
 - Possibly modify: various files for TypeScript errors
 
 - [ ] **Step 1: Remove old ws-related imports and check for stragglers**
@@ -2516,6 +2545,7 @@ pnpm tsc --noEmit 2>&1 | head -50
 ```
 
 Fix any type errors that surface. Common issues:
+
 - Old `ConnectionManager` imports in handler files
 - Missing `ws` types
 - `clientMessage`/`serverMessage` imports that no longer exist
@@ -2546,6 +2576,7 @@ git commit -m "chore: cleanup old ws references, fix type errors"
 - [ ] **Step 6: Manual verification**
 
 Start the dev server and verify:
+
 ```bash
 pnpm dev
 ```
@@ -2562,15 +2593,15 @@ pnpm dev
 
 ## Architecture Summary
 
-| Before (ws) | After (Socket.IO) |
-|---|---|
-| `WebSocketServer` with `noServer: true` | `Server` attached to httpServer |
-| Manual HTTP upgrade handler | Socket.IO manages upgrade |
-| `ConnectionManager` tracks sockets + identities | `socket.data.identity` |
-| `ClientSubscriptions` bridges MessageBus → WS | `BusRoomBridge` bridges MessageBus → Socket.IO rooms |
-| `clientMessage` discriminated union (switch/case) | Named events with `socket.on()` |
-| `requestId` + promise map + 15s timeout | `emitWithAck` with built-in ack |
-| Custom exponential backoff reconnection | Socket.IO built-in reconnection |
-| No heartbeat (iOS resume hack) | Built-in ping/pong (10s interval, 5s timeout) |
-| `connections.send(ws, { type: 'mutation:ok', ... })` | `callback({ data: ... })` |
-| `connections.send(ws, { type: 'card:updated', ... })` | `io.to('col:running').emit('card:updated', ...)` |
+| Before (ws)                                           | After (Socket.IO)                                    |
+| ----------------------------------------------------- | ---------------------------------------------------- |
+| `WebSocketServer` with `noServer: true`               | `Server` attached to httpServer                      |
+| Manual HTTP upgrade handler                           | Socket.IO manages upgrade                            |
+| `ConnectionManager` tracks sockets + identities       | `socket.data.identity`                               |
+| `ClientSubscriptions` bridges MessageBus → WS         | `BusRoomBridge` bridges MessageBus → Socket.IO rooms |
+| `clientMessage` discriminated union (switch/case)     | Named events with `socket.on()`                      |
+| `requestId` + promise map + 15s timeout               | `emitWithAck` with built-in ack                      |
+| Custom exponential backoff reconnection               | Socket.IO built-in reconnection                      |
+| No heartbeat (iOS resume hack)                        | Built-in ping/pong (10s interval, 5s timeout)        |
+| `connections.send(ws, { type: 'mutation:ok', ... })`  | `callback({ data: ... })`                            |
+| `connections.send(ws, { type: 'card:updated', ... })` | `io.to('col:running').emit('card:updated', ...)`     |

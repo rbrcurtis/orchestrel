@@ -41,7 +41,10 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
     setEffort: vi.fn(async () => undefined),
     setModel: vi.fn(async () => undefined),
     getMessages: vi.fn(() => []),
-    getTranscriptSnapshot: vi.fn(() => ({ cursor: { streamId: 'test', sequence: 0 }, state: { baseline: [], baselineThrough: 0, overlay: [], events: [] } })),
+    getTranscriptSnapshot: vi.fn(() => ({
+      cursor: { streamId: 'test', sequence: 0 },
+      state: { baseline: [], baselineThrough: 0, overlay: [], events: [] },
+    })),
     debugLeafState: vi.fn(() => ({
       tag: 'test',
       leafId: null,
@@ -151,11 +154,13 @@ describe('OrcdSession Pi runtime loop', () => {
 
     await session.run({ prompt: 'go' });
 
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      sessionId: 'session-stream',
-      event,
-    }));
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        type: 'stream_event',
+        sessionId: 'session-stream',
+        event,
+      }),
+    );
   });
 
   it('emits result on agent_end (once per run), not on intermediate turn_end', async () => {
@@ -184,9 +189,7 @@ describe('OrcdSession Pi runtime loop', () => {
 
     await session.run({ prompt: 'go' });
 
-    expect(results).toEqual([
-      { type: 'result', subtype: 'success', message: assistant, toolResults: [] },
-    ]);
+    expect(results).toEqual([{ type: 'result', subtype: 'success', message: assistant, toolResults: [] }]);
   });
 
   it('emits a system/init event on first run so the UI shows "Session started"', async () => {
@@ -210,25 +213,33 @@ describe('OrcdSession Pi runtime loop', () => {
     await session.run({ prompt: 'go' });
 
     expect(initEvents).toHaveLength(1);
-    expect(initEvents[0]).toMatchObject({ type: 'system', subtype: 'init', session_id: 'session-init', model: 'test-model' });
+    expect(initEvents[0]).toMatchObject({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'session-init',
+      model: 'test-model',
+    });
   });
 
   it('emits context_usage for usage events', async () => {
-    const runtime = createRuntimeSession([
-      {
-        type: 'message_update',
-        message: {
-          // Pi's Usage shape: components + totalTokens, no context window.
-          usage: {
-            input: 12000,
-            output: 300,
-            cacheRead: 45,
-            cacheWrite: 0,
-            totalTokens: 12345,
+    const runtime = createRuntimeSession(
+      [
+        {
+          type: 'message_update',
+          message: {
+            // Pi's Usage shape: components + totalTokens, no context window.
+            usage: {
+              input: 12000,
+              output: 300,
+              cacheRead: 45,
+              cacheWrite: 0,
+              totalTokens: 12345,
+            },
           },
         },
-      },
-    ], 'session-usage');
+      ],
+      'session-usage',
+    );
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
@@ -247,12 +258,14 @@ describe('OrcdSession Pi runtime loop', () => {
 
     expect(session.lastContextTokens).toBe(12345);
     expect(session.lastContextWindow).toBe(262144);
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'context_usage',
-      sessionId: 'session-usage',
-      contextTokens: 12345,
-      contextWindow: 262144,
-    }));
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        type: 'context_usage',
+        sessionId: 'session-usage',
+        contextTokens: 12345,
+        contextWindow: 262144,
+      }),
+    );
   });
 
   it('delays session_exit while the worktree has an enabled scheduled job, then exits once it fires', async () => {
@@ -401,9 +414,7 @@ describe('OrcdSession Pi runtime loop', () => {
   });
 
   it('emits task_started for async agent launches seen in live Pi events', async () => {
-    const runtime = createRuntimeSession([
-      asyncLaunchResult('call_abc', 'agent-123'),
-    ], 'session-task');
+    const runtime = createRuntimeSession([asyncLaunchResult('call_abc', 'agent-123')], 'session-task');
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
@@ -419,22 +430,27 @@ describe('OrcdSession Pi runtime loop', () => {
     session.subscribe(cb);
 
     const run = session.run({ prompt: 'go' });
-    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      event: expect.objectContaining({
-        type: 'task_started',
-        task_id: 'agent-123',
-        description: 'Implement remaining tasks',
-      }),
-    })));
+    await vi.waitFor(() =>
+      expect(payloads).toContainEqual(
+        expect.objectContaining({
+          type: 'stream_event',
+          event: expect.objectContaining({
+            type: 'task_started',
+            task_id: 'agent-123',
+            description: 'Implement remaining tasks',
+          }),
+        }),
+      ),
+    );
     runtime.emit(taskNotification('agent-123'));
     await run;
   });
 
   it('delays session_exit until pending async task notification arrives from Pi events', async () => {
-    const runtime = createRuntimeSession([
-      asyncLaunchResult('call_delay', 'agent-delay-123', 'Wait for async work'),
-    ], 'session-delay');
+    const runtime = createRuntimeSession(
+      [asyncLaunchResult('call_delay', 'agent-delay-123', 'Wait for async work')],
+      'session-delay',
+    );
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
@@ -453,24 +469,30 @@ describe('OrcdSession Pi runtime loop', () => {
     });
 
     const run = session.run({ prompt: 'go' });
-    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      event: expect.objectContaining({ type: 'task_started', task_id: 'agent-delay-123' }),
-    })));
+    await vi.waitFor(() =>
+      expect(payloads).toContainEqual(
+        expect.objectContaining({
+          type: 'stream_event',
+          event: expect.objectContaining({ type: 'task_started', task_id: 'agent-delay-123' }),
+        }),
+      ),
+    );
     expect(received).not.toContain('session_exit');
 
     runtime.emit(taskNotification('agent-delay-123'));
     await run;
 
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      event: expect.objectContaining({
-        type: 'task_notification',
-        task_id: 'agent-delay-123',
-        status: 'completed',
-        result: 'DONE',
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        type: 'stream_event',
+        event: expect.objectContaining({
+          type: 'task_notification',
+          task_id: 'agent-delay-123',
+          status: 'completed',
+          result: 'DONE',
+        }),
       }),
-    }));
+    );
     expect(payloads.at(-1)).toEqual({
       type: 'session_exit',
       sessionId: 'session-delay',
@@ -479,9 +501,10 @@ describe('OrcdSession Pi runtime loop', () => {
   });
 
   it('waits for a background-notification Pi run to settle before session_exit', async () => {
-    const runtime = createRuntimeSession([
-      asyncLaunchResult('call_settle', 'agent-settle-123', 'Continue after async work'),
-    ], 'session-settle');
+    const runtime = createRuntimeSession(
+      [asyncLaunchResult('call_settle', 'agent-settle-123', 'Continue after async work')],
+      'session-settle',
+    );
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
@@ -500,7 +523,12 @@ describe('OrcdSession Pi runtime loop', () => {
     let streaming = false;
     let settle: (() => void) | undefined;
     runtime.isStreaming = vi.fn(() => streaming);
-    runtime.waitForIdle = vi.fn(() => new Promise<void>((resolve) => { settle = resolve; }));
+    runtime.waitForIdle = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
 
     const run = session.run({ prompt: 'go' });
     await vi.waitFor(() => expect(runtime.prompt).toHaveBeenCalled());
@@ -520,9 +548,10 @@ describe('OrcdSession Pi runtime loop', () => {
   });
 
   it('emits stopped session_exit when cancelled while waiting for async task notification', async () => {
-    const runtime = createRuntimeSession([
-      asyncLaunchResult('call_cancel', 'agent-cancel-123', 'Run follow-up async work'),
-    ], 'session-cancel');
+    const runtime = createRuntimeSession(
+      [asyncLaunchResult('call_cancel', 'agent-cancel-123', 'Run follow-up async work')],
+      'session-cancel',
+    );
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({
@@ -541,10 +570,14 @@ describe('OrcdSession Pi runtime loop', () => {
     });
 
     const run = session.run({ prompt: 'go' });
-    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      event: expect.objectContaining({ type: 'task_started', task_id: 'agent-cancel-123' }),
-    })));
+    await vi.waitFor(() =>
+      expect(payloads).toContainEqual(
+        expect.objectContaining({
+          type: 'stream_event',
+          event: expect.objectContaining({ type: 'task_started', task_id: 'agent-cancel-123' }),
+        }),
+      ),
+    );
     expect(received).not.toContain('session_exit');
 
     await session.cancel();
@@ -593,13 +626,31 @@ describe('OrcdSession Pi runtime loop', () => {
   });
 
   it('maps Pi subagent tool_execution events to the subagent line-item feed, deduping unchanged progress', async () => {
-    const runtime = createRuntimeSession([
-      { type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'sub-1', args: { description: 'Explore repo' } },
-      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'finding files', status: 'running' } },
-      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'finding files', status: 'running' } },
-      { type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'sub-1', partialResult: { activity: 'editing', status: 'running' } },
-      { type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'sub-1', isError: false },
-    ], 'session-subagent');
+    const runtime = createRuntimeSession(
+      [
+        { type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'sub-1', args: { description: 'Explore repo' } },
+        {
+          type: 'tool_execution_update',
+          toolName: 'Agent',
+          toolCallId: 'sub-1',
+          partialResult: { activity: 'finding files', status: 'running' },
+        },
+        {
+          type: 'tool_execution_update',
+          toolName: 'Agent',
+          toolCallId: 'sub-1',
+          partialResult: { activity: 'finding files', status: 'running' },
+        },
+        {
+          type: 'tool_execution_update',
+          toolName: 'Agent',
+          toolCallId: 'sub-1',
+          partialResult: { activity: 'editing', status: 'running' },
+        },
+        { type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'sub-1', isError: false },
+      ],
+      'session-subagent',
+    );
     pi.createPiRuntimeSession.mockResolvedValue(runtime);
 
     const session = new OrcdSession({

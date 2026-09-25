@@ -2,32 +2,54 @@
 
 // Content blocks (inside stream_event deltas)
 
-export interface TextDelta { type: 'text_delta'; text: string }
-export interface ThinkingDelta { type: 'thinking_delta'; thinking: string }
-export interface InputJsonDelta { type: 'input_json_delta'; partial_json: string }
+export interface TextDelta {
+  type: 'text_delta';
+  text: string;
+}
+export interface ThinkingDelta {
+  type: 'thinking_delta';
+  thinking: string;
+}
+export interface InputJsonDelta {
+  type: 'input_json_delta';
+  partial_json: string;
+}
 
 export interface ContentBlockStart {
   type: 'content_block_start';
   index: number;
-  content_block: { type: 'text' | 'thinking' | 'tool_use'; id?: string; name?: string; text?: string; thinking?: string };
+  content_block: {
+    type: 'text' | 'thinking' | 'tool_use';
+    id?: string;
+    name?: string;
+    text?: string;
+    thinking?: string;
+  };
 }
 export interface ContentBlockDelta {
   type: 'content_block_delta';
   index: number;
   delta: TextDelta | ThinkingDelta | InputJsonDelta;
 }
-export interface ContentBlockStop { type: 'content_block_stop'; index: number }
-export interface MessageStart { type: 'message_start'; message: { id: string; role: string; model: string } }
-export interface MessageDelta { type: 'message_delta'; delta: { stop_reason?: string }; usage?: { output_tokens: number } }
-export interface MessageStop { type: 'message_stop' }
+export interface ContentBlockStop {
+  type: 'content_block_stop';
+  index: number;
+}
+export interface MessageStart {
+  type: 'message_start';
+  message: { id: string; role: string; model: string };
+}
+export interface MessageDelta {
+  type: 'message_delta';
+  delta: { stop_reason?: string };
+  usage?: { output_tokens: number };
+}
+export interface MessageStop {
+  type: 'message_stop';
+}
 
 export type StreamEvent =
-  | ContentBlockStart
-  | ContentBlockDelta
-  | ContentBlockStop
-  | MessageStart
-  | MessageDelta
-  | MessageStop;
+  ContentBlockStart | ContentBlockDelta | ContentBlockStop | MessageStart | MessageDelta | MessageStop;
 
 // Top-level SDK message types
 
@@ -68,11 +90,21 @@ export interface SdkUserMessage {
 
 export interface SdkResultMessage {
   type: 'result';
-  subtype: 'success' | 'error_max_turns' | 'error_during_execution' | 'error_max_budget_usd' | 'error_max_structured_output_retries';
+  subtype:
+    | 'success'
+    | 'error_max_turns'
+    | 'error_during_execution'
+    | 'error_max_budget_usd'
+    | 'error_max_structured_output_retries';
   result?: string;
   errorMessage?: string;
   total_cost_usd: number;
-  usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
   num_turns: number;
   duration_ms: number;
   duration_api_ms?: number;

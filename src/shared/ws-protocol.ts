@@ -231,11 +231,22 @@ export interface ClientToServerEvents {
   'agent:status': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
 
   // Session
-  'session:transcript': (data: { cardId: number }, ack: (res: AckResponse<import('./orcd-protocol').TranscriptSnapshotMessage['snapshot']>) => void) => void;
-  'session:history-page': (data: { cardId: number; page: import('./transcript-history').TranscriptHistoryRequest }, ack: (res: AckResponse<import('./transcript-history').TranscriptHistoryPage>) => void) => void;
-  'session:load': (data: { cardId: number; sessionId?: string }, ack: (res: AckResponse<{ messages: unknown[] }>) => void) => void;
-  'session:set-model': (data: { cardId: number; provider: string; model: string }, ack: (res: AckResponse) => void) => void;
-
+  'session:transcript': (
+    data: { cardId: number },
+    ack: (res: AckResponse<import('./orcd-protocol').TranscriptSnapshotMessage['snapshot']>) => void,
+  ) => void;
+  'session:history-page': (
+    data: { cardId: number; page: import('./transcript-history').TranscriptHistoryRequest },
+    ack: (res: AckResponse<import('./transcript-history').TranscriptHistoryPage>) => void,
+  ) => void;
+  'session:load': (
+    data: { cardId: number; sessionId?: string },
+    ack: (res: AckResponse<{ messages: unknown[] }>) => void,
+  ) => void;
+  'session:set-model': (
+    data: { cardId: number; provider: string; model: string },
+    ack: (res: AckResponse) => void,
+  ) => void;
 }
 
 /** Server → Client push events */

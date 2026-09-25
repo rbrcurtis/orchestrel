@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { cardSchema, projectSchema, agentStatusSchema } from './ws-protocol'
+import { describe, it, expect } from 'vitest';
+import { cardSchema, projectSchema, agentStatusSchema } from './ws-protocol';
 
 describe('cardSchema', () => {
   it('validates a full card row', () => {
@@ -26,10 +26,10 @@ describe('cardSchema', () => {
       summarizeThreshold: 0.6,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
-    }
-    const result = cardSchema.safeParse(card)
-    expect(result.success).toBe(true)
-  })
+    };
+    const result = cardSchema.safeParse(card);
+    expect(result.success).toBe(true);
+  });
 
   it('rejects invalid column', () => {
     const card = {
@@ -55,10 +55,10 @@ describe('cardSchema', () => {
       contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
-    }
-    const result = cardSchema.safeParse(card)
-    expect(result.success).toBe(false)
-  })
+    };
+    const result = cardSchema.safeParse(card);
+    expect(result.success).toBe(false);
+  });
 
   it('coerces sqlite integer booleans', () => {
     const card = {
@@ -84,12 +84,12 @@ describe('cardSchema', () => {
       contextWindow: 200000,
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
-    }
-    const result = cardSchema.safeParse(card)
-    expect(result.success).toBe(true)
-    expect(result.success).toBe(true)
-  })
-})
+    };
+    const result = cardSchema.safeParse(card);
+    expect(result.success).toBe(true);
+    expect(result.success).toBe(true);
+  });
+});
 
 describe('projectSchema', () => {
   it('validates a full project row', () => {
@@ -109,11 +109,11 @@ describe('projectSchema', () => {
       color: '#ff0000',
       archived: false,
       createdAt: '2024-01-01T00:00:00',
-    }
-    const result = projectSchema.safeParse(project)
-    expect(result.success).toBe(true)
-  })
-})
+    };
+    const result = projectSchema.safeParse(project);
+    expect(result.success).toBe(true);
+  });
+});
 
 describe('agentStatusSchema', () => {
   it('validates running status', () => {
@@ -126,10 +126,10 @@ describe('agentStatusSchema', () => {
       turnsCompleted: 2,
       contextTokens: 5000,
       contextWindow: 200000,
-    }
-    const result = agentStatusSchema.safeParse(status)
-    expect(result.success).toBe(true)
-  })
+    };
+    const result = agentStatusSchema.safeParse(status);
+    expect(result.success).toBe(true);
+  });
 
   it('validates completed status', () => {
     const status = {
@@ -141,10 +141,10 @@ describe('agentStatusSchema', () => {
       turnsCompleted: 1,
       contextTokens: 0,
       contextWindow: 200000,
-    }
-    const result = agentStatusSchema.safeParse(status)
-    expect(result.success).toBe(true)
-  })
+    };
+    const result = agentStatusSchema.safeParse(status);
+    expect(result.success).toBe(true);
+  });
 
   it('rejects invalid status value', () => {
     const status = {
@@ -156,8 +156,8 @@ describe('agentStatusSchema', () => {
       turnsCompleted: 0,
       contextTokens: 0,
       contextWindow: 200000,
-    }
-    const result = agentStatusSchema.safeParse(status)
-    expect(result.success).toBe(false)
-  })
-})
+    };
+    const result = agentStatusSchema.safeParse(status);
+    expect(result.success).toBe(false);
+  });
+});

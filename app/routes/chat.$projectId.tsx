@@ -45,9 +45,10 @@ export const NewChatComposer = observer(function NewChatComposer({
     setCreating(true);
     void (async () => {
       try {
-        const pendingInitialFiles = files.length > 0
-          ? await uploadFiles(files, { draftId: attachmentDraftId ?? crypto.randomUUID() })
-          : undefined;
+        const pendingInitialFiles =
+          files.length > 0
+            ? await uploadFiles(files, { draftId: attachmentDraftId ?? crypto.randomUUID() })
+            : undefined;
         const card = await cardStore.createChatCard({ description: text, projectId: project.id, pendingInitialFiles });
         if (onCreated) onCreated(card.id);
         else navigate(`/chat/${project.id}/${card.id}`);
@@ -69,7 +70,10 @@ export const NewChatComposer = observer(function NewChatComposer({
     <div className="flex h-full flex-col items-center justify-center px-5 py-8">
       <div className="w-full max-w-3xl space-y-6">
         {!onCreated && (
-          <Link to="/chat" className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            to="/chat"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             <ArrowLeft className="size-4" />
             All projects
           </Link>
@@ -78,15 +82,30 @@ export const NewChatComposer = observer(function NewChatComposer({
           <FileAttachments files={files} errors={fileErrors} onFilesChange={setFiles} onErrorsChange={setFileErrors}>
             {({ onPaste, openPicker, dragging }) => (
               <div className={`relative ${dragging ? 'rounded-md ring-2 ring-neon-cyan/50' : ''}`}>
-                <Textarea ref={textareaRef} value={description} onChange={(e) => setDescription(e.target.value)} onKeyDown={handleKeyDown} onPaste={onPaste} placeholder="How can I help you today?" rows={8} className="min-h-48 resize-none border-0 bg-transparent p-4 pr-10 text-base shadow-none focus-visible:ring-0" />
-                <div className="absolute bottom-2 right-2"><FilePickerButton onClick={openPicker} /></div>
+                <Textarea
+                  ref={textareaRef}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onPaste={onPaste}
+                  placeholder="How can I help you today?"
+                  rows={8}
+                  className="min-h-48 resize-none border-0 bg-transparent p-4 pr-10 text-base shadow-none focus-visible:ring-0"
+                />
+                <div className="absolute bottom-2 right-2">
+                  <FilePickerButton onClick={openPicker} />
+                </div>
               </div>
             )}
           </FileAttachments>
           <div className="flex items-center gap-3 border-t border-border/70 px-2 pt-3">
             <p className="text-xs text-muted-foreground">Enter adds a line • Cmd/Ctrl+Enter sends</p>
             <span className="flex-1" />
-            <Button onClick={handleSubmit} disabled={(!description.trim() && files.length === 0) || creating} className="gap-2 rounded-full px-5">
+            <Button
+              onClick={handleSubmit}
+              disabled={(!description.trim() && files.length === 0) || creating}
+              className="gap-2 rounded-full px-5"
+            >
               {creating ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
               {creating ? 'Starting…' : 'Start chat'}
             </Button>

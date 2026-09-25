@@ -57,13 +57,9 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<ThinkingOption>(
     project?.defaultThinkingLevel ?? 'high',
   );
-  const [defaultSummarizeThreshold, setDefaultSummarizeThreshold] = useState(
-    project?.defaultSummarizeThreshold ?? 0,
-  );
+  const [defaultSummarizeThreshold, setDefaultSummarizeThreshold] = useState(project?.defaultSummarizeThreshold ?? 0);
   const config = useConfigStore();
-  const [nodeName, setNodeName] = useState(
-    project?.nodeName ?? config.connectedNodes[0]?.name ?? 'local',
-  );
+  const [nodeName, setNodeName] = useState(project?.nodeName ?? config.connectedNodes[0]?.name ?? 'local');
   const [providerID, setProviderID] = useState(project?.providerID ?? 'anthropic');
   const [archived, setArchived] = useState(project?.archived ?? false);
   const [pending, setPending] = useState(false);
@@ -110,7 +106,9 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
 
   function handleProviderChange(newProvider: string) {
     setProviderID(newProvider);
-    setDefaultModel(newProvider === DEFAULT_SENTINEL ? DEFAULT_SENTINEL : config.defaultModelForNode(nodeName, newProvider));
+    setDefaultModel(
+      newProvider === DEFAULT_SENTINEL ? DEFAULT_SENTINEL : config.defaultModelForNode(nodeName, newProvider),
+    );
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -199,10 +197,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
               {isGitRepo && (
                 <div>
                   <label className="block text-sm font-medium text-muted-foreground mb-1">Default Branch</label>
-                  <Select
-                    value={defaultBranch}
-                    onValueChange={setDefaultBranch}
-                  >
+                  <Select value={defaultBranch} onValueChange={setDefaultBranch}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select branch..." />
                     </SelectTrigger>
@@ -229,7 +224,11 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
               )}
 
               <div className="flex items-center gap-2">
-                <Checkbox id="archived" checked={archived} onCheckedChange={(checked) => setArchived(checked === true)} />
+                <Checkbox
+                  id="archived"
+                  checked={archived}
+                  onCheckedChange={(checked) => setArchived(checked === true)}
+                />
                 <label htmlFor="archived" className="text-sm font-medium text-muted-foreground">
                   Archived
                 </label>
@@ -323,7 +322,10 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
               {/* Default Summarize — new cards in this project inherit this background-compaction threshold */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Summarize</label>
-                <Select value={String(defaultSummarizeThreshold)} onValueChange={(val) => setDefaultSummarizeThreshold(parseFloat(val))}>
+                <Select
+                  value={String(defaultSummarizeThreshold)}
+                  onValueChange={(val) => setDefaultSummarizeThreshold(parseFloat(val))}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>

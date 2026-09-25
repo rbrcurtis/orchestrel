@@ -61,16 +61,13 @@ export async function initBackend(): Promise<{
 
   // --- Socket.IO creation deferred to attachSocketIo ---
   function attachSocketIo(httpServer: HttpServer) {
-    const io = new IoServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(
-      httpServer,
-      {
-        serveClient: false,
-        // See ws/server.ts: generous timeouts to survive Access-gated tunnel jitter.
-        pingInterval: 25_000,
-        pingTimeout: 30_000,
-        cors: { origin: true, credentials: true },
-      },
-    );
+    const io = new IoServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
+      serveClient: false,
+      // See ws/server.ts: generous timeouts to survive Access-gated tunnel jitter.
+      pingInterval: 25_000,
+      pingTimeout: 30_000,
+      cors: { origin: true, credentials: true },
+    });
     io.use(socketAuthMiddleware);
     io.on('connection', (socket) => registerSocketEvents(socket, io));
     busRoomBridge.init(io);
@@ -81,8 +78,14 @@ export async function initBackend(): Promise<{
   // --- OrcdClient per node + controller listeners ---
   const { OrcdClient } = await import('./orcd-client');
   const { loadNodeRegistry } = await import('./config/nodes');
-  const { initOrcdRouter, reconcileRunningCards, rearmScheduledSessions, registerAutoStart, registerWorktreeCleanup, registerProcessReaper } =
-    await import('./controllers/card-sessions');
+  const {
+    initOrcdRouter,
+    reconcileRunningCards,
+    rearmScheduledSessions,
+    registerAutoStart,
+    registerWorktreeCleanup,
+    registerProcessReaper,
+  } = await import('./controllers/card-sessions');
 
   const nodes = loadNodeRegistry();
 

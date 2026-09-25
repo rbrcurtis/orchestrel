@@ -173,8 +173,15 @@ export function parseModelReply(reply: string): ModelTimeReply | null {
   if (wake) return { kind: 'wake', phrase: wake[1].trim().replace(/^["'`]|["'`]$/g, '') };
   // Some runs answer with the phrase alone. Accept a first line that looks like
   // one (a relative offset, a clock time, a date, or a day name).
-  const line = reply.split('\n').map((l) => l.trim().replace(/^["'`]|["'`]$/g, '')).find(Boolean);
-  if (line && line.length <= 60 && /^(\+|\d|mon|tue|wed|thu|fri|sat|sun|tomorrow|next |this |today|noon|midnight)/i.test(line)) {
+  const line = reply
+    .split('\n')
+    .map((l) => l.trim().replace(/^["'`]|["'`]$/g, ''))
+    .find(Boolean);
+  if (
+    line &&
+    line.length <= 60 &&
+    /^(\+|\d|mon|tue|wed|thu|fri|sat|sun|tomorrow|next |this |today|noon|midnight)/i.test(line)
+  ) {
     return { kind: /^\+/.test(line) ? 'wait' : 'wake', phrase: line };
   }
   return null;
@@ -291,7 +298,8 @@ async function askModel(endpoint: SleepEndpoint, messages: ChatMessage[]): Promi
   }
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: unknown } }> };
   const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) throw new SleepResolutionError('Sleep time lookup returned no answer');
+  if (typeof content !== 'string' || !content.trim())
+    throw new SleepResolutionError('Sleep time lookup returned no answer');
   return content;
 }
 
@@ -313,10 +321,7 @@ const THEN_RE = /\s+then\b\s*/i;
  * a prompt written on the lines below instead (parseAppCommands ends the phrase
  * at the newline) arrives here as `leftover` and is used the same way.
  */
-export function splitSleepArgument(
-  argument: string,
-  leftover = '',
-): { phrase: string; prompt: string | null } {
+export function splitSleepArgument(argument: string, leftover = ''): { phrase: string; prompt: string | null } {
   const arg = argument.trim();
   const m = THEN_RE.exec(arg);
   const phrase = m ? arg.slice(0, m.index) : arg;
@@ -406,7 +411,10 @@ export async function resolveSleepUntil(phrase: string, now = Date.now()): Promi
     if (!parsed) throw new SleepResolutionError(`Could not understand the sleep time "${clean}"`);
     const retry = await tryDate(parsed.phrase);
     if (retry === null || new Date(retry).getDay() !== asked) {
-      const landed = retry === null ? `an unreadable time ("${parsed.phrase}")` : `${localStamp(retry)} (${DAY_NAMES[new Date(retry).getDay()]})`;
+      const landed =
+        retry === null
+          ? `an unreadable time ("${parsed.phrase}")`
+          : `${localStamp(retry)} (${DAY_NAMES[new Date(retry).getDay()]})`;
       throw new SleepResolutionError(
         `Could not agree a ${DAY_NAMES[asked]}: "${clean}" resolved to ${landed}. ` +
           `Try "/sleep <hours>" or an explicit date.`,

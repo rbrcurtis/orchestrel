@@ -14,12 +14,14 @@ describe('OrcdClient dispatch ordering', () => {
       internals.dispatch({ type: 'session_created', sessionId: 'sess-new' });
     };
 
-    await expect(client.create({
-      prompt: 'start',
-      cwd: '/tmp/project',
-      provider: 'anthropic',
-      model: 'sonnet',
-    })).resolves.toBe('sess-new');
+    await expect(
+      client.create({
+        prompt: 'start',
+        cwd: '/tmp/project',
+        provider: 'anthropic',
+        model: 'sonnet',
+      }),
+    ).resolves.toBe('sess-new');
   });
 
   it('rejects create when orcd returns a create-level error', async () => {
@@ -34,12 +36,14 @@ describe('OrcdClient dispatch ordering', () => {
       internals.dispatch({ type: 'error', sessionId: '', error: 'unknown provider: missing' });
     };
 
-    await expect(client.create({
-      prompt: 'start',
-      cwd: '/tmp/project',
-      provider: 'missing',
-      model: 'sonnet',
-    })).rejects.toThrow('unknown provider: missing');
+    await expect(
+      client.create({
+        prompt: 'start',
+        cwd: '/tmp/project',
+        provider: 'missing',
+        model: 'sonnet',
+      }),
+    ).rejects.toThrow('unknown provider: missing');
   });
 
   it('awaits async handlers before dispatching the next message', async () => {
@@ -131,9 +135,17 @@ describe('OrcdClient dispatch ordering', () => {
     // Session was inactive (rehydrated for /compact). compact_started should
     // make isActive() true so auto-start doesn't spawn a throwaway turn.
     expect(client.isActive('sess-c')).toBe(false);
-    internals.dispatch({ type: 'stream_event', sessionId: 'sess-c', event: { type: 'system', subtype: 'compact_started' } });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_started' },
+    });
     expect(client.isActive('sess-c')).toBe(true);
-    internals.dispatch({ type: 'stream_event', sessionId: 'sess-c', event: { type: 'system', subtype: 'compact_done' } });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_done' },
+    });
     expect(client.isActive('sess-c')).toBe(false);
   });
 
@@ -145,8 +157,16 @@ describe('OrcdClient dispatch ordering', () => {
     expect(client.isActive('sess-live')).toBe(true);
     // compact_started must NOT re-flag it as compact-activated, so compact_done
     // must not evict a session that was already running.
-    internals.dispatch({ type: 'stream_event', sessionId: 'sess-live', event: { type: 'system', subtype: 'compact_started' } });
-    internals.dispatch({ type: 'stream_event', sessionId: 'sess-live', event: { type: 'system', subtype: 'compact_done' } });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-live',
+      event: { type: 'system', subtype: 'compact_started' },
+    });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-live',
+      event: { type: 'system', subtype: 'compact_done' },
+    });
     expect(client.isActive('sess-live')).toBe(true);
   });
 
@@ -164,7 +184,14 @@ describe('OrcdClient dispatch ordering', () => {
     };
     internals.socket = { writable: true };
     internals.send = (a) => {
-      internals.dispatch({ type: 'path_validated', requestId: a.requestId, exists: true, isGitRepo: true, defaultBranch: 'main', gitCommonDir: '/repo/.git' });
+      internals.dispatch({
+        type: 'path_validated',
+        requestId: a.requestId,
+        exists: true,
+        isGitRepo: true,
+        defaultBranch: 'main',
+        gitCommonDir: '/repo/.git',
+      });
     };
     const res = await client.pathValidate('/repo');
     expect(res).toMatchObject({ exists: true, isGitRepo: true, defaultBranch: 'main', gitCommonDir: '/repo/.git' });
@@ -188,8 +215,16 @@ describe('OrcdClient dispatch ordering', () => {
     internals.socket = { writable: true };
     internals.send = (a) => {
       internals.dispatch({
-        type: 'capabilities', requestId: a.requestId, name: 'local',
-        providers: [{ id: 'anthropic', label: 'Anthropic', models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 }] }],
+        type: 'capabilities',
+        requestId: a.requestId,
+        name: 'local',
+        providers: [
+          {
+            id: 'anthropic',
+            label: 'Anthropic',
+            models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 }],
+          },
+        ],
         defaults: { provider: 'anthropic', model: 'sonnet' },
       });
     };

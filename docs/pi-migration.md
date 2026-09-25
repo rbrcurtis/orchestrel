@@ -26,13 +26,13 @@ Historical notes and tests may mention old Claude paths as negative examples or 
 
 Use Pi's native locations and resource types:
 
-| Resource | Current location/model |
-| --- | --- |
+| Resource                     | Current location/model                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------- |
 | User auth and model registry | Pi canonical user config directory (`~/.pi`, currently `~/.pi/agent` through the SDK) |
-| Project instructions | Pi project instruction files such as `AGENTS.md` |
-| Slash commands | Pi prompt templates / commands |
-| Skills | Pi skills, separate from commands |
-| Session history | Pi session storage accessed through Pi session-manager APIs |
+| Project instructions         | Pi project instruction files such as `AGENTS.md`                                      |
+| Slash commands               | Pi prompt templates / commands                                                        |
+| Skills                       | Pi skills, separate from commands                                                     |
+| Session history              | Pi session storage accessed through Pi session-manager APIs                           |
 
 ## Provider Configuration Boundary
 

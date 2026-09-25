@@ -94,6 +94,7 @@ app/components/ToolUseBlock.tsx
 ### Task 1.1: Create worktree and install dependencies
 
 **Files:**
+
 - Modify: `package.json`
 
 - [ ] **Step 1: Create git worktree**
@@ -127,6 +128,7 @@ git commit -m "chore: add mobx, ws, hono, drizzle-zod, vitest dependencies"
 ### Task 1.2: Create shared WS protocol
 
 **Files:**
+
 - Create: `src/shared/ws-protocol.ts`
 - Test: `src/shared/ws-protocol.test.ts`
 
@@ -134,94 +136,124 @@ git commit -m "chore: add mobx, ws, hono, drizzle-zod, vitest dependencies"
 
 ```typescript
 // src/shared/ws-protocol.test.ts
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'vitest';
 import {
-  clientMessage, serverMessage,
-  cardSchema, projectSchema,
-  type ClientMessage, type ServerMessage, type Card, type Project,
-} from './ws-protocol'
+  clientMessage,
+  serverMessage,
+  cardSchema,
+  projectSchema,
+  type ClientMessage,
+  type ServerMessage,
+  type Card,
+  type Project,
+} from './ws-protocol';
 
 describe('ws-protocol', () => {
   describe('cardSchema', () => {
     it('validates a full card row', () => {
       const card = {
-        id: 1, title: 'Test', description: '', column: 'backlog',
-        position: 0, projectId: null, prUrl: null, sessionId: null,
-        worktreePath: null, worktreeBranch: null, useWorktree: true,
-        sourceBranch: null, model: 'sonnet', thinkingLevel: 'high',
-        promptsSent: 0, turnsCompleted: 0,
-        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
-      }
-      expect(cardSchema.parse(card)).toEqual(card)
-    })
+        id: 1,
+        title: 'Test',
+        description: '',
+        column: 'backlog',
+        position: 0,
+        projectId: null,
+        prUrl: null,
+        sessionId: null,
+        worktreePath: null,
+        worktreeBranch: null,
+        useWorktree: true,
+        sourceBranch: null,
+        model: 'sonnet',
+        thinkingLevel: 'high',
+        promptsSent: 0,
+        turnsCompleted: 0,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+      expect(cardSchema.parse(card)).toEqual(card);
+    });
 
     it('rejects invalid column', () => {
-      expect(() => cardSchema.parse({ column: 'invalid' })).toThrow()
-    })
-  })
+      expect(() => cardSchema.parse({ column: 'invalid' })).toThrow();
+    });
+  });
 
   describe('clientMessage', () => {
     it('parses subscribe message', () => {
-      const msg = { type: 'subscribe', columns: ['backlog', 'ready'] }
-      expect(clientMessage.parse(msg).type).toBe('subscribe')
-    })
+      const msg = { type: 'subscribe', columns: ['backlog', 'ready'] };
+      expect(clientMessage.parse(msg).type).toBe('subscribe');
+    });
 
     it('parses card:move mutation', () => {
       const msg = {
-        type: 'card:move', requestId: 'r1',
+        type: 'card:move',
+        requestId: 'r1',
         data: { id: 1, column: 'review', position: 1.5 },
-      }
-      const parsed = clientMessage.parse(msg)
-      expect(parsed.type).toBe('card:move')
-    })
+      };
+      const parsed = clientMessage.parse(msg);
+      expect(parsed.type).toBe('card:move');
+    });
 
     it('rejects unknown message type', () => {
-      expect(() => clientMessage.parse({ type: 'bogus' })).toThrow()
-    })
-  })
+      expect(() => clientMessage.parse({ type: 'bogus' })).toThrow();
+    });
+  });
 
   describe('serverMessage', () => {
     it('parses sync message', () => {
-      const msg = { type: 'sync', cards: [], projects: [] }
-      expect(serverMessage.parse(msg).type).toBe('sync')
-    })
+      const msg = { type: 'sync', cards: [], projects: [] };
+      expect(serverMessage.parse(msg).type).toBe('sync');
+    });
 
     it('parses mutation:ok', () => {
-      const msg = { type: 'mutation:ok', requestId: 'r1' }
-      expect(serverMessage.parse(msg).type).toBe('mutation:ok')
-    })
+      const msg = { type: 'mutation:ok', requestId: 'r1' };
+      expect(serverMessage.parse(msg).type).toBe('mutation:ok');
+    });
 
     it('parses card:updated', () => {
       const msg = {
         type: 'card:updated',
         data: {
-          id: 1, title: 'T', description: '', column: 'ready',
-          position: 0, projectId: null, prUrl: null, sessionId: null,
-          worktreePath: null, worktreeBranch: null, useWorktree: true,
-          sourceBranch: null, model: 'sonnet', thinkingLevel: 'high',
-          promptsSent: 0, turnsCompleted: 0,
-          createdAt: '2026-01-01', updatedAt: '2026-01-01',
+          id: 1,
+          title: 'T',
+          description: '',
+          column: 'ready',
+          position: 0,
+          projectId: null,
+          prUrl: null,
+          sessionId: null,
+          worktreePath: null,
+          worktreeBranch: null,
+          useWorktree: true,
+          sourceBranch: null,
+          model: 'sonnet',
+          thinkingLevel: 'high',
+          promptsSent: 0,
+          turnsCompleted: 0,
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01',
         },
-      }
-      expect(serverMessage.parse(msg).type).toBe('card:updated')
-    })
-  })
-})
+      };
+      expect(serverMessage.parse(msg).type).toBe('card:updated');
+    });
+  });
+});
 ```
 
 - [ ] **Step 2: Create vitest config**
 
 ```typescript
 // vitest.config.ts
-import { defineConfig } from 'vitest/config'
-import tsconfigPaths from 'vite-tsconfig-paths'
+import { defineConfig } from 'vitest/config';
+import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     globals: true,
   },
-})
+});
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -236,24 +268,22 @@ Expected: FAIL — module `./ws-protocol` not found.
 
 ```typescript
 // src/shared/ws-protocol.ts
-import { z } from 'zod'
-import { createSelectSchema, createInsertSchema } from 'drizzle-zod'
-import { cards, projects } from '../server/db/schema'
+import { z } from 'zod';
+import { createSelectSchema, createInsertSchema } from 'drizzle-zod';
+import { cards, projects } from '../server/db/schema';
 
 // --- Entity schemas (read types, derived from Drizzle) ---
 
-export const cardSchema = createSelectSchema(cards)
-export const projectSchema = createSelectSchema(projects)
+export const cardSchema = createSelectSchema(cards);
+export const projectSchema = createSelectSchema(projects);
 
-export type Card = z.infer<typeof cardSchema>
-export type Project = z.infer<typeof projectSchema>
+export type Card = z.infer<typeof cardSchema>;
+export type Project = z.infer<typeof projectSchema>;
 
 // --- Column enum ---
 
-export const columnEnum = z.enum([
-  'backlog', 'ready', 'in_progress', 'review', 'done', 'archive',
-])
-export type Column = z.infer<typeof columnEnum>
+export const columnEnum = z.enum(['backlog', 'ready', 'in_progress', 'review', 'done', 'archive']);
+export type Column = z.infer<typeof columnEnum>;
 
 // --- Mutation input schemas (write types) ---
 
@@ -266,17 +296,15 @@ export const cardCreateSchema = createInsertSchema(cards).pick({
   thinkingLevel: true,
   useWorktree: true,
   sourceBranch: true,
-})
+});
 
-export const cardUpdateSchema = z.object({ id: z.number() }).merge(
-  cardCreateSchema.partial(),
-)
+export const cardUpdateSchema = z.object({ id: z.number() }).merge(cardCreateSchema.partial());
 
 export const cardMoveSchema = z.object({
   id: z.number(),
   column: columnEnum,
   position: z.number(),
-})
+});
 
 export const projectCreateSchema = createInsertSchema(projects).pick({
   name: true,
@@ -287,11 +315,9 @@ export const projectCreateSchema = createInsertSchema(projects).pick({
   defaultModel: true,
   defaultThinkingLevel: true,
   color: true,
-})
+});
 
-export const projectUpdateSchema = z.object({ id: z.number() }).merge(
-  projectCreateSchema.partial(),
-)
+export const projectUpdateSchema = z.object({ id: z.number() }).merge(projectCreateSchema.partial());
 
 // --- File refs (for Claude message attachments) ---
 
@@ -301,20 +327,20 @@ export const fileRefSchema = z.object({
   mimeType: z.string(),
   path: z.string(),
   size: z.number(),
-})
+});
 
 // --- Claude schemas ---
 
 export const claudeStartSchema = z.object({
   cardId: z.number(),
   prompt: z.string().min(1),
-})
+});
 
 export const claudeSendSchema = z.object({
   cardId: z.number(),
   message: z.string().min(1),
   files: z.array(fileRefSchema).optional(),
-})
+});
 
 export const claudeStatusSchema = z.object({
   cardId: z.number(),
@@ -324,14 +350,14 @@ export const claudeStatusSchema = z.object({
   sessionId: z.string().nullable(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
-})
+});
 
 export const claudeMessageSchema = z.object({
   type: z.enum(['user', 'assistant', 'result', 'system']),
   message: z.record(z.unknown()),
   isSidechain: z.boolean().optional(),
   ts: z.string().optional(),
-})
+});
 
 // --- Client → Server messages ---
 
@@ -361,10 +387,14 @@ export const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('claude:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
 
   // Session history (cardId for routing the response back to the right session)
-  z.object({ type: z.literal('session:load'), requestId: z.string(), data: z.object({ sessionId: z.string(), cardId: z.number() }) }),
-])
+  z.object({
+    type: z.literal('session:load'),
+    requestId: z.string(),
+    data: z.object({ sessionId: z.string(), cardId: z.number() }),
+  }),
+]);
 
-export type ClientMessage = z.infer<typeof clientMessage>
+export type ClientMessage = z.infer<typeof clientMessage>;
 
 // --- Server → Client messages ---
 
@@ -382,15 +412,23 @@ export const serverMessage = z.discriminatedUnion('type', [
 
   // Pagination
   z.object({
-    type: z.literal('page:result'), column: columnEnum,
-    cards: z.array(cardSchema), nextCursor: z.number().optional(), total: z.number(),
+    type: z.literal('page:result'),
+    column: columnEnum,
+    cards: z.array(cardSchema),
+    nextCursor: z.number().optional(),
+    total: z.number(),
   }),
 
   // Search
   z.object({ type: z.literal('search:result'), requestId: z.string(), cards: z.array(cardSchema), total: z.number() }),
 
   // Session history (cardId included so client can route to the right session store)
-  z.object({ type: z.literal('session:history'), requestId: z.string(), cardId: z.number(), messages: z.array(claudeMessageSchema) }),
+  z.object({
+    type: z.literal('session:history'),
+    requestId: z.string(),
+    cardId: z.number(),
+    messages: z.array(claudeMessageSchema),
+  }),
 
   // Claude session streaming
   z.object({ type: z.literal('claude:message'), cardId: z.number(), data: claudeMessageSchema }),
@@ -398,9 +436,9 @@ export const serverMessage = z.discriminatedUnion('type', [
 
   // Directory browsing result
   z.object({ type: z.literal('project:browse:result'), requestId: z.string(), data: z.unknown() }),
-])
+]);
 
-export type ServerMessage = z.infer<typeof serverMessage>
+export type ServerMessage = z.infer<typeof serverMessage>;
 ```
 
 - [ ] **Step 5: Run tests**
@@ -425,6 +463,7 @@ git commit -m "feat: shared WS protocol with Zod schemas derived from Drizzle"
 ### Task 2.1: Connection manager
 
 **Files:**
+
 - Create: `src/server/ws/connections.ts`
 - Test: `src/server/ws/connections.test.ts`
 
@@ -432,88 +471,90 @@ git commit -m "feat: shared WS protocol with Zod schemas derived from Drizzle"
 
 ```typescript
 // src/server/ws/connections.test.ts
-import { describe, it, expect, vi } from 'vitest'
-import { ConnectionManager } from './connections'
-import type { ServerMessage } from '../../shared/ws-protocol'
+import { describe, it, expect, vi } from 'vitest';
+import { ConnectionManager } from './connections';
+import type { ServerMessage } from '../../shared/ws-protocol';
 
 function mockWs() {
-  return { send: vi.fn(), readyState: 1 /* OPEN */ } as any
+  return { send: vi.fn(), readyState: 1 /* OPEN */ } as any;
 }
 
 describe('ConnectionManager', () => {
   it('registers and removes connections', () => {
-    const mgr = new ConnectionManager()
-    const ws = mockWs()
-    mgr.add(ws)
-    expect(mgr.size).toBe(1)
-    mgr.remove(ws)
-    expect(mgr.size).toBe(0)
-  })
+    const mgr = new ConnectionManager();
+    const ws = mockWs();
+    mgr.add(ws);
+    expect(mgr.size).toBe(1);
+    mgr.remove(ws);
+    expect(mgr.size).toBe(0);
+  });
 
   it('tracks subscribed columns', () => {
-    const mgr = new ConnectionManager()
-    const ws = mockWs()
-    mgr.add(ws)
-    mgr.subscribe(ws, ['backlog', 'ready'])
-    expect(mgr.getSubscribedColumns(ws)).toEqual(new Set(['backlog', 'ready']))
-  })
+    const mgr = new ConnectionManager();
+    const ws = mockWs();
+    mgr.add(ws);
+    mgr.subscribe(ws, ['backlog', 'ready']);
+    expect(mgr.getSubscribedColumns(ws)).toEqual(new Set(['backlog', 'ready']));
+  });
 
   it('broadcasts to subscribed connections only', () => {
-    const mgr = new ConnectionManager()
-    const ws1 = mockWs()
-    const ws2 = mockWs()
-    mgr.add(ws1)
-    mgr.add(ws2)
-    mgr.subscribe(ws1, ['backlog'])
-    mgr.subscribe(ws2, ['ready'])
+    const mgr = new ConnectionManager();
+    const ws1 = mockWs();
+    const ws2 = mockWs();
+    mgr.add(ws1);
+    mgr.add(ws2);
+    mgr.subscribe(ws1, ['backlog']);
+    mgr.subscribe(ws2, ['ready']);
 
     const msg: ServerMessage = {
       type: 'card:updated',
       data: { id: 1, title: 'T', description: '', column: 'backlog', position: 0 } as any,
-    }
-    mgr.broadcast(msg, 'backlog')
+    };
+    mgr.broadcast(msg, 'backlog');
 
-    expect(ws1.send).toHaveBeenCalledOnce()
-    expect(ws2.send).not.toHaveBeenCalled()
-  })
+    expect(ws1.send).toHaveBeenCalledOnce();
+    expect(ws2.send).not.toHaveBeenCalled();
+  });
 
   it('broadcasts to all when no column filter', () => {
-    const mgr = new ConnectionManager()
-    const ws1 = mockWs()
-    const ws2 = mockWs()
-    mgr.add(ws1)
-    mgr.add(ws2)
-    mgr.subscribe(ws1, ['backlog'])
-    mgr.subscribe(ws2, ['ready'])
+    const mgr = new ConnectionManager();
+    const ws1 = mockWs();
+    const ws2 = mockWs();
+    mgr.add(ws1);
+    mgr.add(ws2);
+    mgr.subscribe(ws1, ['backlog']);
+    mgr.subscribe(ws2, ['ready']);
 
-    const msg: ServerMessage = { type: 'project:updated', data: { id: 1 } as any }
-    mgr.broadcast(msg)
+    const msg: ServerMessage = { type: 'project:updated', data: { id: 1 } as any };
+    mgr.broadcast(msg);
 
-    expect(ws1.send).toHaveBeenCalledOnce()
-    expect(ws2.send).toHaveBeenCalledOnce()
-  })
+    expect(ws1.send).toHaveBeenCalledOnce();
+    expect(ws2.send).toHaveBeenCalledOnce();
+  });
 
   it('broadcasts card:move to both old and new column subscribers', () => {
-    const mgr = new ConnectionManager()
-    const ws1 = mockWs()
-    const ws2 = mockWs()
-    const ws3 = mockWs()
-    mgr.add(ws1); mgr.add(ws2); mgr.add(ws3)
-    mgr.subscribe(ws1, ['backlog'])
-    mgr.subscribe(ws2, ['ready'])
-    mgr.subscribe(ws3, ['done'])
+    const mgr = new ConnectionManager();
+    const ws1 = mockWs();
+    const ws2 = mockWs();
+    const ws3 = mockWs();
+    mgr.add(ws1);
+    mgr.add(ws2);
+    mgr.add(ws3);
+    mgr.subscribe(ws1, ['backlog']);
+    mgr.subscribe(ws2, ['ready']);
+    mgr.subscribe(ws3, ['done']);
 
     const msg: ServerMessage = {
       type: 'card:updated',
       data: { id: 1, column: 'ready' } as any,
-    }
-    mgr.broadcast(msg, 'backlog', 'ready')
+    };
+    mgr.broadcast(msg, 'backlog', 'ready');
 
-    expect(ws1.send).toHaveBeenCalledOnce()
-    expect(ws2.send).toHaveBeenCalledOnce()
-    expect(ws3.send).not.toHaveBeenCalled()
-  })
-})
+    expect(ws1.send).toHaveBeenCalledOnce();
+    expect(ws2.send).toHaveBeenCalledOnce();
+    expect(ws3.send).not.toHaveBeenCalled();
+  });
+});
 ```
 
 - [ ] **Step 2: Run test — verify fail**
@@ -526,50 +567,51 @@ npx vitest run src/server/ws/connections.test.ts
 
 ```typescript
 // src/server/ws/connections.ts
-import type { WebSocket } from 'ws'
-import type { ServerMessage } from '../../shared/ws-protocol'
+import type { WebSocket } from 'ws';
+import type { ServerMessage } from '../../shared/ws-protocol';
 
 interface Connection {
-  ws: WebSocket
-  subscribedColumns: Set<string>
+  ws: WebSocket;
+  subscribedColumns: Set<string>;
 }
 
 export class ConnectionManager {
-  private connections = new Map<WebSocket, Connection>()
+  private connections = new Map<WebSocket, Connection>();
 
-  get size() { return this.connections.size }
+  get size() {
+    return this.connections.size;
+  }
 
   add(ws: WebSocket) {
-    this.connections.set(ws, { ws, subscribedColumns: new Set() })
+    this.connections.set(ws, { ws, subscribedColumns: new Set() });
   }
 
   remove(ws: WebSocket) {
-    this.connections.delete(ws)
+    this.connections.delete(ws);
   }
 
   subscribe(ws: WebSocket, columns: string[]) {
-    const conn = this.connections.get(ws)
-    if (conn) conn.subscribedColumns = new Set(columns)
+    const conn = this.connections.get(ws);
+    if (conn) conn.subscribedColumns = new Set(columns);
   }
 
   getSubscribedColumns(ws: WebSocket): Set<string> {
-    return this.connections.get(ws)?.subscribedColumns ?? new Set()
+    return this.connections.get(ws)?.subscribedColumns ?? new Set();
   }
 
   broadcast(msg: ServerMessage, ...affectedColumns: string[]) {
-    const raw = JSON.stringify(msg)
+    const raw = JSON.stringify(msg);
     for (const conn of this.connections.values()) {
-      if (conn.ws.readyState !== 1) continue // not OPEN
-      if (affectedColumns.length === 0 ||
-          affectedColumns.some(col => conn.subscribedColumns.has(col))) {
-        conn.ws.send(raw)
+      if (conn.ws.readyState !== 1) continue; // not OPEN
+      if (affectedColumns.length === 0 || affectedColumns.some((col) => conn.subscribedColumns.has(col))) {
+        conn.ws.send(raw);
       }
     }
   }
 
   /** Send to a specific connection */
   send(ws: WebSocket, msg: ServerMessage) {
-    if (ws.readyState === 1) ws.send(JSON.stringify(msg))
+    if (ws.readyState === 1) ws.send(JSON.stringify(msg));
   }
 }
 ```
@@ -590,6 +632,7 @@ git commit -m "feat: WebSocket connection manager with subscription filtering"
 ### Task 2.2: DB Mutator
 
 **Files:**
+
 - Create: `src/server/db/mutator.ts`
 - Test: `src/server/db/mutator.test.ts`
 
@@ -597,14 +640,14 @@ git commit -m "feat: WebSocket connection manager with subscription filtering"
 
 ```typescript
 // src/server/db/mutator.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // We test the broadcast integration, not actual DB calls (those are integration tests).
 // Mock drizzle DB and verify broadcast is called with correct args.
 
 describe('DbMutator', () => {
-  it('is defined in Task 2.2 — integration-tested after WS server wiring in Task 2.4')
-})
+  it('is defined in Task 2.2 — integration-tested after WS server wiring in Task 2.4');
+});
 ```
 
 Note: The mutator wraps synchronous `better-sqlite3` calls. Full integration tests require the DB. For now, build it and verify compilation. Integration testing happens in Task 2.4.
@@ -612,6 +655,7 @@ Note: The mutator wraps synchronous `better-sqlite3` calls. Full integration tes
 - [ ] **Step 2: Implement the mutator**
 
 Reference the existing logic in these files (copy business logic, not tRPC wrappers):
+
 - `src/server/routers/cards.ts` — card CRUD, worktree setup on move to in_progress, cleanup on archive
 - `src/server/routers/projects.ts` — project CRUD, color assignment, git repo detection, directory browsing
 
@@ -619,11 +663,11 @@ Reference the existing logic in these files (copy business logic, not tRPC wrapp
 
 ```typescript
 // src/server/db/mutator.ts
-import { eq, sql, asc, inArray } from 'drizzle-orm'
-import { db } from './index'
-import { cards, projects, NEON_COLORS } from './schema'
-import type { ConnectionManager } from '../ws/connections'
-import type { Card, Project, Column } from '../../shared/ws-protocol'
+import { eq, sql, asc, inArray } from 'drizzle-orm';
+import { db } from './index';
+import { cards, projects, NEON_COLORS } from './schema';
+import type { ConnectionManager } from '../ws/connections';
+import type { Card, Project, Column } from '../../shared/ws-protocol';
 
 export class DbMutator {
   constructor(private connMgr: ConnectionManager) {}
@@ -632,88 +676,109 @@ export class DbMutator {
 
   listCards(columns?: Column[]): Card[] {
     if (columns && columns.length > 0) {
-      return db.select().from(cards).where(inArray(cards.column, columns)).orderBy(asc(cards.position)).all()
+      return db.select().from(cards).where(inArray(cards.column, columns)).orderBy(asc(cards.position)).all();
     }
-    return db.select().from(cards).orderBy(asc(cards.position)).all()
+    return db.select().from(cards).orderBy(asc(cards.position)).all();
   }
 
   createCard(data: Record<string, unknown>): Card {
-    const col = (data.column as string) || 'backlog'
-    const maxPos = db.select({ max: sql<number>`max(position)` })
-      .from(cards).where(eq(cards.column, col)).get()
-    const position = (maxPos?.max ?? -1) + 1
+    const col = (data.column as string) || 'backlog';
+    const maxPos = db
+      .select({ max: sql<number>`max(position)` })
+      .from(cards)
+      .where(eq(cards.column, col))
+      .get();
+    const position = (maxPos?.max ?? -1) + 1;
 
-    const created = db.insert(cards).values({
-      ...data,
-      position,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as any).returning().get()
+    const created = db
+      .insert(cards)
+      .values({
+        ...data,
+        position,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any)
+      .returning()
+      .get();
 
-    this.connMgr.broadcast({ type: 'card:updated', data: created as Card }, col)
-    return created as Card
+    this.connMgr.broadcast({ type: 'card:updated', data: created as Card }, col);
+    return created as Card;
   }
 
   updateCard(id: number, data: Record<string, unknown>): Card {
-    const updated = db.update(cards)
+    const updated = db
+      .update(cards)
       .set({ ...data, updatedAt: new Date().toISOString() } as any)
       .where(eq(cards.id, id))
-      .returning().get()
-    this.connMgr.broadcast({ type: 'card:updated', data: updated as Card }, (updated as Card).column)
-    return updated as Card
+      .returning()
+      .get();
+    this.connMgr.broadcast({ type: 'card:updated', data: updated as Card }, (updated as Card).column);
+    return updated as Card;
   }
 
   moveCard(id: number, column: string, position: number): Card {
-    const prev = db.select().from(cards).where(eq(cards.id, id)).get()
-    const prevCol = prev?.column
-    const updated = db.update(cards)
+    const prev = db.select().from(cards).where(eq(cards.id, id)).get();
+    const prevCol = prev?.column;
+    const updated = db
+      .update(cards)
       .set({ column: column as any, position, updatedAt: new Date().toISOString() })
       .where(eq(cards.id, id))
-      .returning().get()
-    const cols = prevCol && prevCol !== column ? [prevCol, column] : [column]
-    this.connMgr.broadcast({ type: 'card:updated', data: updated as Card }, ...cols)
-    return updated as Card
+      .returning()
+      .get();
+    const cols = prevCol && prevCol !== column ? [prevCol, column] : [column];
+    this.connMgr.broadcast({ type: 'card:updated', data: updated as Card }, ...cols);
+    return updated as Card;
   }
 
   deleteCard(id: number): void {
-    const card = db.select().from(cards).where(eq(cards.id, id)).get()
-    if (!card) return
-    db.delete(cards).where(eq(cards.id, id)).run()
-    this.connMgr.broadcast({ type: 'card:deleted', data: { id } }, card.column)
+    const card = db.select().from(cards).where(eq(cards.id, id)).get();
+    if (!card) return;
+    db.delete(cards).where(eq(cards.id, id)).run();
+    this.connMgr.broadcast({ type: 'card:deleted', data: { id } }, card.column);
   }
 
   // --- Projects ---
 
   listProjects(): Project[] {
-    return db.select().from(projects).all()
+    return db.select().from(projects).all();
   }
 
   createProject(data: Record<string, unknown>): Project {
     if (!data.color) {
-      const used = db.select({ color: projects.color }).from(projects).all()
-        .map(p => p.color).filter(Boolean)
-      data.color = NEON_COLORS.find(c => !used.includes(c)) ?? NEON_COLORS[0]
+      const used = db
+        .select({ color: projects.color })
+        .from(projects)
+        .all()
+        .map((p) => p.color)
+        .filter(Boolean);
+      data.color = NEON_COLORS.find((c) => !used.includes(c)) ?? NEON_COLORS[0];
     }
-    const created = db.insert(projects).values({
-      ...data,
-      createdAt: new Date().toISOString(),
-    } as any).returning().get()
-    this.connMgr.broadcast({ type: 'project:updated', data: created as Project })
-    return created as Project
+    const created = db
+      .insert(projects)
+      .values({
+        ...data,
+        createdAt: new Date().toISOString(),
+      } as any)
+      .returning()
+      .get();
+    this.connMgr.broadcast({ type: 'project:updated', data: created as Project });
+    return created as Project;
   }
 
   updateProject(id: number, data: Record<string, unknown>): Project {
-    const updated = db.update(projects)
+    const updated = db
+      .update(projects)
       .set(data as any)
       .where(eq(projects.id, id))
-      .returning().get()
-    this.connMgr.broadcast({ type: 'project:updated', data: updated as Project })
-    return updated as Project
+      .returning()
+      .get();
+    this.connMgr.broadcast({ type: 'project:updated', data: updated as Project });
+    return updated as Project;
   }
 
   deleteProject(id: number): void {
-    db.delete(projects).where(eq(projects.id, id)).run()
-    this.connMgr.broadcast({ type: 'project:deleted', data: { id } })
+    db.delete(projects).where(eq(projects.id, id)).run();
+    this.connMgr.broadcast({ type: 'project:deleted', data: { id } });
   }
 }
 ```
@@ -736,20 +801,21 @@ git commit -m "feat: DB mutator with broadcast for cards and projects"
 ### Task 2.3: Cloudflare Access auth for WS upgrade
 
 **Files:**
+
 - Create: `src/server/ws/auth.ts`
 
 - [ ] **Step 1: Implement auth module**
 
 ```typescript
 // src/server/ws/auth.ts
-import type { IncomingMessage } from 'http'
-import { createRemoteJWKSet, jwtVerify } from 'jose'
+import type { IncomingMessage } from 'http';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-const CF_TEAM_DOMAIN = process.env.CF_TEAM_DOMAIN // <team>.cloudflareaccess.com
-const CERTS_URL = `https://${CF_TEAM_DOMAIN}.cloudflareaccess.com/cdn-cgi/access/certs`
+const CF_TEAM_DOMAIN = process.env.CF_TEAM_DOMAIN; // <team>.cloudflareaccess.com
+const CERTS_URL = `https://${CF_TEAM_DOMAIN}.cloudflareaccess.com/cdn-cgi/access/certs`;
 
 // jose caches JWK set and handles rotation automatically
-const jwks = createRemoteJWKSet(new URL(CERTS_URL))
+const jwks = createRemoteJWKSet(new URL(CERTS_URL));
 
 /**
  * Validate Cloudflare Access JWT from the CF_Authorization cookie.
@@ -757,21 +823,21 @@ const jwks = createRemoteJWKSet(new URL(CERTS_URL))
  * In dev mode, skip validation.
  */
 export async function validateCfAccess(req: IncomingMessage): Promise<boolean> {
-  if (process.env.NODE_ENV === 'development') return true
+  if (process.env.NODE_ENV === 'development') return true;
 
-  const cookie = req.headers.cookie ?? ''
-  const match = cookie.match(/CF_Authorization=([^;]+)/)
-  if (!match) return false
+  const cookie = req.headers.cookie ?? '';
+  const match = cookie.match(/CF_Authorization=([^;]+)/);
+  if (!match) return false;
 
   try {
     await jwtVerify(match[1], jwks, {
       issuer: `https://${CF_TEAM_DOMAIN}.cloudflareaccess.com`,
       // audience is the Access Application's AUD tag — set via env or hardcode
       // audience: process.env.CF_ACCESS_AUD,
-    })
-    return true
+    });
+    return true;
   } catch {
-    return false
+    return false;
   }
 }
 ```
@@ -786,6 +852,7 @@ git commit -m "feat: Cloudflare Access JWT validation for WS upgrade"
 ### Task 2.4: WebSocket server + Vite plugin
 
 **Files:**
+
 - Create: `src/server/ws/server.ts`
 - Modify: `vite.config.ts`
 
@@ -793,54 +860,54 @@ git commit -m "feat: Cloudflare Access JWT validation for WS upgrade"
 
 ```typescript
 // src/server/ws/server.ts
-import { WebSocketServer } from 'ws'
-import type { Server as HttpServer } from 'http'
-import type { Plugin } from 'vite'
-import { ConnectionManager } from './connections'
-import { DbMutator } from '../db/mutator'
-import { validateCfAccess } from './auth'
-import { handleMessage } from './handlers'
+import { WebSocketServer } from 'ws';
+import type { Server as HttpServer } from 'http';
+import type { Plugin } from 'vite';
+import { ConnectionManager } from './connections';
+import { DbMutator } from '../db/mutator';
+import { validateCfAccess } from './auth';
+import { handleMessage } from './handlers';
 
-export const connections = new ConnectionManager()
-export const mutator = new DbMutator(connections)
+export const connections = new ConnectionManager();
+export const mutator = new DbMutator(connections);
 
 export function createWsServer(httpServer: HttpServer) {
-  const wss = new WebSocketServer({ noServer: true })
+  const wss = new WebSocketServer({ noServer: true });
 
   httpServer.on('upgrade', async (req, socket, head) => {
     // Only handle /ws path
-    if (req.url !== '/ws') return
+    if (req.url !== '/ws') return;
 
-    const valid = await validateCfAccess(req)
+    const valid = await validateCfAccess(req);
     if (!valid) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-      socket.destroy()
-      return
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req)
-    })
-  })
+      wss.emit('connection', ws, req);
+    });
+  });
 
   wss.on('connection', (ws) => {
-    connections.add(ws)
+    connections.add(ws);
 
     ws.on('message', (raw) => {
       try {
-        const data = JSON.parse(raw.toString())
-        handleMessage(ws, data, connections, mutator)
+        const data = JSON.parse(raw.toString());
+        handleMessage(ws, data, connections, mutator);
       } catch (err) {
-        console.error('WS message parse error:', err)
+        console.error('WS message parse error:', err);
       }
-    })
+    });
 
     ws.on('close', () => {
-      connections.remove(ws)
-    })
-  })
+      connections.remove(ws);
+    });
+  });
 
-  return wss
+  return wss;
 }
 
 /**
@@ -851,11 +918,11 @@ export function wsServerPlugin(): Plugin {
     name: 'orchestrel-ws',
     configureServer(server) {
       if (server.httpServer) {
-        createWsServer(server.httpServer)
-        console.log('[ws] WebSocket server attached to Vite dev server')
+        createWsServer(server.httpServer);
+        console.log('[ws] WebSocket server attached to Vite dev server');
       }
     },
-  }
+  };
 }
 ```
 
@@ -864,8 +931,9 @@ export function wsServerPlugin(): Plugin {
 Read the current vite.config.ts and add the wsServerPlugin import. Add the plugin to the plugins array.
 
 In `vite.config.ts`, add:
+
 ```typescript
-import { wsServerPlugin } from './src/server/ws/server'
+import { wsServerPlugin } from './src/server/ws/server';
 ```
 
 And add `wsServerPlugin()` to the `plugins` array.
@@ -874,36 +942,31 @@ And add `wsServerPlugin()` to the `plugins` array.
 
 ```typescript
 // src/server/ws/handlers.ts
-import type { WebSocket } from 'ws'
-import type { ConnectionManager } from './connections'
-import type { DbMutator } from '../db/mutator'
-import { clientMessage } from '../../shared/ws-protocol'
+import type { WebSocket } from 'ws';
+import type { ConnectionManager } from './connections';
+import type { DbMutator } from '../db/mutator';
+import { clientMessage } from '../../shared/ws-protocol';
 
-export function handleMessage(
-  ws: WebSocket,
-  raw: unknown,
-  connections: ConnectionManager,
-  mutator: DbMutator,
-) {
-  const parsed = clientMessage.safeParse(raw)
+export function handleMessage(ws: WebSocket, raw: unknown, connections: ConnectionManager, mutator: DbMutator) {
+  const parsed = clientMessage.safeParse(raw);
   if (!parsed.success) {
     connections.send(ws, {
       type: 'mutation:error',
       requestId: (raw as any)?.requestId ?? 'unknown',
       error: `Invalid message: ${parsed.error.message}`,
-    })
-    return
+    });
+    return;
   }
 
-  const msg = parsed.data
+  const msg = parsed.data;
   switch (msg.type) {
     case 'subscribe': {
-      connections.subscribe(ws, msg.columns)
+      connections.subscribe(ws, msg.columns);
       // Send sync with cards in subscribed columns + all projects
-      const cards = mutator.listCards(msg.columns as any)
-      const projects = mutator.listProjects()
-      connections.send(ws, { type: 'sync', cards, projects })
-      break
+      const cards = mutator.listCards(msg.columns as any);
+      const projects = mutator.listProjects();
+      connections.send(ws, { type: 'sync', cards, projects });
+      break;
     }
     default:
       // TODO: implement remaining handlers in Chunk 3
@@ -912,7 +975,7 @@ export function handleMessage(
           type: 'mutation:error',
           requestId: msg.requestId,
           error: `Handler not implemented: ${msg.type}`,
-        })
+        });
       }
   }
 }
@@ -951,12 +1014,14 @@ git commit -m "feat: WebSocket server with Vite plugin, subscribe/sync handler"
 ### Task 3.1: Card handlers
 
 **Files:**
+
 - Create: `src/server/ws/handlers/cards.ts`
 - Modify: `src/server/ws/handlers.ts`
 
 - [ ] **Step 1: Implement card handlers**
 
 Port business logic from `src/server/routers/cards.ts`. Key logic to preserve:
+
 - `create`: validate project exists if projectId set, setup worktree if card starts in `in_progress`
 - `move`: worktree setup when moving to `in_progress`, worktree cleanup when moving to `archive`
 - `update`: partial updates for title, description, projectId, model, thinkingLevel
@@ -965,68 +1030,78 @@ Port business logic from `src/server/routers/cards.ts`. Key logic to preserve:
 
 ```typescript
 // src/server/ws/handlers/cards.ts
-import type { WebSocket } from 'ws'
-import type { ConnectionManager } from '../connections'
-import type { DbMutator } from '../../db/mutator'
-import type { ClientMessage } from '../../../shared/ws-protocol'
+import type { WebSocket } from 'ws';
+import type { ConnectionManager } from '../connections';
+import type { DbMutator } from '../../db/mutator';
+import type { ClientMessage } from '../../../shared/ws-protocol';
 
 export function handleCardCreate(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'card:create' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'card:create' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
     // Port validation logic from cards.ts router create mutation
     // If projectId is set, verify project exists
     // Call mutator.createCard(msg.data)
     // If column is in_progress and project has worktree, set up worktree
-    const card = mutator.createCard(msg.data as any)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: card })
+    const card = mutator.createCard(msg.data as any);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: card });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export function handleCardUpdate(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'card:update' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'card:update' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
-    const { id, ...data } = msg.data
-    const card = mutator.updateCard(id, data)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: card })
+    const { id, ...data } = msg.data;
+    const card = mutator.updateCard(id, data);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: card });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export function handleCardMove(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'card:move' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'card:move' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
     // Port worktree setup/cleanup logic from cards.ts move mutation
-    const card = mutator.moveCard(msg.data.id, msg.data.column, msg.data.position)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: card })
+    const card = mutator.moveCard(msg.data.id, msg.data.column, msg.data.position);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: card });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export function handleCardDelete(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'card:delete' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'card:delete' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
-    mutator.deleteCard(msg.data.id)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId })
+    mutator.deleteCard(msg.data.id);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export async function handleCardGenerateTitle(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'card:generateTitle' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'card:generateTitle' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
     // Port Ollama call from cards.ts generateTitle mutation
@@ -1034,9 +1109,9 @@ export async function handleCardGenerateTitle(
     // 2. Call Ollama API
     // 3. mutator.updateCard(id, { title: generated })
     // 4. Send mutation:ok
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId })
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 ```
@@ -1065,6 +1140,7 @@ git commit -m "feat: WS card mutation handlers (create, update, move, delete, ge
 ### Task 3.2: Project handlers
 
 **Files:**
+
 - Create: `src/server/ws/handlers/projects.ts`
 - Modify: `src/server/ws/handlers.ts`
 
@@ -1074,51 +1150,58 @@ Port business logic from `src/server/routers/projects.ts`: CRUD, directory brows
 
 ```typescript
 // src/server/ws/handlers/projects.ts
-import type { WebSocket } from 'ws'
-import type { ConnectionManager } from '../connections'
-import type { DbMutator } from '../../db/mutator'
-import type { ClientMessage } from '../../../shared/ws-protocol'
+import type { WebSocket } from 'ws';
+import type { ConnectionManager } from '../connections';
+import type { DbMutator } from '../../db/mutator';
+import type { ClientMessage } from '../../../shared/ws-protocol';
 
 export function handleProjectCreate(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'project:create' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'project:create' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
     // Port git repo detection from projects.ts
-    const project = mutator.createProject(msg.data as any)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: project })
+    const project = mutator.createProject(msg.data as any);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: project });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export function handleProjectUpdate(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'project:update' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'project:update' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
-    const { id, ...data } = msg.data
-    const project = mutator.updateProject(id, data)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: project })
+    const { id, ...data } = msg.data;
+    const project = mutator.updateProject(id, data);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: project });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export function handleProjectDelete(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'project:delete' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'project:delete' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
-    mutator.deleteProject(msg.data.id)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId })
+    mutator.deleteProject(msg.data.id);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export function handleProjectBrowse(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'project:browse' }>,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'project:browse' }>,
   connections: ConnectionManager,
 ) {
   try {
@@ -1128,9 +1211,9 @@ export function handleProjectBrowse(
       type: 'project:browse:result',
       requestId: msg.requestId,
       data: [], // implement
-    })
+    });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 ```
@@ -1151,6 +1234,7 @@ git commit -m "feat: WS project mutation handlers"
 ### Task 3.3: Session history + pagination + search handlers
 
 **Files:**
+
 - Create: `src/server/ws/handlers/sessions.ts`
 - Modify: `src/server/ws/handlers.ts`
 
@@ -1160,39 +1244,45 @@ Port from `src/server/routers/sessions.ts` — reads JSONL files, parses message
 
 ```typescript
 // src/server/ws/handlers/sessions.ts
-import { readFileSync, statSync } from 'fs'
-import { join } from 'path'
-import type { WebSocket } from 'ws'
-import type { ConnectionManager } from '../connections'
-import type { ClientMessage } from '../../../shared/ws-protocol'
+import { readFileSync, statSync } from 'fs';
+import { join } from 'path';
+import type { WebSocket } from 'ws';
+import type { ConnectionManager } from '../connections';
+import type { ClientMessage } from '../../../shared/ws-protocol';
 
 export function handleSessionLoad(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'session:load' }>,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'session:load' }>,
   connections: ConnectionManager,
 ) {
   try {
-    const sessPath = join(process.cwd(), 'data', 'sessions', `${msg.data.sessionId}.jsonl`)
-    const raw = readFileSync(sessPath, 'utf8')
-    const mtime = statSync(sessPath).mtime.toISOString()
-    const messages = raw.split('\n')
+    const sessPath = join(process.cwd(), 'data', 'sessions', `${msg.data.sessionId}.jsonl`);
+    const raw = readFileSync(sessPath, 'utf8');
+    const mtime = statSync(sessPath).mtime.toISOString();
+    const messages = raw
+      .split('\n')
       .filter(Boolean)
-      .map(line => {
-        try { return JSON.parse(line) } catch { return null }
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
       })
       .filter(Boolean)
       .filter((m: any) => ['assistant', 'user', 'result', 'system'].includes(m.type))
-      .map((m: any) => ({ ...m, ts: m.ts ?? mtime }))
+      .map((m: any) => ({ ...m, ts: m.ts ?? mtime }));
 
     connections.send(ws, {
       type: 'session:history',
       requestId: msg.requestId,
       cardId: msg.data.cardId,
       messages,
-    })
+    });
     // Also send mutation:ok so the client's mutate() promise resolves
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId })
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 ```
@@ -1256,129 +1346,130 @@ git commit -m "feat: WS handlers for session history, pagination, and search"
 ### Task 4.1: WS client wrapper
 
 **Files:**
+
 - Create: `app/lib/ws-client.ts`
 
 - [ ] **Step 1: Implement typed WS client**
 
 ```typescript
 // app/lib/ws-client.ts
-import {
-  clientMessage, serverMessage,
-  type ClientMessage, type ServerMessage,
-} from '../../src/shared/ws-protocol'
+import { clientMessage, serverMessage, type ClientMessage, type ServerMessage } from '../../src/shared/ws-protocol';
 
-type EntityHandler = (msg: ServerMessage) => void
+type EntityHandler = (msg: ServerMessage) => void;
 
 export class WsClient {
-  private ws: WebSocket | null = null
-  private pending = new Map<string, {
-    resolve: (data: unknown) => void
-    reject: (err: Error) => void
-    timeout: ReturnType<typeof setTimeout>
-  }>()
-  private onEntity: EntityHandler
-  private subscribedColumns: string[] = []
-  private reconnectAttempt = 0
-  private maxReconnectDelay = 30_000
-  private disposed = false
+  private ws: WebSocket | null = null;
+  private pending = new Map<
+    string,
+    {
+      resolve: (data: unknown) => void;
+      reject: (err: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
+  private onEntity: EntityHandler;
+  private subscribedColumns: string[] = [];
+  private reconnectAttempt = 0;
+  private maxReconnectDelay = 30_000;
+  private disposed = false;
 
   constructor(onEntity: EntityHandler) {
-    this.onEntity = onEntity
-    this.connect()
+    this.onEntity = onEntity;
+    this.connect();
   }
 
   private get wsUrl(): string {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${proto}//${location.host}/ws`
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.host}/ws`;
   }
 
   private connect() {
-    if (this.disposed) return
-    this.ws = new WebSocket(this.wsUrl)
+    if (this.disposed) return;
+    this.ws = new WebSocket(this.wsUrl);
 
     this.ws.onopen = () => {
-      this.reconnectAttempt = 0
+      this.reconnectAttempt = 0;
       if (this.subscribedColumns.length > 0) {
-        this.send({ type: 'subscribe', columns: this.subscribedColumns as any })
+        this.send({ type: 'subscribe', columns: this.subscribedColumns as any });
       }
-    }
+    };
 
     this.ws.onmessage = (evt) => {
       try {
-        const raw = JSON.parse(evt.data)
-        const msg = serverMessage.parse(raw)
+        const raw = JSON.parse(evt.data);
+        const msg = serverMessage.parse(raw);
         if (msg.type === 'mutation:ok' || msg.type === 'mutation:error') {
-          const p = this.pending.get(msg.requestId)
+          const p = this.pending.get(msg.requestId);
           if (p) {
-            clearTimeout(p.timeout)
-            this.pending.delete(msg.requestId)
-            if (msg.type === 'mutation:ok') p.resolve(msg.data)
-            else p.reject(new Error(msg.error))
+            clearTimeout(p.timeout);
+            this.pending.delete(msg.requestId);
+            if (msg.type === 'mutation:ok') p.resolve(msg.data);
+            else p.reject(new Error(msg.error));
           }
         } else {
-          this.onEntity(msg)
+          this.onEntity(msg);
         }
       } catch (err) {
-        console.error('[ws] message parse error:', err)
+        console.error('[ws] message parse error:', err);
       }
-    }
+    };
 
     this.ws.onclose = () => {
-      if (!this.disposed) this.scheduleReconnect()
-    }
-    this.ws.onerror = () => this.ws?.close()
+      if (!this.disposed) this.scheduleReconnect();
+    };
+    this.ws.onerror = () => this.ws?.close();
   }
 
   private scheduleReconnect() {
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, this.maxReconnectDelay)
-    this.reconnectAttempt++
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, this.maxReconnectDelay);
+    this.reconnectAttempt++;
     // Reject all pending — callers will rollback optimistic state
     for (const [, p] of this.pending) {
-      clearTimeout(p.timeout)
-      p.reject(new Error('WebSocket disconnected'))
+      clearTimeout(p.timeout);
+      p.reject(new Error('WebSocket disconnected'));
     }
-    this.pending.clear()
-    setTimeout(() => this.connect(), delay)
+    this.pending.clear();
+    setTimeout(() => this.connect(), delay);
   }
 
   get connected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   send(msg: ClientMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg))
+      this.ws.send(JSON.stringify(msg));
     }
   }
 
   subscribe(columns: string[]) {
-    this.subscribedColumns = columns
-    this.send({ type: 'subscribe', columns: columns as any })
+    this.subscribedColumns = columns;
+    this.send({ type: 'subscribe', columns: columns as any });
   }
 
   async mutate<T = unknown>(msg: ClientMessage & { requestId: string }): Promise<T> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.pending.delete(msg.requestId)
-        reject(new Error('Mutation timeout'))
-      }, 15_000)
+        this.pending.delete(msg.requestId);
+        reject(new Error('Mutation timeout'));
+      }, 15_000);
       this.pending.set(msg.requestId, {
         resolve: resolve as (data: unknown) => void,
         reject,
         timeout,
-      })
-      this.send(msg)
-    })
+      });
+      this.send(msg);
+    });
   }
 
   dispose() {
-    this.disposed = true
-    this.ws?.close()
+    this.disposed = true;
+    this.ws?.close();
     for (const [, p] of this.pending) {
-      clearTimeout(p.timeout)
-      p.reject(new Error('Client disposed'))
+      clearTimeout(p.timeout);
+      p.reject(new Error('Client disposed'));
     }
-    this.pending.clear()
+    this.pending.clear();
   }
 }
 ```
@@ -1393,6 +1484,7 @@ git commit -m "feat: typed WebSocket client with reconnection and mutation corre
 ### Task 4.2: MobX stores
 
 **Files:**
+
 - Create: `app/stores/card-store.ts`
 - Create: `app/stores/project-store.ts`
 - Create: `app/stores/session-store.ts`
@@ -1403,104 +1495,106 @@ git commit -m "feat: typed WebSocket client with reconnection and mutation corre
 
 ```typescript
 // app/stores/card-store.ts
-import { makeAutoObservable, toJS } from 'mobx'
-import type { Card, Column } from '../../src/shared/ws-protocol'
-import type { WsClient } from '../lib/ws-client'
+import { makeAutoObservable, toJS } from 'mobx';
+import type { Card, Column } from '../../src/shared/ws-protocol';
+import type { WsClient } from '../lib/ws-client';
 
-let _ws: WsClient | null = null
-export function setWsClient(ws: WsClient) { _ws = ws }
+let _ws: WsClient | null = null;
+export function setWsClient(ws: WsClient) {
+  _ws = ws;
+}
 
 export class CardStore {
-  cards = new Map<number, Card>()
+  cards = new Map<number, Card>();
 
   constructor() {
-    makeAutoObservable(this)
+    makeAutoObservable(this);
   }
 
   // --- Computed ---
 
   cardsByColumn(col: string): Card[] {
-    return [...this.cards.values()]
-      .filter(c => c.column === col)
-      .sort((a, b) => a.position - b.position)
+    return [...this.cards.values()].filter((c) => c.column === col).sort((a, b) => a.position - b.position);
   }
 
   getCard(id: number): Card | undefined {
-    return this.cards.get(id)
+    return this.cards.get(id);
   }
 
   // --- Hydration ---
 
   hydrate(cards: Card[]) {
-    for (const c of cards) this.cards.set(c.id, c)
+    for (const c of cards) this.cards.set(c.id, c);
   }
 
   clear() {
-    this.cards.clear()
+    this.cards.clear();
   }
 
   // --- Server push handlers ---
 
   handleUpdated(card: Card) {
-    this.cards.set(card.id, card)
+    this.cards.set(card.id, card);
   }
 
   handleDeleted(id: number) {
-    this.cards.delete(id)
+    this.cards.delete(id);
   }
 
   // --- Optimistic mutations ---
 
   async createCard(data: Record<string, unknown>): Promise<Card> {
-    const requestId = crypto.randomUUID()
+    const requestId = crypto.randomUUID();
     const card = await _ws!.mutate<Card>({
-      type: 'card:create', requestId, data: data as any,
-    })
-    return card
+      type: 'card:create',
+      requestId,
+      data: data as any,
+    });
+    return card;
   }
 
   async updateCard(id: number, data: Record<string, unknown>): Promise<void> {
-    const prev = toJS(this.cards.get(id))
-    if (prev) this.cards.set(id, { ...prev, ...data } as Card)
+    const prev = toJS(this.cards.get(id));
+    if (prev) this.cards.set(id, { ...prev, ...data } as Card);
 
     try {
       await _ws!.mutate({
         type: 'card:update',
         requestId: crypto.randomUUID(),
         data: { id, ...data } as any,
-      })
+      });
     } catch {
-      if (prev) this.cards.set(id, prev)
+      if (prev) this.cards.set(id, prev);
     }
   }
 
   async moveCard(id: number, column: Column, position: number): Promise<void> {
-    const prev = toJS(this.cards.get(id))
-    if (prev) this.cards.set(id, { ...prev, column, position })
+    const prev = toJS(this.cards.get(id));
+    if (prev) this.cards.set(id, { ...prev, column, position });
 
     try {
       await _ws!.mutate({
         type: 'card:move',
         requestId: crypto.randomUUID(),
         data: { id, column, position },
-      })
+      });
     } catch {
-      if (prev) this.cards.set(id, prev)
+      if (prev) this.cards.set(id, prev);
     }
   }
 
   async deleteCard(id: number): Promise<void> {
-    const prev = toJS(this.cards.get(id))
-    this.cards.delete(id)
+    const prev = toJS(this.cards.get(id));
+    this.cards.delete(id);
 
     try {
       await _ws!.mutate({
         type: 'card:delete',
         requestId: crypto.randomUUID(),
         data: { id },
-      })
+      });
     } catch {
-      if (prev) this.cards.set(id, prev)
+      if (prev) this.cards.set(id, prev);
     }
   }
 
@@ -1509,13 +1603,13 @@ export class CardStore {
       type: 'card:generateTitle',
       requestId: crypto.randomUUID(),
       data: { id },
-    })
+    });
   }
 
   // --- Serialization for IDB ---
 
   serialize(): Card[] {
-    return [...this.cards.values()]
+    return [...this.cards.values()];
   }
 }
 ```
@@ -1524,38 +1618,40 @@ export class CardStore {
 
 ```typescript
 // app/stores/project-store.ts
-import { makeAutoObservable, toJS } from 'mobx'
-import type { Project } from '../../src/shared/ws-protocol'
-import type { WsClient } from '../lib/ws-client'
+import { makeAutoObservable, toJS } from 'mobx';
+import type { Project } from '../../src/shared/ws-protocol';
+import type { WsClient } from '../lib/ws-client';
 
-let _ws: WsClient | null = null
-export function setProjectWs(ws: WsClient) { _ws = ws }
+let _ws: WsClient | null = null;
+export function setProjectWs(ws: WsClient) {
+  _ws = ws;
+}
 
 export class ProjectStore {
-  projects = new Map<number, Project>()
+  projects = new Map<number, Project>();
 
   constructor() {
-    makeAutoObservable(this)
+    makeAutoObservable(this);
   }
 
   get all(): Project[] {
-    return [...this.projects.values()]
+    return [...this.projects.values()];
   }
 
   getProject(id: number): Project | undefined {
-    return this.projects.get(id)
+    return this.projects.get(id);
   }
 
   hydrate(projects: Project[]) {
-    for (const p of projects) this.projects.set(p.id, p)
+    for (const p of projects) this.projects.set(p.id, p);
   }
 
   handleUpdated(project: Project) {
-    this.projects.set(project.id, project)
+    this.projects.set(project.id, project);
   }
 
   handleDeleted(id: number) {
-    this.projects.delete(id)
+    this.projects.delete(id);
   }
 
   async createProject(data: Record<string, unknown>): Promise<Project> {
@@ -1563,39 +1659,39 @@ export class ProjectStore {
       type: 'project:create',
       requestId: crypto.randomUUID(),
       data: data as any,
-    })
+    });
   }
 
   async updateProject(id: number, data: Record<string, unknown>): Promise<void> {
-    const prev = toJS(this.projects.get(id))
-    if (prev) this.projects.set(id, { ...prev, ...data } as Project)
+    const prev = toJS(this.projects.get(id));
+    if (prev) this.projects.set(id, { ...prev, ...data } as Project);
     try {
       await _ws!.mutate({
         type: 'project:update',
         requestId: crypto.randomUUID(),
         data: { id, ...data } as any,
-      })
+      });
     } catch {
-      if (prev) this.projects.set(id, prev)
+      if (prev) this.projects.set(id, prev);
     }
   }
 
   async deleteProject(id: number): Promise<void> {
-    const prev = toJS(this.projects.get(id))
-    this.projects.delete(id)
+    const prev = toJS(this.projects.get(id));
+    this.projects.delete(id);
     try {
       await _ws!.mutate({
         type: 'project:delete',
         requestId: crypto.randomUUID(),
         data: { id },
-      })
+      });
     } catch {
-      if (prev) this.projects.set(id, prev)
+      if (prev) this.projects.set(id, prev);
     }
   }
 
   serialize(): Project[] {
-    return [...this.projects.values()]
+    return [...this.projects.values()];
   }
 }
 ```
@@ -1604,70 +1700,76 @@ export class ProjectStore {
 
 ```typescript
 // app/stores/session-store.ts
-import { makeAutoObservable, observable } from 'mobx'
-import type { WsClient } from '../lib/ws-client'
-import type { ServerMessage } from '../../src/shared/ws-protocol'
+import { makeAutoObservable, observable } from 'mobx';
+import type { WsClient } from '../lib/ws-client';
+import type { ServerMessage } from '../../src/shared/ws-protocol';
 
 interface SessionState {
-  active: boolean
-  status: string
-  sessionId: string | null
-  promptsSent: number
-  turnsCompleted: number
-  liveMessages: Array<Record<string, unknown>>
-  history: Array<Record<string, unknown>>
-  contextTokens: number
-  contextWindow: number
+  active: boolean;
+  status: string;
+  sessionId: string | null;
+  promptsSent: number;
+  turnsCompleted: number;
+  liveMessages: Array<Record<string, unknown>>;
+  history: Array<Record<string, unknown>>;
+  contextTokens: number;
+  contextWindow: number;
 }
 
-let _ws: WsClient | null = null
-export function setSessionWs(ws: WsClient) { _ws = ws }
+let _ws: WsClient | null = null;
+export function setSessionWs(ws: WsClient) {
+  _ws = ws;
+}
 
 export class SessionStore {
-  sessions = observable.map<number, SessionState>()
+  sessions = observable.map<number, SessionState>();
 
   constructor() {
-    makeAutoObservable(this)
+    makeAutoObservable(this);
   }
 
   getSession(cardId: number): SessionState | undefined {
-    return this.sessions.get(cardId)
+    return this.sessions.get(cardId);
   }
 
   handleClaudeMessage(cardId: number, data: Record<string, unknown>) {
-    let session = this.sessions.get(cardId)
+    let session = this.sessions.get(cardId);
     if (!session) {
-      session = this.makeSession()
-      this.sessions.set(cardId, session)
+      session = this.makeSession();
+      this.sessions.set(cardId, session);
     }
-    session.liveMessages.push(data)
+    session.liveMessages.push(data);
 
     // Extract context tokens from assistant messages
     if (data.type === 'assistant' && data.message) {
-      const msg = data.message as Record<string, unknown>
+      const msg = data.message as Record<string, unknown>;
       if (msg.usage && typeof msg.usage === 'object') {
-        const usage = msg.usage as Record<string, number>
-        session.contextTokens = usage.input_tokens ?? session.contextTokens
+        const usage = msg.usage as Record<string, number>;
+        session.contextTokens = usage.input_tokens ?? session.contextTokens;
       }
     }
     // Extract context window from result messages
     if (data.type === 'result' && data.message) {
-      const msg = data.message as Record<string, unknown>
+      const msg = data.message as Record<string, unknown>;
       if (msg.modelUsage && typeof msg.modelUsage === 'object') {
-        const mu = msg.modelUsage as Record<string, number>
-        session.contextWindow = mu.contextWindow ?? session.contextWindow
+        const mu = msg.modelUsage as Record<string, number>;
+        session.contextWindow = mu.contextWindow ?? session.contextWindow;
       }
     }
   }
 
   handleClaudeStatus(data: {
-    cardId: number; active: boolean; status: string;
-    sessionId: string | null; promptsSent: number; turnsCompleted: number;
+    cardId: number;
+    active: boolean;
+    status: string;
+    sessionId: string | null;
+    promptsSent: number;
+    turnsCompleted: number;
   }) {
-    let session = this.sessions.get(data.cardId)
+    let session = this.sessions.get(data.cardId);
     if (!session) {
-      session = this.makeSession()
-      this.sessions.set(data.cardId, session)
+      session = this.makeSession();
+      this.sessions.set(data.cardId, session);
     }
     Object.assign(session, {
       active: data.active,
@@ -1675,21 +1777,21 @@ export class SessionStore {
       sessionId: data.sessionId,
       promptsSent: data.promptsSent,
       turnsCompleted: data.turnsCompleted,
-    })
+    });
   }
 
   setHistory(cardId: number, messages: Array<Record<string, unknown>>) {
-    let session = this.sessions.get(cardId)
+    let session = this.sessions.get(cardId);
     if (!session) {
-      session = this.makeSession()
-      this.sessions.set(cardId, session)
+      session = this.makeSession();
+      this.sessions.set(cardId, session);
     }
-    session.history = messages
+    session.history = messages;
   }
 
   clearLiveMessages(cardId: number) {
-    const session = this.sessions.get(cardId)
-    if (session) session.liveMessages = []
+    const session = this.sessions.get(cardId);
+    if (session) session.liveMessages = [];
   }
 
   // --- Actions ---
@@ -1699,7 +1801,7 @@ export class SessionStore {
       type: 'claude:start',
       requestId: crypto.randomUUID(),
       data: { cardId, prompt },
-    })
+    });
   }
 
   async sendMessage(cardId: number, message: string, files?: Array<Record<string, unknown>>): Promise<void> {
@@ -1707,7 +1809,7 @@ export class SessionStore {
       type: 'claude:send',
       requestId: crypto.randomUUID(),
       data: { cardId, message, files } as any,
-    })
+    });
   }
 
   async stopSession(cardId: number): Promise<void> {
@@ -1715,7 +1817,7 @@ export class SessionStore {
       type: 'claude:stop',
       requestId: crypto.randomUUID(),
       data: { cardId },
-    })
+    });
   }
 
   async requestStatus(cardId: number): Promise<void> {
@@ -1723,7 +1825,7 @@ export class SessionStore {
       type: 'claude:status',
       requestId: crypto.randomUUID(),
       data: { cardId },
-    })
+    });
   }
 
   async loadHistory(sessionId: string, cardId: number): Promise<void> {
@@ -1733,16 +1835,21 @@ export class SessionStore {
       type: 'session:load',
       requestId: crypto.randomUUID(),
       data: { sessionId, cardId },
-    })
+    });
   }
 
   private makeSession(): SessionState {
     return {
-      active: false, status: 'completed', sessionId: null,
-      promptsSent: 0, turnsCompleted: 0,
-      liveMessages: [], history: [],
-      contextTokens: 0, contextWindow: 0,
-    }
+      active: false,
+      status: 'completed',
+      sessionId: null,
+      promptsSent: 0,
+      turnsCompleted: 0,
+      liveMessages: [],
+      history: [],
+      contextTokens: 0,
+      contextWindow: 0,
+    };
   }
 }
 ```
@@ -1751,70 +1858,70 @@ export class SessionStore {
 
 ```typescript
 // app/stores/root-store.ts
-import { CardStore, setWsClient } from './card-store'
-import { ProjectStore, setProjectWs } from './project-store'
-import { SessionStore, setSessionWs } from './session-store'
-import { WsClient } from '../lib/ws-client'
-import type { ServerMessage } from '../../src/shared/ws-protocol'
+import { CardStore, setWsClient } from './card-store';
+import { ProjectStore, setProjectWs } from './project-store';
+import { SessionStore, setSessionWs } from './session-store';
+import { WsClient } from '../lib/ws-client';
+import type { ServerMessage } from '../../src/shared/ws-protocol';
 
 export class RootStore {
-  cards: CardStore
-  projects: ProjectStore
-  sessions: SessionStore
-  ws: WsClient
+  cards: CardStore;
+  projects: ProjectStore;
+  sessions: SessionStore;
+  ws: WsClient;
 
   constructor() {
-    this.cards = new CardStore()
-    this.projects = new ProjectStore()
-    this.sessions = new SessionStore()
-    this.ws = new WsClient(this.handleMessage)
-    setWsClient(this.ws)
-    setProjectWs(this.ws)
-    setSessionWs(this.ws)
+    this.cards = new CardStore();
+    this.projects = new ProjectStore();
+    this.sessions = new SessionStore();
+    this.ws = new WsClient(this.handleMessage);
+    setWsClient(this.ws);
+    setProjectWs(this.ws);
+    setSessionWs(this.ws);
   }
 
   handleMessage = (msg: ServerMessage) => {
     switch (msg.type) {
       case 'sync':
-        this.cards.hydrate(msg.cards as any)
-        this.projects.hydrate(msg.projects as any)
-        break
+        this.cards.hydrate(msg.cards as any);
+        this.projects.hydrate(msg.projects as any);
+        break;
       case 'card:updated':
-        this.cards.handleUpdated(msg.data as any)
-        break
+        this.cards.handleUpdated(msg.data as any);
+        break;
       case 'card:deleted':
-        this.cards.handleDeleted(msg.data.id)
-        break
+        this.cards.handleDeleted(msg.data.id);
+        break;
       case 'project:updated':
-        this.projects.handleUpdated(msg.data as any)
-        break
+        this.projects.handleUpdated(msg.data as any);
+        break;
       case 'project:deleted':
-        this.projects.handleDeleted(msg.data.id)
-        break
+        this.projects.handleDeleted(msg.data.id);
+        break;
       case 'claude:message':
-        this.sessions.handleClaudeMessage(msg.cardId, msg.data as any)
-        break
+        this.sessions.handleClaudeMessage(msg.cardId, msg.data as any);
+        break;
       case 'claude:status':
-        this.sessions.handleClaudeStatus(msg.data as any)
-        break
+        this.sessions.handleClaudeStatus(msg.data as any);
+        break;
       case 'session:history':
-        this.sessions.setHistory(msg.cardId, msg.messages as any)
-        break
+        this.sessions.setHistory(msg.cardId, msg.messages as any);
+        break;
       case 'page:result':
-        this.cards.hydrate(msg.cards as any)
-        break
+        this.cards.hydrate(msg.cards as any);
+        break;
       case 'search:result':
         // Handle in a search-specific observable if needed
-        break
+        break;
     }
-  }
+  };
 
   subscribe(columns: string[]) {
-    this.ws.subscribe(columns)
+    this.ws.subscribe(columns);
   }
 
   dispose() {
-    this.ws.dispose()
+    this.ws.dispose();
   }
 }
 ```
@@ -1853,36 +1960,37 @@ git commit -m "feat: MobX stores (card, project, session, root) + React context"
 ### Task 4.3: IndexedDB persistence
 
 **Files:**
+
 - Create: `app/lib/store-persist.ts`
 
 - [ ] **Step 1: Implement persistence**
 
 ```typescript
 // app/lib/store-persist.ts
-import { autorun, toJS } from 'mobx'
-import { get, set } from 'idb-keyval'
+import { autorun, toJS } from 'mobx';
+import { get, set } from 'idb-keyval';
 
 interface Persistable {
-  serialize(): unknown[]
-  hydrate(data: unknown[]): void
+  serialize(): unknown[];
+  hydrate(data: unknown[]): void;
 }
 
 export function persistStore<T extends Persistable>(store: T, key: string) {
   // Load from IDB on init
   get(key).then((cached) => {
     if (Array.isArray(cached) && cached.length > 0) {
-      store.hydrate(cached)
+      store.hydrate(cached);
     }
-  })
+  });
 
   // Save to IDB on change, debounced 1s
   autorun(
     () => {
-      const data = toJS(store.serialize())
-      set(key, data)
+      const data = toJS(store.serialize());
+      set(key, data);
     },
     { delay: 1000 },
-  )
+  );
 }
 ```
 
@@ -1900,11 +2008,13 @@ git commit -m "feat: MobX → IndexedDB persistence via autorun"
 ### Task 5.1: Root layout — swap providers
 
 **Files:**
+
 - Modify: `app/root.tsx`
 
 - [ ] **Step 1: Read current root.tsx**
 
 Read `app/root.tsx` thoroughly. Understand the provider hierarchy:
+
 ```
 QueryClient → PersistQueryClientProvider → TRPCProvider → App
 ```
@@ -1914,29 +2024,28 @@ QueryClient → PersistQueryClientProvider → TRPCProvider → App
 Replace the React Query + tRPC provider stack with MobX StoreProvider:
 
 ```typescript
-import { RootStore } from './stores/root-store'
-import { StoreProvider } from './stores/context'
-import { persistStore } from './lib/store-persist'
+import { RootStore } from './stores/root-store';
+import { StoreProvider } from './stores/context';
+import { persistStore } from './lib/store-persist';
 
 // Module-level singleton (survives HMR)
-let rootStore: RootStore
+let rootStore: RootStore;
 if (!(globalThis as any).__rootStore) {
-  rootStore = new RootStore()
-  persistStore(rootStore.cards, 'orchestrel:cards')
-  persistStore(rootStore.projects, 'orchestrel:projects')
-  ;(globalThis as any).__rootStore = rootStore
+  rootStore = new RootStore();
+  persistStore(rootStore.cards, 'orchestrel:cards');
+  persistStore(rootStore.projects, 'orchestrel:projects');
+  (globalThis as any).__rootStore = rootStore;
 } else {
-  rootStore = (globalThis as any).__rootStore
+  rootStore = (globalThis as any).__rootStore;
 }
 ```
 
 Replace the provider tree:
+
 ```tsx
 // Before: <PersistQueryClientProvider><TRPCProvider>
 // After:
-<StoreProvider store={rootStore}>
-  {children}
-</StoreProvider>
+<StoreProvider store={rootStore}>{children}</StoreProvider>
 ```
 
 Keep: service worker registration, Vite HMR handler, theme/layout.
@@ -1959,11 +2068,13 @@ git commit -m "feat: replace React Query + tRPC providers with MobX StoreProvide
 ### Task 5.2: Board layout (board.tsx)
 
 **Files:**
+
 - Modify: `app/routes/board.tsx`
 
 - [ ] **Step 1: Read and understand current board.tsx**
 
 Read `app/routes/board.tsx`. It manages:
+
 - Selected card state (URL search params)
 - Panel resize
 - New card modal
@@ -1975,26 +2086,26 @@ Read `app/routes/board.tsx`. It manages:
 Replace `useQuery(trpc.cards.list.queryOptions())` and `useQuery(trpc.projects.list.queryOptions())` with store access:
 
 ```typescript
-import { observer } from 'mobx-react-lite'
-import { useCardStore, useProjectStore, useStore } from '../stores/context'
+import { observer } from 'mobx-react-lite';
+import { useCardStore, useProjectStore, useStore } from '../stores/context';
 
 // Wrap component with observer()
 export default observer(function BoardLayout() {
-  const cardStore = useCardStore()
-  const projectStore = useProjectStore()
-  const store = useStore()
+  const cardStore = useCardStore();
+  const projectStore = useProjectStore();
+  const store = useStore();
 
   // Subscribe to active columns on mount
   useEffect(() => {
-    store.subscribe(['backlog', 'ready', 'in_progress', 'review', 'done'])
-  }, [])
+    store.subscribe(['backlog', 'ready', 'in_progress', 'review', 'done']);
+  }, []);
 
   // Replace: const { data: allCards } = useQuery(...)
   // With: observe cardStore directly
-  const selectedCard = cardStore.getCard(selectedCardId)
+  const selectedCard = cardStore.getCard(selectedCardId);
 
   // ... rest of component
-})
+});
 ```
 
 Replace all `useMutation` calls with store action calls.
@@ -2009,11 +2120,13 @@ git commit -m "feat: migrate board.tsx layout to MobX observers"
 ### Task 5.3: Board index (main board with DnD)
 
 **Files:**
+
 - Modify: `app/routes/board.index.tsx`
 
 - [ ] **Step 1: Read and understand current board.index.tsx**
 
 This is the most complex component — 378 lines with:
+
 - Column grouping from server data
 - Drag-and-drop with dnd-kit
 - Optimistic card movement
@@ -2023,6 +2136,7 @@ This is the most complex component — 378 lines with:
 - [ ] **Step 2: Migrate to MobX**
 
 Key changes:
+
 - Replace `useQuery(trpc.cards.list.queryOptions())` with `useCardStore()`
 - Replace the `columns` local state + useEffect sync with MobX computed `cardsByColumn`
 - Replace `moveMutation` with `cardStore.moveCard()`
@@ -2030,18 +2144,23 @@ Key changes:
 - Wrap with `observer()`
 
 The `columns` local state pattern can be simplified:
+
 ```typescript
 // Before: local state + useEffect sync from server
 // After: computed directly from store
-const backlog = cardStore.cardsByColumn('backlog')
-const ready = cardStore.cardsByColumn('ready')
+const backlog = cardStore.cardsByColumn('backlog');
+const ready = cardStore.cardsByColumn('ready');
 // ... etc
 
 // For DnD optimistic reorder during drag, use a local override:
-const [dragOverride, setDragOverride] = useState<Record<string, Card[]> | null>(null)
+const [dragOverride, setDragOverride] = useState<Record<string, Card[]> | null>(null);
 const displayColumns = dragOverride ?? {
-  backlog, ready, in_progress, review, done,
-}
+  backlog,
+  ready,
+  in_progress,
+  review,
+  done,
+};
 ```
 
 - [ ] **Step 3: Verify DnD still works**
@@ -2058,6 +2177,7 @@ git commit -m "feat: migrate board index to MobX with DnD support"
 ### Task 5.4: Remaining board routes
 
 **Files:**
+
 - Modify: `app/routes/board.backlog.tsx`
 - Modify: `app/routes/board.done.tsx`
 - Modify: `app/routes/board.archive.tsx`
@@ -2073,21 +2193,22 @@ Same pattern.
 - [ ] **Step 3: Migrate board.archive.tsx**
 
 This one needs pagination support:
+
 ```typescript
-const cardStore = useCardStore()
-const store = useStore()
-const [loading, setLoading] = useState(false)
+const cardStore = useCardStore();
+const store = useStore();
+const [loading, setLoading] = useState(false);
 
 // Initial page load
 useEffect(() => {
-  store.ws.send({ type: 'page', column: 'archive', limit: 50 })
-}, [])
+  store.ws.send({ type: 'page', column: 'archive', limit: 50 });
+}, []);
 
 // Infinite scroll handler
 function loadMore() {
-  const archiveCards = cardStore.cardsByColumn('archive')
-  const lastPos = archiveCards[archiveCards.length - 1]?.position
-  store.ws.send({ type: 'page', column: 'archive', cursor: lastPos, limit: 50 })
+  const archiveCards = cardStore.cardsByColumn('archive');
+  const lastPos = archiveCards[archiveCards.length - 1]?.position;
+  store.ws.send({ type: 'page', column: 'archive', cursor: lastPos, limit: 50 });
 }
 ```
 
@@ -2101,11 +2222,13 @@ git commit -m "feat: migrate backlog, done, archive routes to MobX"
 ### Task 5.5: CardDetail component
 
 **Files:**
+
 - Modify: `app/components/CardDetail.tsx`
 
 - [ ] **Step 1: Read CardDetail.tsx (664 lines)**
 
 This is a large component. Key integrations:
+
 - `useQuery(trpc.cards.list)` for card data
 - `useQuery(trpc.projects.list)` for project dropdown
 - `useMutation(trpc.cards.update)` for saving changes
@@ -2118,23 +2241,24 @@ This is a large component. Key integrations:
 - [ ] **Step 2: Migrate to MobX**
 
 Replace all query/mutation hooks:
+
 ```typescript
-const cardStore = useCardStore()
-const projectStore = useProjectStore()
-const sessionStore = useSessionStore()
+const cardStore = useCardStore();
+const projectStore = useProjectStore();
+const sessionStore = useSessionStore();
 
 // Card data — reactive via observer()
-const card = cardStore.getCard(cardId)
-const projects = projectStore.all
+const card = cardStore.getCard(cardId);
+const projects = projectStore.all;
 
 // Mutations → store actions
-const handleSave = () => cardStore.updateCard(cardId, draft)
-const handleDelete = () => cardStore.deleteCard(cardId)
-const handleMove = (col: string) => cardStore.moveCard(cardId, col, 0)
-const handleGenerateTitle = () => cardStore.generateTitle(cardId)
+const handleSave = () => cardStore.updateCard(cardId, draft);
+const handleDelete = () => cardStore.deleteCard(cardId);
+const handleMove = (col: string) => cardStore.moveCard(cardId, col, 0);
+const handleGenerateTitle = () => cardStore.generateTitle(cardId);
 
 // Session status — from session store
-const session = sessionStore.getSession(cardId)
+const session = sessionStore.getSession(cardId);
 ```
 
 Also migrate `NewCardDetail` (card creation form).
@@ -2153,6 +2277,7 @@ git commit -m "feat: migrate CardDetail to MobX store actions"
 ### Task 6.1: Server-side Claude WS handlers
 
 **Files:**
+
 - Create: `src/server/ws/handlers/claude.ts`
 - Modify: `src/server/ws/handlers.ts`
 - Modify: `src/server/claude/manager.ts`
@@ -2160,6 +2285,7 @@ git commit -m "feat: migrate CardDetail to MobX store actions"
 - [ ] **Step 1: Read existing claude.ts router and manager.ts**
 
 Understand the full flow:
+
 - `claude.ts` start mutation: creates session, registers 'message' and 'exit' handlers, waits for init
 - `claude.ts` sendMessage: recreates session if needed (after server restart), sends message
 - `claude.ts` onMessage subscription: yields tracked messages from buffer + live
@@ -2169,83 +2295,101 @@ Understand the full flow:
 
 ```typescript
 // src/server/ws/handlers/claude.ts
-import type { WebSocket } from 'ws'
-import type { ConnectionManager } from '../connections'
-import type { DbMutator } from '../../db/mutator'
-import type { ClientMessage } from '../../../shared/ws-protocol'
-import { sessionManager } from '../../claude/manager'
-import { db } from '../../db'
-import { cards, projects } from '../../db/schema'
-import { eq } from 'drizzle-orm'
+import type { WebSocket } from 'ws';
+import type { ConnectionManager } from '../connections';
+import type { DbMutator } from '../../db/mutator';
+import type { ClientMessage } from '../../../shared/ws-protocol';
+import { sessionManager } from '../../claude/manager';
+import { db } from '../../db';
+import { cards, projects } from '../../db/schema';
+import { eq } from 'drizzle-orm';
 
 export async function handleClaudeStart(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'claude:start' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'claude:start' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
-    const { cardId, prompt } = msg.data
-    const card = db.select().from(cards).where(eq(cards.id, cardId)).get()
-    if (!card) throw new Error(`Card ${cardId} not found`)
-    if (!card.worktreePath) throw new Error(`Card ${cardId} has no working directory`)
+    const { cardId, prompt } = msg.data;
+    const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
+    if (!card) throw new Error(`Card ${cardId} not found`);
+    if (!card.worktreePath) throw new Error(`Card ${cardId} has no working directory`);
 
-    let projectName: string | undefined
+    let projectName: string | undefined;
     if (card.projectId) {
-      const proj = db.select({ name: projects.name }).from(projects).where(eq(projects.id, card.projectId)).get()
-      if (proj) projectName = proj.name.toLowerCase()
+      const proj = db.select({ name: projects.name }).from(projects).where(eq(projects.id, card.projectId)).get();
+      if (proj) projectName = proj.name.toLowerCase();
     }
 
-    const isResume = !!card.sessionId
+    const isResume = !!card.sessionId;
     const session = sessionManager.create(
-      cardId, card.worktreePath, card.sessionId ?? undefined,
-      projectName, card.model, card.thinkingLevel,
-    )
+      cardId,
+      card.worktreePath,
+      card.sessionId ?? undefined,
+      projectName,
+      card.model,
+      card.thinkingLevel,
+    );
 
     // Register event handlers — use mutator for DB writes (triggers broadcasts)
     session.on('message', (m: Record<string, unknown>) => {
       // Push message to WS client
       connections.send(ws, {
-        type: 'claude:message', cardId,
+        type: 'claude:message',
+        cardId,
         data: m as any,
-      })
+      });
       // On result, persist counters via mutator
       if (m.type === 'result') {
         mutator.updateCard(cardId, {
           promptsSent: session.promptsSent,
           turnsCompleted: session.turnsCompleted,
-        })
+        });
       }
-    })
+    });
 
     session.on('exit', () => {
       if (session.status === 'completed' || session.status === 'errored') {
-        mutator.moveCard(cardId, 'review', card.position)
+        mutator.moveCard(cardId, 'review', card.position);
         mutator.updateCard(cardId, {
           promptsSent: session.promptsSent,
           turnsCompleted: session.turnsCompleted,
-        })
+        });
       }
       connections.send(ws, {
         type: 'claude:status',
         data: {
-          cardId, active: false, status: session.status,
-          sessionId: session.sessionId, promptsSent: session.promptsSent,
+          cardId,
+          active: false,
+          status: session.status,
+          sessionId: session.sessionId,
+          promptsSent: session.promptsSent,
           turnsCompleted: session.turnsCompleted,
         },
-      })
-    })
+      });
+    });
 
-    session.promptsSent++
-    await session.start(prompt)
+    session.promptsSent++;
+    await session.start(prompt);
 
     // Wait for session init (sessionId assigned)
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timed out')), 30_000)
+      const timeout = setTimeout(() => reject(new Error('Timed out')), 30_000);
       const check = () => {
-        if (session.sessionId) { clearTimeout(timeout); session.off('message', check); resolve() }
-      }
-      session.on('message', check)
-      session.on('exit', () => { clearTimeout(timeout); session.off('message', check); reject(new Error('Session exited')) })
-    })
+        if (session.sessionId) {
+          clearTimeout(timeout);
+          session.off('message', check);
+          resolve();
+        }
+      };
+      session.on('message', check);
+      session.on('exit', () => {
+        clearTimeout(timeout);
+        session.off('message', check);
+        reject(new Error('Session exited'));
+      });
+    });
 
     // For fresh sessions, store sessionId and reset counters.
     // This runs AFTER waitForInit, so the 'result' handler from the first turn
@@ -2257,21 +2401,23 @@ export async function handleClaudeStart(
         sessionId: session.sessionId,
         promptsSent: 1,
         turnsCompleted: 0,
-      })
+      });
     }
 
     connections.send(ws, {
       type: 'claude:status',
       data: {
-        cardId, active: true, status: 'running',
+        cardId,
+        active: true,
+        status: 'running',
         sessionId: session.sessionId,
         promptsSent: session.promptsSent,
         turnsCompleted: session.turnsCompleted,
       },
-    })
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: { status: 'started' } })
+    });
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: { status: 'started' } });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
@@ -2286,57 +2432,66 @@ export async function handleClaudeStart(
 // 7. Persist promptsSent via mutator
 // Port ALL of this logic faithfully.
 export async function handleClaudeSend(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'claude:send' }>,
-  connections: ConnectionManager, mutator: DbMutator,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'claude:send' }>,
+  connections: ConnectionManager,
+  mutator: DbMutator,
 ) {
   try {
     // Port FULL sendMessage logic from claude.ts (lines 114-194)
     // See the CRITICAL note above — do not skip the session recreation path
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: { status: 'sent' } })
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: { status: 'sent' } });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export async function handleClaudeStop(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'claude:stop' }>,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'claude:stop' }>,
   connections: ConnectionManager,
 ) {
   try {
-    await sessionManager.kill(msg.data.cardId)
-    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: { status: 'stopped' } })
+    await sessionManager.kill(msg.data.cardId);
+    connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId, data: { status: 'stopped' } });
   } catch (err) {
-    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) })
+    connections.send(ws, { type: 'mutation:error', requestId: msg.requestId, error: String(err) });
   }
 }
 
 export function handleClaudeStatus(
-  ws: WebSocket, msg: Extract<ClientMessage, { type: 'claude:status' }>,
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'claude:status' }>,
   connections: ConnectionManager,
 ) {
-  const session = sessionManager.get(msg.data.cardId)
+  const session = sessionManager.get(msg.data.cardId);
   if (session) {
     connections.send(ws, {
       type: 'claude:status',
       data: {
-        cardId: msg.data.cardId, active: session.status === 'running',
-        status: session.status, sessionId: session.sessionId,
-        promptsSent: session.promptsSent, turnsCompleted: session.turnsCompleted,
+        cardId: msg.data.cardId,
+        active: session.status === 'running',
+        status: session.status,
+        sessionId: session.sessionId,
+        promptsSent: session.promptsSent,
+        turnsCompleted: session.turnsCompleted,
       },
-    })
+    });
   } else {
-    const [card] = db.select().from(cards).where(eq(cards.id, msg.data.cardId))
+    const [card] = db.select().from(cards).where(eq(cards.id, msg.data.cardId));
     connections.send(ws, {
       type: 'claude:status',
       data: {
-        cardId: msg.data.cardId, active: false, status: 'completed',
+        cardId: msg.data.cardId,
+        active: false,
+        status: 'completed',
         sessionId: card?.sessionId ?? null,
         promptsSent: card?.promptsSent ?? 0,
         turnsCompleted: card?.turnsCompleted ?? 0,
       },
-    })
+    });
   }
-  connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId })
+  connections.send(ws, { type: 'mutation:ok', requestId: msg.requestId });
 }
 ```
 
@@ -2356,11 +2511,13 @@ git commit -m "feat: Claude session WS handlers (start, send, stop, status)"
 ### Task 6.2: Migrate SessionView component
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx`
 
 - [ ] **Step 1: Read SessionView.tsx (661 lines)**
 
 Key things to understand:
+
 - `useSubscription(trpc.claude.onMessage)` for live streaming
 - `useQuery(trpc.sessions.loadSession)` for history
 - `useQuery(trpc.claude.status)` with 3s polling
@@ -2375,50 +2532,50 @@ Key things to understand:
 Replace the data layer while keeping the UI intact:
 
 ```typescript
-import { observer } from 'mobx-react-lite'
-import { useSessionStore, useCardStore, useStore } from '../stores/context'
+import { observer } from 'mobx-react-lite';
+import { useSessionStore, useCardStore, useStore } from '../stores/context';
 
 export default observer(function SessionView({ cardId }: { cardId: number }) {
-  const sessionStore = useSessionStore()
-  const cardStore = useCardStore()
-  const store = useStore()
-  const card = cardStore.getCard(cardId)
-  const session = sessionStore.getSession(cardId)
+  const sessionStore = useSessionStore();
+  const cardStore = useCardStore();
+  const store = useStore();
+  const card = cardStore.getCard(cardId);
+  const session = sessionStore.getSession(cardId);
 
   // Load history when card has sessionId
   useEffect(() => {
     if (card?.sessionId) {
-      sessionStore.loadHistory(card.sessionId, cardId)
+      sessionStore.loadHistory(card.sessionId, cardId);
     }
-  }, [card?.sessionId])
+  }, [card?.sessionId]);
 
   // Request status on mount
   useEffect(() => {
-    sessionStore.requestStatus(cardId)
-  }, [cardId])
+    sessionStore.requestStatus(cardId);
+  }, [cardId]);
 
   // Merged messages: history + live
-  const messages = useMemo(() => [
-    ...(session?.history ?? []),
-    ...(session?.liveMessages ?? []),
-  ], [session?.history, session?.liveMessages])
+  const messages = useMemo(
+    () => [...(session?.history ?? []), ...(session?.liveMessages ?? [])],
+    [session?.history, session?.liveMessages],
+  );
 
   // Start session
   const handleStart = async (prompt: string) => {
-    await sessionStore.startSession(cardId, prompt)
-  }
+    await sessionStore.startSession(cardId, prompt);
+  };
 
   // Send message
   const handleSend = async (message: string, files?: unknown[]) => {
-    await sessionStore.sendMessage(cardId, message, files as any)
-  }
+    await sessionStore.sendMessage(cardId, message, files as any);
+  };
 
   // Stop session
-  const handleStop = () => sessionStore.stopSession(cardId)
+  const handleStop = () => sessionStore.stopSession(cardId);
 
   // Keep: file upload (POST /api/upload), UI components, auto-scroll, context gauge
   // ...
-})
+});
 ```
 
 - [ ] **Step 3: Verify streaming works**
@@ -2439,6 +2596,7 @@ git commit -m "feat: migrate SessionView to MobX + WS streaming"
 ### Task 7.1: External REST API with Hono
 
 **Files:**
+
 - Create: `src/server/api/rest.ts`
 - Modify: `vite.config.ts` (or `src/server/ws/server.ts` to mount)
 
@@ -2446,41 +2604,41 @@ git commit -m "feat: migrate SessionView to MobX + WS streaming"
 
 ```typescript
 // src/server/api/rest.ts
-import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
-import { cardCreateSchema, cardUpdateSchema, cardMoveSchema } from '../../shared/ws-protocol'
-import type { DbMutator } from '../db/mutator'
+import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { cardCreateSchema, cardUpdateSchema, cardMoveSchema } from '../../shared/ws-protocol';
+import type { DbMutator } from '../db/mutator';
 
 export function createRestApi(mutator: DbMutator) {
-  const app = new Hono()
+  const app = new Hono();
 
   app.post('/api/cards', zValidator('json', cardCreateSchema), (c) => {
-    const data = c.req.valid('json')
-    const card = mutator.createCard(data)
-    return c.json(card, 201)
-  })
+    const data = c.req.valid('json');
+    const card = mutator.createCard(data);
+    return c.json(card, 201);
+  });
 
   app.patch('/api/cards/:id', zValidator('json', cardUpdateSchema.omit({ id: true })), (c) => {
-    const id = Number(c.req.param('id'))
-    const data = c.req.valid('json')
-    const card = mutator.updateCard(id, data)
-    return c.json(card)
-  })
+    const id = Number(c.req.param('id'));
+    const data = c.req.valid('json');
+    const card = mutator.updateCard(id, data);
+    return c.json(card);
+  });
 
   app.post('/api/cards/:id/move', zValidator('json', cardMoveSchema.omit({ id: true })), (c) => {
-    const id = Number(c.req.param('id'))
-    const data = c.req.valid('json')
-    const card = mutator.moveCard(id, data.column, data.position)
-    return c.json(card)
-  })
+    const id = Number(c.req.param('id'));
+    const data = c.req.valid('json');
+    const card = mutator.moveCard(id, data.column, data.position);
+    return c.json(card);
+  });
 
   app.delete('/api/cards/:id', (c) => {
-    const id = Number(c.req.param('id'))
-    mutator.deleteCard(id)
-    return c.json({ ok: true })
-  })
+    const id = Number(c.req.param('id'));
+    mutator.deleteCard(id);
+    return c.json({ ok: true });
+  });
 
-  return app
+  return app;
 }
 ```
 
@@ -2489,20 +2647,20 @@ export function createRestApi(mutator: DbMutator) {
 Use `@hono/node-server`'s `getRequestListener` to convert Hono's fetch-based handler to a Node.js middleware. Add to the `wsServerPlugin` in `src/server/ws/server.ts`:
 
 ```typescript
-import { getRequestListener } from '@hono/node-server'
-import { createRestApi } from '../api/rest'
+import { getRequestListener } from '@hono/node-server';
+import { createRestApi } from '../api/rest';
 
 // In configureServer:
-const restApp = createRestApi(mutator)
-const restHandler = getRequestListener(restApp.fetch)
+const restApp = createRestApi(mutator);
+const restHandler = getRequestListener(restApp.fetch);
 
 server.middlewares.use((req, res, next) => {
   if (req.url?.startsWith('/api/cards') || req.url?.startsWith('/api/docs')) {
-    restHandler(req, res)
+    restHandler(req, res);
   } else {
-    next()
+    next();
   }
-})
+});
 ```
 
 **Note:** This project runs `pnpm dev` in production (systemd service runs Vite dev server). The WS server and REST API are both mounted via the Vite plugin, which IS the production entry point. If the project ever moves to a production build (`pnpm build` + express), the `createWsServer()` and REST middleware must be wired into the express server entry point as well.
@@ -2531,6 +2689,7 @@ git commit -m "feat: REST API for external card management"
 ### Task 8.1: Remove tRPC + React Query
 
 **Files:**
+
 - Delete: `src/server/trpc.ts`
 - Delete: `src/server/routers/index.ts`
 - Delete: `src/server/routers/cards.ts`
@@ -2589,6 +2748,7 @@ pnpm dev
 ```
 
 Test checklist:
+
 1. Board loads with cards from WS sync
 2. Create a new card — appears instantly
 3. Drag card between columns — optimistic + persists

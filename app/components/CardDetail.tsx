@@ -149,7 +149,12 @@ function CardFields({
             placeholder="Add a description..."
           />
         ) : onFilesChange && onFileErrorsChange ? (
-          <FileAttachments files={files} errors={fileErrors} onFilesChange={onFilesChange} onErrorsChange={onFileErrorsChange}>
+          <FileAttachments
+            files={files}
+            errors={fileErrors}
+            onFilesChange={onFilesChange}
+            onErrorsChange={onFileErrorsChange}
+          >
             {({ onPaste, openPicker, dragging }) => (
               <div className={`relative ${dragging ? 'rounded-md ring-2 ring-neon-cyan/50' : ''}`}>
                 <Textarea
@@ -168,7 +173,9 @@ function CardFields({
                   placeholder="Add a description..."
                   className="max-h-40 resize-y pr-10"
                 />
-                <div className="absolute bottom-2 right-2"><FilePickerButton onClick={openPicker} /></div>
+                <div className="absolute bottom-2 right-2">
+                  <FilePickerButton onClick={openPicker} />
+                </div>
               </div>
             )}
           </FileAttachments>
@@ -204,7 +211,8 @@ function CardFields({
               patch({
                 projectId: pid,
                 useWorktree: !!(proj?.isGitRepo && proj.defaultWorktree),
-                worktreeBranch: proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || cardTitle) || null : null,
+                worktreeBranch:
+                  proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || cardTitle) || null : null,
                 sourceBranch: null,
                 provider: resolved?.provider ?? draft.provider,
                 model: resolved?.model ?? config.defaultModelForNode('', draft.provider),
@@ -224,7 +232,9 @@ function CardFields({
               {visibleProjects.map((p) => (
                 <SelectItem key={p.id} value={String(p.id)}>
                   <span className="flex items-center gap-2">
-                    {p.color && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />}
+                    {p.color && (
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                    )}
                     {p.name}
                   </span>
                 </SelectItem>
@@ -248,7 +258,10 @@ function CardFields({
               });
             }}
           />
-          <label htmlFor={hasSession ? 'savedUseWorktree' : 'newUseWorktree'} className="text-sm font-medium text-muted-foreground">
+          <label
+            htmlFor={hasSession ? 'savedUseWorktree' : 'newUseWorktree'}
+            className="text-sm font-medium text-muted-foreground"
+          >
             Use worktree
           </label>
         </div>
@@ -279,7 +292,9 @@ function CardFields({
             <label className="block text-xs font-medium text-muted-foreground mb-1">Provider</label>
             <Select
               value={draft.provider}
-              onValueChange={(val) => patch({ provider: val, model: config.defaultModelForNode(selectedProject.nodeName, val) })}
+              onValueChange={(val) =>
+                patch({ provider: val, model: config.defaultModelForNode(selectedProject.nodeName, val) })
+              }
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -297,7 +312,9 @@ function CardFields({
             <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
             <Select key={draft.provider} value={draft.model} onValueChange={(val) => patch({ model: val })}>
               <SelectTrigger className="w-full">
-                <span data-slot="select-value">{config.getModelForNode(selectedProject.nodeName, draft.provider, draft.model)?.label ?? draft.model}</span>
+                <span data-slot="select-value">
+                  {config.getModelForNode(selectedProject.nodeName, draft.provider, draft.model)?.label ?? draft.model}
+                </span>
               </SelectTrigger>
               <SelectContent position="popper" className="max-h-60">
                 {config.getModelsForNode(selectedProject.nodeName, draft.provider).map(([alias, m]) => (
@@ -310,7 +327,10 @@ function CardFields({
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Summarize</label>
-            <Select value={String(draft.summarizeThreshold)} onValueChange={(val) => patch({ summarizeThreshold: parseFloat(val) })}>
+            <Select
+              value={String(draft.summarizeThreshold)}
+              onValueChange={(val) => patch({ summarizeThreshold: parseFloat(val) })}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -847,9 +867,8 @@ export const NewCardDetail = observer(function NewCardDetail({
     if (!draft.title.trim() || !draft.projectId) return;
     setCreating(true);
     try {
-      const pendingInitialFiles = files.length > 0
-        ? await uploadFiles(files, { draftId: attachmentDraftId ?? crypto.randomUUID() })
-        : undefined;
+      const pendingInitialFiles =
+        files.length > 0 ? await uploadFiles(files, { draftId: attachmentDraftId ?? crypto.randomUUID() }) : undefined;
       const card = await cardStore.createCard({
         title: draft.title,
         description: draft.description || undefined,
@@ -965,9 +984,7 @@ function CopyPathButton({
   color?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const path = worktreeBranch && projectPath
-    ? `${projectPath}/.worktrees/${worktreeBranch}`
-    : projectPath;
+  const path = worktreeBranch && projectPath ? `${projectPath}/.worktrees/${worktreeBranch}` : projectPath;
 
   async function handleCopy() {
     if (!path) return;

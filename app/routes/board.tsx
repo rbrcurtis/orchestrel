@@ -187,7 +187,6 @@ const BoardLayout = observer(function BoardLayout() {
     };
   }, []);
 
-
   // Ferris wheel: when a slot presents a new card that's ready to prompt
   // (review), focus its prompt so it's stably selected while the wheel turns.
   // Running cards never grab focus — the user doesn't want to prompt those.
@@ -423,7 +422,9 @@ const BoardLayout = observer(function BoardLayout() {
                   {filterActive && (
                     <span
                       className={`absolute -top-0.5 -right-0.5 size-4 rounded-full text-[10px] font-medium flex items-center justify-center ${
-                        excludeN > 0 ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'
+                        excludeN > 0
+                          ? 'bg-destructive text-destructive-foreground'
+                          : 'bg-primary text-primary-foreground'
                       }`}
                     >
                       {includeN + excludeN}

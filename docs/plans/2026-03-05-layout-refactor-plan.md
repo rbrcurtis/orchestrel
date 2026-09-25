@@ -13,6 +13,7 @@
 ### Task 1: Route Configuration
 
 **Files:**
+
 - Modify: `app/routes.ts`
 - Create: `app/routes/board.tsx` (layout route)
 - Create: `app/routes/board.index.tsx` (active board — ready, in_progress, review)
@@ -23,16 +24,16 @@
 
 ```ts
 // app/routes.ts
-import { type RouteConfig, route, index, layout } from "@react-router/dev/routes";
+import { type RouteConfig, route, index, layout } from '@react-router/dev/routes';
 
 export default [
-  layout("routes/board.tsx", [
-    index("routes/board.index.tsx"),
-    route("backlog", "routes/board.backlog.tsx"),
-    route("done", "routes/board.done.tsx"),
+  layout('routes/board.tsx', [
+    index('routes/board.index.tsx'),
+    route('backlog', 'routes/board.backlog.tsx'),
+    route('done', 'routes/board.done.tsx'),
   ]),
-  route("api/trpc/*", "routes/api.trpc.$.ts"),
-  route("settings/repos", "routes/settings.repos.tsx"),
+  route('api/trpc/*', 'routes/api.trpc.$.ts'),
+  route('settings/repos', 'routes/settings.repos.tsx'),
 ] satisfies RouteConfig;
 ```
 
@@ -40,7 +41,7 @@ export default [
 
 ```tsx
 // app/routes/board.tsx
-import { Outlet } from "react-router";
+import { Outlet } from 'react-router';
 
 export default function BoardLayout() {
   return (
@@ -99,13 +100,14 @@ git add -A && git commit -m "feat: route config for layout refactor with placeho
 ### Task 2: BoardLayout — Header with Nav Buttons
 
 **Files:**
+
 - Modify: `app/routes/board.tsx`
 
 **Step 1: Build the header with nav, search, settings**
 
 ```tsx
 // app/routes/board.tsx
-import { Outlet, Link, useLocation } from "react-router";
+import { Outlet, Link, useLocation } from 'react-router';
 import { Settings } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { SearchBar } from '~/components/SearchBar';
@@ -129,12 +131,7 @@ export default function BoardLayout() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Conductor</h1>
           <nav className="flex items-center gap-1">
             {NAV_ITEMS.map(({ to, label }) => (
-              <Button
-                key={to}
-                variant={location.pathname === to ? 'default' : 'ghost'}
-                size="sm"
-                asChild
-              >
+              <Button key={to} variant={location.pathname === to ? 'default' : 'ghost'} size="sm" asChild>
                 <Link to={to}>{label}</Link>
               </Button>
             ))}
@@ -174,6 +171,7 @@ git add -A && git commit -m "feat: board layout header with nav buttons, search,
 ### Task 3: Two-Panel Shell with Resizable Divider
 
 **Files:**
+
 - Modify: `app/routes/board.tsx`
 - Create: `app/components/ResizeHandle.tsx`
 
@@ -258,14 +256,17 @@ const selectedCardId = searchParams.get('card') ? Number(searchParams.get('card'
 const { panelRef, initialWidth, onMouseDown } = useResizablePanel();
 
 function selectCard(id: number | null) {
-  setSearchParams(prev => {
-    if (id === null) {
-      prev.delete('card');
-    } else {
-      prev.set('card', String(id));
-    }
-    return prev;
-  }, { replace: true });
+  setSearchParams(
+    (prev) => {
+      if (id === null) {
+        prev.delete('card');
+      } else {
+        prev.set('card', String(id));
+      }
+      return prev;
+    },
+    { replace: true },
+  );
 }
 
 // JSX:
@@ -292,7 +293,7 @@ function selectCard(id: number | null) {
       </div>
     )}
   </div>
-</div>
+</div>;
 ```
 
 **Step 3: Verify**
@@ -310,6 +311,7 @@ git add -A && git commit -m "feat: two-panel layout with resizable divider and l
 ### Task 4: Extract CardDetail from CardDetailPanel
 
 **Files:**
+
 - Create: `app/components/CardDetail.tsx`
 - Modify: `app/components/CardDetailPanel.tsx` (eventually delete)
 
@@ -326,6 +328,7 @@ Extract the inner content from `CardDetailPanel` into a standalone `CardDetail` 
 - Close button (X in top-right)
 
 Key changes from CardDetailPanel:
+
 1. **No Sheet wrapper** — just the content
 2. **Status dropdown** — new Select field that calls `cards.move` mutation
 3. **Save button** — collect all edits in local state, persist on Save click
@@ -333,6 +336,7 @@ Key changes from CardDetailPanel:
 5. **All fields editable always** (not conditional on column) — since status can change via dropdown
 
 The component should:
+
 - Load card data from `trpc.cards.list` query (same pattern as today)
 - Track dirty state: `useState` for draft fields, compare to server values
 - Save button enabled only when dirty
@@ -360,11 +364,18 @@ type Props = {
 
 const STATUSES = ['backlog', 'ready', 'in_progress', 'review', 'done'] as const;
 const statusLabels: Record<string, string> = {
-  backlog: 'Backlog', ready: 'Ready', in_progress: 'In Progress', review: 'Review', done: 'Done',
+  backlog: 'Backlog',
+  ready: 'Ready',
+  in_progress: 'In Progress',
+  review: 'Review',
+  done: 'Done',
 };
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 const priorityLabels: Record<string, string> = {
-  low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  urgent: 'Urgent',
 };
 
 export function CardDetail({ cardId, onClose }: Props) {
@@ -376,7 +387,14 @@ export function CardDetail({ cardId, onClose }: Props) {
   const { data: repos } = useQuery(trpc.repos.list.queryOptions());
 
   // Draft state for editable fields
-  const [draft, setDraft] = useState({ title: '', description: '', priority: '', repoId: null as number | null, useWorktree: false, sourceBranch: null as string | null });
+  const [draft, setDraft] = useState({
+    title: '',
+    description: '',
+    priority: '',
+    repoId: null as number | null,
+    useWorktree: false,
+    sourceBranch: null as string | null,
+  });
 
   // Sync draft when card data arrives or cardId changes
   useEffect(() => {
@@ -392,25 +410,25 @@ export function CardDetail({ cardId, onClose }: Props) {
     }
   }, [card?.id, card?.updatedAt]);
 
-  const isDirty = card && (
-    draft.title !== card.title ||
-    draft.description !== (card.description ?? '') ||
-    draft.priority !== card.priority ||
-    draft.repoId !== card.repoId ||
-    draft.useWorktree !== card.useWorktree ||
-    draft.sourceBranch !== card.sourceBranch
-  );
+  const isDirty =
+    card &&
+    (draft.title !== card.title ||
+      draft.description !== (card.description ?? '') ||
+      draft.priority !== card.priority ||
+      draft.repoId !== card.repoId ||
+      draft.useWorktree !== card.useWorktree ||
+      draft.sourceBranch !== card.sourceBranch);
 
   const updateMutation = useMutation(
     trpc.cards.update.mutationOptions({
       onSuccess: () => queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() }),
-    })
+    }),
   );
 
   const moveMutation = useMutation(
     trpc.cards.move.mutationOptions({
       onSuccess: () => queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() }),
-    })
+    }),
   );
 
   function handleSave() {
@@ -432,15 +450,11 @@ export function CardDetail({ cardId, onClose }: Props) {
   }
 
   if (!card) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-        Card not found
-      </div>
-    );
+    return <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Card not found</div>;
   }
 
   const col = card.column as string;
-  const selectedRepo = repos?.find(r => r.id === draft.repoId);
+  const selectedRepo = repos?.find((r) => r.id === draft.repoId);
 
   return (
     <div className="flex flex-col h-full">
@@ -461,10 +475,14 @@ export function CardDetail({ cardId, onClose }: Props) {
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Status</label>
             <Select value={col} onValueChange={handleStatusChange}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {STATUSES.map(s => (
-                  <SelectItem key={s} value={s}>{statusLabels[s]}</SelectItem>
+                {STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {statusLabels[s]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -473,10 +491,7 @@ export function CardDetail({ cardId, onClose }: Props) {
           {/* Title */}
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
-            <Input
-              value={draft.title}
-              onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
-            />
+            <Input value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} />
           </div>
 
           {/* Description */}
@@ -484,7 +499,7 @@ export function CardDetail({ cardId, onClose }: Props) {
             <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
             <Textarea
               value={draft.description}
-              onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+              onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
               rows={4}
               placeholder="Add a description..."
               className="resize-y"
@@ -494,11 +509,15 @@ export function CardDetail({ cardId, onClose }: Props) {
           {/* Priority */}
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Priority</label>
-            <Select value={draft.priority} onValueChange={val => setDraft(d => ({ ...d, priority: val }))}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <Select value={draft.priority} onValueChange={(val) => setDraft((d) => ({ ...d, priority: val }))}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {PRIORITIES.map(p => (
-                  <SelectItem key={p} value={p}>{priorityLabels[p]}</SelectItem>
+                {PRIORITIES.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {priorityLabels[p]}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -509,13 +528,17 @@ export function CardDetail({ cardId, onClose }: Props) {
             <label className="block text-xs font-medium text-muted-foreground mb-1">Repository</label>
             <Select
               value={draft.repoId != null ? String(draft.repoId) : '__none__'}
-              onValueChange={val => setDraft(d => ({ ...d, repoId: val === '__none__' ? null : Number(val) }))}
+              onValueChange={(val) => setDraft((d) => ({ ...d, repoId: val === '__none__' ? null : Number(val) }))}
             >
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">None</SelectItem>
-                {repos?.map(r => (
-                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                {repos?.map((r) => (
+                  <SelectItem key={r.id} value={String(r.id)}>
+                    {r.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -528,7 +551,7 @@ export function CardDetail({ cardId, onClose }: Props) {
                 id="useWorktree"
                 checked={draft.useWorktree}
                 disabled={!!card.worktreePath}
-                onCheckedChange={checked => setDraft(d => ({ ...d, useWorktree: checked === true }))}
+                onCheckedChange={(checked) => setDraft((d) => ({ ...d, useWorktree: checked === true }))}
               />
               <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
                 Use worktree
@@ -542,9 +565,11 @@ export function CardDetail({ cardId, onClose }: Props) {
               <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
               <Select
                 value={draft.sourceBranch ?? selectedRepo.defaultBranch ?? ''}
-                onValueChange={val => setDraft(d => ({ ...d, sourceBranch: val }))}
+                onValueChange={(val) => setDraft((d) => ({ ...d, sourceBranch: val }))}
               >
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="main">main</SelectItem>
                   <SelectItem value="dev">dev</SelectItem>
@@ -556,25 +581,20 @@ export function CardDetail({ cardId, onClose }: Props) {
 
         {/* Save button */}
         <div className="px-4 pb-4 shrink-0">
-          <Button
-            className="w-full"
-            disabled={!isDirty || updateMutation.isPending}
-            onClick={handleSave}
-          >
+          <Button className="w-full" disabled={!isDirty || updateMutation.isPending} onClick={handleSave}>
             {updateMutation.isPending ? 'Saving...' : 'Save'}
           </Button>
         </div>
 
         {/* Session view */}
-        {(col === 'in_progress' || col === 'review') && (
-          card.repoId || card.worktreePath ? (
+        {(col === 'in_progress' || col === 'review') &&
+          (card.repoId || card.worktreePath ? (
             <SessionView cardId={card.id} sessionId={card.sessionId} />
           ) : (
             <div className="px-4 text-sm text-muted-foreground italic">
               No repo linked - assign a repo to enable Claude sessions
             </div>
-          )
-        )}
+          ))}
       </div>
     </div>
   );
@@ -596,6 +616,7 @@ git add -A && git commit -m "feat: extract CardDetail component with status drop
 ### Task 5: Wire CardDetail into BoardLayout
 
 **Files:**
+
 - Modify: `app/routes/board.tsx`
 - Modify: `app/components/CardDetailPanel.tsx` → keep as mobile-only Sheet wrapper
 
@@ -607,13 +628,15 @@ Update the right panel section in `app/routes/board.tsx`:
 import { CardDetail } from '~/components/CardDetail';
 
 // In the right panel div:
-{selectedCardId ? (
-  <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
-) : (
-  <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-    Select a card to view details
-  </div>
-)}
+{
+  selectedCardId ? (
+    <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
+  ) : (
+    <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+      Select a card to view details
+    </div>
+  );
+}
 ```
 
 **Step 2: Mobile — Sheet wrapper**
@@ -623,19 +646,21 @@ Create a simple wrapper that uses the existing Sheet for mobile:
 ```tsx
 // In board.tsx, below the desktop panel:
 // Mobile sheet (shown only on <lg when card is selected)
-{selectedCardId && (
-  <div className="lg:hidden">
-    <Sheet open={true} onOpenChange={() => selectCard(null)}>
-      <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col">
-        <SheetHeader className="sr-only">
-          <SheetTitle>Card Detail</SheetTitle>
-          <SheetDescription>Card detail panel</SheetDescription>
-        </SheetHeader>
-        <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
-      </SheetContent>
-    </Sheet>
-  </div>
-)}
+{
+  selectedCardId && (
+    <div className="lg:hidden">
+      <Sheet open={true} onOpenChange={() => selectCard(null)}>
+        <SheetContent side="right" className="w-full sm:w-[400px] p-0 flex flex-col">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Card Detail</SheetTitle>
+            <SheetDescription>Card detail panel</SheetDescription>
+          </SheetHeader>
+          <CardDetail cardId={selectedCardId} onClose={() => selectCard(null)} />
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
 ```
 
 **Step 3: Verify**
@@ -653,6 +678,7 @@ git add -A && git commit -m "feat: wire CardDetail into layout — persistent pa
 ### Task 6: StatusRow Component
 
 **Files:**
+
 - Create: `app/components/StatusRow.tsx`
 
 **Step 1: Build StatusRow — horizontal scrollable card row**
@@ -696,33 +722,19 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
   return (
     <div className="shrink-0">
       <div className="flex items-center gap-2 px-4 py-2">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-          {displayNames[id]}
-        </h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{displayNames[id]}</h2>
         <Badge variant="secondary">{cards.length}</Badge>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => onAddCard?.(id)}
-          title="Add card"
-        >
+        <Button variant="ghost" size="icon-xs" onClick={() => onAddCard?.(id)} title="Add card">
           <Plus className="size-4" />
         </Button>
       </div>
-      <div
-        ref={setNodeRef}
-        className="flex gap-2 px-4 pb-3 overflow-x-auto min-h-[3.5rem]"
-      >
-        <SortableContext items={cards.map(c => c.id)} strategy={horizontalListSortingStrategy}>
-          {cards.map(card => (
+      <div ref={setNodeRef} className="flex gap-2 px-4 pb-3 overflow-x-auto min-h-[3.5rem]">
+        <SortableContext items={cards.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+          {cards.map((card) => (
             <Card key={card.id} id={card.id} title={card.title} priority={card.priority} onClick={onCardClick} />
           ))}
         </SortableContext>
-        {cards.length === 0 && (
-          <p className="text-xs text-gray-400 dark:text-gray-600 py-2">
-            No cards
-          </p>
-        )}
+        {cards.length === 0 && <p className="text-xs text-gray-400 dark:text-gray-600 py-2">No cards</p>}
       </div>
     </div>
   );
@@ -734,6 +746,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
 The Card component currently has no explicit width. Add a fixed width so cards don't collapse in horizontal flow:
 
 In `app/components/Card.tsx`, update the card's outer div className:
+
 - Add `w-56 shrink-0` to give cards a fixed width in horizontal mode
 
 Similarly update `CardOverlay` width from `w-72` to `w-56`.
@@ -749,11 +762,13 @@ git add -A && git commit -m "feat: StatusRow component with horizontal card layo
 ### Task 7: Active Board Route (Ready, In Progress, Review)
 
 **Files:**
+
 - Modify: `app/routes/board.index.tsx`
 
 **Step 1: Implement the active board with DnD**
 
 Port the DnD logic from `Board.tsx` into `board.index.tsx`, adapted for horizontal rows. The key changes:
+
 - Only 3 columns: `ready`, `in_progress`, `review`
 - Uses `StatusRow` instead of `Column`
 - Cross-row drag (vertical movement between rows) changes status
@@ -766,11 +781,21 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2 } from 'lucide-react';
 import {
-  DndContext, DragOverlay, PointerSensor, KeyboardSensor,
-  useSensors, useSensor, pointerWithin, closestCenter, getFirstCollision,
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensors,
+  useSensor,
+  pointerWithin,
+  closestCenter,
+  getFirstCollision,
   MeasuringStrategy,
-  type DragStartEvent, type DragOverEvent, type DragEndEvent,
-  type CollisionDetection, type UniqueIdentifier,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+  type CollisionDetection,
+  type UniqueIdentifier,
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useTRPC } from '~/lib/trpc';
@@ -801,6 +826,7 @@ export default function ActiveBoard() {
 ```
 
 The DnD logic stays almost identical to `Board.tsx`. Key differences:
+
 - `COLUMNS` → `ACTIVE_COLUMNS`
 - `Column` → `StatusRow`
 - `setSelectedCardId` → `selectCard` (from context)
@@ -822,6 +848,7 @@ git add -A && git commit -m "feat: active board route with horizontal rows and c
 ### Task 8: Backlog Route
 
 **Files:**
+
 - Modify: `app/routes/board.backlog.tsx`
 
 **Step 1: Implement backlog page**
@@ -845,6 +872,7 @@ git add -A && git commit -m "feat: backlog route with single horizontal row"
 ### Task 9: Done Route
 
 **Files:**
+
 - Modify: `app/routes/board.done.tsx`
 
 **Step 1: Implement done page**
@@ -867,11 +895,13 @@ git add -A && git commit -m "feat: done route with single horizontal row"
 ### Task 10: Keyboard Shortcuts
 
 **Files:**
+
 - Modify: `app/routes/board.tsx`
 
 **Step 1: Add global keyboard shortcuts in the layout**
 
 Move keyboard shortcut handling from Board.tsx to the layout:
+
 - `/` — focus search bar
 - `n` — create card (in first column of current route: ready for `/`, backlog for `/backlog`, done for `/done`)
 - `Escape` — deselect card (clear `?card` param)
@@ -891,6 +921,7 @@ git add -A && git commit -m "feat: keyboard shortcuts in layout"
 ### Task 11: Cleanup Old Components
 
 **Files:**
+
 - Delete: `app/components/Board.tsx`
 - Delete: `app/components/Column.tsx`
 - Delete: `app/components/CardDetailPanel.tsx`
@@ -925,6 +956,7 @@ git add -A && git commit -m "refactor: remove old Board, Column, CardDetailPanel
 ### Task 12: Browser Testing
 
 **Step 1: Test desktop layout**
+
 - All 3 routes render with horizontal rows
 - Right panel shows card detail, empty state works
 - Resize handle works, width persists across refresh
@@ -937,6 +969,7 @@ git add -A && git commit -m "refactor: remove old Board, Column, CardDetailPanel
 - Nav buttons highlight current route
 
 **Step 2: Test mobile layout**
+
 - Right panel hidden
 - Tapping card opens Sheet
 - Sheet has all card detail functionality

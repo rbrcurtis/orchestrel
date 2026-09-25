@@ -3,6 +3,7 @@
 ## Overview
 
 Refactor the page layout from a horizontal kanban board with a slide-over detail panel to:
+
 - Persistent right panel (card detail) on desktop
 - Horizontal rows (cards flow left-to-right) replacing vertical columns
 - Separate routes for backlog and done
@@ -51,6 +52,7 @@ Selected card stored in URL search param: `?card=5`.
 ## Horizontal Rows (StatusRow)
 
 Each row:
+
 - Header: status label, card count badge, + button
 - Cards in horizontal scrollable flex container
 - DnD: `horizontalListSortingStrategy` per row
@@ -71,16 +73,19 @@ Each row:
 ## Component Structure
 
 ### New
+
 - `BoardLayout` — layout route: header, nav, two-panel shell with resize handle
 - `CardDetail` — extracted card detail content with status dropdown + Save
 - `CardDetailSheet` — Sheet wrapper around CardDetail for mobile
 - `StatusRow` — horizontal scrollable row of cards with DnD
 
 ### Removed
+
 - `Column` — replaced by StatusRow
 - `CardDetailPanel` — split into CardDetail + CardDetailSheet
 
 ### Unchanged
+
 - `Card`, `CardOverlay`, `SearchBar`, `MessageBlock`, `SessionView`
 
 ## DnD Changes
@@ -94,6 +99,6 @@ Each row:
 
 ## Card Creation
 
-- + button on every row/status
+- - button on every row/status
 - Creates card and opens in detail panel
 - No auto-save; explicit Save button required

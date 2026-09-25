@@ -38,7 +38,14 @@ type ScrollAreaProps = React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   viewportClassName?: string;
 };
 
-function ScrollArea({ className, children, viewportRef, viewportClassName, type = 'scroll', ...props }: ScrollAreaProps) {
+function ScrollArea({
+  className,
+  children,
+  viewportRef,
+  viewportClassName,
+  type = 'scroll',
+  ...props
+}: ScrollAreaProps) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"

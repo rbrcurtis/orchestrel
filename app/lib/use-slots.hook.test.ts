@@ -304,10 +304,7 @@ describe('flash', () => {
     });
 
     rerender({
-      cards: [
-        review,
-        makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
-      ],
+      cards: [review, makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' })],
     });
 
     await waitFor(() => {

@@ -54,7 +54,11 @@ export class Card extends BaseEntity {
   @Column({ name: 'session_cwd', type: 'text', nullable: true })
   sessionCwd!: string | null;
 
-  @Column({ type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
+  @Column({
+    type: 'integer',
+    default: 0,
+    transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v },
+  })
   sandbox!: boolean;
 
   @Column({ name: 'source_branch', type: 'text', nullable: true })

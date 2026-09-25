@@ -30,13 +30,15 @@ export async function runIdempotent<T>(
   }
 
   try {
-    await ApiIdempotency.save(ApiIdempotency.create({
-      requestKey: key,
-      operation,
-      requestHash: hash,
-      responseJson: '',
-      createdAt: new Date().toISOString(),
-    }));
+    await ApiIdempotency.save(
+      ApiIdempotency.create({
+        requestKey: key,
+        operation,
+        requestHash: hash,
+        responseJson: '',
+        createdAt: new Date().toISOString(),
+      }),
+    );
   } catch (err) {
     console.error(`[rest:idempotency] failed to reserve key ${key}:`, err);
     const raced = await ApiIdempotency.findOneBy({ requestKey: key });

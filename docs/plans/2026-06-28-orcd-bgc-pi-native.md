@@ -30,28 +30,29 @@
 
 ## File structure
 
-| File | Change | Responsibility |
-|------|--------|----------------|
-| `src/orcd/pi-runtime.ts` | modify | Add `prepareBgCompaction` + `applyBgCompaction` to `PiRuntimeSession`; close over `modelRegistry`/`model`/`thinkingLevel`. The only place that touches Pi compaction internals. |
-| `src/orcd/session.ts` | modify | `OrcdSession.prepareBgCompaction`/`applyBgCompaction` delegating to the pi session; `isIdle` accessor; map Pi `compaction_start/end` → synthetic `bgc_started`/`compact_boundary`. |
-| `src/orcd/socket-server.ts` | modify | New BGC controller (parallel prepare → idle apply → staleness guard); threshold trigger; repoint manual `/compact`; delete `triggerCompaction`/`applyPendingCompaction`/`pendingSummaries`. |
-| `src/orcd/__tests__/socket-server-compaction.test.ts` | rewrite | Cover the new flow. |
-| `src/lib/session-compactor.ts` + `.test.ts` | delete | Dead prepare/defer + Claude-shaped parser. |
-| `src/lib/summarize-session.ts`, `scripts/summarize.ts`, `scripts/test-summarize.ts` | delete (after import check) | Dead dry-run preview chain. |
-| `src/shared/constants.ts` | modify | Remove `AUTO_COMPACT_RATIO`. |
-| `src/orcd/import-claude-session.ts` | delete (after import check) | Zero importers. |
+| File                                                                                | Change                      | Responsibility                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/orcd/pi-runtime.ts`                                                            | modify                      | Add `prepareBgCompaction` + `applyBgCompaction` to `PiRuntimeSession`; close over `modelRegistry`/`model`/`thinkingLevel`. The only place that touches Pi compaction internals.             |
+| `src/orcd/session.ts`                                                               | modify                      | `OrcdSession.prepareBgCompaction`/`applyBgCompaction` delegating to the pi session; `isIdle` accessor; map Pi `compaction_start/end` → synthetic `bgc_started`/`compact_boundary`.          |
+| `src/orcd/socket-server.ts`                                                         | modify                      | New BGC controller (parallel prepare → idle apply → staleness guard); threshold trigger; repoint manual `/compact`; delete `triggerCompaction`/`applyPendingCompaction`/`pendingSummaries`. |
+| `src/orcd/__tests__/socket-server-compaction.test.ts`                               | rewrite                     | Cover the new flow.                                                                                                                                                                         |
+| `src/lib/session-compactor.ts` + `.test.ts`                                         | delete                      | Dead prepare/defer + Claude-shaped parser.                                                                                                                                                  |
+| `src/lib/summarize-session.ts`, `scripts/summarize.ts`, `scripts/test-summarize.ts` | delete (after import check) | Dead dry-run preview chain.                                                                                                                                                                 |
+| `src/shared/constants.ts`                                                           | modify                      | Remove `AUTO_COMPACT_RATIO`.                                                                                                                                                                |
+| `src/orcd/import-claude-session.ts`                                                 | delete (after import check) | Zero importers.                                                                                                                                                                             |
 
 ---
 
 ## Task 1: pi-runtime — out-of-band summarize + apply
 
 **Files:**
+
 - Modify: `src/orcd/pi-runtime.ts`
 - Test: `src/orcd/__tests__/pi-runtime-bgc.test.ts` (create)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `src/orcd/__tests__/pi-runtime-bgc.test.ts`. Mock the Pi SDK so the test exercises *our* wiring without a live model. Runtime uses the root-exported `findCutPoint` + `generateSummary` + `DEFAULT_COMPACTION_SETTINGS`.
+Create `src/orcd/__tests__/pi-runtime-bgc.test.ts`. Mock the Pi SDK so the test exercises _our_ wiring without a live model. Runtime uses the root-exported `findCutPoint` + `generateSummary` + `DEFAULT_COMPACTION_SETTINGS`.
 
 ```ts
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -68,11 +69,13 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
   generateSummary: (...a: unknown[]) => generateSummary(...a),
   DEFAULT_COMPACTION_SETTINGS: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
   AuthStorage: { create: () => ({ setRuntimeApiKey: vi.fn() }) },
-  ModelRegistry: { create: () => ({
-    registerProvider: vi.fn(),
-    find: () => ({ id: 'm', api: 'anthropic-messages' }),
-    getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} })),
-  }) },
+  ModelRegistry: {
+    create: () => ({
+      registerProvider: vi.fn(),
+      find: () => ({ id: 'm', api: 'anthropic-messages' }),
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} })),
+    }),
+  },
   SessionManager: { create: () => ({}), open: () => ({}), list: vi.fn(async () => []) },
   createAgentSession: vi.fn(async () => ({
     session: {
@@ -144,16 +147,36 @@ Expected: FAIL — `s.prepareBgCompaction is not a function`.
 In `src/orcd/pi-runtime.ts`:
 
 Add to the value import from the package root (line 2):
+
 ```ts
-import { AuthStorage, DEFAULT_COMPACTION_SETTINGS, ModelRegistry, SessionManager, createAgentSession, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
+import {
+  AuthStorage,
+  DEFAULT_COMPACTION_SETTINGS,
+  ModelRegistry,
+  SessionManager,
+  createAgentSession,
+  findCutPoint,
+  generateSummary,
+  getAgentDir,
+} from '@earendil-works/pi-coding-agent';
 ```
+
 Add `CompactionResult` to the type import (line 3):
+
 ```ts
-import type { AgentSession, AgentSessionEvent, AuthStorage as PiAuthStorage, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
+import type {
+  AgentSession,
+  AgentSessionEvent,
+  AuthStorage as PiAuthStorage,
+  CompactionResult,
+  ProviderConfig as ProviderConfigInput,
+} from '@earendil-works/pi-coding-agent';
 ```
+
 > Do NOT import or `declare module` `prepareCompaction` — it is not a real export (verified against `dist/index.js`) and would be `undefined` at runtime.
 
 Extend the `PiRuntimeSession` interface (after `compact(...)`):
+
 ```ts
   /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
   prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal): Promise<CompactionResult | null>;
@@ -162,6 +185,7 @@ Extend the `PiRuntimeSession` interface (after `compact(...)`):
 ```
 
 In `createPiRuntimeSession`, the closure already has `modelRegistry`, `model`, and `opts.effort`. Add these methods to the returned object:
+
 ```ts
     async prepareBgCompaction(keepFraction, currentTokens, signal) {
       const sm = session.sessionManager as unknown as {
@@ -206,6 +230,7 @@ In `createPiRuntimeSession`, the closure already has `modelRegistry`, `model`, a
       agent.state.messages = sm.buildSessionContext().messages;
     },
 ```
+
 > `session.sessionManager` is typed `ReadonlySessionManager` (omits `getBranch`/`appendCompaction`/`buildSessionContext`); the narrow casts reach the runtime methods. `getApiKeyAndHeaders` returns a discriminated union, so read `apiKey`/`headers` defensively. Keep casts local; no blanket `any`.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -217,6 +242,7 @@ Expected: PASS (3 tests).
 
 Run: `corepack pnpm typecheck`
 Expected: no errors.
+
 ```bash
 git add src/orcd/pi-runtime.ts src/orcd/__tests__/pi-runtime-bgc.test.ts
 git commit -m "feat(orcd): pi-runtime out-of-band BGC summarize + apply"
@@ -227,12 +253,14 @@ git commit -m "feat(orcd): pi-runtime out-of-band BGC summarize + apply"
 ## Task 2: OrcdSession — delegation, idle accessor, safety-net mapping
 
 **Files:**
+
 - Modify: `src/orcd/session.ts`
 - Test: `src/orcd/__tests__/session-bgc.test.ts` (create)
 
 - [ ] **Step 1: Write the failing test**
 
 Create `src/orcd/__tests__/session-bgc.test.ts`:
+
 ```ts
 import { describe, expect, it } from 'vitest';
 import { OrcdSession } from '../session';
@@ -275,21 +303,24 @@ Expected: FAIL — `compact_boundary`/`bgc_started` not emitted, and `s.isIdle i
 In `src/orcd/session.ts`:
 
 (a) Map Pi compaction events. At the **top of `emitMappedPiEvent(event)`** (before the existing `const usage = ...` on line 249), add:
+
 ```ts
-    if (this.isRecord(event) && event.type === 'compaction_start') {
-      this.emitBgcStarted();
-      return;
-    }
-    if (this.isRecord(event) && event.type === 'compaction_end') {
-      // Pi's own auto-compaction (the ~92% safety net) finished — surface it so
-      // the UI context wheel resets even when orcd's BGC didn't drive it.
-      this.emitCompactBoundary();
-      return;
-    }
+if (this.isRecord(event) && event.type === 'compaction_start') {
+  this.emitBgcStarted();
+  return;
+}
+if (this.isRecord(event) && event.type === 'compaction_end') {
+  // Pi's own auto-compaction (the ~92% safety net) finished — surface it so
+  // the UI context wheel resets even when orcd's BGC didn't drive it.
+  this.emitCompactBoundary();
+  return;
+}
 ```
-> These return early so Pi's raw compaction events are not also forwarded as ordinary stream events. orcd's *own* BGC apply does not emit these (it calls `appendCompaction` directly), so there is no double signal.
+
+> These return early so Pi's raw compaction events are not also forwarded as ordinary stream events. orcd's _own_ BGC apply does not emit these (it calls `appendCompaction` directly), so there is no double signal.
 
 (b) Add an idle accessor. After `cancel()` / near `compact()` (around line 447), add:
+
 ```ts
   /** True when no turn is currently streaming — safe to splice a compaction. */
   isIdle(): boolean {
@@ -309,6 +340,7 @@ In `src/orcd/session.ts`:
     this.emitCompactBoundary();
   }
 ```
+
 > `this.running` is the private flag already set in `run()`/`finalizeExit()`. `isRecord` is the existing private guard used elsewhere in the file.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -319,6 +351,7 @@ Expected: PASS (2 tests).
 - [ ] **Step 5: Typecheck + commit**
 
 Run: `corepack pnpm typecheck`
+
 ```bash
 git add src/orcd/session.ts src/orcd/__tests__/session-bgc.test.ts
 git commit -m "feat(orcd): OrcdSession BGC delegation + Pi safety-net event mapping"
@@ -329,6 +362,7 @@ git commit -m "feat(orcd): OrcdSession BGC delegation + Pi safety-net event mapp
 ## Task 3: socket-server — BGC controller (parallel prepare → idle apply)
 
 **Files:**
+
 - Modify: `src/orcd/socket-server.ts`
 - Test: `src/orcd/__tests__/socket-server-compaction.test.ts` (rewrite the `background compaction` describe block)
 
@@ -337,6 +371,7 @@ This task replaces `triggerCompaction`, `applyPendingCompaction`, the `pendingSu
 - [ ] **Step 1: Write the failing tests**
 
 Replace the existing `describe('OrcdServer background compaction', ...)` block in `src/orcd/__tests__/socket-server-compaction.test.ts` with:
+
 ```ts
 describe('OrcdServer background compaction', () => {
   function bgcSession(id: string) {
@@ -370,7 +405,12 @@ describe('OrcdServer background compaction', () => {
     server.store.add(session);
     server['attachLifecycleHooks'](session);
 
-    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined } as never);
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({
+      summary: 'S',
+      firstKeptEntryId: 'e1',
+      tokensBefore: 9,
+      details: undefined,
+    } as never);
     const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(true); // Pi safety net won
@@ -400,12 +440,20 @@ describe('OrcdServer background compaction', () => {
     client.subscriptions.set(session.id, cb);
     session.subscribe(cb);
 
-    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined } as never);
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({
+      summary: 'S',
+      firstKeptEntryId: 'e1',
+      tokensBefore: 1,
+      details: undefined,
+    } as never);
     vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
 
-    server['handleAction'](client as never, { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm' } as CompactAction);
+    server['handleAction'](
+      client as never,
+      { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm' } as CompactAction,
+    );
     await new Promise((r) => setTimeout(r, 0));
 
     const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
@@ -422,11 +470,14 @@ Expected: FAIL — `server['maybeStartBgc'] is not a function`, `session.latestE
 - [ ] **Step 3: Add `latestEntryIsCompaction` to OrcdSession and pi-runtime**
 
 In `src/orcd/pi-runtime.ts`, add to the `PiRuntimeSession` interface:
+
 ```ts
   /** True when the newest entry on the branch is already a compaction. */
   latestEntryIsCompaction(): boolean;
 ```
+
 and to the returned object:
+
 ```ts
     latestEntryIsCompaction() {
       const entries = session.sessionManager.getBranch();
@@ -434,7 +485,9 @@ and to the returned object:
       return !!last && (last as { type?: string }).type === 'compaction';
     },
 ```
+
 In `src/orcd/session.ts`, add:
+
 ```ts
   /** True when the newest branch entry is already a compaction (Pi safety net beat us). */
   latestEntryIsCompaction(): boolean {
@@ -495,20 +548,22 @@ Replace `handleCompact` (so manual `/compact` uses the new path — see Task 4),
 ```
 
 Update the threshold check inside `attachLifecycleHooks` (the `context_usage` block, currently ~lines 449-471) to call the new controller:
+
 ```ts
-      if (msg.type === 'context_usage') {
-        if (
-          session.summarizeThreshold > 0 &&
-          msg.contextWindow > 0 &&
-          !this.compacting.has(sid) &&
-          msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
-        ) {
-          const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
-          console.log(`[orcd:${sid.slice(0, 8)}:bgc] threshold hit (${pct}%), starting`);
-          void this.maybeStartBgc(session);
-        }
-      }
+if (msg.type === 'context_usage') {
+  if (
+    session.summarizeThreshold > 0 &&
+    msg.contextWindow > 0 &&
+    !this.compacting.has(sid) &&
+    msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
+  ) {
+    const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
+    console.log(`[orcd:${sid.slice(0, 8)}:bgc] threshold hit (${pct}%), starting`);
+    void this.maybeStartBgc(session);
+  }
+}
 ```
+
 Remove the now-unused `onBeforeExit` apply hook body that called `applyPendingCompaction` (delete that hook registration in `attachLifecycleHooks`).
 
 - [ ] **Step 5: Run tests to verify they pass**
@@ -519,6 +574,7 @@ Expected: PASS.
 - [ ] **Step 6: Typecheck + commit**
 
 Run: `corepack pnpm typecheck`
+
 ```bash
 git add src/orcd/socket-server.ts src/orcd/session.ts src/orcd/pi-runtime.ts src/orcd/__tests__/socket-server-compaction.test.ts
 git commit -m "feat(orcd): parallel BGC controller (prepare off-band, apply when idle)"
@@ -529,12 +585,14 @@ git commit -m "feat(orcd): parallel BGC controller (prepare off-band, apply when
 ## Task 4: Repoint manual `/compact` at the new mechanism
 
 **Files:**
+
 - Modify: `src/orcd/socket-server.ts`
 - Test: `src/orcd/__tests__/socket-server-compaction.test.ts` (the `rehydrates inactive persisted sessions` test already exercises `handleCompact`)
 
 - [ ] **Step 1: Rewrite `handleCompact`**
 
 `handleCompact` must still rehydrate an inactive persisted session (so `/compact` works after a restart), then run the BGC controller immediately instead of the old defer. Replace its body with:
+
 ```ts
   private handleCompact(client: ClientState, action: OrcdAction & { action: 'compact' }): void {
     let session = this.store.get(action.sessionId);
@@ -564,6 +622,7 @@ git commit -m "feat(orcd): parallel BGC controller (prepare off-band, apply when
     });
   }
 ```
+
 > A rehydrated session has `lastContextTokens === 0`, so `prepareBgCompaction` computes `keepRecentTokens = 0` → Pi keeps a minimal tail and summarizes the rest, which is the desired "compact everything now" behavior for a cold manual compact. (`prepareCompaction` returns `undefined` only when the session is too small / already compacted, handled as a no-op.)
 
 The `beginCompaction` helper added earlier for `/compact` wiring is now folded into `maybeStartBgc`; delete `beginCompaction` if no other caller remains (grep first).
@@ -576,6 +635,7 @@ Expected: PASS (including `rehydrates inactive persisted sessions for explicit c
 - [ ] **Step 3: Typecheck + commit**
 
 Run: `corepack pnpm typecheck`
+
 ```bash
 git add src/orcd/socket-server.ts src/orcd/__tests__/socket-server-compaction.test.ts
 git commit -m "feat(orcd): manual /compact routes through the BGC controller"
@@ -590,13 +650,15 @@ git commit -m "feat(orcd): manual /compact routes through the BGC controller"
 - [ ] **Step 1: Verify importers are gone**
 
 Run:
+
 ```bash
 grep -rn "session-compactor" src app scripts | grep -v "src/lib/session-compactor"
 grep -rn "summarize-session\|summarizeSession" src app scripts | grep -v "src/lib/summarize-session"
 grep -rn "AUTO_COMPACT_RATIO" src app scripts
 grep -rn "import-claude-session\|importClaudeSession" src app scripts | grep -v "src/orcd/import-claude-session"
 ```
-Expected: only the scripts slated for deletion (`scripts/summarize.ts`, `scripts/test-summarize.ts`) reference `summarize-session`; everything else returns nothing. If any *other* file still imports these, STOP and fix that caller first.
+
+Expected: only the scripts slated for deletion (`scripts/summarize.ts`, `scripts/test-summarize.ts`) reference `summarize-session`; everything else returns nothing. If any _other_ file still imports these, STOP and fix that caller first.
 
 - [ ] **Step 2: Delete the files**
 
@@ -606,6 +668,7 @@ git rm src/lib/session-compactor.ts src/lib/session-compactor.test.ts \
        scripts/summarize.ts scripts/test-summarize.ts \
        src/orcd/import-claude-session.ts
 ```
+
 (Adjust if any listed file does not exist — confirm with `ls` first.)
 
 - [ ] **Step 3: Remove `AUTO_COMPACT_RATIO`**
@@ -649,6 +712,7 @@ On a non-critical card, send prompts until `context_tokens / context_window ≥ 
 # newest compaction entry should be fromHook=true and the file keeps full history
 grep -c '"type":"compaction"' ~/.pi/agent/sessions/<slug>/<ts>_<sessionId>.jsonl
 ```
+
 Confirm in the UI that the context wheel dropped after the BGC fired, and again if you let a session reach ~92% (Pi safety net → `compact_boundary` via the new mapping).
 
 - [ ] **Step 4: Manual `/compact`**

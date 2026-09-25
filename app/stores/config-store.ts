@@ -73,8 +73,7 @@ export class ConfigStore {
     model: string,
     thinkingLevel: string,
   ): { provider: string; model: string; thinkingLevel: string } {
-    const thinking =
-      thinkingLevel === DEFAULT_SENTINEL ? (this.nodeDefaultThinking(name) ?? 'high') : thinkingLevel;
+    const thinking = thinkingLevel === DEFAULT_SENTINEL ? (this.nodeDefaultThinking(name) ?? 'high') : thinkingLevel;
     if (providerID !== DEFAULT_SENTINEL) {
       return {
         provider: providerID,
@@ -89,5 +88,4 @@ export class ConfigStore {
       thinkingLevel: thinking,
     };
   }
-
 }

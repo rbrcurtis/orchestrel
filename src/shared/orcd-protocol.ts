@@ -6,10 +6,10 @@ export interface CreateAction {
   cwd: string;
   provider: string;
   model: string;
-  effort?: string;       // 'adaptive' | 'high' | 'medium' | 'low' | 'disabled'
-  sessionId?: string;    // Resume existing session
+  effort?: string; // 'adaptive' | 'high' | 'medium' | 'low' | 'disabled'
+  sessionId?: string; // Resume existing session
   contextWindow?: number;
-  summarizeThreshold?: number;  // 0-1, fraction of context window to trigger compaction
+  summarizeThreshold?: number; // 0-1, fraction of context window to trigger compaction
   requestId?: string;
 }
 
@@ -207,14 +207,14 @@ export interface StreamEventMessage {
   type: 'stream_event';
   sessionId: string;
   eventIndex: number;
-  event: unknown;        // Runtime stream event
+  event: unknown; // Runtime stream event
 }
 
 export interface SessionResultMessage {
   type: 'result';
   sessionId: string;
   eventIndex: number;
-  result: unknown;       // Runtime turn result
+  result: unknown; // Runtime turn result
 }
 
 export interface TurnCompleteMessage {
@@ -246,8 +246,8 @@ export interface ContextUsageMessage {
 
 export interface SessionIdUpdateMessage {
   type: 'session_id_update';
-  sessionId: string;       // orcd-level session id (unchanged, for routing)
-  newSessionId: string;    // Runtime session id after a fork
+  sessionId: string; // orcd-level session id (unchanged, for routing)
+  newSessionId: string; // Runtime session id after a fork
 }
 
 export interface SessionListMessage {
@@ -298,7 +298,10 @@ export interface PathValidatedMessage {
 export interface TranscriptSnapshotMessage {
   type: 'transcript_snapshot';
   requestId?: string;
-  snapshot: { cursor: import('./transcript-sync').TranscriptCursor; state: import('./transcript-sync').TranscriptState } | null;
+  snapshot: {
+    cursor: import('./transcript-sync').TranscriptCursor;
+    state: import('./transcript-sync').TranscriptState;
+  } | null;
 }
 
 export interface HistoryPageMessage {

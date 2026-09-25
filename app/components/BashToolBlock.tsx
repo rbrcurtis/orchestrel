@@ -53,9 +53,7 @@ export const BashToolBlock = observer(function BashToolBlock({
     >
       <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 bg-muted hover:bg-hover transition-colors text-left min-w-0">
         {expanded ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
-        {isRunning && (
-          <span className="inline-block size-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-        )}
+        {isRunning && <span className="inline-block size-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
         {expanded ? (
           description && <span className="text-muted-foreground truncate text-[11px] min-w-0">{description}</span>
         ) : (

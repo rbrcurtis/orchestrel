@@ -9,7 +9,13 @@ const BASE: OrchestrelConfig = {
   defaultProvider: 'max',
   defaultModel: 'assistant',
   ringBufferSize: 100,
-  providers: { max: { baseUrl: 'http://max.local:11434', apiKey: 'x', models: { assistant: { label: 'a', modelID: 'm', contextWindow: 1000 } } } },
+  providers: {
+    max: {
+      baseUrl: 'http://max.local:11434',
+      apiKey: 'x',
+      models: { assistant: { label: 'a', modelID: 'm', contextWindow: 1000 } },
+    },
+  },
 };
 
 describe('runMaintain', () => {
@@ -26,7 +32,17 @@ describe('buildAlertText', () => {
         durationMs: 1234,
         stagingFiles: ['data/memory-staging/2026-08-31.json'],
         projects: [
-          { project: 'trackable', sessions: 2, ops: 5, stores: 3, updates: 1, deletes: 0, skips: 1, errors: [], sessionIds: [] },
+          {
+            project: 'trackable',
+            sessions: 2,
+            ops: 5,
+            stores: 3,
+            updates: 1,
+            deletes: 0,
+            skips: 1,
+            errors: [],
+            sessionIds: [],
+          },
         ],
       },
       'data/memory-staging',

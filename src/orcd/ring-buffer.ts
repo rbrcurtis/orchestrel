@@ -10,8 +10,8 @@ export interface IndexedItem<T> {
  */
 export class RingBuffer<T> {
   private items: Array<T | undefined>;
-  private head = 0;     // write position in items[]
-  private count = 0;    // total items currently stored
+  private head = 0; // write position in items[]
+  private count = 0; // total items currently stored
   private nextIndex = 0; // monotonic event index
 
   constructor(private capacity: number) {
@@ -44,7 +44,7 @@ export class RingBuffer<T> {
 
     const result: IndexedItem<T>[] = [];
     for (let idx = startIndex; idx < this.nextIndex; idx++) {
-      const pos = ((this.head - this.count + (idx - oldestIndex)) % this.capacity + this.capacity) % this.capacity;
+      const pos = (((this.head - this.count + (idx - oldestIndex)) % this.capacity) + this.capacity) % this.capacity;
       result.push({ index: idx, item: this.items[pos]! });
     }
     return result;

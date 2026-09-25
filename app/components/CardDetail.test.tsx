@@ -56,12 +56,19 @@ function makeCard(description: string): Card {
 
 function providerConfig() {
   return {
-    anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } } },
+    anthropic: {
+      label: 'Anthropic',
+      models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet', contextWindow: 200000 } },
+    },
     kpp: { label: 'KPP', models: { opus: { label: 'Opus', modelID: 'claude-opus', contextWindow: 200000 } } },
   };
 }
 
-function renderNewCardDetail(opts?: { initialProjectId?: number; projectFilter?: ProjectFilter; projects?: Project[] }) {
+function renderNewCardDetail(opts?: {
+  initialProjectId?: number;
+  projectFilter?: ProjectFilter;
+  projects?: Project[];
+}) {
   const store = new RootStore();
   store.projects.hydrate(opts?.projects ?? [makeProject(42, 'Orchestrel')]);
   store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);
@@ -165,7 +172,9 @@ describe('NewCardDetail description draft persistence', () => {
     const { store } = renderNewCardDetail();
 
     fireEvent.change(screen.getByPlaceholderText('Card title'), { target: { value: 'Saved card' } });
-    fireEvent.change(screen.getByPlaceholderText('Add a description...'), { target: { value: 'completed description' } });
+    fireEvent.change(screen.getByPlaceholderText('Add a description...'), {
+      target: { value: 'completed description' },
+    });
     fireEvent.mouseDown(screen.getByRole('button', { name: 'Save' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -258,7 +267,9 @@ describe('CardDetail saved card fields', () => {
     fireEvent.click(screen.getByRole('option', { name: 'KPP' }));
 
     await waitFor(() =>
-      expect(store.cards.updateCard).toHaveBeenCalledWith(expect.objectContaining({ id: 7, provider: 'kpp', model: 'opus' })),
+      expect(store.cards.updateCard).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 7, provider: 'kpp', model: 'opus' }),
+      ),
     );
   });
 });

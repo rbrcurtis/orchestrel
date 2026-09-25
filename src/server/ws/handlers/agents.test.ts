@@ -127,8 +127,14 @@ describe('handleAgentStatus', () => {
     const callback = vi.fn();
     const socket = { emit: vi.fn() };
     mockFindOneBy.mockResolvedValue({
-      id: 42, column: 'review', sessionId: 'sess-abc', promptsSent: 1,
-      turnsCompleted: 1, contextTokens: 0, contextWindow: 200_000, save: vi.fn(),
+      id: 42,
+      column: 'review',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 0,
+      contextWindow: 200_000,
+      save: vi.fn(),
     });
     mockIsActive.mockReturnValue(false);
 
@@ -156,12 +162,15 @@ describe('handleAgentStatus', () => {
     await handleAgentStatus({ cardId: 42 }, callback, { emit } as never);
 
     expect(save).not.toHaveBeenCalled();
-    expect(emit).toHaveBeenCalledWith('agent:status', expect.objectContaining({
-      cardId: 42,
-      active: false,
-      status: 'starting',
-      sessionId: null,
-    }));
+    expect(emit).toHaveBeenCalledWith(
+      'agent:status',
+      expect.objectContaining({
+        cardId: 42,
+        active: false,
+        status: 'starting',
+        sessionId: null,
+      }),
+    );
     expect(callback).toHaveBeenCalledWith({});
   });
 
@@ -188,12 +197,15 @@ describe('handleAgentStatus', () => {
 
     expect(card.column).toBe('review');
     expect(save).toHaveBeenCalled();
-    expect(emit).toHaveBeenCalledWith('agent:status', expect.objectContaining({
-      cardId: 42,
-      active: false,
-      status: 'completed',
-      sessionId: 'sess-abc',
-    }));
+    expect(emit).toHaveBeenCalledWith(
+      'agent:status',
+      expect.objectContaining({
+        cardId: 42,
+        active: false,
+        status: 'completed',
+        sessionId: 'sess-abc',
+      }),
+    );
     expect(callback).toHaveBeenCalledWith({});
   });
 
@@ -220,12 +232,15 @@ describe('handleAgentStatus', () => {
 
     expect(card.column).toBe('review');
     expect(save).toHaveBeenCalled();
-    expect(emit).toHaveBeenCalledWith('agent:status', expect.objectContaining({
-      cardId: 42,
-      active: false,
-      status: 'completed',
-      sessionId: 'sess-abc',
-    }));
+    expect(emit).toHaveBeenCalledWith(
+      'agent:status',
+      expect.objectContaining({
+        cardId: 42,
+        active: false,
+        status: 'completed',
+        sessionId: 'sess-abc',
+      }),
+    );
     expect(callback).toHaveBeenCalledWith({});
   });
 });

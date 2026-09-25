@@ -68,11 +68,28 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
         apiKey: memory.projects[key].apiKey,
         project: memory.projects[key].project,
       };
-      const summary: ProjectSummary = { project: key, sessions: 0, ops: 0, stores: 0, updates: 0, deletes: 0, skips: 0, errors: [], sessionIds: [] };
+      const summary: ProjectSummary = {
+        project: key,
+        sessions: 0,
+        ops: 0,
+        stores: 0,
+        updates: 0,
+        deletes: 0,
+        skips: 0,
+        errors: [],
+        sessionIds: [],
+      };
       for (const file of files) {
         try {
           const excerpt = buildExcerpt(file.path, memory.excerptTokens);
-          const ops = await consolidate({ excerpt, server, runtime, model, maxTurns: memory.maxTurns, mode: memory.mode });
+          const ops = await consolidate({
+            excerpt,
+            server,
+            runtime,
+            model,
+            maxTurns: memory.maxTurns,
+            mode: memory.mode,
+          });
           const stagingFile = appendStaging(memory.stageDir, {
             project: key,
             apiUrl: server.apiUrl,
@@ -99,11 +116,20 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
       projects.push(summary);
     }
 
-    const summary: MaintainSummary = { runId, projects, stagingFiles: [...stagingFiles], durationMs: Date.now() - started };
+    const summary: MaintainSummary = {
+      runId,
+      projects,
+      stagingFiles: [...stagingFiles],
+      durationMs: Date.now() - started,
+    };
     finishRun(db, runId, 'done', JSON.stringify(summary));
     if (memory.telegram) {
       try {
-        await sendTelegramAlert(memory.telegram.botToken, memory.telegram.chatId, buildAlertText(summary, memory.stageDir));
+        await sendTelegramAlert(
+          memory.telegram.botToken,
+          memory.telegram.chatId,
+          buildAlertText(summary, memory.stageDir),
+        );
       } catch (err) {
         console.error('[memory-maintainer] telegram alert failed:', err);
       }

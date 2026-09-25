@@ -14,20 +14,22 @@
 
 ## File Structure
 
-| File | Change | Responsibility |
-|------|--------|---------------|
+| File                                      | Change         | Responsibility                                                                                                                                                  |
+| ----------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/server/controllers/card-sessions.ts` | Major refactor | Replace `registerCardSession` with `initOrcdRouter`, `trackSession`, `untrackSession`. Same message handling logic, but via single global handler + map lookup. |
-| `src/server/ws/handlers/agents.ts` | Minor update | Replace `registerCardSession` calls with `trackSession` |
-| `src/server/init.ts` | Minor update | Call `initOrcdRouter(client)` at startup |
+| `src/server/ws/handlers/agents.ts`        | Minor update   | Replace `registerCardSession` calls with `trackSession`                                                                                                         |
+| `src/server/init.ts`                      | Minor update   | Call `initOrcdRouter(client)` at startup                                                                                                                        |
 
 ---
 
 ### Task 1: Refactor card-sessions.ts — global router with session map
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.ts`
 
 This is the core refactor. We replace the per-card handler registration pattern with:
+
 - A module-level `Map<string, number>` (sessionId → cardId)
 - `trackSession(cardId, sessionId)` — adds an entry
 - `untrackSession(sessionId)` — removes an entry
@@ -47,7 +49,17 @@ import { MessageBus } from '../bus';
 vi.mock('../models/index', () => ({
   AppDataSource: {
     getRepository: () => ({
-      findOneBy: vi.fn().mockResolvedValue({ id: 42, sessionId: 'sess-abc', contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, updatedAt: '', save: vi.fn() }),
+      findOneBy: vi
+        .fn()
+        .mockResolvedValue({
+          id: 42,
+          sessionId: 'sess-abc',
+          contextTokens: 0,
+          contextWindow: 200000,
+          turnsCompleted: 0,
+          updatedAt: '',
+          save: vi.fn(),
+        }),
       save: vi.fn().mockResolvedValue(undefined),
     }),
   },
@@ -65,7 +77,9 @@ describe('orcd message router', () => {
 
   // Minimal mock OrcdClient — captures the onMessage handler
   const mockClient = {
-    onMessage: vi.fn((h: (msg: unknown) => void) => { handler = h; }),
+    onMessage: vi.fn((h: (msg: unknown) => void) => {
+      handler = h;
+    }),
     offMessage: vi.fn(),
   };
 
@@ -197,10 +211,7 @@ export function untrackSession(sessionId: string): void {
  * Routes messages by looking up sessionId → cardId in the map.
  * Call once at startup — survives for the process lifetime.
  */
-export function initOrcdRouter(
-  client: OrcdClient,
-  bus: MessageBus = messageBus,
-): void {
+export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus): void {
   const repo = () => AppDataSource.getRepository(Card);
 
   client.onMessage(async (msg: OrcdMessage) => {
@@ -282,10 +293,7 @@ export function initOrcdRouter(
 
 // ── Session exit ─────────────────────────────────────────────────────────────
 
-async function handleSessionExit(
-  cardId: number,
-  bus: MessageBus = messageBus,
-): Promise<void> {
+async function handleSessionExit(cardId: number, bus: MessageBus = messageBus): Promise<void> {
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
 
@@ -330,7 +338,7 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
       );
       const { ensureWorktree } = await import('../sessions/worktree');
       const cwd = await ensureWorktree(fullCard);
-      const prompt = fullCard.sessionId ? '' : fullCard.description ?? '';
+      const prompt = fullCard.sessionId ? '' : (fullCard.description ?? '');
 
       const sessionId = await client.create({
         prompt,
@@ -396,6 +404,7 @@ function repo() {
 ```
 
 Key differences from the old code:
+
 - No `registerCardSession` — replaced by `initOrcdRouter` (one global handler) + `trackSession` (map entry)
 - No `registeredSessions` Set — the `sessionCardMap` serves this purpose
 - No per-card closures — one handler does a map lookup
@@ -425,6 +434,7 @@ the map is populated by trackSession calls."
 ### Task 2: Update agents.ts to use trackSession
 
 **Files:**
+
 - Modify: `src/server/ws/handlers/agents.ts:4,29,46`
 
 - [ ] **Step 1: Replace imports and calls**
@@ -444,27 +454,27 @@ import { trackSession } from '../../controllers/card-sessions';
 Change lines 28-29 (follow-up path) from:
 
 ```ts
-      // Follow-up to active session — ensure handler registered (may be lost after server restart)
-      registerCardSession(cardId, card.sessionId);
+// Follow-up to active session — ensure handler registered (may be lost after server restart)
+registerCardSession(cardId, card.sessionId);
 ```
 
 To:
 
 ```ts
-      // Follow-up to active session — ensure tracked in router map
-      trackSession(cardId, card.sessionId);
+// Follow-up to active session — ensure tracked in router map
+trackSession(cardId, card.sessionId);
 ```
 
 Change line 46 (new session path) from:
 
 ```ts
-      registerCardSession(cardId, sessionId);
+registerCardSession(cardId, sessionId);
 ```
 
 To:
 
 ```ts
-      trackSession(cardId, sessionId);
+trackSession(cardId, sessionId);
 ```
 
 - [ ] **Step 2: Verify it compiles**
@@ -484,6 +494,7 @@ git commit -m "refactor: use trackSession instead of registerCardSession in agen
 ### Task 3: Wire up global router at startup
 
 **Files:**
+
 - Modify: `src/server/init.ts:101-115`
 
 - [ ] **Step 1: Add initOrcdRouter call**
@@ -491,58 +502,58 @@ git commit -m "refactor: use trackSession instead of registerCardSession in agen
 In `src/server/init.ts`, change lines 101-115 from:
 
 ```ts
-  // --- OC controllers + OrcdClient ---
-  const { registerAutoStart, registerWorktreeCleanup } = await import('./controllers/card-sessions');
-  const initState = await import('./init-state');
+// --- OC controllers + OrcdClient ---
+const { registerAutoStart, registerWorktreeCleanup } = await import('./controllers/card-sessions');
+const initState = await import('./init-state');
 
-  let client = initState.getOrcdClient();
-  if (!client) {
-    const { OrcdClient } = await import('./orcd-client');
-    client = new OrcdClient();
-    await client.connect();
-    initState.setOrcdClient(client);
-  }
+let client = initState.getOrcdClient();
+if (!client) {
+  const { OrcdClient } = await import('./orcd-client');
+  client = new OrcdClient();
+  await client.connect();
+  initState.setOrcdClient(client);
+}
 
-  registerAutoStart();
-  registerWorktreeCleanup();
-  console.log('[orcd] OrcdClient connected, controller listeners registered');
+registerAutoStart();
+registerWorktreeCleanup();
+console.log('[orcd] OrcdClient connected, controller listeners registered');
 ```
 
 To:
 
 ```ts
-  // --- OC controllers + OrcdClient ---
-  const { initOrcdRouter, trackSession, registerAutoStart, registerWorktreeCleanup } =
-    await import('./controllers/card-sessions');
-  const initState = await import('./init-state');
+// --- OC controllers + OrcdClient ---
+const { initOrcdRouter, trackSession, registerAutoStart, registerWorktreeCleanup } =
+  await import('./controllers/card-sessions');
+const initState = await import('./init-state');
 
-  let client = initState.getOrcdClient();
-  if (!client) {
-    const { OrcdClient } = await import('./orcd-client');
-    client = new OrcdClient();
-    await client.connect();
-    initState.setOrcdClient(client);
-  }
+let client = initState.getOrcdClient();
+if (!client) {
+  const { OrcdClient } = await import('./orcd-client');
+  client = new OrcdClient();
+  await client.connect();
+  initState.setOrcdClient(client);
+}
 
-  // Register the single global orcd message router
-  initOrcdRouter(client);
+// Register the single global orcd message router
+initOrcdRouter(client);
 
-  // Populate session map from running cards so messages route after restart
-  try {
-    const { Card: CardModel } = await import('./models/Card');
-    const runningCards = await CardModel.find({ where: { column: 'running' } });
-    for (const card of runningCards) {
-      if (card.sessionId) {
-        trackSession(card.id, card.sessionId);
-      }
+// Populate session map from running cards so messages route after restart
+try {
+  const { Card: CardModel } = await import('./models/Card');
+  const runningCards = await CardModel.find({ where: { column: 'running' } });
+  for (const card of runningCards) {
+    if (card.sessionId) {
+      trackSession(card.id, card.sessionId);
     }
-  } catch (err) {
-    console.error('[startup] session map population failed:', err);
   }
+} catch (err) {
+  console.error('[startup] session map population failed:', err);
+}
 
-  registerAutoStart();
-  registerWorktreeCleanup();
-  console.log('[orcd] OrcdClient connected, router + listeners registered');
+registerAutoStart();
+registerWorktreeCleanup();
+console.log('[orcd] OrcdClient connected, router + listeners registered');
 ```
 
 - [ ] **Step 2: Check for duplicate init in ws/server.ts**

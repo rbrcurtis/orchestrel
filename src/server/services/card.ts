@@ -183,7 +183,12 @@ class CardService {
         }
       } else {
         const liveColumns = new Set<string>(['running', 'review']);
-        if (card.sessionId && client?.isActive(card.sessionId) && liveColumns.has(card.column) && !liveColumns.has(data.column)) {
+        if (
+          card.sessionId &&
+          client?.isActive(card.sessionId) &&
+          liveColumns.has(card.column) &&
+          !liveColumns.has(data.column)
+        ) {
           console.log(`[session:${id}] stopping: card moving ${card.column} → ${data.column}`);
           client.cancel(card.sessionId);
         }
@@ -215,10 +220,9 @@ class CardService {
     // session is re-created with the card's effort anyway if it is not resident.
     if (data.thinkingLevel !== undefined && data.thinkingLevel !== prevThinkingLevel && card.sessionId) {
       const initState = await import('../init-state');
-      initState.getClientByNode(card.nodeName)?.setEffort(
-        card.sessionId,
-        data.thinkingLevel === 'off' ? 'disabled' : data.thinkingLevel,
-      );
+      initState
+        .getClientByNode(card.nodeName)
+        ?.setEffort(card.sessionId, data.thinkingLevel === 'off' ? 'disabled' : data.thinkingLevel);
     }
 
     return card;
@@ -244,12 +248,7 @@ class CardService {
     return { cards: results, total };
   }
 
-  async pageCards(
-    column: Column,
-    cursor?: number,
-    limit = PAGE_SIZE,
-    visible?: number[] | 'all',
-  ): Promise<PageResult> {
+  async pageCards(column: Column, cursor?: number, limit = PAGE_SIZE, visible?: number[] | 'all'): Promise<PageResult> {
     // Order matches the client's column sort so paged slices stay contiguous with
     // what the UI renders: archive is newest-updated first, active columns (backlog)
     // are position ASC. id is a tiebreaker so the total order is stable across calls
@@ -266,9 +265,7 @@ class CardService {
     });
     // Filter by user visibility BEFORE slicing so page sizes stay correct.
     const all =
-      !visible || visible === 'all'
-        ? found
-        : found.filter((c) => c.projectId != null && visible.includes(c.projectId));
+      !visible || visible === 'all' ? found : found.filter((c) => c.projectId != null && visible.includes(c.projectId));
     const startIdx = cursor !== undefined ? all.findIndex((c) => c.id === cursor) + 1 : 0;
     const slice = all.slice(startIdx, startIdx + limit);
     const nextCursor = startIdx + limit < all.length ? slice[slice.length - 1]?.id : undefined;
@@ -294,7 +291,12 @@ class CardService {
           client.pathValidate(opts.path),
           client.pathValidate(candidate.path),
         ]);
-        if (supplied.isGitRepo && configured.isGitRepo && supplied.gitCommonDir && supplied.gitCommonDir === configured.gitCommonDir) {
+        if (
+          supplied.isGitRepo &&
+          configured.isGitRepo &&
+          supplied.gitCommonDir &&
+          supplied.gitCommonDir === configured.gitCommonDir
+        ) {
           project = candidate;
           break;
         }

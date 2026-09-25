@@ -78,7 +78,9 @@ export const ChatSidebar = observer(function ChatSidebar({ activeCardId, project
             );
           })}
           {project && cards.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No conversations in this project yet</div>
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              No conversations in this project yet
+            </div>
           )}
         </div>
       </ScrollArea>

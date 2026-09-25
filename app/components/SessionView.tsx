@@ -51,9 +51,17 @@ export const SessionView = observer(function SessionView({
   // message in the loaded history, so prepending unconditionally would render it twice.
   const firstUserEntry = conversation.find((entry) => entry.kind === 'user');
   const historyStartsWithPrompt = firstUserEntry?.content.trim() === initialPrompt;
-  const visibleConversation = initialPrompt && !historyStartsWithPrompt
-    ? [{ kind: 'user' as const, content: initialPrompt, timestamp: card ? new Date(card.createdAt).getTime() : undefined }, ...conversation]
-    : conversation;
+  const visibleConversation =
+    initialPrompt && !historyStartsWithPrompt
+      ? [
+          {
+            kind: 'user' as const,
+            content: initialPrompt,
+            timestamp: card ? new Date(card.createdAt).getTime() : undefined,
+          },
+          ...conversation,
+        ]
+      : conversation;
   const currentBlocks = session?.accumulator.currentBlocks ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
@@ -197,7 +205,12 @@ export const SessionView = observer(function SessionView({
     setIsStarting(false);
   }
 
-  async function handleUpdateCard(data: { model?: string; provider?: string; thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive'; summarizeThreshold?: number }) {
+  async function handleUpdateCard(data: {
+    model?: string;
+    provider?: string;
+    thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'adaptive';
+    summarizeThreshold?: number;
+  }) {
     await cardStore.updateCard({ id: cardId, ...data });
   }
 
@@ -246,9 +259,7 @@ export const SessionView = observer(function SessionView({
       {/* Status bar — above prompt input */}
       {(isStreaming || visibleConversation.length > 0) && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-muted border-t border-border shrink-0 min-w-0 overflow-hidden">
-          <StatusBadge
-            status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus}
-          />
+          <StatusBadge status={isStarting && sessionStatus !== 'running' ? 'starting' : sessionStatus} />
           {nodeOffline && (
             <span className="text-[11px] text-amber-500 shrink-0" title={`Node ${card?.nodeName} is offline`}>
               node offline / reconnecting
@@ -302,7 +313,9 @@ export const SessionView = observer(function SessionView({
           </select>
           <select
             value={thinkingLevel}
-            onChange={(e) => handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' | 'adaptive' })}
+            onChange={(e) =>
+              handleUpdateCard({ thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' | 'adaptive' })
+            }
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto"
           >
             <option value="off">Off</option>
@@ -351,7 +364,13 @@ export const SessionView = observer(function SessionView({
         isPending={isStarting || nodeOffline}
         onSend={handleSend}
         onStop={handleStop}
-        onCompact={!!sessionId || sessionActive ? (bgcInProgress || compactInProgress ? undefined : () => sessionStore.compactSession(cardId)) : undefined}
+        onCompact={
+          !!sessionId || sessionActive
+            ? bgcInProgress || compactInProgress
+              ? undefined
+              : () => sessionStore.compactSession(cardId)
+            : undefined
+        }
         onPromptSent={onPromptSent}
         sendPending={false}
         contextPercent={contextPercent}

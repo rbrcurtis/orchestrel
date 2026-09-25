@@ -54,6 +54,7 @@ Each task is independently committable. Run `pnpm test` (full suite) at phase bo
 ### Task 1: Add `requestId` to all client→orcd actions
 
 **Files:**
+
 - Modify: `src/shared/orcd-protocol.ts`
 - Test: `src/shared/orcd-protocol.test.ts` (create)
 
@@ -112,6 +113,7 @@ git commit -m "feat(protocol): add optional requestId for request/reply correlat
 ### Task 2: Add `hello` action and `capabilities` message
 
 **Files:**
+
 - Modify: `src/shared/orcd-protocol.ts`
 - Test: `src/shared/orcd-protocol.test.ts`
 
@@ -188,6 +190,7 @@ git commit -m "feat(protocol): add hello action and capabilities message"
 ### Task 3: Add worktree/path actions and replies
 
 **Files:**
+
 - Modify: `src/shared/orcd-protocol.ts`
 - Test: `src/shared/orcd-protocol.test.ts`
 
@@ -196,15 +199,29 @@ git commit -m "feat(protocol): add hello action and capabilities message"
 ```ts
 it('models worktree and path actions with replies', () => {
   const prep: OrcdAction = {
-    action: 'worktree_prepare', requestId: 'w1',
-    projectPath: '/repo', branch: 'feat-x', sourceBranch: 'main', setupCommands: 'pnpm i',
+    action: 'worktree_prepare',
+    requestId: 'w1',
+    projectPath: '/repo',
+    branch: 'feat-x',
+    sourceBranch: 'main',
+    setupCommands: 'pnpm i',
   };
   expect(prep.action).toBe('worktree_prepare');
 
-  const ready: OrcdMessage = { type: 'worktree_ready', requestId: 'w1', path: '/repo/.worktrees/feat-x', branch: 'feat-x' };
+  const ready: OrcdMessage = {
+    type: 'worktree_ready',
+    requestId: 'w1',
+    path: '/repo/.worktrees/feat-x',
+    branch: 'feat-x',
+  };
   expect(ready.type).toBe('worktree_ready');
 
-  const rm: OrcdAction = { action: 'worktree_remove', requestId: 'w2', projectPath: '/repo', path: '/repo/.worktrees/feat-x' };
+  const rm: OrcdAction = {
+    action: 'worktree_remove',
+    requestId: 'w2',
+    projectPath: '/repo',
+    path: '/repo/.worktrees/feat-x',
+  };
   expect(rm.action).toBe('worktree_remove');
 
   const ok: OrcdMessage = { type: 'ok', requestId: 'w2' };
@@ -213,7 +230,13 @@ it('models worktree and path actions with replies', () => {
   const pv: OrcdAction = { action: 'path_validate', requestId: 'p1', path: '/repo' };
   expect(pv.action).toBe('path_validate');
 
-  const pvr: OrcdMessage = { type: 'path_validated', requestId: 'p1', exists: true, isGitRepo: true, defaultBranch: 'main' };
+  const pvr: OrcdMessage = {
+    type: 'path_validated',
+    requestId: 'p1',
+    exists: true,
+    isGitRepo: true,
+    defaultBranch: 'main',
+  };
   expect(pvr.type).toBe('path_validated');
 });
 ```
@@ -294,6 +317,7 @@ Phase B changes `OrcdServer`'s constructor and connection handling. Existing tes
 ### Task 4: Switch `OrcdServer` to a TCP listener
 
 **Files:**
+
 - Modify: `src/orcd/socket-server.ts`
 - Modify: `src/orcd/index.ts`
 - Modify: `src/orcd/__tests__/socket-server-compaction.test.ts` (update `createServer` helper)
@@ -306,11 +330,16 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { createConnection } from 'net';
 import { OrcdServer } from '../socket-server';
 
-function freePort() { return 7400 + Math.floor(Math.random() * 500); }
+function freePort() {
+  return 7400 + Math.floor(Math.random() * 500);
+}
 
 describe('OrcdServer TCP listener', () => {
   let server: OrcdServer | null = null;
-  afterEach(() => { server?.stop(); server = null; });
+  afterEach(() => {
+    server?.stop();
+    server = null;
+  });
 
   it('listens on host:port and accepts a TCP connection', async () => {
     const port = freePort();
@@ -321,7 +350,10 @@ describe('OrcdServer TCP listener', () => {
     );
     await server.start();
     await new Promise<void>((resolve, reject) => {
-      const c = createConnection({ host: '127.0.0.1', port }, () => { c.end(); resolve(); });
+      const c = createConnection({ host: '127.0.0.1', port }, () => {
+        c.end();
+        resolve();
+      });
       c.on('error', reject);
     });
   });
@@ -398,11 +430,18 @@ async function main() {
     config.memoryUpsert,
   );
   await server.start();
-  const shutdown = () => { console.log('[orcd] shutting down...'); server.stop(); process.exit(0); };
+  const shutdown = () => {
+    console.log('[orcd] shutting down...');
+    server.stop();
+    process.exit(0);
+  };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
-main().catch((err) => { console.error('[orcd] fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('[orcd] fatal:', err);
+  process.exit(1);
+});
 ```
 
 > Note: `config.listen`, `config.authToken`, `config.name` are added in Task 10. Until then this file will not type-check against the old config — implement Task 10 before running the full build, or stub the fields. Per-task test for Task 4 does not import `index.ts`.
@@ -436,6 +475,7 @@ git commit -m "feat(orcd): bind TCP listener instead of unix socket"
 ### Task 5: Per-connection auth flag + `hello` handshake
 
 **Files:**
+
 - Modify: `src/orcd/socket-server.ts`
 - Test: `src/orcd/__tests__/socket-server-auth.test.ts` (create)
 
@@ -446,7 +486,9 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { createConnection, type Socket } from 'net';
 import { OrcdServer } from '../socket-server';
 
-function freePort() { return 7000 + Math.floor(Math.random() * 500); }
+function freePort() {
+  return 7000 + Math.floor(Math.random() * 500);
+}
 
 async function connectAndSend(port: number, lines: object[]): Promise<string[]> {
   return new Promise((resolve, reject) => {
@@ -454,7 +496,9 @@ async function connectAndSend(port: number, lines: object[]): Promise<string[]> 
     const c: Socket = createConnection({ host: '127.0.0.1', port }, () => {
       for (const l of lines) c.write(JSON.stringify(l) + '\n');
     });
-    c.on('data', (d) => { out.push(...d.toString().split('\n').filter(Boolean)); });
+    c.on('data', (d) => {
+      out.push(...d.toString().split('\n').filter(Boolean));
+    });
     c.on('close', () => resolve(out));
     c.on('error', reject);
     setTimeout(() => c.end(), 150);
@@ -463,7 +507,10 @@ async function connectAndSend(port: number, lines: object[]): Promise<string[]> 
 
 describe('OrcdServer auth', () => {
   let server: OrcdServer | null = null;
-  afterEach(() => { server?.stop(); server = null; });
+  afterEach(() => {
+    server?.stop();
+    server = null;
+  });
 
   async function boot() {
     const port = freePort();
@@ -566,6 +613,7 @@ git commit -m "feat(orcd): require hello token auth before any action"
 ### Task 6: Build the `capabilities` payload from loaded providers
 
 **Files:**
+
 - Modify: `src/orcd/socket-server.ts`
 - Test: `src/orcd/__tests__/socket-server-capabilities.test.ts` (create)
 
@@ -581,7 +629,10 @@ describe('buildCapabilities', () => {
       { listen: { host: '127.0.0.1', port: 0 }, authToken: 't', name: 'gpubox' },
       {
         anthropic: {
-          type: 'anthropic', baseUrl: '', apiKey: '', modelAliasEnv: {},
+          type: 'anthropic',
+          baseUrl: '',
+          apiKey: '',
+          modelAliasEnv: {},
           models: ['claude-sonnet-4-6'],
           modelLabels: { 'claude-sonnet-4-6': { alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 } },
         },
@@ -590,7 +641,9 @@ describe('buildCapabilities', () => {
     );
     const caps = server['buildCapabilities']('h1');
     expect(caps).toMatchObject({
-      type: 'capabilities', requestId: 'h1', name: 'gpubox',
+      type: 'capabilities',
+      requestId: 'h1',
+      name: 'gpubox',
       defaults: { provider: 'anthropic', model: 'sonnet' },
     });
     expect(caps.providers[0]).toMatchObject({ id: 'anthropic', label: 'Anthropic' });
@@ -638,6 +691,7 @@ git commit -m "feat(orcd): build capabilities payload from providers"
 ### Task 7: `worktree_prepare` / `worktree_remove` on orcd
 
 **Files:**
+
 - Create: `src/orcd/worktree-ops.ts` (move logic from `src/server/worktree.ts`)
 - Modify: `src/orcd/socket-server.ts`
 - Test: `src/orcd/__tests__/worktree-ops.test.ts` (create)
@@ -663,18 +717,30 @@ async function tempRepo(): Promise<string> {
 
 describe('worktree-ops', () => {
   let repo: string;
-  afterEach(async () => { if (repo) await rm(repo, { recursive: true, force: true }); });
+  afterEach(async () => {
+    if (repo) await rm(repo, { recursive: true, force: true });
+  });
 
   it('prepares a worktree and returns its resolved path', async () => {
     repo = await tempRepo();
-    const res = await prepareWorktree({ projectPath: repo, branch: 'feat-x', sourceBranch: undefined, setupCommands: '' });
+    const res = await prepareWorktree({
+      projectPath: repo,
+      branch: 'feat-x',
+      sourceBranch: undefined,
+      setupCommands: '',
+    });
     expect(res.path).toBe(join(repo, '.worktrees', 'feat-x'));
     expect((await stat(res.path)).isDirectory()).toBe(true);
   });
 
   it('removes a worktree', async () => {
     repo = await tempRepo();
-    const res = await prepareWorktree({ projectPath: repo, branch: 'feat-y', sourceBranch: undefined, setupCommands: '' });
+    const res = await prepareWorktree({
+      projectPath: repo,
+      branch: 'feat-y',
+      sourceBranch: undefined,
+      setupCommands: '',
+    });
     await removeWorktree(repo, res.path);
     await expect(stat(res.path)).rejects.toThrow();
   });
@@ -736,7 +802,10 @@ function copyOpencodeConfig(srcDir: string, destDir: string): void {
 }
 
 export async function prepareWorktree(opts: {
-  projectPath: string; branch: string; sourceBranch?: string; setupCommands?: string;
+  projectPath: string;
+  branch: string;
+  sourceBranch?: string;
+  setupCommands?: string;
 }): Promise<{ path: string; branch: string }> {
   const wtPath = resolveWorkDir(opts.branch, opts.projectPath);
   if (!existsSync(wtPath)) {
@@ -746,7 +815,10 @@ export async function prepareWorktree(opts: {
         await runSetupCommands(wtPath, opts.setupCommands);
       } catch (err) {
         // Setup failure must not block the session — the worktree exists and the agent can run.
-        console.error(`[worktree:${opts.branch}] setup failed (continuing):`, err instanceof Error ? err.message : String(err));
+        console.error(
+          `[worktree:${opts.branch}] setup failed (continuing):`,
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }
     copyOpencodeConfig(opts.projectPath, wtPath);
@@ -813,6 +885,7 @@ git commit -m "feat(orcd): own worktree prepare/remove on the node"
 ### Task 8: `path_validate` on orcd
 
 **Files:**
+
 - Modify: `src/orcd/worktree-ops.ts`
 - Modify: `src/orcd/socket-server.ts`
 - Test: `src/orcd/__tests__/path-validate.test.ts` (create)
@@ -829,7 +902,10 @@ import { validatePath } from '../worktree-ops';
 
 describe('validatePath', () => {
   let dir: string | undefined;
-  afterEach(async () => { if (dir) await rm(dir, { recursive: true, force: true }); dir = undefined; });
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
 
   it('reports a non-existent path', async () => {
     const res = await validatePath('/no/such/path-xyz');
@@ -859,13 +935,17 @@ Add to `src/orcd/worktree-ops.ts`:
 ```ts
 import { join } from 'path';
 
-export async function validatePath(path: string): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null }> {
+export async function validatePath(
+  path: string,
+): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null }> {
   if (!existsSync(path)) return { exists: false, isGitRepo: false, defaultBranch: null };
   const isGitRepo = existsSync(join(path, '.git'));
   let defaultBranch: string | null = null;
   if (isGitRepo) {
     try {
-      defaultBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path, stdio: 'pipe' }).toString().trim() || null;
+      defaultBranch =
+        execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: path, stdio: 'pipe' }).toString().trim() ||
+        null;
     } catch (err) {
       console.log(`[path_validate] could not resolve branch for ${path}:`, err instanceof Error ? err.message : err);
     }
@@ -928,6 +1008,7 @@ orcd's shared config loader (`src/shared/config.ts`) gains `listen`/`authToken`/
 ### Task 10: Add `listen`/`authToken`/`name` to the shared config loader
 
 **Files:**
+
 - Modify: `src/shared/config.ts`
 - Test: `src/shared/config.test.ts` (locate or create; check existing shared config tests)
 
@@ -979,19 +1060,22 @@ Expected: FAIL — `listen`/`authToken`/`name` not on `OrchestrelConfig`.
 In the `OrchestrelConfig` interface, replace `socket: string;` with:
 
 ```ts
-  listen: { host: string; port: number };
-  authToken: string;
-  name: string;
+listen: {
+  host: string;
+  port: number;
+}
+authToken: string;
+name: string;
 ```
 
 In `parseConfig`, parse them (with `resolveEnvVars` on `authToken`):
 
 ```ts
-  const rawListen = (raw.listen ?? {}) as Record<string, unknown>;
-  const listen = {
-    host: String(rawListen.host ?? '127.0.0.1'),
-    port: Number(rawListen.port ?? 7420),
-  };
+const rawListen = (raw.listen ?? {}) as Record<string, unknown>;
+const listen = {
+  host: String(rawListen.host ?? '127.0.0.1'),
+  port: Number(rawListen.port ?? 7420),
+};
 ```
 
 In the returned object, replace `socket: ...` with:
@@ -1019,6 +1103,7 @@ git commit -m "feat(config): add listen/authToken/name, drop socket"
 ### Task 11: Carry model labels into orcd's shaped config
 
 **Files:**
+
 - Modify: `src/orcd/config.ts`
 - Modify: `src/orcd/__tests__/config.test.ts` (update YAML fixtures: drop `socket:`, assert `listen`)
 
@@ -1036,7 +1121,9 @@ Update the "throws on missing providers" fixture the same way. Add an assertion 
 ```ts
 expect(cfg.listen).toEqual({ host: '127.0.0.1', port: 7420 });
 expect(cfg.providers.anthropic.modelLabels['claude-sonnet-4-6']).toEqual({
-  alias: 'sonnet', label: 'Sonnet 4.6', contextWindow: 200000,
+  alias: 'sonnet',
+  label: 'Sonnet 4.6',
+  contextWindow: 200000,
 });
 expect(cfg.providers.anthropic.label).toBe('Anthropic');
 ```
@@ -1079,22 +1166,22 @@ export interface OrcdConfig {
 In `toOrcdShape`, build `modelLabels` (key by modelID, matching `models: string[]`) and pass `label`:
 
 ```ts
-    const modelLabels: Record<string, { alias: string; label: string; contextWindow: number }> = {};
-    for (const [alias, m] of Object.entries(p.models)) {
-      modelLabels[m.modelID] = { alias, label: m.label, contextWindow: m.contextWindow };
-    }
-    providers[id] = {
-      type: p.type ?? 'anthropic',
-      ...(p.label ? { label: p.label } : {}),
-      baseUrl: p.baseUrl ?? '',
-      apiKey: p.apiKey ?? '',
-      ...(p.authToken ? { authToken: p.authToken } : {}),
-      ...(p.region ? { region: p.region } : {}),
-      ...(p.profile ? { profile: p.profile } : {}),
-      models: Object.values(p.models).map((m) => m.modelID),
-      modelLabels,
-      modelAliasEnv: buildModelAliasEnv(p.models, p.aliases),
-    };
+const modelLabels: Record<string, { alias: string; label: string; contextWindow: number }> = {};
+for (const [alias, m] of Object.entries(p.models)) {
+  modelLabels[m.modelID] = { alias, label: m.label, contextWindow: m.contextWindow };
+}
+providers[id] = {
+  type: p.type ?? 'anthropic',
+  ...(p.label ? { label: p.label } : {}),
+  baseUrl: p.baseUrl ?? '',
+  apiKey: p.apiKey ?? '',
+  ...(p.authToken ? { authToken: p.authToken } : {}),
+  ...(p.region ? { region: p.region } : {}),
+  ...(p.profile ? { profile: p.profile } : {}),
+  models: Object.values(p.models).map((m) => m.modelID),
+  modelLabels,
+  modelAliasEnv: buildModelAliasEnv(p.models, p.aliases),
+};
 ```
 
 Replace the returned `socket: cfg.socket` with `listen: cfg.listen, authToken: cfg.authToken, name: cfg.name`.
@@ -1135,6 +1222,7 @@ git commit -m "feat(config): orcd carries model labels; example renamed to orcd.
 ### Task 12: `orc.yaml` node-registry loader (BE)
 
 **Files:**
+
 - Create: `src/server/config/nodes.ts`
 - Create: `orc.example.yaml`
 - Test: `src/server/config/nodes.test.ts` (create)
@@ -1216,7 +1304,9 @@ export function loadNodeRegistry(): NodeEntry[] {
   return cached;
 }
 
-export function resetNodeRegistryCache(): void { cached = null; }
+export function resetNodeRegistryCache(): void {
+  cached = null;
+}
 ```
 
 - [ ] **Step 4: Create `orc.example.yaml`**
@@ -1255,6 +1345,7 @@ git commit -m "feat(config): orc.yaml node registry loader"
 ### Task 13: `OrcdClient` dials TCP with `{ host, port, token }`
 
 **Files:**
+
 - Modify: `src/server/orcd-client.ts`
 - Modify: `src/server/orcd-client.test.ts` (constructor calls)
 - Test: same file
@@ -1329,6 +1420,7 @@ git commit -m "feat(be): OrcdClient dials TCP with node options"
 ### Task 14: Generic `requestId` request/reply + `hello` handshake + capability cache
 
 **Files:**
+
 - Modify: `src/server/orcd-client.ts`
 - Test: `src/server/orcd-client.test.ts`
 
@@ -1344,7 +1436,13 @@ it('correlates a request by requestId and resolves on reply', async () => {
   };
   internals.socket = { writable: true };
   internals.send = (a) => {
-    internals.dispatch({ type: 'path_validated', requestId: a.requestId, exists: true, isGitRepo: true, defaultBranch: 'main' });
+    internals.dispatch({
+      type: 'path_validated',
+      requestId: a.requestId,
+      exists: true,
+      isGitRepo: true,
+      defaultBranch: 'main',
+    });
   };
   const res = await client.pathValidate('/repo');
   expect(res).toMatchObject({ exists: true, isGitRepo: true, defaultBranch: 'main' });
@@ -1360,8 +1458,12 @@ it('caches capabilities from a hello reply', async () => {
   internals.socket = { writable: true };
   internals.send = (a) => {
     internals.dispatch({
-      type: 'capabilities', requestId: a.requestId, name: 'local',
-      providers: [{ id: 'anthropic', label: 'Anthropic', models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 }] }],
+      type: 'capabilities',
+      requestId: a.requestId,
+      name: 'local',
+      providers: [
+        { id: 'anthropic', label: 'Anthropic', models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 }] },
+      ],
       defaults: { provider: 'anthropic', model: 'sonnet' },
     });
   };
@@ -1450,8 +1552,14 @@ this.buf = '';
 const isReconnect = this.hasConnectedBefore;
 this.hasConnectedBefore = true;
 this.sayHello()
-  .then(() => { if (isReconnect) this.reconnectCallback?.(); resolve(); })
-  .catch((err) => { console.error(`[orcd-client:${this.nodeName}] hello failed:`, err.message); reject(err); });
+  .then(() => {
+    if (isReconnect) this.reconnectCallback?.();
+    resolve();
+  })
+  .catch((err) => {
+    console.error(`[orcd-client:${this.nodeName}] hello failed:`, err.message);
+    reject(err);
+  });
 ```
 
 > `list` and `create` keep their existing correlation (they don't set `requestId`, so the pending-request short-circuit won't capture them). Leave them as-is.
@@ -1471,6 +1579,7 @@ git commit -m "feat(be): requestId correlation, hello handshake, capability cach
 ### Task 15: Multi-client registry in `init-state`
 
 **Files:**
+
 - Modify: `src/server/init-state.ts`
 - Test: `src/server/init-state.test.ts` (create)
 
@@ -1480,7 +1589,9 @@ git commit -m "feat(be): requestId correlation, hello handshake, capability cach
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getOrcdClient, getClientByNode, setClientForNode, listNodeClients, clearNodeClients } from './init-state';
 
-class FakeClient { constructor(public nodeName: string) {} }
+class FakeClient {
+  constructor(public nodeName: string) {}
+}
 
 describe('init-state node registry', () => {
   beforeEach(() => clearNodeClients());
@@ -1510,14 +1621,24 @@ Expected: FAIL — registry functions missing.
 In `src/server/init-state.ts`, replace the single-client block:
 
 ```ts
-import type { OrcdClient } from './orcd-client'
-const _nodeClients = new Map<string, OrcdClient>()
-export function setClientForNode(name: string, client: OrcdClient): void { _nodeClients.set(name, client) }
-export function getClientByNode(name: string): OrcdClient | null { return _nodeClients.get(name) ?? null }
-export function listNodeClients(): OrcdClient[] { return [..._nodeClients.values()] }
-export function clearNodeClients(): void { _nodeClients.clear() }
+import type { OrcdClient } from './orcd-client';
+const _nodeClients = new Map<string, OrcdClient>();
+export function setClientForNode(name: string, client: OrcdClient): void {
+  _nodeClients.set(name, client);
+}
+export function getClientByNode(name: string): OrcdClient | null {
+  return _nodeClients.get(name) ?? null;
+}
+export function listNodeClients(): OrcdClient[] {
+  return [..._nodeClients.values()];
+}
+export function clearNodeClients(): void {
+  _nodeClients.clear();
+}
 /** Back-compat: callers that predate multi-node default to the 'local' node. */
-export function getOrcdClient(): OrcdClient | null { return _nodeClients.get('local') ?? null }
+export function getOrcdClient(): OrcdClient | null {
+  return _nodeClients.get('local') ?? null;
+}
 ```
 
 Remove `setOrcdClient` (callers move to `setClientForNode` in Task 16).
@@ -1537,6 +1658,7 @@ git commit -m "feat(be): per-node OrcdClient registry in init-state"
 ### Task 16: Boot one client per node in `ws/server.ts`
 
 **Files:**
+
 - Modify: `src/server/ws/server.ts` (~L145-180)
 
 - [ ] **Step 1: Replace single-client init with a per-node loop**
@@ -1546,8 +1668,13 @@ In the one-time init block, replace the single `OrcdClient` construction with:
 ```ts
 const { OrcdClient } = await import('../orcd-client');
 const { loadNodeRegistry } = await import('../config/nodes');
-const { initOrcdRouter, reconcileRunningCards, registerAutoStart, registerWorktreeCleanup, registerMemoryUpsertOnArchive } =
-  await import('../controllers/card-sessions');
+const {
+  initOrcdRouter,
+  reconcileRunningCards,
+  registerAutoStart,
+  registerWorktreeCleanup,
+  registerMemoryUpsertOnArchive,
+} = await import('../controllers/card-sessions');
 
 const nodes = loadNodeRegistry();
 for (const node of nodes) {
@@ -1562,8 +1689,11 @@ for (const node of nodes) {
     }
   }
   initOrcdRouter(client);
-  try { await reconcileRunningCards(client); }
-  catch (err) { console.error(`[startup] reconcile failed for ${node.name}:`, err); }
+  try {
+    await reconcileRunningCards(client);
+  } catch (err) {
+    console.error(`[startup] reconcile failed for ${node.name}:`, err);
+  }
   client.onReconnect(() => {
     console.log(`[orcd] node ${node.name} reconnected, reconciling...`);
     reconcileRunningCards(client!).catch((e) => console.error(`[orcd] reconnect reconcile ${node.name}:`, e));
@@ -1598,6 +1728,7 @@ git commit -m "feat(be): boot one OrcdClient per registry node"
 ### Task 17: Initial-connect failure schedules reconnect
 
 **Files:**
+
 - Modify: `src/server/orcd-client.ts`
 - Test: `src/server/orcd-client.test.ts`
 
@@ -1628,7 +1759,9 @@ sock.on('error', (err) => {
     if (!this.destroyed && !this.reconnectTimer) {
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
-        this.connect().catch((e) => console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (e as Error).message));
+        this.connect().catch((e) =>
+          console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (e as Error).message),
+        );
       }, 2000);
     }
     reject(err);
@@ -1668,6 +1801,7 @@ Every card-routed action looks up the client by the card's node. Local worktree/
 ### Task 18: Route `startCardSession` worktree prep + create through the card's node
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.ts` (`startCardSession`, `registerAutoStart`)
 - Modify: `src/server/sessions/worktree.ts` (delete local execution; keep a thin resolver or inline into startCardSession)
 - Test: `src/server/controllers/card-sessions.test.ts` (find existing; add a routing test)
@@ -1681,8 +1815,14 @@ it('prepares the worktree on the node then creates the session', async () => {
   const calls: string[] = [];
   const fakeClient = {
     nodeName: 'gpubox',
-    worktreePrepare: async () => { calls.push('prepare'); return { path: '/repo/.worktrees/feat', branch: 'feat' }; },
-    create: async (opts: { cwd: string }) => { calls.push(`create:${opts.cwd}`); return 'sess-1'; },
+    worktreePrepare: async () => {
+      calls.push('prepare');
+      return { path: '/repo/.worktrees/feat', branch: 'feat' };
+    },
+    create: async (opts: { cwd: string }) => {
+      calls.push(`create:${opts.cwd}`);
+      return 'sess-1';
+    },
   };
   // card with worktreeBranch 'feat', nodeName 'gpubox', projectId set
   // invoke the exported startCardSession (export it if not already)
@@ -1721,10 +1861,12 @@ async function startCardSession(client: OrcdClient, card: Card, bus: MessageBus 
       throw new Error(`card ${card.id} has no project`);
     }
 
-    const prompt = card.sessionId ? '' : card.description ?? '';
+    const prompt = card.sessionId ? '' : (card.description ?? '');
     const sessionId = await client.create({
-      prompt, cwd,
-      provider: card.provider, model: card.model,
+      prompt,
+      cwd,
+      provider: card.provider,
+      model: card.model,
       sessionId: card.sessionId ?? undefined,
       contextWindow: card.contextWindow,
       summarizeThreshold: card.summarizeThreshold,
@@ -1776,6 +1918,7 @@ git commit -m "feat(be): route session start + worktree prepare through the card
 ### Task 19: Route worktree cleanup through the card's node
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.ts` (`cleanupWorktreeForCard`, ~L350-375)
 - Test: `src/server/controllers/card-sessions.test.ts`
 
@@ -1853,6 +1996,7 @@ git commit -m "feat(be): route worktree cleanup through the card's node (best-ef
 ### Task 20: Route `cancel`/`isActive` call sites by node
 
 **Files:**
+
 - Modify: `src/server/services/card.ts` (`updateCard` cancel, `deleteCard` cancel)
 - Modify: `src/server/ws/handlers/agents.ts`, `src/server/ws/handlers/sessions.ts` (getOrcdClient usages)
 - Test: `src/server/services/card.test.ts`
@@ -1900,6 +2044,7 @@ git commit -m "feat(be): route cancel/isActive by card node"
 ### Task 21: Replace `config/providers.ts` with node capability lookups in `card.ts`
 
 **Files:**
+
 - Modify: `src/server/services/card.ts`
 - Delete: `src/server/config/providers.ts`
 - Test: `src/server/services/card.test.ts`
@@ -1992,6 +2137,7 @@ git commit -m "feat(be): derive provider/contextWindow from node capabilities"
 ### Task 22: Route `path_validate` in project create/update
 
 **Files:**
+
 - Modify: `src/server/services/project.ts`
 - Test: `src/server/services/project.test.ts`
 
@@ -2043,6 +2189,7 @@ Add immutable `node_name` to `projects` and `cards`, backfilled to `'local'`. Sc
 ### Task 23: Add `node_name` columns to the DB and entities
 
 **Files:**
+
 - Modify: `src/server/models/Project.ts`
 - Modify: `src/server/models/Card.ts`
 - DB: `data/orchestrel.db` (ALTER TABLE)
@@ -2092,6 +2239,7 @@ git commit -m "feat(db): add immutable node_name to projects and cards"
 ### Task 24: Expose `nodeName` on the FE wire types
 
 **Files:**
+
 - Modify: `src/shared/ws-protocol.ts` (Card/Project zod schemas + types)
 - Test: existing ws-protocol tests
 
@@ -2127,6 +2275,7 @@ The sync payload becomes node-aware (which nodes exist, their connection state, 
 ### Task 25: Node-aware sync payload
 
 **Files:**
+
 - Modify: `src/shared/ws-protocol.ts` (`SyncPayload`)
 - Modify: `src/server/ws/handlers/projects.ts` (~L56 sync emit)
 - Test: a server-side test asserting the payload shape (extend an existing handler test or add one)
@@ -2150,7 +2299,7 @@ Change `SyncPayload`:
 export interface SyncPayload {
   cards: Card[];
   projects: Project[];
-  nodes: NodeInfo[];          // replaces the flat `providers` map
+  nodes: NodeInfo[]; // replaces the flat `providers` map
   user?: User;
   users?: User[];
 }
@@ -2172,7 +2321,9 @@ export function nodesForClient(): NodeInfo[] {
       for (const p of caps.providers) {
         providers[p.id] = {
           label: p.label,
-          models: Object.fromEntries(p.models.map((m) => [m.alias, { label: m.label, modelID: m.alias, contextWindow: m.contextWindow }])),
+          models: Object.fromEntries(
+            p.models.map((m) => [m.alias, { label: m.label, modelID: m.alias, contextWindow: m.contextWindow }]),
+          ),
         };
       }
     }
@@ -2200,6 +2351,7 @@ git commit -m "feat(fe-wire): node-aware sync payload"
 ### Task 26: FE config store holds nodes
 
 **Files:**
+
 - Modify: `app/stores/config-store.ts`
 - Modify: caller that hydrates sync (find where `SyncPayload` is consumed — likely `app/stores/*` board store)
 - Test: `app/stores/config-store.test.ts`
@@ -2210,7 +2362,17 @@ git commit -m "feat(fe-wire): node-aware sync payload"
 it('hydrates nodes and exposes connected ones', () => {
   const store = new ConfigStore();
   store.hydrateNodes([
-    { name: 'local', connected: true, providers: { anthropic: { label: 'Anthropic', models: { sonnet: { label: 'Sonnet', modelID: 'sonnet', contextWindow: 1000000 } } } }, defaults: { provider: 'anthropic', model: 'sonnet' } },
+    {
+      name: 'local',
+      connected: true,
+      providers: {
+        anthropic: {
+          label: 'Anthropic',
+          models: { sonnet: { label: 'Sonnet', modelID: 'sonnet', contextWindow: 1000000 } },
+        },
+      },
+      defaults: { provider: 'anthropic', model: 'sonnet' },
+    },
     { name: 'gpubox', connected: false, providers: {} },
   ]);
   expect(store.nodes.length).toBe(2);
@@ -2231,15 +2393,25 @@ import type { NodeInfo, ProviderConfig, ModelConfig } from '../../src/shared/ws-
 
 export class ConfigStore {
   nodes: NodeInfo[] = [];
-  constructor() { makeAutoObservable(this); }
+  constructor() {
+    makeAutoObservable(this);
+  }
 
-  hydrateNodes(nodes: NodeInfo[]) { this.nodes = nodes; }
+  hydrateNodes(nodes: NodeInfo[]) {
+    this.nodes = nodes;
+  }
 
-  get connectedNodes(): NodeInfo[] { return this.nodes.filter((n) => n.connected); }
+  get connectedNodes(): NodeInfo[] {
+    return this.nodes.filter((n) => n.connected);
+  }
 
-  nodeByName(name: string): NodeInfo | undefined { return this.nodes.find((n) => n.name === name); }
+  nodeByName(name: string): NodeInfo | undefined {
+    return this.nodes.find((n) => n.name === name);
+  }
 
-  providersForNode(name: string): Record<string, ProviderConfig> { return this.nodeByName(name)?.providers ?? {}; }
+  providersForNode(name: string): Record<string, ProviderConfig> {
+    return this.nodeByName(name)?.providers ?? {};
+  }
 
   getModelsForNode(name: string, providerID: string): [string, ModelConfig][] {
     return Object.entries(this.providersForNode(name)[providerID]?.models ?? {});
@@ -2269,6 +2441,7 @@ git commit -m "feat(fe): config store tracks nodes + per-node capabilities"
 ### Task 27: Project form picks a node, constrains provider/model, validates path on node
 
 **Files:**
+
 - Modify: `app/components/ProjectForm.tsx`
 - Modify: `app/stores/project-store.ts` (if it carries provider/model lists)
 
@@ -2301,6 +2474,7 @@ git commit -m "feat(fe): project form is node-aware"
 ### Task 28: Offline-node card is read-only
 
 **Files:**
+
 - Modify: card detail / session view components (find the component rendering card actions — `app/components/CardDetail.tsx` / `SessionView`)
 - Modify: card create form (inherit project node, show non-editable)
 
@@ -2335,6 +2509,7 @@ git commit -m "feat(fe): offline-node cards render read-only from cache"
 ### Task 29: Two-orcd integration test
 
 **Files:**
+
 - Test: `src/server/__tests__/multi-node.integration.test.ts` (create)
 
 - [ ] **Step 1: Write the integration test**
@@ -2361,22 +2536,56 @@ async function tempRepo() {
 
 describe('multi-node isolation', () => {
   const cleanup: Array<() => void> = [];
-  afterAll(async () => { for (const c of cleanup) c(); });
+  afterAll(async () => {
+    for (const c of cleanup) c();
+  });
 
   it('two nodes report independent capabilities and prepare worktrees independently', async () => {
-    const a = new OrcdServer({ listen: { host: '127.0.0.1', port: 7811 }, authToken: 'a-tok', name: 'nodeA' },
-      { anthropic: { type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '', models: ['claude-sonnet-4-6'], modelLabels: { 'claude-sonnet-4-6': { alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 } }, modelAliasEnv: {} } },
-      { provider: 'anthropic', model: 'sonnet' });
-    const b = new OrcdServer({ listen: { host: '127.0.0.1', port: 7812 }, authToken: 'b-tok', name: 'nodeB' },
-      { bedrock: { type: 'anthropic', label: 'Bedrock', baseUrl: '', apiKey: '', models: ['m'], modelLabels: { m: { alias: 'haiku', label: 'Haiku', contextWindow: 200000 } }, modelAliasEnv: {} } },
-      { provider: 'bedrock', model: 'haiku' });
-    await a.start(); await b.start();
-    cleanup.push(() => a.stop(), () => b.stop());
+    const a = new OrcdServer(
+      { listen: { host: '127.0.0.1', port: 7811 }, authToken: 'a-tok', name: 'nodeA' },
+      {
+        anthropic: {
+          type: 'anthropic',
+          label: 'Anthropic',
+          baseUrl: '',
+          apiKey: '',
+          models: ['claude-sonnet-4-6'],
+          modelLabels: { 'claude-sonnet-4-6': { alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 } },
+          modelAliasEnv: {},
+        },
+      },
+      { provider: 'anthropic', model: 'sonnet' },
+    );
+    const b = new OrcdServer(
+      { listen: { host: '127.0.0.1', port: 7812 }, authToken: 'b-tok', name: 'nodeB' },
+      {
+        bedrock: {
+          type: 'anthropic',
+          label: 'Bedrock',
+          baseUrl: '',
+          apiKey: '',
+          models: ['m'],
+          modelLabels: { m: { alias: 'haiku', label: 'Haiku', contextWindow: 200000 } },
+          modelAliasEnv: {},
+        },
+      },
+      { provider: 'bedrock', model: 'haiku' },
+    );
+    await a.start();
+    await b.start();
+    cleanup.push(
+      () => a.stop(),
+      () => b.stop(),
+    );
 
     const ca = new OrcdClient({ host: '127.0.0.1', port: 7811, token: 'a-tok', name: 'nodeA' });
     const cb = new OrcdClient({ host: '127.0.0.1', port: 7812, token: 'b-tok', name: 'nodeB' });
-    await ca.connect(); await cb.connect();
-    cleanup.push(() => ca.disconnect(), () => cb.disconnect());
+    await ca.connect();
+    await cb.connect();
+    cleanup.push(
+      () => ca.disconnect(),
+      () => cb.disconnect(),
+    );
 
     expect(ca.capabilities?.name).toBe('nodeA');
     expect(cb.capabilities?.name).toBe('nodeB');
@@ -2384,15 +2593,29 @@ describe('multi-node isolation', () => {
     expect(cb.capabilities?.providers[0].id).toBe('bedrock');
 
     const repoA = await tempRepo();
-    cleanup.push(() => { void rm(repoA, { recursive: true, force: true }); });
+    cleanup.push(() => {
+      void rm(repoA, { recursive: true, force: true });
+    });
     const wt = await ca.worktreePrepare({ projectPath: repoA, branch: 'feat-a', setupCommands: '' });
     expect(wt.path).toBe(join(repoA, '.worktrees', 'feat-a'));
   });
 
   it('rejects a client presenting the wrong token', async () => {
-    const a = new OrcdServer({ listen: { host: '127.0.0.1', port: 7813 }, authToken: 'right', name: 'nodeA' },
-      { anthropic: { type: 'anthropic', label: 'A', baseUrl: '', apiKey: '', models: ['m'], modelLabels: { m: { alias: 'sonnet', label: 'S', contextWindow: 1 } }, modelAliasEnv: {} } },
-      { provider: 'anthropic', model: 'sonnet' });
+    const a = new OrcdServer(
+      { listen: { host: '127.0.0.1', port: 7813 }, authToken: 'right', name: 'nodeA' },
+      {
+        anthropic: {
+          type: 'anthropic',
+          label: 'A',
+          baseUrl: '',
+          apiKey: '',
+          models: ['m'],
+          modelLabels: { m: { alias: 'sonnet', label: 'S', contextWindow: 1 } },
+          modelAliasEnv: {},
+        },
+      },
+      { provider: 'anthropic', model: 'sonnet' },
+    );
     await a.start();
     cleanup.push(() => a.stop());
     const c = new OrcdClient({ host: '127.0.0.1', port: 7813, token: 'wrong', name: 'nodeA' });
@@ -2428,6 +2651,7 @@ The spec's resilience strategy is: size the per-session ring buffer to cover the
 ### Task 30: Make the session ring-buffer size configurable
 
 **Files:**
+
 - Modify: `src/shared/config.ts` (parse `ringBufferSize`)
 - Modify: `src/orcd/config.ts` (carry it onto `OrcdConfig`)
 - Modify: `src/orcd/socket-server.ts` (pass to `OrcdSession` at both construction sites, L145 + L270)
@@ -2440,7 +2664,8 @@ In `src/orcd/__tests__/config.test.ts`, add to a parse test:
 
 ```ts
 it('parses ringBufferSize with a default', () => {
-  const cfg = parseConfig(`
+  const cfg = parseConfig(
+    `
 listen: { host: 127.0.0.1, port: 7420 }
 authToken: tok
 defaultProvider: anthropic
@@ -2450,7 +2675,9 @@ providers:
     label: Anthropic
     models:
       sonnet: { label: "Sonnet", modelID: claude-sonnet-4-6, contextWindow: 200000 }
-`, {});
+`,
+    {},
+  );
   expect(cfg.ringBufferSize).toBe(5000); // default
 });
 ```
@@ -2480,7 +2707,7 @@ Expected: PASS
 Add under `defaultCwd`:
 
 ```yaml
-ringBufferSize: 5000   # per-session event buffer; size to cover the max expected BE↔node outage
+ringBufferSize: 5000 # per-session event buffer; size to cover the max expected BE↔node outage
 ```
 
 - [ ] **Step 6: Commit**

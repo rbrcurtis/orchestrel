@@ -50,10 +50,7 @@ function calcCostFromModelUsage(
       total += usage.costUsd;
       continue;
     }
-    total +=
-      (usage.inputTokens * p.input +
-        usage.outputTokens * p.output) /
-      1_000_000;
+    total += (usage.inputTokens * p.input + usage.outputTokens * p.output) / 1_000_000;
   }
   if (!allKnown && fallback != null) return fallback;
   return Object.keys(modelUsage).length ? total : fallback;
@@ -209,9 +206,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
         <span className="text-muted-foreground">Thinking...</span>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="p-2 text-xs text-muted-foreground whitespace-pre-wrap break-words min-w-0">
-          {thinking}
-        </div>
+        <div className="p-2 text-xs text-muted-foreground whitespace-pre-wrap break-words min-w-0">{thinking}</div>
       </CollapsibleContent>
     </Collapsible>
   );
@@ -238,61 +233,60 @@ function formatEntryTime(timestamp?: number): string | null {
   return ENTRY_TIME_FORMATTER.format(new Date(timestamp));
 }
 
-export const MessageBlock = memo(observer(function MessageBlock({ entry, index: _index, accentColor }: Props) {
-  switch (entry.kind) {
-    case 'blocks':
-      return <BlocksEntry blocks={entry.blocks} accentColor={accentColor} />;
-    case 'result':
-      return <TurnEndBlock data={entry.data} timestamp={entry.timestamp} />;
-    case 'tool_activity':
-      return (
-        <div className="py-1 min-w-0 overflow-hidden">
-          <ToolUseBlock
-            name={entry.data.name}
-            input={entry.data.input as Record<string, unknown>}
-            output={entry.data.result}
-          />
-        </div>
-      );
-    case 'user':
-      return <UserBlock content={entry.content} accentColor={accentColor} />;
-    case 'error':
-      return (
-        <div className="text-xs text-destructive py-1 min-w-0 overflow-hidden">
-          Error: {entry.message}
-        </div>
-      );
-    case 'compact': {
-      const time = formatEntryTime(entry.timestamp);
-      return (
-        <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
-          <div className="flex-1 border-t border-neon-amber/30 shrink min-w-2" />
-          <span className="text-neon-amber shrink-0">{entry.label ?? 'Context compacted'}{time ? ` · ${time}` : ''}</span>
-          <div className="flex-1 border-t border-neon-amber/30 shrink min-w-2" />
-        </div>
-      );
-    }
-    case 'system':
-      return entry.subtype === 'init' ? (
-        <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
-          <div className="flex items-center gap-2 w-full min-w-0">
-            <div className="flex-1 border-t border-border shrink min-w-2" />
-            <span className="shrink-0">
-              Session started · {entry.model ?? 'unknown'}
-              {formatEntryTime(entry.timestamp) ? ` · ${formatEntryTime(entry.timestamp)}` : ''}
-            </span>
-            <div className="flex-1 border-t border-border shrink min-w-2" />
+export const MessageBlock = memo(
+  observer(function MessageBlock({ entry, index: _index, accentColor }: Props) {
+    switch (entry.kind) {
+      case 'blocks':
+        return <BlocksEntry blocks={entry.blocks} accentColor={accentColor} />;
+      case 'result':
+        return <TurnEndBlock data={entry.data} timestamp={entry.timestamp} />;
+      case 'tool_activity':
+        return (
+          <div className="py-1 min-w-0 overflow-hidden">
+            <ToolUseBlock
+              name={entry.data.name}
+              input={entry.data.input as Record<string, unknown>}
+              output={entry.data.result}
+            />
           </div>
-        </div>
-      ) : (
-        <div className="text-xs text-muted-foreground py-1 min-w-0 overflow-hidden">
-          {entry.subtype}
-        </div>
-      );
-    default:
-      return null;
-  }
-}));
+        );
+      case 'user':
+        return <UserBlock content={entry.content} accentColor={accentColor} />;
+      case 'error':
+        return <div className="text-xs text-destructive py-1 min-w-0 overflow-hidden">Error: {entry.message}</div>;
+      case 'compact': {
+        const time = formatEntryTime(entry.timestamp);
+        return (
+          <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
+            <div className="flex-1 border-t border-neon-amber/30 shrink min-w-2" />
+            <span className="text-neon-amber shrink-0">
+              {entry.label ?? 'Context compacted'}
+              {time ? ` · ${time}` : ''}
+            </span>
+            <div className="flex-1 border-t border-neon-amber/30 shrink min-w-2" />
+          </div>
+        );
+      }
+      case 'system':
+        return entry.subtype === 'init' ? (
+          <div className="flex flex-col items-center gap-1 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
+            <div className="flex items-center gap-2 w-full min-w-0">
+              <div className="flex-1 border-t border-border shrink min-w-2" />
+              <span className="shrink-0">
+                Session started · {entry.model ?? 'unknown'}
+                {formatEntryTime(entry.timestamp) ? ` · ${formatEntryTime(entry.timestamp)}` : ''}
+              </span>
+              <div className="flex-1 border-t border-border shrink min-w-2" />
+            </div>
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground py-1 min-w-0 overflow-hidden">{entry.subtype}</div>
+        );
+      default:
+        return null;
+    }
+  }),
+);
 
 // --- Blocks entry: renders each ContentBlock ---
 
@@ -365,9 +359,7 @@ function TextBlock({ content, accentColor }: { content: string; accentColor?: st
 
 function TurnEndBlock({ data, timestamp }: { data: TurnResult; timestamp?: number }) {
   const isSuccess = data.subtype === 'success' || data.subtype === 'error_max_turns';
-  const cost = data.modelUsage
-    ? calcCostFromModelUsage(data.modelUsage, data.costUsd)
-    : data.costUsd;
+  const cost = data.modelUsage ? calcCostFromModelUsage(data.modelUsage, data.costUsd) : data.costUsd;
   const durationSec = data.durationMs != null ? (data.durationMs / 1000).toFixed(1) : null;
   const time = formatEntryTime(timestamp);
 
@@ -378,9 +370,7 @@ function TurnEndBlock({ data, timestamp }: { data: TurnResult; timestamp?: numbe
     return (
       <div className="my-2 min-w-0 overflow-hidden">
         <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive min-w-0">
-          <div className="font-semibold">
-            Turn failed{time ? ` · ${time}` : ''}
-          </div>
+          <div className="font-semibold">Turn failed{time ? ` · ${time}` : ''}</div>
           <div className="mt-1 whitespace-pre-wrap break-all overflow-hidden text-destructive/90">{detail}</div>
         </div>
       </div>
@@ -454,13 +444,17 @@ function UserBlock({ content, accentColor }: { content: string; accentColor?: st
           {collapsible ? (
             <CollapsibleTrigger className="flex flex-1 items-start gap-1.5 text-left min-w-0">
               <span className="flex h-5 items-center shrink-0">
-                {expanded
-                  ? <ChevronDown className="size-3.5 text-muted-foreground" />
-                  : <ChevronRight className="size-3.5 text-muted-foreground" />}
+                {expanded ? (
+                  <ChevronDown className="size-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                )}
               </span>
-              {expanded
-                ? <span className="whitespace-pre-wrap break-words min-w-0">{displayText}</span>
-                : <span className="truncate min-w-0">{firstLine}</span>}
+              {expanded ? (
+                <span className="whitespace-pre-wrap break-words min-w-0">{displayText}</span>
+              ) : (
+                <span className="truncate min-w-0">{firstLine}</span>
+              )}
             </CollapsibleTrigger>
           ) : (
             <div className="flex-1 min-w-0 whitespace-pre-wrap break-words">{displayText}</div>

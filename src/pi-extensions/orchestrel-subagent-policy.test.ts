@@ -1,10 +1,12 @@
-import { createEventBus, DefaultResourceLoader, type EventBus, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import {
+  createEventBus,
+  DefaultResourceLoader,
+  type EventBus,
+  type ExtensionAPI,
+} from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 import type { OrchestrelSubagentPolicy } from '../shared/subagent-policy';
-import {
-  createOrchestrelSubagentPolicyExtension,
-  ORCHESTREL_SUBAGENT_POLICY_ENV,
-} from './orchestrel-subagent-policy';
+import { createOrchestrelSubagentPolicyExtension, ORCHESTREL_SUBAGENT_POLICY_ENV } from './orchestrel-subagent-policy';
 
 type Request = {
   agentType: string;
@@ -30,9 +32,12 @@ function loadPolicyFactory(
   onDecision?: (input: { agentType: string; decision: { model: string; source: string } | { error: string } }) => void,
 ) {
   const shutdown = vi.fn();
-  const pi = { events: bus, on: (event: string, handler: () => void) => {
-    if (event === 'session_shutdown') shutdown.mockImplementation(handler);
-  } } as unknown as ExtensionAPI;
+  const pi = {
+    events: bus,
+    on: (event: string, handler: () => void) => {
+      if (event === 'session_shutdown') shutdown.mockImplementation(handler);
+    },
+  } as unknown as ExtensionAPI;
   createOrchestrelSubagentPolicyExtension(policy, { onDecision })(pi);
   return shutdown;
 }
@@ -46,10 +51,12 @@ function request(bus: EventBus, value: Omit<Request, 'decision'>): Request {
 function validateRequest(value: Omit<Request, 'decision'>): void {
   let handler: ((raw: unknown) => void) | undefined;
   const pi = {
-    events: { on: (_channel: string, listener: (raw: unknown) => void) => {
-      handler = listener;
-      return () => {};
-    } },
+    events: {
+      on: (_channel: string, listener: (raw: unknown) => void) => {
+        handler = listener;
+        return () => {};
+      },
+    },
     on: () => {},
   } as unknown as ExtensionAPI;
   createOrchestrelSubagentPolicyExtension(trackablePolicy)(pi);
@@ -62,13 +69,17 @@ describe('Orchestrel subagent policy extension', () => {
     loadPolicyFactory(bus, trackablePolicy);
 
     const mapped = request(bus, {
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
+      agentType: 'Explore',
+      parentProvider: 'trackable',
+      parentModel: 'trackable/auto',
     });
     expect(mapped.decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
 
     const explicit = request(bus, {
-      agentType: 'Explore', requestedModel: 'trackable/auto',
-      parentProvider: 'trackable', parentModel: 'trackable/auto',
+      agentType: 'Explore',
+      requestedModel: 'trackable/auto',
+      parentProvider: 'trackable',
+      parentModel: 'trackable/auto',
     });
     expect(explicit.decision).toEqual({ model: 'trackable/auto', source: 'explicit' });
   });
@@ -77,20 +88,32 @@ describe('Orchestrel subagent policy extension', () => {
     const bus = createEventBus();
     loadPolicyFactory(bus, trackablePolicy);
 
-    expect(request(bus, {
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/claude-sonnet-4-6',
-    }).decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        parentProvider: 'trackable',
+        parentModel: 'trackable/claude-sonnet-4-6',
+      }).decision,
+    ).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
   });
 
   it('rejects malformed and cross-provider parent model identities', () => {
     for (const parentModel of ['auto', 'trackable/', 'trackable/claude/sonnet', 'trackable/claude sonnet']) {
-      expect(() => validateRequest({
-        agentType: 'Explore', parentProvider: 'trackable', parentModel,
-      })).toThrow('subagent model policy request parentModel must be a fully qualified provider/modelID');
+      expect(() =>
+        validateRequest({
+          agentType: 'Explore',
+          parentProvider: 'trackable',
+          parentModel,
+        }),
+      ).toThrow('subagent model policy request parentModel must be a fully qualified provider/modelID');
     }
-    expect(() => validateRequest({
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'anthropic/claude-sonnet-4-6',
-    })).toThrow('subagent model policy request parentModel provider must equal parentProvider "trackable"');
+    expect(() =>
+      validateRequest({
+        agentType: 'Explore',
+        parentProvider: 'trackable',
+        parentModel: 'anthropic/claude-sonnet-4-6',
+      }),
+    ).toThrow('subagent model policy request parentModel provider must equal parentProvider "trackable"');
   });
 
   it('reports the selected model to an optional decision callback', () => {
@@ -99,7 +122,9 @@ describe('Orchestrel subagent policy extension', () => {
     loadPolicyFactory(bus, trackablePolicy, onDecision);
 
     request(bus, {
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
+      agentType: 'Explore',
+      parentProvider: 'trackable',
+      parentModel: 'trackable/auto',
     });
 
     expect(onDecision).toHaveBeenCalledWith({
@@ -112,15 +137,23 @@ describe('Orchestrel subagent policy extension', () => {
     const bus = createEventBus();
     loadPolicyFactory(bus, trackablePolicy);
 
-    expect(request(bus, {
-      agentType: 'Explore', requestedModel: 'anthropic/claude-opus-4-6',
-      parentProvider: 'trackable', parentModel: 'trackable/auto',
-    }).decision).toEqual({
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        requestedModel: 'anthropic/claude-opus-4-6',
+        parentProvider: 'trackable',
+        parentModel: 'trackable/auto',
+      }).decision,
+    ).toEqual({
       error: 'Subagent model "anthropic/claude-opus-4-6" is not allowed. This session uses provider "trackable".',
     });
-    expect(request(bus, {
-      agentType: 'Explore', parentProvider: 'anthropic', parentModel: 'anthropic/claude-opus-4-6',
-    }).decision).toEqual({
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        parentProvider: 'anthropic',
+        parentModel: 'anthropic/claude-opus-4-6',
+      }).decision,
+    ).toEqual({
       error: 'Subagent policy provider "trackable" does not match parent provider "anthropic".',
     });
   });
@@ -129,27 +162,43 @@ describe('Orchestrel subagent policy extension', () => {
     const bus = createEventBus();
     loadPolicyFactory(bus, trackablePolicy);
 
-    expect(request(bus, {
-      agentType: 'Explore', requestedModel: 'auto',
-      parentProvider: 'trackable', parentModel: 'trackable/auto',
-    }).decision).toEqual({ model: 'trackable/auto', source: 'explicit' });
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        requestedModel: 'auto',
+        parentProvider: 'trackable',
+        parentModel: 'trackable/auto',
+      }).decision,
+    ).toEqual({ model: 'trackable/auto', source: 'explicit' });
 
-    expect(request(bus, {
-      agentType: 'Explore', requestedModel: 'claude-opus-4-6',
-      parentProvider: 'trackable', parentModel: 'trackable/auto',
-    }).decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'explicit' });
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        requestedModel: 'claude-opus-4-6',
+        parentProvider: 'trackable',
+        parentModel: 'trackable/auto',
+      }).decision,
+    ).toEqual({ model: 'trackable/claude-opus-4-6', source: 'explicit' });
 
-    expect(request(bus, {
-      agentType: 'Explore', requestedModel: 'gpt-5.4',
-      parentProvider: 'trackable', parentModel: 'trackable/auto',
-    }).decision).toEqual({
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        requestedModel: 'gpt-5.4',
+        parentProvider: 'trackable',
+        parentModel: 'trackable/auto',
+      }).decision,
+    ).toEqual({
       error: 'Subagent model "gpt-5.4" is not allowed. This session uses provider "trackable".',
     });
 
-    expect(request(bus, {
-      agentType: 'Explore', requestedModel: 'trackable/gpt-5.4',
-      parentProvider: 'trackable', parentModel: 'trackable/auto',
-    }).decision).toEqual({
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        requestedModel: 'trackable/gpt-5.4',
+        parentProvider: 'trackable',
+        parentModel: 'trackable/auto',
+      }).decision,
+    ).toEqual({
       error: 'Subagent model "trackable/gpt-5.4" is not allowed. This session uses provider "trackable".',
     });
   });
@@ -174,22 +223,33 @@ describe('Orchestrel subagent policy extension', () => {
     const chatgptLoader = new DefaultResourceLoader({
       ...loaderOptions,
       eventBus: chatgpt,
-      extensionFactories: [createOrchestrelSubagentPolicyExtension({
-        parentProvider: 'chatgpt', parentModel: 'chatgpt/gpt-5.5',
-        parentModels: ['gpt-5.5', 'gpt-5.4-nano'],
-        agents: { Explore: { model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' } },
-        allowCrossProvider: false,
-      })],
+      extensionFactories: [
+        createOrchestrelSubagentPolicyExtension({
+          parentProvider: 'chatgpt',
+          parentModel: 'chatgpt/gpt-5.5',
+          parentModels: ['gpt-5.5', 'gpt-5.4-nano'],
+          agents: { Explore: { model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' } },
+          allowCrossProvider: false,
+        }),
+      ],
     });
     await Promise.all([trackableLoader.reload(), chatgptLoader.reload()]);
 
     const [trackableResult, chatgptResult] = await Promise.all([
-      Promise.resolve().then(() => request(trackable, {
-        agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
-      })),
-      Promise.resolve().then(() => request(chatgpt, {
-        agentType: 'Explore', parentProvider: 'chatgpt', parentModel: 'chatgpt/gpt-5.5',
-      })),
+      Promise.resolve().then(() =>
+        request(trackable, {
+          agentType: 'Explore',
+          parentProvider: 'trackable',
+          parentModel: 'trackable/auto',
+        }),
+      ),
+      Promise.resolve().then(() =>
+        request(chatgpt, {
+          agentType: 'Explore',
+          parentProvider: 'chatgpt',
+          parentModel: 'chatgpt/gpt-5.5',
+        }),
+      ),
     ]);
 
     expect(trackableResult.decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
@@ -200,16 +260,22 @@ describe('Orchestrel subagent policy extension', () => {
     const bus = createEventBus();
     const shutdown = loadPolicyFactory(bus, trackablePolicy);
     const decided = request(bus, {
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
+      agentType: 'Explore',
+      parentProvider: 'trackable',
+      parentModel: 'trackable/auto',
     });
     decided.decision = { model: 'trackable/preselected', source: 'another policy' };
     bus.emit('subagents:model-policy', decided);
     expect(decided.decision).toEqual({ model: 'trackable/preselected', source: 'another policy' });
 
     shutdown();
-    expect(request(bus, {
-      agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto',
-    }).decision).toBeUndefined();
+    expect(
+      request(bus, {
+        agentType: 'Explore',
+        parentProvider: 'trackable',
+        parentModel: 'trackable/auto',
+      }).decision,
+    ).toBeUndefined();
   });
 
   it('fails closed when the default entrypoint policy is absent', async () => {

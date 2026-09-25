@@ -45,7 +45,9 @@ providers:
     });
     expect(cfg.listen).toEqual({ host: '127.0.0.1', port: 7420 });
     expect(cfg.providers.anthropic.modelLabels?.['claude-sonnet-4-6']).toEqual({
-      alias: 'sonnet', label: 'Sonnet 4.6', contextWindow: 200000,
+      alias: 'sonnet',
+      label: 'Sonnet 4.6',
+      contextWindow: 200000,
     });
     expect(cfg.providers.anthropic.label).toBe('Anthropic');
   });
@@ -108,6 +110,8 @@ providers:
       sonnet: { label: "Sonnet", modelID: claude-sonnet-4-6, contextWindow: 200000 }
 `;
     expect(parseConfig(yaml, {}).ringBufferSize).toBe(5000);
-    expect(parseConfig(yaml.replace('authToken: tok', 'authToken: tok\nringBufferSize: 20000'), {}).ringBufferSize).toBe(20000);
+    expect(
+      parseConfig(yaml.replace('authToken: tok', 'authToken: tok\nringBufferSize: 20000'), {}).ringBufferSize,
+    ).toBe(20000);
   });
 });

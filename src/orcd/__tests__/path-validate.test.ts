@@ -8,7 +8,10 @@ import { validatePath } from '../worktree-ops';
 
 describe('validatePath', () => {
   let dir: string | undefined;
-  afterEach(async () => { if (dir) await rm(dir, { recursive: true, force: true }); dir = undefined; });
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
 
   it('reports a non-existent path', async () => {
     const res = await validatePath('/no/such/path-xyz');

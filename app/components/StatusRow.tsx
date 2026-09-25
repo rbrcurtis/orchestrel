@@ -70,9 +70,7 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
   );
 
   const cardList = (
-    <div
-      className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2 px-4 pb-3 min-h-[3.5rem]"
-    >
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-2 px-4 pb-3 min-h-[3.5rem]">
       <SortableContext items={cards.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
         {cards.map((card) => (
           <Card

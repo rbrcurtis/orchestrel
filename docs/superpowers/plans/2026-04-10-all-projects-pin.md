@@ -13,6 +13,7 @@
 ### Task 1: Widen `SlotState` type and update `resolvePinnedCards`
 
 **Files:**
+
 - Modify: `app/lib/resolve-pin.ts:1-114`
 - Test: `app/lib/resolve-pin.test.ts`
 
@@ -26,9 +27,7 @@ In `app/lib/resolve-pin.ts`, change lines 1-6 from:
 import type { Card } from '../../src/shared/ws-protocol';
 
 export type SlotState =
-  | { type: 'pinned'; projectId: number; cardId?: number }
-  | { type: 'manual'; cardId: number }
-  | { type: 'empty' };
+  { type: 'pinned'; projectId: number; cardId?: number } | { type: 'manual'; cardId: number } | { type: 'empty' };
 ```
 
 to:
@@ -39,9 +38,7 @@ import type { Card } from '../../src/shared/ws-protocol';
 export type PinTarget = number | 'all';
 
 export type SlotState =
-  | { type: 'pinned'; projectId: PinTarget; cardId?: number }
-  | { type: 'manual'; cardId: number }
-  | { type: 'empty' };
+  { type: 'pinned'; projectId: PinTarget; cardId?: number } | { type: 'manual'; cardId: number } | { type: 'empty' };
 ```
 
 - [ ] **Step 2: Run existing tests to verify no regressions**
@@ -56,123 +53,112 @@ Expected: All 26 tests PASS (the type widening is backwards-compatible — all e
 Add the following tests at the end of the `describe('resolvePinnedCards', ...)` block in `app/lib/resolve-pin.test.ts`:
 
 ```typescript
-  // ─── "all" pin resolution ──────────────────────────────────────────────────
+// ─── "all" pin resolution ──────────────────────────────────────────────────
 
-  it('resolves cards from any project into an "all" pinned slot', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(1); // oldest review first
-  });
+it('resolves cards from any project into an "all" pinned slot', () => {
+  const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+  const cards = [
+    makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+  ];
+  const result = resolvePinnedCards(slots, cards);
+  expect(result.get(1)).toBe(1); // oldest review first
+});
 
-  it('distributes all-project cards across multiple "all" slots', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(1);
-    expect(result.get(2)).toBe(2);
-  });
+it('distributes all-project cards across multiple "all" slots', () => {
+  const slots: SlotState[] = [
+    { type: 'empty' },
+    { type: 'pinned', projectId: 'all' },
+    { type: 'pinned', projectId: 'all' },
+  ];
+  const cards = [
+    makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+  ];
+  const result = resolvePinnedCards(slots, cards);
+  expect(result.get(1)).toBe(1);
+  expect(result.get(2)).toBe(2);
+});
 
-  it('excludes cards already claimed by per-project pins from "all" slots', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 10 },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(1); // project-specific pin takes card 1
-    expect(result.get(2)).toBe(2); // "all" gets remaining card 2
-  });
+it('excludes cards already claimed by per-project pins from "all" slots', () => {
+  const slots: SlotState[] = [
+    { type: 'empty' },
+    { type: 'pinned', projectId: 10 },
+    { type: 'pinned', projectId: 'all' },
+  ];
+  const cards = [
+    makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+  ];
+  const result = resolvePinnedCards(slots, cards);
+  expect(result.get(1)).toBe(1); // project-specific pin takes card 1
+  expect(result.get(2)).toBe(2); // "all" gets remaining card 2
+});
 
-  it('excludes cards in manual slots from "all" resolution', () => {
-    const slots: SlotState[] = [
-      { type: 'manual', cardId: 1 },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(2); // card 1 excluded (manual), card 2 fills
-  });
+it('excludes cards in manual slots from "all" resolution', () => {
+  const slots: SlotState[] = [
+    { type: 'manual', cardId: 1 },
+    { type: 'pinned', projectId: 'all' },
+  ];
+  const cards = [
+    makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+  ];
+  const result = resolvePinnedCards(slots, cards);
+  expect(result.get(1)).toBe(2); // card 1 excluded (manual), card 2 fills
+});
 
-  it('uses same priority ranking in "all" slots: review > active running > queued', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-      { type: 'pinned', projectId: 'all' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'running', queuePosition: 1 }),
-      makeCard({ id: 2, projectId: 20, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
-      makeCard({ id: 3, projectId: 30, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
-    const result = resolvePinnedCards(slots, cards);
-    expect(result.get(1)).toBe(3); // review first
-    expect(result.get(2)).toBe(2); // active running second
-    expect(result.get(3)).toBe(1); // queued running last
-  });
+it('uses same priority ranking in "all" slots: review > active running > queued', () => {
+  const slots: SlotState[] = [
+    { type: 'empty' },
+    { type: 'pinned', projectId: 'all' },
+    { type: 'pinned', projectId: 'all' },
+    { type: 'pinned', projectId: 'all' },
+  ];
+  const cards = [
+    makeCard({ id: 1, projectId: 10, column: 'running', queuePosition: 1 }),
+    makeCard({ id: 2, projectId: 20, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
+    makeCard({ id: 3, projectId: 30, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+  ];
+  const result = resolvePinnedCards(slots, cards);
+  expect(result.get(1)).toBe(3); // review first
+  expect(result.get(2)).toBe(2); // active running second
+  expect(result.get(3)).toBe(1); // queued running last
+});
 
-  it('sticky behavior works for "all" slots', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
-    ];
-    const prev = new Map([[1, 2]]); // slot 1 was showing card 2
-    const result = resolvePinnedCards(slots, cards, prev);
-    expect(result.get(1)).toBe(2); // sticky
-    expect(result.get(2)).toBe(1); // remaining card
-  });
+it('sticky behavior works for "all" slots', () => {
+  const slots: SlotState[] = [
+    { type: 'empty' },
+    { type: 'pinned', projectId: 'all' },
+    { type: 'pinned', projectId: 'all' },
+  ];
+  const cards = [
+    makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
+  ];
+  const prev = new Map([[1, 2]]); // slot 1 was showing card 2
+  const result = resolvePinnedCards(slots, cards, prev);
+  expect(result.get(1)).toBe(2); // sticky
+  expect(result.get(2)).toBe(1); // remaining card
+});
 
-  it('releases running cards in "all" slots when review cards are available', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-      makeCard({ id: 2, projectId: 20, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
-    ];
-    const prev = new Map([[1, 2]]); // slot 1 was showing running card 2
-    const result = resolvePinnedCards(slots, cards, prev);
-    expect(result.get(1)).toBe(1); // review card takes priority, running released
-  });
+it('releases running cards in "all" slots when review cards are available', () => {
+  const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+  const cards = [
+    makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
+    makeCard({ id: 2, projectId: 20, column: 'running', queuePosition: null, updatedAt: '2026-03-20T02:00:00Z' }),
+  ];
+  const prev = new Map([[1, 2]]); // slot 1 was showing running card 2
+  const result = resolvePinnedCards(slots, cards, prev);
+  expect(result.get(1)).toBe(1); // review card takes priority, running released
+});
 
-  it('returns empty for "all" slot when no eligible cards exist', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'backlog' }),
-    ];
-    const result = resolvePinnedCards(slots, cards);
-    expect(result.has(1)).toBe(false);
-  });
+it('returns empty for "all" slot when no eligible cards exist', () => {
+  const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+  const cards = [makeCard({ id: 1, projectId: 10, column: 'backlog' })];
+  const result = resolvePinnedCards(slots, cards);
+  expect(result.has(1)).toBe(false);
+});
 ```
 
 - [ ] **Step 4: Run tests to verify they fail**
@@ -308,9 +294,7 @@ And add the `rankCards` helper above the function (after the types, before `reso
 ```typescript
 /** Rank eligible cards: review (oldest first) → active running (newest first) → queued running (queuePosition asc). */
 function rankCards(eligible: Card[]): Card[] {
-  const review = eligible
-    .filter((c) => c.column === 'review')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const review = eligible.filter((c) => c.column === 'review').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   const activeRunning = eligible
     .filter((c) => c.column === 'running' && c.queuePosition == null)
@@ -344,6 +328,7 @@ git commit -m "feat: add 'all' pin target to resolve cards across all projects"
 ### Task 2: Update `useSlots` to accept `PinTarget`
 
 **Files:**
+
 - Modify: `app/lib/use-slots.ts:155-159`
 - Test: `app/lib/use-slots.test.ts`
 
@@ -352,46 +337,46 @@ git commit -m "feat: add 'all' pin target to resolve cards across all projects"
 Add to the `describe('applyPinSlot', ...)` block in `app/lib/use-slots.test.ts`:
 
 ```typescript
-  it('pins a slot to "all" projects', () => {
-    const slots: SlotState[] = [{ type: 'empty' }, { type: 'empty' }];
-    expect(applyPinSlot(slots, 1, 'all')[1]).toEqual({ type: 'pinned', projectId: 'all' });
-  });
+it('pins a slot to "all" projects', () => {
+  const slots: SlotState[] = [{ type: 'empty' }, { type: 'empty' }];
+  expect(applyPinSlot(slots, 1, 'all')[1]).toEqual({ type: 'pinned', projectId: 'all' });
+});
 ```
 
 And add to the `describe('applyOnCardCreated', ...)` block:
 
 ```typescript
-  it('places card in slot 0 when only an "all" pin exists (not project-specific)', () => {
-    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
-    const { slots: next, flashIndex } = applyOnCardCreated(slots, 1, 10);
-    expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(0);
-  });
+it('places card in slot 0 when only an "all" pin exists (not project-specific)', () => {
+  const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+  const { slots: next, flashIndex } = applyOnCardCreated(slots, 1, 10);
+  expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
+  expect(flashIndex).toBe(0);
+});
 ```
 
 And add to the `describe('applyDropCard', ...)` block:
 
 ```typescript
-  it('converts to manual when dropping onto an "all" pinned slot', () => {
-    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
-    const { slots: next } = applyDropCard(slots, 1, 5, 10);
-    // "all" pin has no specific projectId to match, so becomes manual
-    expect(next[1]).toEqual({ type: 'manual', cardId: 5 });
-  });
+it('converts to manual when dropping onto an "all" pinned slot', () => {
+  const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+  const { slots: next } = applyDropCard(slots, 1, 5, 10);
+  // "all" pin has no specific projectId to match, so becomes manual
+  expect(next[1]).toEqual({ type: 'manual', cardId: 5 });
+});
 ```
 
 And add to the `describe('applySelectCard', ...)` block:
 
 ```typescript
-  it('does not treat "all" pinned slot as project-specific for override placement', () => {
-    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
-    const cards = [makeCard({ id: 1, projectId: 10, column: 'done' })];
-    const resolved = new Map<number, number>();
-    // "all" slots don't match a specific projectId, so card goes to slot 0 fallback
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
-    expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(0);
-  });
+it('does not treat "all" pinned slot as project-specific for override placement', () => {
+  const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+  const cards = [makeCard({ id: 1, projectId: 10, column: 'done' })];
+  const resolved = new Map<number, number>();
+  // "all" slots don't match a specific projectId, so card goes to slot 0 fallback
+  const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+  expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
+  expect(flashIndex).toBe(0);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -404,37 +389,49 @@ Expected: The new tests FAIL because `applyPinSlot` signature only accepts `numb
 In `app/lib/use-slots.ts`, add the import of `PinTarget`:
 
 Change line 2 from:
+
 ```typescript
 import { resolvePinnedCards, type SlotState } from './resolve-pin';
 ```
+
 to:
+
 ```typescript
 import { resolvePinnedCards, type SlotState, type PinTarget } from './resolve-pin';
 ```
 
 Change `applyPinSlot` (line 155) from:
+
 ```typescript
 export function applyPinSlot(slots: SlotState[], index: number, projectId: number): SlotState[] {
 ```
+
 to:
+
 ```typescript
 export function applyPinSlot(slots: SlotState[], index: number, projectId: PinTarget): SlotState[] {
 ```
 
 Change the `UseSlotsResult` type (line 224) from:
+
 ```typescript
   pinSlot: (index: number, projectId: number) => void;
 ```
+
 to:
+
 ```typescript
   pinSlot: (index: number, projectId: PinTarget) => void;
 ```
 
 Change the `pinSlot` function inside `useSlots` (line 287) from:
+
 ```typescript
   function pinSlot(index: number, projectId: number) {
 ```
+
 to:
+
 ```typescript
   function pinSlot(index: number, projectId: PinTarget) {
 ```
@@ -456,6 +453,7 @@ git commit -m "feat: widen pinSlot to accept PinTarget ('all' | number)"
 ### Task 3: Add "All Projects" option to `ProjectPinSelector`
 
 **Files:**
+
 - Modify: `app/components/ProjectPinSelector.tsx`
 
 - [ ] **Step 1: Widen `onSelect` prop to accept `PinTarget` and add "All Projects" button**
@@ -532,6 +530,7 @@ git commit -m "feat: add 'All Projects' option with rainbow dot to pin selector"
 ### Task 4: Update `board.tsx` to handle `'all'` pin in column slots
 
 **Files:**
+
 - Modify: `app/routes/board.tsx:398-615`
 
 - [ ] **Step 1: Widen `onPin` prop and update header rendering for "all" pins**
@@ -539,10 +538,13 @@ git commit -m "feat: add 'All Projects' option with rainbow dot to pin selector"
 In `app/routes/board.tsx`, change the `ColumnSlotProps` type's `onPin` (around line 449):
 
 From:
+
 ```typescript
   onPin: (projectId: number) => void;
 ```
+
 To:
+
 ```typescript
   onPin: (projectId: PinTarget) => void;
 ```
@@ -558,31 +560,37 @@ import type { SlotState, PinTarget } from '~/lib/resolve-pin';
 In the `columnSlots.map` block (around line 400), change:
 
 ```typescript
-            const pinProjectId = slot.type === 'pinned' ? slot.projectId : null;
+const pinProjectId = slot.type === 'pinned' ? slot.projectId : null;
 ```
 
 This already returns `PinTarget | null` after the type change, so no code change needed — but the `pinProject` lookup and `borderColor` need updating. Change (around lines 409-410):
 
 From:
+
 ```typescript
-            const pinProject = pinProjectId != null ? projectStore.getProject(pinProjectId) : null;
-            const borderColor = pinProject?.color ?? slotProject?.color ?? null;
+const pinProject = pinProjectId != null ? projectStore.getProject(pinProjectId) : null;
+const borderColor = pinProject?.color ?? slotProject?.color ?? null;
 ```
+
 To:
+
 ```typescript
-            const pinProject = typeof pinProjectId === 'number' ? projectStore.getProject(pinProjectId) : null;
-            const borderColor = pinProjectId === 'all' ? null : (pinProject?.color ?? slotProject?.color ?? null);
+const pinProject = typeof pinProjectId === 'number' ? projectStore.getProject(pinProjectId) : null;
+const borderColor = pinProjectId === 'all' ? null : (pinProject?.color ?? slotProject?.color ?? null);
 ```
 
 - [ ] **Step 3: Update `ColumnSlotProps` type for `pinProjectId`**
 
 Change (around line 448):
+
 ```typescript
-  pinProjectId: number | null;
+pinProjectId: number | null;
 ```
+
 To:
+
 ```typescript
-  pinProjectId: PinTarget | null;
+pinProjectId: PinTarget | null;
 ```
 
 - [ ] **Step 4: Update the empty pinned slot rendering to handle "all"**
@@ -590,6 +598,7 @@ To:
 In the `ColumnSlot` component, the empty pinned state (around line 577) renders the project badge and the `+` button. Replace the entire empty-pinned branch (`pinProjectId != null ? (` ... closing `</div>`) with:
 
 From:
+
 ```typescript
         ) : pinProjectId != null ? (
           <div className="flex flex-col flex-1">
@@ -624,6 +633,7 @@ From:
 ```
 
 To:
+
 ```typescript
         ) : pinProjectId != null ? (
           <div className="flex flex-col flex-1">
@@ -674,13 +684,16 @@ To:
 The `creatingCard && pinProjectId != null` branch (around line 554) passes `pinProjectId` as `initialProjectId` to `NewCardDetail`. Since `'all'` has no single project, guard it. Change:
 
 From:
+
 ```typescript
         ) : creatingCard && pinProjectId != null ? (
           <NewCardDetail
             column="running"
             initialProjectId={pinProjectId}
 ```
+
 To:
+
 ```typescript
         ) : creatingCard && typeof pinProjectId === 'number' ? (
           <NewCardDetail
@@ -711,6 +724,7 @@ git commit -m "feat: render 'All Projects' badge with rainbow dot in pinned colu
 ### Task 5: Handle `'all'` pin edge cases in `applyDropCard` and `applySelectCard`
 
 **Files:**
+
 - Modify: `app/lib/use-slots.ts:106-135` (applyDropCard)
 
 The `applyDropCard` function (line 128) checks `cardProjectId === target.projectId` to decide whether to preserve the pin. For `'all'` slots, no single card project matches `'all'`, so it correctly falls through to `manual`. The `applySelectCard` function (line 89) checks `slot.projectId === projectId` — for `'all'`, no card's numeric projectId will match `'all'`, so it correctly skips. Both behaviors are correct by default and covered by the tests from Task 2.
@@ -729,6 +743,7 @@ If no changes needed, skip this step.
 ### Task 6: Border color for "all" pin when card is displayed
 
 **Files:**
+
 - Modify: `app/routes/board.tsx:410`
 
 When an "all" slot is displaying a card, the border divider should show that card's project color (not the pin's color, since "all" has no color).
@@ -736,6 +751,7 @@ When an "all" slot is displaying a card, the border divider should show that car
 - [ ] **Step 1: Verify border color logic**
 
 The current code after Task 4 step 2:
+
 ```typescript
 const borderColor = pinProjectId === 'all' ? null : (pinProject?.color ?? slotProject?.color ?? null);
 ```
@@ -743,7 +759,8 @@ const borderColor = pinProjectId === 'all' ? null : (pinProject?.color ?? slotPr
 When `pinProjectId === 'all'`, `borderColor` is `null`, but `slotProject?.color` (the displayed card's project color) is available. Change to:
 
 ```typescript
-const borderColor = pinProjectId === 'all' ? (slotProject?.color ?? null) : (pinProject?.color ?? slotProject?.color ?? null);
+const borderColor =
+  pinProjectId === 'all' ? (slotProject?.color ?? null) : (pinProject?.color ?? slotProject?.color ?? null);
 ```
 
 This makes "all" slots use the displayed card's project color as their border, which provides useful visual context about which project the current card belongs to.

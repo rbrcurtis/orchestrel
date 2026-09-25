@@ -6,7 +6,13 @@ import type { AgentSessionEvent, InlineExtension, SessionEntry } from '@earendil
 import { buildContextEntries, sessionEntryToContextMessages, SessionManager } from '@earendil-works/pi-coding-agent';
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { displayedMessages, TranscriptSync } from '../transcript-sync';
-import type { ReplayDecision, TranscriptCursor, TranscriptEnvelope, TranscriptEvent, TranscriptState } from '../../shared/transcript-sync';
+import type {
+  ReplayDecision,
+  TranscriptCursor,
+  TranscriptEnvelope,
+  TranscriptEvent,
+  TranscriptState,
+} from '../../shared/transcript-sync';
 import { expect, it } from 'vitest';
 import { Type } from 'typebox';
 import { createTranscriptSyncFixture } from './transcript-sync-fixture';
@@ -53,7 +59,8 @@ it('settles queued identical prompts only after final message replacement is dur
       pi.on('message_end', async (event, ctx) => {
         if (event.message.role !== 'assistant' || textContent(event.message) !== 'third raw') return;
         messageEndRuntimeMessageCount = fixture.runtime.session.agent.state.messages.length;
-        messageEndPersistedEntryCount = SessionManager.open(ctx.sessionManager.getSessionFile()!).getEntries()
+        messageEndPersistedEntryCount = SessionManager.open(ctx.sessionManager.getSessionFile()!)
+          .getEntries()
           .filter((entry) => entry.type === 'message').length;
         replacementStarted?.();
         await replacementGate;
@@ -102,7 +109,12 @@ it('settles queued identical prompts only after final message replacement is dur
           lowLevelIdleEventCount = events.length;
         });
       }
-      if (event.type === 'message_end' && event.message.role === 'assistant' && textContent(event.message) === 'initial' && !queued) {
+      if (
+        event.type === 'message_end' &&
+        event.message.role === 'assistant' &&
+        textContent(event.message) === 'initial' &&
+        !queued
+      ) {
         queued = true;
         void session.prompt('same follow-up', { streamingBehavior: 'followUp' });
         void session.prompt('same follow-up', { streamingBehavior: 'followUp' });
@@ -154,8 +166,12 @@ it('settles queued identical prompts only after final message replacement is dur
     expect(messages).toHaveLength(7);
     expect(messages.map((entry) => entry.id)).toHaveLength(new Set(messages.map((entry) => entry.id)).size);
     const userMessages = messages.filter(
-      (entry): entry is SessionEntry & { type: 'message'; message: { role: 'user'; content: string | Array<{ type: string; text?: string }> } } =>
-        entry.message.role === 'user',
+      (
+        entry,
+      ): entry is SessionEntry & {
+        type: 'message';
+        message: { role: 'user'; content: string | Array<{ type: string; text?: string }> };
+      } => entry.message.role === 'user',
     );
     expect(userMessages.map((entry) => contentText(entry.message.content))).toEqual([
       'initial prompt',
@@ -216,7 +232,8 @@ async function createTranscriptWire(sync: TranscriptSync): Promise<{
         rest = rest.slice(end + 1);
         const cursor = JSON.parse(line) as TranscriptCursor | undefined;
         const decision: ReplayDecision<TranscriptEvent, TranscriptState> = sync.replaySince(cursor);
-        if (decision.type === 'snapshot') writeWire(socket, { type: 'snapshot', cursor: decision.cursor, state: decision.state });
+        if (decision.type === 'snapshot')
+          writeWire(socket, { type: 'snapshot', cursor: decision.cursor, state: decision.state });
         else writeWire(socket, { type: 'events', events: decision.events });
         end = rest.indexOf('\n');
       }
@@ -235,12 +252,16 @@ async function createTranscriptWire(sync: TranscriptSync): Promise<{
     },
     async close() {
       for (const socket of sockets) socket.destroy();
-      await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     },
   };
 }
 
-async function connectWire(port: number, replica: TranscriptReplica, cursor: TranscriptCursor | undefined): Promise<{
+async function connectWire(
+  port: number,
+  replica: TranscriptReplica,
+  cursor: TranscriptCursor | undefined,
+): Promise<{
   socket: Socket;
   frames: WireMessage[];
   waitForFrames(count: number): Promise<void>;
@@ -256,7 +277,8 @@ async function connectWire(port: number, replica: TranscriptReplica, cursor: Tra
       const message = JSON.parse(rest.slice(0, end)) as WireMessage;
       rest = rest.slice(end + 1);
       frames.push(message);
-      if (message.type === 'snapshot') expect(replica.applySnapshot(message.cursor, message.state)).toEqual({ type: 'accepted' });
+      if (message.type === 'snapshot')
+        expect(replica.applySnapshot(message.cursor, message.state)).toEqual({ type: 'accepted' });
       else for (const event of message.events) expect(replica.accept(event)).toEqual({ type: 'accepted' });
       for (const waiter of waiters.splice(0)) {
         if (frames.length >= waiter.count) waiter.resolve();
@@ -279,9 +301,13 @@ async function connectWire(port: number, replica: TranscriptReplica, cursor: Tra
 
 it('recovers TCP transcript snapshots and retained replays without duplicate display content', async () => {
   let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let paused: (() => void) | undefined;
-  const pausedGate = new Promise<void>((resolve) => { paused = resolve; });
+  const pausedGate = new Promise<void>((resolve) => {
+    paused = resolve;
+  });
   const fixture = await createTranscriptSyncFixture({
     name: 'pause-stream',
     factory: (pi) => {
@@ -311,9 +337,7 @@ it('recovers TCP transcript snapshots and retained replays without duplicate dis
     await pausedGate;
     await connected.waitForFrames(2);
     const latestFrame = connected.frames.at(-1)!;
-    const partialCursor = latestFrame.type === 'events'
-      ? latestFrame.events.at(-1)!.cursor
-      : latestFrame.cursor;
+    const partialCursor = latestFrame.type === 'events' ? latestFrame.events.at(-1)!.cursor : latestFrame.cursor;
     const retainedSnapshot = connected.frames.find((frame): frame is WireSnapshot => frame.type === 'snapshot');
     expect(retainedSnapshot).toBeDefined();
     connected.socket.destroy();
@@ -333,7 +357,10 @@ it('recovers TCP transcript snapshots and retained replays without duplicate dis
     overflow.socket.destroy();
 
     const retainedSnapshotReplica = new TranscriptReplica();
-    const retainedSnapshotWire = await connectWire(retainedWire.port, retainedSnapshotReplica, { streamId: 'foreign', sequence: 0 });
+    const retainedSnapshotWire = await connectWire(retainedWire.port, retainedSnapshotReplica, {
+      streamId: 'foreign',
+      sequence: 0,
+    });
     await retainedSnapshotWire.waitForFrames(1);
     const currentSnapshot = retainedSnapshotWire.frames[0]!;
     if (currentSnapshot.type !== 'snapshot') throw new Error('Expected retained snapshot');
@@ -357,9 +384,13 @@ it('recovers TCP transcript snapshots and retained replays without duplicate dis
 
 it('replaces stale runtime epochs and forks active streams through public runtime APIs', async () => {
   let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let paused: (() => void) | undefined;
-  const pausedGate = new Promise<void>((resolve) => { paused = resolve; });
+  const pausedGate = new Promise<void>((resolve) => {
+    paused = resolve;
+  });
   let pauseActiveResponse = false;
   const fixture = await createTranscriptSyncFixture({
     name: 'pause-for-replacement',
@@ -374,9 +405,13 @@ it('replaces stale runtime epochs and forks active streams through public runtim
   });
   let unsubscribe: (() => void) | undefined;
   try {
-    fixture.faux.setResponses([fauxAssistantMessage('seed'), fauxAssistantMessage('partial'), fauxAssistantMessage('forked')]);
+    fixture.faux.setResponses([
+      fauxAssistantMessage('seed'),
+      fauxAssistantMessage('partial'),
+      fauxAssistantMessage('forked'),
+    ]);
     const original = fixture.runtime.session;
-    const oldSync = new TranscriptSync('old-epoch', [] , 10);
+    const oldSync = new TranscriptSync('old-epoch', [], 10);
     unsubscribe = original.subscribe((event) => oldSync.accept(event));
     await original.prompt('persisted');
     const persistedFile = original.sessionFile;
@@ -386,7 +421,14 @@ it('replaces stale runtime epochs and forks active streams through public runtim
     await pausedGate;
     const oldCursor = oldSync.snapshot().cursor;
 
-    const forkEntry = original.sessionManager.getEntries().find((entry) => entry.type === 'message' && entry.message.role === 'user' && contentText(entry.message.content) === 'persisted');
+    const forkEntry = original.sessionManager
+      .getEntries()
+      .find(
+        (entry) =>
+          entry.type === 'message' &&
+          entry.message.role === 'user' &&
+          contentText(entry.message.content) === 'persisted',
+      );
     expect(forkEntry).toBeDefined();
     const fork = fixture.runtime.fork(forkEntry!.id);
     release?.();
@@ -395,7 +437,9 @@ it('replaces stale runtime epochs and forks active streams through public runtim
     const replacement = fixture.runtime.session;
     const replacementSync = new TranscriptSync('fork-epoch', replacement.sessionManager.getEntries(), 10);
     const view = new TranscriptReplica();
-    expect(view.applySnapshot(replacementSync.snapshot().cursor, replacementSync.snapshot().state)).toEqual({ type: 'accepted' });
+    expect(view.applySnapshot(replacementSync.snapshot().cursor, replacementSync.snapshot().state)).toEqual({
+      type: 'accepted',
+    });
     const replacementUnsubscribe = replacement.subscribe((event) => {
       const envelope = replacementSync.accept(event);
       expect(view.accept(envelope)).toEqual({ type: 'accepted' });
@@ -416,7 +460,13 @@ it('replaces stale runtime epochs and forks active streams through public runtim
     const recreatedSync = new TranscriptSync('recreated-epoch', recreated.sessionManager.getEntries(), 10);
     expect(recreatedSync.replaySince(oldCursor).type).toBe('snapshot');
     expect(displayedText(new TranscriptReplica())).toEqual([]);
-    const restored = displayedMessages(recreatedSync.snapshot().state).map((message) => message.role === 'user' ? contentText(message.content) : message.role === 'assistant' ? contentText(message.content) : message.role);
+    const restored = displayedMessages(recreatedSync.snapshot().state).map((message) =>
+      message.role === 'user'
+        ? contentText(message.content)
+        : message.role === 'assistant'
+          ? contentText(message.content)
+          : message.role,
+    );
     expect(restored).toContain('persisted');
     expect(restored).toContain('seed');
   } finally {
@@ -434,18 +484,45 @@ it('projects Pi compaction context while preserving its append-only entry log', 
     await fixture.runtime.session.prompt('new prompt');
     const manager = fixture.runtime.session.sessionManager;
     const entries = manager.getEntries();
-    const firstKept = entries.find((entry) => entry.type === 'message' && entry.message.role === 'user' && contentText(entry.message.content) === 'new prompt');
+    const firstKept = entries.find(
+      (entry) =>
+        entry.type === 'message' &&
+        entry.message.role === 'user' &&
+        contentText(entry.message.content) === 'new prompt',
+    );
     expect(firstKept).toBeDefined();
     manager.appendCompaction('synthetic summary', firstKept!.id, 100);
     const context = buildContextEntries(manager.getEntries());
     const projected = context.flatMap((entry) => sessionEntryToContextMessages(entry));
-    expect(projected.map((message) => message.role === 'compactionSummary' ? message.summary : message.role === 'user' ? contentText(message.content) : message.role === 'assistant' ? contentText(message.content) : message.role)).toEqual([
+    expect(
+      projected.map((message) =>
+        message.role === 'compactionSummary'
+          ? message.summary
+          : message.role === 'user'
+            ? contentText(message.content)
+            : message.role === 'assistant'
+              ? contentText(message.content)
+              : message.role,
+      ),
+    ).toEqual([
       // Pi 0.86+ persists the system prompt/tool loadout as a leading system message.
       // It is model context; Orchestrel's display projection drops it (see projectEntries).
-      'system', 'synthetic summary', 'new prompt', 'new answer',
+      'system',
+      'synthetic summary',
+      'new prompt',
+      'new answer',
     ]);
     expect(manager.getEntries()).toHaveLength(entries.length + 1);
-    expect(manager.getEntries().some((entry) => entry.type === 'message' && entry.message.role === 'user' && contentText(entry.message.content) === 'old prompt')).toBe(true);
+    expect(
+      manager
+        .getEntries()
+        .some(
+          (entry) =>
+            entry.type === 'message' &&
+            entry.message.role === 'user' &&
+            contentText(entry.message.content) === 'old prompt',
+        ),
+    ).toBe(true);
   } finally {
     await fixture.dispose();
   }
@@ -455,9 +532,13 @@ it('measures retained payloads for a long unsettled tool loop and releases the o
   const rounds = 16;
   const outputBytes = 65_536;
   let settledStarted: (() => void) | undefined;
-  const settledStartedGate = new Promise<void>((resolve) => { settledStarted = resolve; });
+  const settledStartedGate = new Promise<void>((resolve) => {
+    settledStarted = resolve;
+  });
   let releaseSettlement: (() => void) | undefined;
-  const settlementGate = new Promise<void>((resolve) => { releaseSettlement = resolve; });
+  const settlementGate = new Promise<void>((resolve) => {
+    releaseSettlement = resolve;
+  });
   const output = 'x'.repeat(outputBytes);
   const fixture = await createTranscriptSyncFixture({
     name: 'large-tool-loop',
@@ -566,7 +647,8 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
     await session.prompt('first prompt');
     expect(settlements).toHaveLength(1);
     expect(firstPartial).toBeDefined();
-    const partialTool = firstPartial!.state.overlay.find((message) => message.message.role === 'assistant')?.toolInput[0];
+    const partialTool = firstPartial!.state.overlay.find((message) => message.message.role === 'assistant')
+      ?.toolInput[0];
     expect(partialTool).toEqual({
       raw: '{"query":"first","page":2}',
       parsed: { query: 'first', page: 2 },
@@ -604,14 +686,18 @@ it('replays sequenced snapshots across overflow and delayed settlement without d
     expect(replica.applySnapshot(otherSnapshot.cursor, otherSnapshot.state).type).toBe('snapshot_required');
     expect(displayedText(replica)).toContain('first prompt');
     expect(displayedText(replica)).toContain('second');
-    expect(replica.applySnapshot(otherSnapshot.cursor, otherSnapshot.state, {
-      fromStreamId: secondSettlement.cursor.streamId,
-      toStreamId: 'other-stream',
-    }).type).toBe('accepted');
-    expect(replica.applySnapshot(secondSettlement.cursor, settledSnapshots[1]!.state, {
-      fromStreamId: 'other-stream',
-      toStreamId: secondSettlement.cursor.streamId,
-    }).type).toBe('accepted');
+    expect(
+      replica.applySnapshot(otherSnapshot.cursor, otherSnapshot.state, {
+        fromStreamId: secondSettlement.cursor.streamId,
+        toStreamId: 'other-stream',
+      }).type,
+    ).toBe('accepted');
+    expect(
+      replica.applySnapshot(secondSettlement.cursor, settledSnapshots[1]!.state, {
+        fromStreamId: 'other-stream',
+        toStreamId: secondSettlement.cursor.streamId,
+      }).type,
+    ).toBe('accepted');
 
     expect(replica.applySnapshot(firstSettledSnapshot.cursor, firstSettledSnapshot.state).type).toBe('duplicate');
     expect(replica.accept(firstSettlement).type).toBe('duplicate');

@@ -84,7 +84,9 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
       if (!cfgEntry) continue;
       const first = group.entries[0];
       const server: MemoryServer = { apiUrl: first.apiUrl, apiKey: cfgEntry.apiKey, project: cfgEntry.project };
-      const stores = group.entries.flatMap((e) => e.ops).filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
+      const stores = group.entries
+        .flatMap((e) => e.ops)
+        .filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
       if (stores.length === 0) continue;
       const prompt = buildMergePrompt(
         stores.map((s) => ({ title: s.title, text: s.text })),

@@ -37,11 +37,11 @@ Orchestrel spawns `opencode serve` as a child process on startup:
 
 Three providers configured in `data/opencode.json`:
 
-| Provider ID | Billing | Auth |
-|---|---|---|
-| `anthropic` | Ryan's personal Anthropic account | API key |
-| `kiro-okkanti` | Okkanti project (Kiro account) | opencode-kiro-auth plugin |
-| `kiro-trackable` | Trackable project (Kiro account) | opencode-kiro-auth plugin |
+| Provider ID      | Billing                           | Auth                      |
+| ---------------- | --------------------------------- | ------------------------- |
+| `anthropic`      | Ryan's personal Anthropic account | API key                   |
+| `kiro-okkanti`   | Okkanti project (Kiro account)    | opencode-kiro-auth plugin |
+| `kiro-trackable` | Trackable project (Kiro account)  | opencode-kiro-auth plugin |
 
 Projects in Orchestrel store a `providerID` that maps to one of these.
 
@@ -56,6 +56,7 @@ Each instance gets its own provider ID, account DB, and `AccountManager`. The ex
 ### Model Selection
 
 **UI:** Two fields on cards (unchanged):
+
 - Model: sonnet / opus
 - Thinking level: off / low / medium / high
 
@@ -86,6 +87,7 @@ Each SDK call includes `?directory=/path/to/worktree` query param (or `x-opencod
 ### Session History
 
 Use OpenCode SDK exclusively:
+
 - **Live streaming:** SSE subscription via `client.event.subscribe()`, scoped to session. Events normalized to `AgentMessage` and forwarded to WS subscribers.
 - **History replay:** `client.session.messages(id)` returns the full message list for a session. Each message is normalized to `AgentMessage` format before sending to the client.
 - **No file tailing, no Orchestrel DB duplication.** All Claude/Kiro-specific log parsing, JSONL reading, and file tailing is eliminated.
@@ -93,6 +95,7 @@ Use OpenCode SDK exclusively:
 ### Session Resume
 
 OpenCode persists sessions in its own SQLite DB. After Orchestrel restart:
+
 1. Child OpenCode process restarts, DB persists
 2. Cards with `sessionId` reconnect to existing OpenCode sessions
 3. `session.get(id)` verifies session exists, `session.prompt()` sends follow-ups
@@ -112,6 +115,7 @@ Extends `AgentSession`:
 **Event normalization:** `src/server/agents/opencode/messages.ts`
 
 Maps OpenCode SSE events to `AgentMessage` types:
+
 - `message.part` (type: text) → `AgentMessage` type `text` (role: assistant)
 - `message.part` (type: tool-invocation) → `AgentMessage` type `tool_call`
 - `message.part` (type: tool-result) → `AgentMessage` type `tool_result`
@@ -129,12 +133,12 @@ Maps OpenCode SSE events to `AgentMessage` types:
 
 ```typescript
 interface CreateSessionOpts {
-  cwd: string
-  providerID: string
-  model: 'sonnet' | 'opus'
-  thinkingLevel: 'off' | 'low' | 'medium' | 'high'
-  resumeSessionId?: string
-  projectName?: string
+  cwd: string;
+  providerID: string;
+  model: 'sonnet' | 'opus';
+  thinkingLevel: 'off' | 'low' | 'medium' | 'high';
+  resumeSessionId?: string;
+  projectName?: string;
 }
 ```
 
@@ -195,6 +199,7 @@ File tailing for externally-active sessions is eliminated — sessions started v
 ## Schema Changes
 
 **Projects table:**
+
 - Add: `providerID` column (`'anthropic' | 'kiro-okkanti' | 'kiro-trackable'`, default `'anthropic'`)
 - Remove: `agentType`, `agentProfile`
 
@@ -205,6 +210,7 @@ File tailing for externally-active sessions is eliminated — sessions started v
 **Types:** `AgentType = 'opencode'`
 
 **Migration:**
+
 1. Backup `data/orchestrel.db` to `data/orchestrel.db.backup`
 2. Delete all existing cards (intentional clean slate — old sessions are Claude/Kiro and won't resolve against OpenCode's DB)
 3. Schema migration: add `providerID`, drop `agentType`/`agentProfile`
@@ -213,16 +219,19 @@ File tailing for externally-active sessions is eliminated — sessions started v
 ## Code Deletion
 
 **Remove entirely:**
+
 - `src/server/agents/claude/` — `session.ts`, `messages.ts`, `session-path.ts`
 - `src/server/agents/kiro/` — `session.ts`, `messages.ts`, `session-path.ts`, `tailer.ts`
 - `src/server/agents/tailer.ts`
 
 **Simplify:**
+
 - `src/server/agents/begin-session.ts` — Rewritten per flow above. All Claude/Kiro-specific imports removed.
 - `src/server/ws/handlers/sessions.ts` — Rewritten per Session History Handler Migration above. All Claude/Kiro-specific imports removed (`getSDKSessionPath`, `getKiroSessionLogPath`, `normalizeClaudeMessage`, `normalizeToolResult`, etc.).
 - `src/server/agents/manager.ts` — Remove tailer management (`startTailing`, `getTailer`, `stopTailing`, tailers Map)
 
 **Dependencies:**
+
 - Remove: `@anthropic-ai/claude-agent-sdk`
 - Add: `@opencode-ai/sdk`
 
@@ -231,10 +240,12 @@ File tailing for externally-active sessions is eliminated — sessions started v
 ## Frontend Changes
 
 **ProjectForm.tsx:**
+
 - Replace `agentType` dropdown with `providerID` dropdown (Anthropic / Kiro-Okkanti / Kiro-Trackable)
 - Remove Kiro HOME directory picker (`DirectoryBrowser`, `agentProfile` field)
 
 **SessionView.tsx:**
+
 - Minimal changes — already renders `AgentMessage` from WS subscription
 - History loading calls backend endpoint that uses `session.messages(id)`
 

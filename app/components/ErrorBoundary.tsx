@@ -14,12 +14,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.error) {
-      return this.props.fallback ?? (
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertTitle>Something went wrong</AlertTitle>
-          <AlertDescription>{this.state.error.message}</AlertDescription>
-        </Alert>
+      return (
+        this.props.fallback ?? (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertTitle>Something went wrong</AlertTitle>
+            <AlertDescription>{this.state.error.message}</AlertDescription>
+          </Alert>
+        )
       );
     }
     return this.props.children;

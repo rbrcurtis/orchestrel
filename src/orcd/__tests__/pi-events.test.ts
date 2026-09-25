@@ -11,37 +11,47 @@ describe('pi event boundary mapper', () => {
   });
 
   it('maps Pi assistant text updates to Claude-shaped stream events', () => {
-    expect(mapPiEventToOrcdPayload({
-      type: 'message_start',
-      message: { role: 'assistant', content: [] },
-    })).toEqual({
+    expect(
+      mapPiEventToOrcdPayload({
+        type: 'message_start',
+        message: { role: 'assistant', content: [] },
+      }),
+    ).toEqual({
       type: 'message_start',
       message: { role: 'assistant', content: [] },
     });
-    expect(mapPiEventToOrcdPayload({
-      type: 'message_update',
-      assistantMessageEvent: { type: 'text_start', contentIndex: 0 },
-    })).toEqual({
+    expect(
+      mapPiEventToOrcdPayload({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_start', contentIndex: 0 },
+      }),
+    ).toEqual({
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'text', text: '' },
     });
-    expect(mapPiEventToOrcdPayload({
-      type: 'message_update',
-      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'hello' },
-    })).toEqual({
+    expect(
+      mapPiEventToOrcdPayload({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'hello' },
+      }),
+    ).toEqual({
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: 'hello' },
     });
-    expect(mapPiEventToOrcdPayload({
-      type: 'message_update',
-      assistantMessageEvent: { type: 'text_end', contentIndex: 0 },
-    })).toEqual({ type: 'content_block_stop', index: 0 });
-    expect(mapPiEventToOrcdPayload({
-      type: 'message_end',
-      message: { role: 'assistant', content: [{ type: 'text', text: 'hello' }] },
-    })).toEqual({ type: 'message_stop' });
+    expect(
+      mapPiEventToOrcdPayload({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_end', contentIndex: 0 },
+      }),
+    ).toEqual({ type: 'content_block_stop', index: 0 });
+    expect(
+      mapPiEventToOrcdPayload({
+        type: 'message_end',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'hello' }] },
+      }),
+    ).toEqual({ type: 'message_stop' });
   });
 
   it('passes turn_end through as a stream event (no longer a result)', () => {
@@ -167,13 +177,22 @@ describe('pi event boundary mapper', () => {
 
 describe('subagent tool_execution mapper', () => {
   it('ignores tool_execution events for non-Agent tools', () => {
-    expect(mapSubagentExecEvent({ type: 'tool_execution_start', toolName: 'bash', toolCallId: 't1', args: {} })).toBeNull();
-    expect(mapSubagentExecEvent({ type: 'tool_execution_end', toolName: 'read', toolCallId: 't1', isError: false })).toBeNull();
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_start', toolName: 'bash', toolCallId: 't1', args: {} }),
+    ).toBeNull();
+    expect(
+      mapSubagentExecEvent({ type: 'tool_execution_end', toolName: 'read', toolCallId: 't1', isError: false }),
+    ).toBeNull();
   });
 
   it('maps Agent start to task_started using the tool description', () => {
     expect(
-      mapSubagentExecEvent({ type: 'tool_execution_start', toolName: 'Agent', toolCallId: 'call-1', args: { description: 'Explore repo' } }),
+      mapSubagentExecEvent({
+        type: 'tool_execution_start',
+        toolName: 'Agent',
+        toolCallId: 'call-1',
+        args: { description: 'Explore repo' },
+      }),
     ).toEqual({ type: 'task_started', task_id: 'call-1', description: 'Explore repo' });
   });
 
@@ -245,7 +264,12 @@ describe('subagent tool_execution mapper', () => {
 
   it('returns null for an Agent update with no details (caller drops it)', () => {
     expect(
-      mapSubagentExecEvent({ type: 'tool_execution_update', toolName: 'Agent', toolCallId: 'call-1', partialResult: {} }),
+      mapSubagentExecEvent({
+        type: 'tool_execution_update',
+        toolName: 'Agent',
+        toolCallId: 'call-1',
+        partialResult: {},
+      }),
     ).toBeNull();
   });
 

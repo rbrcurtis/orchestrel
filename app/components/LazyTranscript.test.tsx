@@ -20,7 +20,10 @@ function conversation(count: number): ConversationEntry[] {
   }));
 }
 
-function setViewportMetrics(viewport: HTMLElement, metrics: { scrollHeight: number; clientHeight: number; scrollTop: number }) {
+function setViewportMetrics(
+  viewport: HTMLElement,
+  metrics: { scrollHeight: number; clientHeight: number; scrollTop: number },
+) {
   Object.defineProperties(viewport, {
     scrollHeight: { configurable: true, value: metrics.scrollHeight },
     clientHeight: { configurable: true, value: metrics.clientHeight },
@@ -35,14 +38,17 @@ describe('LazyTranscript auto-scroll', () => {
   beforeEach(() => {
     rafCallbacks = [];
     resizeObservers = [];
-    vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: ResizeObserverCallback) {
-        resizeObservers.push(callback);
-      }
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resizeObservers.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       rafCallbacks.push(callback);
       return rafCallbacks.length;
@@ -76,9 +82,7 @@ describe('LazyTranscript auto-scroll', () => {
       onShowScrollButtonChange: vi.fn(),
     };
 
-    const { container, rerender } = render(
-      <LazyTranscript {...props} conversation={conversation(3)} />,
-    );
+    const { container, rerender } = render(<LazyTranscript {...props} conversation={conversation(3)} />);
     const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
       if (typeof options === 'object') viewport.scrollTop = Number(options.top);
@@ -111,9 +115,7 @@ describe('LazyTranscript auto-scroll', () => {
       onShowScrollButtonChange: vi.fn(),
     };
 
-    const { container, rerender } = render(
-      <LazyTranscript {...props} conversation={conversation(3)} />,
-    );
+    const { container, rerender } = render(<LazyTranscript {...props} conversation={conversation(3)} />);
     const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
       if (typeof options === 'object') viewport.scrollTop = Number(options.top);
@@ -173,9 +175,7 @@ describe('LazyTranscript auto-scroll', () => {
       onShowScrollButtonChange: vi.fn(),
     };
 
-    const { container } = render(
-      <LazyTranscript {...props} conversation={conversation(3)} />,
-    );
+    const { container } = render(<LazyTranscript {...props} conversation={conversation(3)} />);
     const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
       if (typeof options === 'object') viewport.scrollTop = Number(options.top);
@@ -204,9 +204,7 @@ describe('LazyTranscript auto-scroll', () => {
       onShowScrollButtonChange: vi.fn(),
     };
 
-    const { container, rerender } = render(
-      <LazyTranscript {...props} conversation={conversation(3)} />,
-    );
+    const { container, rerender } = render(<LazyTranscript {...props} conversation={conversation(3)} />);
     const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
       if (typeof options === 'object') viewport.scrollTop = Number(options.top);
@@ -241,9 +239,7 @@ describe('LazyTranscript auto-scroll', () => {
       onShowScrollButtonChange: vi.fn(),
     };
 
-    const { container, rerender } = render(
-      <LazyTranscript {...props} conversation={conversation(3)} />,
-    );
+    const { container, rerender } = render(<LazyTranscript {...props} conversation={conversation(3)} />);
     const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
       if (typeof options === 'object') viewport.scrollTop = Number(options.top);
@@ -280,9 +276,7 @@ describe('LazyTranscript auto-scroll', () => {
       onShowScrollButtonChange: vi.fn(),
     };
 
-    const { container, rerender } = render(
-      <LazyTranscript {...props} conversation={conversation(3)} />,
-    );
+    const { container, rerender } = render(<LazyTranscript {...props} conversation={conversation(3)} />);
     const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
     const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
       if (typeof options === 'object') viewport.scrollTop = Number(options.top);
@@ -334,7 +328,14 @@ describe('LazyTranscript infinite scroll', () => {
     rafCallbacks = [];
     FakeIntersectionObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
-    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       rafCallbacks.push(callback);
       return rafCallbacks.length;

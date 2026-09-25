@@ -48,21 +48,22 @@ never writes to any memory API until explicitly switched to write mode.
 
 New module `src/lib/memory-maintainer/` (fresh, direct modules, no DI):
 
-| File | Responsibility |
-|------|----------------|
-| `config.ts` | Read `memory:` section from shared OrchestrelConfig (`loadConfig` + `resolveEnvVars`); resolve project by longest cwd prefix |
-| `memory-api.ts` | REST client: `searchMemories`, `storeMemory`, `updateMemory`, `deleteMemory` (Bearer auth, plain fetch) |
-| `sweep.ts` | Walk `~/.pi/agent/sessions`, apply watermark + settle filter, classify files by project |
-| `excerpt.ts` | Build a bounded LLM excerpt from one session JSONL (user text, assistant text, toolCall/toolResult summaries; token cap) |
-| `consolidate.ts` | Agent tool-loop via `ModelRuntime`: search/store/update/delete tools; emits staged ops |
-| `merge.ts` | Weekly pass: review a week's staged ops per memory server set, propose merged durable memories |
-| `staging.ts` | Append ops to the per-day staging JSON file |
-| `telegram.ts` | Send run summary to Telegram (plain fetch to `api.telegram.org`) |
-| `maintain.ts` | Orchestrate one run: sweep → group by project → consolidate → stage → alert; writes run log |
-| `scheduler.ts` | Daily + weekly timers, single-run guard, registered via `init-state.ts` |
-| `cli.ts` | `arg`-based CLI: `--run`, `--weekly`, `--status` |
+| File             | Responsibility                                                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `config.ts`      | Read `memory:` section from shared OrchestrelConfig (`loadConfig` + `resolveEnvVars`); resolve project by longest cwd prefix |
+| `memory-api.ts`  | REST client: `searchMemories`, `storeMemory`, `updateMemory`, `deleteMemory` (Bearer auth, plain fetch)                      |
+| `sweep.ts`       | Walk `~/.pi/agent/sessions`, apply watermark + settle filter, classify files by project                                      |
+| `excerpt.ts`     | Build a bounded LLM excerpt from one session JSONL (user text, assistant text, toolCall/toolResult summaries; token cap)     |
+| `consolidate.ts` | Agent tool-loop via `ModelRuntime`: search/store/update/delete tools; emits staged ops                                       |
+| `merge.ts`       | Weekly pass: review a week's staged ops per memory server set, propose merged durable memories                               |
+| `staging.ts`     | Append ops to the per-day staging JSON file                                                                                  |
+| `telegram.ts`    | Send run summary to Telegram (plain fetch to `api.telegram.org`)                                                             |
+| `maintain.ts`    | Orchestrate one run: sweep → group by project → consolidate → stage → alert; writes run log                                  |
+| `scheduler.ts`   | Daily + weekly timers, single-run guard, registered via `init-state.ts`                                                      |
+| `cli.ts`         | `arg`-based CLI: `--run`, `--weekly`, `--status`                                                                             |
 
 Supporting changes:
+
 - `src/shared/config.ts`: add `memory` section to `OrchestrelConfig`.
 - `src/server/models/index.ts`: create `memory_maintainer_watermark` and
   `memory_maintainer_runs` tables in `initDatabase` (CREATE TABLE IF NOT EXISTS,
@@ -75,20 +76,20 @@ Supporting changes:
 
 ```yaml
 memory:
-  mode: stage            # stage | write (write is future)
-  provider: max          # provider id from providers map
-  model: assistant       # alias in providers.max.models
-  maxTurns: 30           # agent loop cap per session
-  excerptTokens: 24000   # token cap for the session excerpt
+  mode: stage # stage | write (write is future)
+  provider: max # provider id from providers map
+  model: assistant # alias in providers.max.models
+  maxTurns: 30 # agent loop cap per session
+  excerptTokens: 24000 # token cap for the session excerpt
   stageDir: data/memory-staging
-  settleMs: 600000       # session must be idle this long before processing (10 min)
-  windowDays: 7          # sessions older than this are permanently skipped (recency window)
+  settleMs: 600000 # session must be idle this long before processing (10 min)
+  windowDays: 7 # sessions older than this are permanently skipped (recency window)
   telegram:
     botToken: ${TELEGRAM_BOT_TOKEN}
     chatId: ${TELEGRAM_CHAT_ID}
   projects:
     trackable:
-      match: ["/home/ryan/Code/trackable", "/home/ryan/Code/transcription"]
+      match: ['/home/ryan/Code/trackable', '/home/ryan/Code/transcription']
       apiUrl: https://memory.trackable.io
       apiKey: ${TRACKABLE_MEMORY_API_KEY}
       project: trackable
@@ -151,6 +152,7 @@ weekly merge can group by memory server set without cross-server merging.
 ## Pipeline
 
 **Daily run (`maintain.ts`):**
+
 1. Sweep: walk sessions dir; skip files whose (path, mtime, size) match the
    watermark, whose mtime is newer than now − `settleMs`, or whose mtime is
    older than now − `windowDays`·24h (recency window, decision C); skip noise
@@ -176,6 +178,7 @@ appended to a new staging file `data/memory-staging/merge-YYYY-MM-DD.json` with
 ## Consolidation agent
 
 Model setup mirrors `src/orcd/pi-runtime.ts`:
+
 - `ModelRuntime.create({ authPath, modelsPath })`, `ModelRegistry`, register the
   `memory.provider` provider via `registerProvider` (api `anthropic-messages`,
   baseUrl from provider config, anonymous api key if none — oMLX ignores it).
@@ -185,6 +188,7 @@ Model setup mirrors `src/orcd/pi-runtime.ts`:
   assistant content has no tool calls or `maxTurns` is hit.
 
 Tools (thin wrappers over `memory-api.ts`):
+
 - `search_memory(query, limit)` → `{ hits: [{id,title,text,score}] }`
 - `store_memory(title, text, tags?)` → `{ id }`
 - `update_memory(id, title?, text?, tags?)` → `{ ok }`

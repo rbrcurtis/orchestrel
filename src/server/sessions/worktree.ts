@@ -21,7 +21,9 @@ export async function ensureWorktree(card: Card, client: OrcdClient): Promise<st
     return proj.path;
   }
 
-  console.log(`[session:${card.id}] ensureWorktree: branch=${card.worktreeBranch}, preparing on node ${client.nodeName}`);
+  console.log(
+    `[session:${card.id}] ensureWorktree: branch=${card.worktreeBranch}, preparing on node ${client.nodeName}`,
+  );
   const source = card.sourceBranch ?? proj.defaultBranch ?? undefined;
   const res = await client.worktreePrepare({
     projectPath: proj.path,

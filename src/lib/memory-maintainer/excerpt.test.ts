@@ -8,11 +8,15 @@ const LINES = [
   { type: 'session', id: 's1', timestamp: '2026-08-31T00:00:00Z', cwd: '/home/ryan/Code/trackable' },
   { type: 'model_change', id: 'mc', timestamp: '2026-08-31T00:00:01Z', provider: 'qwen', modelId: 'qwen3.8-max' },
   {
-    type: 'message', id: 'u1', timestamp: '2026-08-31T00:00:02Z',
+    type: 'message',
+    id: 'u1',
+    timestamp: '2026-08-31T00:00:02Z',
     message: { role: 'user', content: [{ type: 'text', text: 'fix the pipeline retry bug' }] },
   },
   {
-    type: 'message', id: 'a1', timestamp: '2026-08-31T00:00:03Z',
+    type: 'message',
+    id: 'a1',
+    timestamp: '2026-08-31T00:00:03Z',
     message: {
       role: 'assistant',
       content: [
@@ -23,7 +27,9 @@ const LINES = [
     },
   },
   {
-    type: 'message', id: 'r1', timestamp: '2026-08-31T00:00:04Z',
+    type: 'message',
+    id: 'r1',
+    timestamp: '2026-08-31T00:00:04Z',
     message: { role: 'toolResult', toolCallId: 't1', toolName: 'edit', content: [{ type: 'text', text: 'ok' }] },
   },
 ];
@@ -52,7 +58,9 @@ describe('buildExcerpt', () => {
     const long = [
       ...LINES,
       {
-        type: 'message', id: 'u2', timestamp: '2026-08-31T00:00:05Z',
+        type: 'message',
+        id: 'u2',
+        timestamp: '2026-08-31T00:00:05Z',
         message: { role: 'user', content: [{ type: 'text', text: 'Z'.repeat(5000) }] },
       },
     ];
@@ -67,7 +75,9 @@ describe('buildExcerpt', () => {
     const lines = [
       ...LINES,
       {
-        type: 'message', id: 'u3', timestamp: '2026-08-31T00:00:06Z',
+        type: 'message',
+        id: 'u3',
+        timestamp: '2026-08-31T00:00:06Z',
         message: { role: 'user', content: [{ type: 'text', text: `use ${SECRET} as the key` }] },
       },
     ];

@@ -35,7 +35,13 @@ export function sweepSessions(memory: MemoryConfig): SweepResult {
   const db = getDb();
   const now = Date.now();
   const files: SessionFile[] = [];
-  const result: SweepResult = { files, droppedUnsettled: 0, droppedWindow: 0, droppedUnknownProject: 0, droppedNoise: 0 };
+  const result: SweepResult = {
+    files,
+    droppedUnsettled: 0,
+    droppedWindow: 0,
+    droppedUnknownProject: 0,
+    droppedNoise: 0,
+  };
 
   let projectDirs: string[];
   try {
@@ -65,9 +71,8 @@ export function sweepSessions(memory: MemoryConfig): SweepResult {
         result.droppedWindow += 1;
         continue;
       }
-      const seen = db
-        .prepare('SELECT mtime_ms, size FROM memory_maintainer_watermark WHERE path = ?')
-        .get(path) as { mtime_ms: number; size: number } | undefined;
+      const seen = db.prepare('SELECT mtime_ms, size FROM memory_maintainer_watermark WHERE path = ?').get(path) as
+        { mtime_ms: number; size: number } | undefined;
       if (seen && seen.mtime_ms === st.mtimeMs && seen.size === st.size) continue;
 
       const header = readHeader(path);

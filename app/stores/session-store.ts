@@ -58,15 +58,19 @@ export class SessionStore {
   private paintLive(cardId: number): void {
     if (this.liveFrames.has(cardId)) return;
     this.liveFrames.add(cardId);
-    setTimeout(() => runInAction(() => {
-      this.liveFrames.delete(cardId);
-      const replica = this.replicas.get(cardId);
-      const session = this.sessions.get(cardId);
-      if (!replica || !session) return;
-      replica.trimVisible();
-      renderTranscriptSnapshot(session.accumulator, replica.snapshot().state);
-      session.historyLoaded = true;
-    }), 100);
+    setTimeout(
+      () =>
+        runInAction(() => {
+          this.liveFrames.delete(cardId);
+          const replica = this.replicas.get(cardId);
+          const session = this.sessions.get(cardId);
+          if (!replica || !session) return;
+          replica.trimVisible();
+          renderTranscriptSnapshot(session.accumulator, replica.snapshot().state);
+          session.historyLoaded = true;
+        }),
+      100,
+    );
   }
 
   private async loadLive(cardId: number): Promise<void> {
@@ -75,12 +79,15 @@ export class SessionStore {
     this.liveLoading.set(cardId, pending);
     const scope = this.cacheScopes.get(cardId);
     try {
-      const snapshot = await this.ws().emit('session:transcript', { cardId }) as import('../../src/shared/orcd-protocol').TranscriptSnapshotMessage['snapshot'];
+      const snapshot = (await this.ws().emit('session:transcript', {
+        cardId,
+      })) as import('../../src/shared/orcd-protocol').TranscriptSnapshotMessage['snapshot'];
       if (!snapshot || this.cacheScopes.get(cardId) !== scope) return;
       const replica = new TranscriptReplica();
       replica.applySnapshot(snapshot.cursor, snapshot.state);
       for (const envelope of pending) {
-        if (replica.accept(envelope).type === 'snapshot_required') throw new Error('Live transcript changed during snapshot');
+        if (replica.accept(envelope).type === 'snapshot_required')
+          throw new Error('Live transcript changed during snapshot');
       }
       this.replicas.set(cardId, replica);
       this.paintLive(cardId);
@@ -149,11 +156,16 @@ export class SessionStore {
       const anchor = `${page.revision}:${direction}:${direction === 'older' ? page.before : page.after}`;
       const cached = scope ? await readTranscriptPage(scope, anchor) : undefined;
       const saved = cached?.records[0] as TranscriptHistoryPage | undefined;
-      const result = saved?.revision === page.revision ? saved : await this.ws().emit('session:history-page', {
-        cardId, page: direction === 'older'
-          ? { before: page.before, revision: page.revision }
-          : { after: page.after ?? undefined, prefix: page.prefix, revision: page.revision, anchorOnly: true },
-      }) as TranscriptHistoryPage | undefined;
+      const result =
+        saved?.revision === page.revision
+          ? saved
+          : ((await this.ws().emit('session:history-page', {
+              cardId,
+              page:
+                direction === 'older'
+                  ? { before: page.before, revision: page.revision }
+                  : { after: page.after ?? undefined, prefix: page.prefix, revision: page.revision, anchorOnly: true },
+            })) as TranscriptHistoryPage | undefined);
       if (!result || result.reset || version !== (this.messageVersions.get(cardId) ?? 0)) {
         console.debug('[transcript] discarded stale older page', cardId);
         return;
@@ -164,19 +176,29 @@ export class SessionStore {
         // replacing the view. Keep the newest anchor so the window still ends
         // at the record the reader already had.
         const merged = [...pageMessages, ...(this.historyMessages.get(cardId) ?? [])];
-        runInAction(() => this.historyPages.set(cardId, {
-          ...result, after: page.after, prefix: page.prefix, hasNewer: page.hasNewer,
-        }));
+        runInAction(() =>
+          this.historyPages.set(cardId, {
+            ...result,
+            after: page.after,
+            prefix: page.prefix,
+            hasNewer: page.hasNewer,
+          }),
+        );
         this.ingestHistory(cardId, merged);
       } else {
         // Appending newer pages keeps the already-loaded older rows.
         const merged = [...(this.historyMessages.get(cardId) ?? []), ...pageMessages];
-        runInAction(() => this.historyPages.set(cardId, {
-          ...result, before: page.before, hasOlder: page.hasOlder,
-        }));
+        runInAction(() =>
+          this.historyPages.set(cardId, {
+            ...result,
+            before: page.before,
+            hasOlder: page.hasOlder,
+          }),
+        );
         this.ingestHistory(cardId, merged);
       }
-      if (scope && !cached) await writeTranscriptPage(scope, { anchor, revision: result.revision, records: [result] }, null);
+      if (scope && !cached)
+        await writeTranscriptPage(scope, { anchor, revision: result.revision, records: [result] }, null);
     } finally {
       this.loadingCards.delete(cardId);
     }
@@ -190,7 +212,9 @@ export class SessionStore {
     });
   }
 
-  setWs(ws: WsClient) { this._ws = ws; }
+  setWs(ws: WsClient) {
+    this._ws = ws;
+  }
   private ws(): WsClient {
     if (!this._ws) throw new Error('WsClient not set');
     return this._ws;
@@ -227,7 +251,13 @@ export class SessionStore {
     runInAction(() => {
       const s = this.getOrCreate(cardId);
       const sdkMsg = msg as SdkMessage;
-      if (typeof msg === 'object' && msg !== null && 'type' in msg && msg.type === 'transcript_event' && 'envelope' in msg) {
+      if (
+        typeof msg === 'object' &&
+        msg !== null &&
+        'type' in msg &&
+        msg.type === 'transcript_event' &&
+        'envelope' in msg
+      ) {
         const envelope = msg.envelope as TranscriptEnvelope<TranscriptEvent>;
         const pending = this.liveLoading.get(cardId);
         if (pending) {
@@ -378,8 +408,7 @@ export class SessionStore {
     // terminal and /sleep parks the card, so neither prompts: surrounding text
     // is discarded with the command and nothing is echoed.
     const { text, action } = parseAppCommands(message);
-    const hasPrompt =
-      action !== 'delete' && action !== 'sleep' && (text.trim().length > 0 || (files?.length ?? 0) > 0);
+    const hasPrompt = action !== 'delete' && action !== 'sleep' && (text.trim().length > 0 || (files?.length ?? 0) > 0);
 
     if (hasPrompt) {
       this.messageVersions.set(cardId, (this.messageVersions.get(cardId) ?? 0) + 1);
@@ -451,34 +480,63 @@ export class SessionStore {
       }
       if (scope && sessionId && !this.sessions.get(cardId)?.active) {
         const cached = await readTranscriptPage(scope, 'latest');
-        const unchanged = () => version === (this.messageVersions.get(cardId) ?? 0)
-          && !this.sessions.get(cardId)?.active && this.cacheScopes.get(cardId) === scope;
+        const unchanged = () =>
+          version === (this.messageVersions.get(cardId) ?? 0) &&
+          !this.sessions.get(cardId)?.active &&
+          this.cacheScopes.get(cardId) === scope;
         const saved = cached?.records[0] as TranscriptHistoryPage | undefined;
         const valid = saved?.sessionId === sessionId && Array.isArray(saved.records) ? saved : undefined;
-        if (valid && unchanged()) this.ingestHistory(cardId, valid.records.map((record) => record.message));
-        let page = await this.ws().emit('session:history-page', { cardId, page: valid?.after ? {
-          after: valid.after, prefix: valid.prefix, revision: valid.revision,
-        } : {} }).catch((err: unknown) => {
-          console.warn('[transcript] page load failed; retaining existing display', err);
-          return undefined;
-        }) as TranscriptHistoryPage | undefined;
+        if (valid && unchanged())
+          this.ingestHistory(
+            cardId,
+            valid.records.map((record) => record.message),
+          );
+        let page = (await this.ws()
+          .emit('session:history-page', {
+            cardId,
+            page: valid?.after
+              ? {
+                  after: valid.after,
+                  prefix: valid.prefix,
+                  revision: valid.revision,
+                }
+              : {},
+          })
+          .catch((err: unknown) => {
+            console.warn('[transcript] page load failed; retaining existing display', err);
+            return undefined;
+          })) as TranscriptHistoryPage | undefined;
         if (page && valid && !page.reset) {
           const records = [...valid.records, ...page.records].slice(-120);
-          page = { ...page, records, before: records[0]?.id ?? null, after: records.at(-1)?.id ?? null,
-            hasOlder: valid.hasOlder || valid.records.length + page.records.length > 120 };
+          page = {
+            ...page,
+            records,
+            before: records[0]?.id ?? null,
+            after: records.at(-1)?.id ?? null,
+            hasOlder: valid.hasOlder || valid.records.length + page.records.length > 120,
+          };
         }
         if (page?.hasNewer && unchanged()) {
-          page = await this.ws().emit('session:history-page', { cardId, page: {} }) as TranscriptHistoryPage | undefined;
+          page = (await this.ws().emit('session:history-page', { cardId, page: {} })) as
+            TranscriptHistoryPage | undefined;
         }
         if (page && page.sessionId === sessionId && unchanged()) {
           const confirmed = page;
           runInAction(() => this.historyPages.set(cardId, confirmed));
-          this.ingestHistory(cardId, page.records.map((record) => record.message));
+          this.ingestHistory(
+            cardId,
+            page.records.map((record) => record.message),
+          );
           if (!valid || cached?.revision !== page.revision) {
-            await writeTranscriptPage(scope, {
-              anchor: 'latest', revision: page.revision,
-              records: [page],
-            }, cached?.revision ?? null);
+            await writeTranscriptPage(
+              scope,
+              {
+                anchor: 'latest',
+                revision: page.revision,
+                records: [page],
+              },
+              cached?.revision ?? null,
+            );
           }
           return;
         }
@@ -507,13 +565,9 @@ export class SessionStore {
       if (s) s.historyLoaded = false;
 
       const sid = s?.sessionId;
-      this.loadHistory(cardId, sid).catch((err) =>
-        console.warn('[ws] resubscribe failed for card', cardId, err),
-      );
+      this.loadHistory(cardId, sid).catch((err) => console.warn('[ws] resubscribe failed for card', cardId, err));
 
-      this.requestStatus(cardId).catch((err) =>
-        console.warn('[ws] status request failed for card', cardId, err),
-      );
+      this.requestStatus(cardId).catch((err) => console.warn('[ws] status request failed for card', cardId, err));
     }
   }
 }

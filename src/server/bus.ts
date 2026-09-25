@@ -39,6 +39,6 @@ export class MessageBus extends EventEmitter {
 }
 
 const existing = getMessageBus();
-export const messageBus = existing ? existing as MessageBus : new MessageBus();
+export const messageBus = existing ? (existing as MessageBus) : new MessageBus();
 if (!existing) setMessageBus(messageBus);
 messageBus.setMaxListeners(200);

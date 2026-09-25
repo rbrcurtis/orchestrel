@@ -13,6 +13,7 @@
 ### Task 1: Add `resolveWorkDir` helper and move `slugify` to shared
 
 **Files:**
+
 - Create: `src/shared/worktree.ts`
 - Create: `src/shared/worktree.test.ts`
 - Modify: `src/server/worktree.ts`
@@ -31,9 +32,7 @@ describe('resolveWorkDir', () => {
   });
 
   it('returns worktree path when branch is set', () => {
-    expect(resolveWorkDir('my-feature', '/home/user/project')).toBe(
-      '/home/user/project/.worktrees/my-feature',
-    );
+    expect(resolveWorkDir('my-feature', '/home/user/project')).toBe('/home/user/project/.worktrees/my-feature');
   });
 });
 
@@ -102,6 +101,7 @@ git commit -m "feat: add resolveWorkDir helper, move slugify to shared"
 ### Task 2: Remove `worktreePath` and `useWorktree` from Card entity
 
 **Files:**
+
 - Modify: `src/server/models/Card.ts`
 
 - [ ] **Step 1: Remove the two columns from the entity**
@@ -123,6 +123,7 @@ In `src/server/models/Card.ts`, delete these blocks:
 In `CardSubscriber.beforeUpdate`, replace `!card.useWorktree` with `!card.worktreeBranch`:
 
 Change line ~111:
+
 ```ts
     if (prev?.column !== 'running' && card.column === 'running' && !card.worktreeBranch && card.projectId) {
 ```
@@ -130,23 +131,23 @@ Change line ~111:
 Replace the query filter. Change:
 
 ```ts
-        const others = await Card.find({
-          where: {
-            column: 'running',
-            projectId: card.projectId,
-            useWorktree: false as unknown as boolean,
-          },
-        });
+const others = await Card.find({
+  where: {
+    column: 'running',
+    projectId: card.projectId,
+    useWorktree: false as unknown as boolean,
+  },
+});
 ```
 
 To:
 
 ```ts
-        const others = await Card.createQueryBuilder('card')
-          .where('card.column = :col', { col: 'running' })
-          .andWhere('card.project_id = :pid', { pid: card.projectId })
-          .andWhere('card.worktree_branch IS NULL')
-          .getMany();
+const others = await Card.createQueryBuilder('card')
+  .where('card.column = :col', { col: 'running' })
+  .andWhere('card.project_id = :pid', { pid: card.projectId })
+  .andWhere('card.worktree_branch IS NULL')
+  .getMany();
 ```
 
 - [ ] **Step 3: Commit**
@@ -161,6 +162,7 @@ git commit -m "feat: remove worktreePath and useWorktree from Card entity"
 ### Task 3: Update ws-protocol schemas
 
 **Files:**
+
 - Modify: `src/shared/ws-protocol.ts`
 
 - [ ] **Step 1: Remove fields from `cardSchema`**
@@ -200,6 +202,7 @@ git commit -m "feat: remove worktreePath/useWorktree from ws-protocol schemas"
 ### Task 4: Update `ensureWorktree` and session handler
 
 **Files:**
+
 - Modify: `src/server/sessions/worktree.ts`
 - Modify: `src/server/ws/handlers/sessions.ts`
 
@@ -244,24 +247,24 @@ export async function ensureWorktree(card: Card): Promise<string> {
 In `src/server/ws/handlers/sessions.ts`, find:
 
 ```ts
-      let dir = card?.worktreePath ?? undefined;
-      if (!dir && card?.projectId) {
-        const proj = await Project.findOneBy({ id: card.projectId });
-        dir = proj?.path;
-      }
+let dir = card?.worktreePath ?? undefined;
+if (!dir && card?.projectId) {
+  const proj = await Project.findOneBy({ id: card.projectId });
+  dir = proj?.path;
+}
 ```
 
 Replace with:
 
 ```ts
-      let dir: string | undefined;
-      if (card?.projectId) {
-        const proj = await Project.findOneBy({ id: card.projectId });
-        if (proj) {
-          const { resolveWorkDir } = await import('../../../shared/worktree');
-          dir = resolveWorkDir(card.worktreeBranch, proj.path);
-        }
-      }
+let dir: string | undefined;
+if (card?.projectId) {
+  const proj = await Project.findOneBy({ id: card.projectId });
+  if (proj) {
+    const { resolveWorkDir } = await import('../../../shared/worktree');
+    dir = resolveWorkDir(card.worktreeBranch, proj.path);
+  }
+}
 ```
 
 - [ ] **Step 3: Commit**
@@ -276,6 +279,7 @@ git commit -m "feat: derive worktree path instead of reading stored field"
 ### Task 5: Update `oc.ts` and `queue-gate`
 
 **Files:**
+
 - Modify: `src/server/controllers/oc.ts`
 - Modify: `src/server/services/queue-gate.ts`
 
@@ -284,16 +288,19 @@ git commit -m "feat: derive worktree path instead of reading stored field"
 Replace all `useWorktree` checks with `worktreeBranch` null checks:
 
 Line ~119 (card entering running — non-worktree gate):
+
 ```ts
       if (!fullCard.worktreeBranch && fullCard.projectId) {
 ```
 
 Line ~137 (direct start log):
+
 ```ts
         `(worktree=${!!card.worktreeBranch}, project=${card.projectId})`,
 ```
 
 Line ~158 (card left running):
+
 ```ts
       if (!card.worktreeBranch && card.projectId) {
 ```
@@ -301,32 +308,34 @@ Line ~158 (card left running):
 - [ ] **Step 2: Update `registerWorktreeCleanup` in `oc.ts`**
 
 Line ~185:
+
 ```ts
-    if (!c.worktreeBranch || !c.projectId) return;
+if (!c.worktreeBranch || !c.projectId) return;
 ```
 
 Derive the path instead of reading `c.worktreePath`:
 
 ```ts
-    try {
-      const proj = await Project.findOneBy({ id: c.projectId });
-      if (!proj) return;
+try {
+  const proj = await Project.findOneBy({ id: c.projectId });
+  if (!proj) return;
 
-      const { resolveWorkDir } = await import('../../shared/worktree');
-      const wtPath = resolveWorkDir(c.worktreeBranch, proj.path);
-      const { removeWorktree, worktreeExists } = await import('../worktree');
-      if (worktreeExists(wtPath)) {
-        removeWorktree(proj.path, wtPath);
-        console.log(`[oc:worktree] removed ${wtPath}`);
-      }
-    } catch (err) {
-      console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
-    }
+  const { resolveWorkDir } = await import('../../shared/worktree');
+  const wtPath = resolveWorkDir(c.worktreeBranch, proj.path);
+  const { removeWorktree, worktreeExists } = await import('../worktree');
+  if (worktreeExists(wtPath)) {
+    removeWorktree(proj.path, wtPath);
+    console.log(`[oc:worktree] removed ${wtPath}`);
+  }
+} catch (err) {
+  console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
+}
 ```
 
 - [ ] **Step 3: Update exit handler in `registerCardSession`**
 
 Line ~83:
+
 ```ts
     if (freshCard && !freshCard.worktreeBranch && freshCard.projectId) {
 ```
@@ -336,25 +345,25 @@ Line ~83:
 Replace the `useWorktree: false` filter. Change:
 
 ```ts
-  const group = await Card.find({
-    where: {
-      column: 'running',
-      projectId,
-      useWorktree: false as unknown as boolean,
-    },
-    order: { queuePosition: 'ASC' },
-  });
+const group = await Card.find({
+  where: {
+    column: 'running',
+    projectId,
+    useWorktree: false as unknown as boolean,
+  },
+  order: { queuePosition: 'ASC' },
+});
 ```
 
 To:
 
 ```ts
-  const group = await Card.createQueryBuilder('card')
-    .where('card.column = :col', { col: 'running' })
-    .andWhere('card.project_id = :pid', { pid: projectId })
-    .andWhere('card.worktree_branch IS NULL')
-    .orderBy('card.queue_position', 'ASC')
-    .getMany();
+const group = await Card.createQueryBuilder('card')
+  .where('card.column = :col', { col: 'running' })
+  .andWhere('card.project_id = :pid', { pid: projectId })
+  .andWhere('card.worktree_branch IS NULL')
+  .orderBy('card.queue_position', 'ASC')
+  .getMany();
 ```
 
 - [ ] **Step 5: Commit**
@@ -369,21 +378,24 @@ git commit -m "feat: replace useWorktree checks with worktreeBranch null checks"
 ### Task 6: Update card service (create defaults)
 
 **Files:**
+
 - Modify: `src/server/services/card.ts`
 
 - [ ] **Step 1: Update `createCard`**
 
 Replace line ~57:
+
 ```ts
-        data.useWorktree = data.useWorktree ?? proj.defaultWorktree;
+data.useWorktree = data.useWorktree ?? proj.defaultWorktree;
 ```
 
 With:
+
 ```ts
-        if (proj.defaultWorktree && !data.worktreeBranch && data.title) {
-          const { slugify } = await import('../../shared/worktree');
-          data.worktreeBranch = slugify(data.title);
-        }
+if (proj.defaultWorktree && !data.worktreeBranch && data.title) {
+  const { slugify } = await import('../../shared/worktree');
+  data.worktreeBranch = slugify(data.title);
+}
 ```
 
 - [ ] **Step 2: Commit**
@@ -398,6 +410,7 @@ git commit -m "feat: auto-set worktreeBranch from title when project defaults to
 ### Task 7: Update frontend — CardDetail
 
 **Files:**
+
 - Modify: `app/components/CardDetail.tsx`
 
 - [ ] **Step 1: Add import**
@@ -429,21 +442,22 @@ Remove `useWorktree` from all these locations.
 ~Line 399-411, update the checkbox:
 
 ```tsx
-  <Checkbox
-    id="useWorktree"
-    checked={!!draft.worktreeBranch}
-    disabled={!!card.worktreeBranch}
-    onCheckedChange={(checked) => {
-      const branch = checked === true ? slugify(draft.title || card.title) : null;
-      setDraft((d) => ({ ...d, worktreeBranch: branch }));
-      saveAll({ worktreeBranch: branch });
-    }}
-  />
+<Checkbox
+  id="useWorktree"
+  checked={!!draft.worktreeBranch}
+  disabled={!!card.worktreeBranch}
+  onCheckedChange={(checked) => {
+    const branch = checked === true ? slugify(draft.title || card.title) : null;
+    setDraft((d) => ({ ...d, worktreeBranch: branch }));
+    saveAll({ worktreeBranch: branch });
+  }}
+/>
 ```
 
 - [ ] **Step 5: Update source branch visibility**
 
 ~Line 416:
+
 ```tsx
   {!!selectedProject?.isGitRepo && !!draft.worktreeBranch && (
 ```
@@ -451,10 +465,13 @@ Remove `useWorktree` from all these locations.
 - [ ] **Step 6: Update project change handler**
 
 ~Line 362-365, replace:
+
 ```ts
   useWorktree: proj?.isGitRepo ? (proj.defaultWorktree ?? false) : false,
 ```
+
 With:
+
 ```ts
   worktreeBranch: proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || card.title) : null,
 ```
@@ -464,12 +481,12 @@ With:
 Update call site (~line 283-290):
 
 ```tsx
-  <CopyPathButton
-    worktreeBranch={card.worktreeBranch}
-    projectPath={cardProject?.path}
-    sourceBranch={card.sourceBranch}
-    color={card.worktreeBranch && cardProject?.color ? cardProject.color : undefined}
-  />
+<CopyPathButton
+  worktreeBranch={card.worktreeBranch}
+  projectPath={cardProject?.path}
+  sourceBranch={card.sourceBranch}
+  color={card.worktreeBranch && cardProject?.color ? cardProject.color : undefined}
+/>
 ```
 
 Rewrite function (~line 839-886):
@@ -487,9 +504,7 @@ function CopyPathButton({
   color?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const path = worktreeBranch && projectPath
-    ? `${projectPath}/.worktrees/${worktreeBranch}`
-    : projectPath;
+  const path = worktreeBranch && projectPath ? `${projectPath}/.worktrees/${worktreeBranch}` : projectPath;
 
   function handleCopy() {
     if (!path) return;
@@ -535,6 +550,7 @@ git commit -m "feat: replace useWorktree with worktreeBranch in CardDetail"
 ### Task 8: Update frontend — NewCard, card-store, board.index
 
 **Files:**
+
 - Modify: `app/components/CardDetail.tsx` (NewCard section)
 - Modify: `app/stores/card-store.ts`
 - Modify: `app/routes/board.index.tsx`
@@ -544,31 +560,31 @@ git commit -m "feat: replace useWorktree with worktreeBranch in CardDetail"
 ~Line 578-601, replace `useWorktree` with `worktreeBranch`:
 
 ```ts
-  const [draft, setDraft] = useState<Draft>(() => {
-    if (initialProjectId != null) {
-      const proj = projectStore.getProject(initialProjectId);
-      if (proj) {
-        return {
-          title: '',
-          description: '',
-          projectId: initialProjectId,
-          worktreeBranch: null,
-          sourceBranch: null,
-          model: proj.defaultModel ?? 'sonnet',
-          thinkingLevel: proj.defaultThinkingLevel ?? 'high',
-        };
-      }
+const [draft, setDraft] = useState<Draft>(() => {
+  if (initialProjectId != null) {
+    const proj = projectStore.getProject(initialProjectId);
+    if (proj) {
+      return {
+        title: '',
+        description: '',
+        projectId: initialProjectId,
+        worktreeBranch: null,
+        sourceBranch: null,
+        model: proj.defaultModel ?? 'sonnet',
+        thinkingLevel: proj.defaultThinkingLevel ?? 'high',
+      };
     }
-    return {
-      title: '',
-      description: '',
-      projectId: null,
-      worktreeBranch: null,
-      sourceBranch: null,
-      model: 'sonnet',
-      thinkingLevel: 'high',
-    };
-  });
+  }
+  return {
+    title: '',
+    description: '',
+    projectId: null,
+    worktreeBranch: null,
+    sourceBranch: null,
+    model: 'sonnet',
+    thinkingLevel: 'high',
+  };
+});
 ```
 
 Note: `worktreeBranch` starts null because we can't slugify an empty title. The server-side `createCard` will auto-set it if the project has `defaultWorktree=true`.
@@ -578,16 +594,16 @@ Note: `worktreeBranch` starts null because we can't slugify an empty title. The 
 ~Line 622-631:
 
 ```ts
-  const card = await cardStore.createCard({
-    title: draft.title,
-    description: draft.description || undefined,
-    column: selectedColumn as Column,
-    projectId: draft.projectId,
-    worktreeBranch: draft.worktreeBranch,
-    sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
-    model: draft.model,
-    thinkingLevel: draft.thinkingLevel,
-  });
+const card = await cardStore.createCard({
+  title: draft.title,
+  description: draft.description || undefined,
+  column: selectedColumn as Column,
+  projectId: draft.projectId,
+  worktreeBranch: draft.worktreeBranch,
+  sourceBranch: draft.sourceBranch as 'main' | 'dev' | null | undefined,
+  model: draft.model,
+  thinkingLevel: draft.thinkingLevel,
+});
 ```
 
 - [ ] **Step 3: Update NewCard project change handler**
@@ -603,14 +619,16 @@ Note: `worktreeBranch` starts null because we can't slugify an empty title. The 
 ~Line 752-755:
 
 ```tsx
-  <Checkbox
-    id="newUseWorktree"
-    checked={!!draft.worktreeBranch}
-    onCheckedChange={(checked) => setDraft((d) => ({
+<Checkbox
+  id="newUseWorktree"
+  checked={!!draft.worktreeBranch}
+  onCheckedChange={(checked) =>
+    setDraft((d) => ({
       ...d,
-      worktreeBranch: checked === true ? (slugify(d.title) || null) : null,
-    }))}
-  />
+      worktreeBranch: checked === true ? slugify(d.title) || null : null,
+    }))
+  }
+/>
 ```
 
 - [ ] **Step 5: Update NewCard source branch visibility**
@@ -645,6 +663,7 @@ git commit -m "feat: replace useWorktree with worktreeBranch across frontend"
 ### Task 9: Update tests
 
 **Files:**
+
 - Modify: `src/shared/ws-protocol.test.ts`
 - Modify: `src/server/models/Card.test.ts`
 - Modify: `src/server/api/controllers/cards.test.ts`
@@ -685,6 +704,7 @@ git commit -m "test: update fixtures to remove worktreePath and useWorktree"
 ### Task 10: DB migration script
 
 **Files:**
+
 - Create: `scripts/migrate-worktree-fields.ts`
 
 - [ ] **Step 1: Write the migration script**

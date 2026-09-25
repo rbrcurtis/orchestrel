@@ -48,16 +48,31 @@ export class Project extends BaseEntity {
   @Column({ name: 'setup_commands', type: 'text', default: '' })
   setupCommands!: string;
 
-  @Column({ name: 'is_git_repo', type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
+  @Column({
+    name: 'is_git_repo',
+    type: 'integer',
+    default: 0,
+    transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v },
+  })
   isGitRepo!: boolean;
 
   @Column({ name: 'default_branch', type: 'text', nullable: true })
   defaultBranch!: string | null;
 
-  @Column({ name: 'default_worktree', type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
+  @Column({
+    name: 'default_worktree',
+    type: 'integer',
+    default: 0,
+    transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v },
+  })
   defaultWorktree!: boolean;
 
-  @Column({ name: 'default_sandbox', type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
+  @Column({
+    name: 'default_sandbox',
+    type: 'integer',
+    default: 0,
+    transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v },
+  })
   defaultSandbox!: boolean;
 
   @Column({ name: 'default_model', type: 'text', default: 'sonnet' })
@@ -79,7 +94,11 @@ export class Project extends BaseEntity {
   color!: string;
 
   @Expose({ groups: ['rest'] })
-  @Column({ type: 'integer', default: 0, transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v } })
+  @Column({
+    type: 'integer',
+    default: 0,
+    transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v },
+  })
   archived!: boolean;
 
   @Column({ name: 'created_at', type: 'text' })

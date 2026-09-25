@@ -70,12 +70,14 @@ For each of `mobile/orchestrel` and `mobile/orc-chat`:
 ### Task 1: Reusable Browser Attachment State and Upload Client
 
 **Files:**
+
 - Create: `app/lib/file-attachments.ts`
 - Create: `app/components/FileAttachments.tsx`
 - Modify: `app/components/SessionView.tsx:386-674`
 - Test: `app/lib/file-attachments.test.ts`
 
 **Interfaces:**
+
 - Produces: `MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024`
 - Produces: `addAttachmentFiles(current: File[], incoming: File[]): { files: File[]; errors: string[] }`
 - Produces: `uploadFiles(files: File[], opts?: { draftId?: string; sessionId?: string }): Promise<FileRef[]>`
@@ -144,7 +146,9 @@ export function addAttachmentFiles(current: File[], incoming: File[]) {
 export async function uploadFiles(
   files: File[],
   opts: { draftId?: string; sessionId?: string } = {},
-): Promise<FileRef[]> { /* FormData + validated fetch */ }
+): Promise<FileRef[]> {
+  /* FormData + validated fetch */
+}
 ```
 
 - [ ] **Step 4: Extract the attachment UI**
@@ -195,6 +199,7 @@ git commit -m "refactor: share attachment composer behavior"
 ### Task 2: Durable Card Uploads and Pending Initial Attachment Schema
 
 **Files:**
+
 - Create: `src/server/attachments.ts`
 - Create: `src/server/attachments.test.ts`
 - Modify: `src/server/init.ts:33-65`
@@ -207,6 +212,7 @@ git commit -m "refactor: share attachment composer behavior"
 - Modify: `app/stores/card-store.test.ts`
 
 **Interfaces:**
+
 - Consumes: `FileRef`, `MAX_ATTACHMENT_BYTES` semantics from Task 1.
 - Produces: `createAttachmentRouter(): express.Router`
 - Produces: `readAttachment(ref: FileRef): Buffer`, `deleteAttachments(refs: FileRef[]): void`, `pruneAttachments(now?: number): void`
@@ -228,8 +234,12 @@ it('stores a sanitized durable draft upload and reads it only inside the root', 
   expect(() => store.read({ ...ref, path: '/etc/passwd' })).toThrow('outside attachment root');
 });
 
-it('reuses stable draft and file ids without escaping the root', () => { /* assert normalized path */ });
-it('prunes only unreferenced directories older than seven days', () => { /* controlled mtimes */ });
+it('reuses stable draft and file ids without escaping the root', () => {
+  /* assert normalized path */
+});
+it('prunes only unreferenced directories older than seven days', () => {
+  /* controlled mtimes */
+});
 ```
 
 - [ ] **Step 2: Run the storage tests and confirm RED**
@@ -298,6 +308,7 @@ git commit -m "feat: persist initial card attachments"
 ### Task 3: Authenticated orcd File Staging
 
 **Files:**
+
 - Modify: `src/shared/orcd-protocol.ts`
 - Create: `src/orcd/file-staging.ts`
 - Create: `src/orcd/__tests__/file-staging.test.ts`
@@ -306,6 +317,7 @@ git commit -m "feat: persist initial card attachments"
 - Modify: `src/server/orcd-client.ts`
 
 **Interfaces:**
+
 - Produces: `FileStageAction { action: 'file_stage'; cardId; file: { id; name; mimeType; size; base64 }; requestId? }`
 - Produces: `FileStagedMessage { type: 'file_staged'; requestId?; file: FileRef }`
 - Produces: `stageFile(input: { cardId: number; file: Omit<FileRef, 'path'>; bytes: Buffer }): Promise<FileRef>`
@@ -321,15 +333,27 @@ Create `src/orcd/__tests__/file-staging.test.ts` with an injected temporary root
 it('writes decoded bytes under the card root and returns a node-local FileRef', () => {
   const staged = stageFile(root, {
     cardId: 42,
-    file: { id: 'abc', name: '../photo.png', mimeType: 'image/png', size: 3, base64: Buffer.from('img').toString('base64') },
+    file: {
+      id: 'abc',
+      name: '../photo.png',
+      mimeType: 'image/png',
+      size: 3,
+      base64: Buffer.from('img').toString('base64'),
+    },
   });
   expect(staged.name).toBe('photo.png');
   expect(readFileSync(staged.path, 'utf8')).toBe('img');
 });
 
-it('is idempotent for the same card and attachment id', () => { /* stage twice, same path/content */ });
-it('rejects invalid ids and decoded size mismatches', () => { /* both branches */ });
-it('prunes staging directories older than seven days', () => { /* controlled mtime */ });
+it('is idempotent for the same card and attachment id', () => {
+  /* stage twice, same path/content */
+});
+it('rejects invalid ids and decoded size mismatches', () => {
+  /* both branches */
+});
+it('prunes staging directories older than seven days', () => {
+  /* controlled mtime */
+});
 ```
 
 - [ ] **Step 2: Run and confirm RED**
@@ -393,6 +417,7 @@ git commit -m "feat: stage attachments on orcd nodes"
 ### Task 4: Initial Prompt Attachment Lifecycle
 
 **Files:**
+
 - Modify: `src/server/sessions/manager.ts`
 - Create: `src/server/sessions/manager.test.ts` if no focused test exists
 - Modify: `src/server/controllers/card-sessions.ts:665-720`
@@ -400,6 +425,7 @@ git commit -m "feat: stage attachments on orcd nodes"
 - Modify: `src/server/attachments.ts`
 
 **Interfaces:**
+
 - Consumes: `readAttachment(ref)`, `deleteAttachments(refs)`, `OrcdClient.stageFile()` from Tasks 2–3.
 - Produces: `stageCardAttachments(client, card): Promise<FileRef[]>`
 - Produces: initial session prompt built with `buildPromptWithFiles(card.description || card.title, stagedFiles)`.
@@ -436,11 +462,13 @@ Before `client.create()` for a card without `sessionId`:
 const pending = card.pendingInitialFiles ?? [];
 const staged: FileRef[] = [];
 for (const file of pending) {
-  staged.push(await client.stageFile({
-    cardId: card.id,
-    file,
-    bytes: readAttachment(file),
-  }));
+  staged.push(
+    await client.stageFile({
+      cardId: card.id,
+      file,
+      bytes: readAttachment(file),
+    }),
+  );
 }
 const rawPrompt = card.description || card.title;
 const prompt = buildPromptWithFiles(rawPrompt, staged);
@@ -473,6 +501,7 @@ git commit -m "feat: send card attachments in initial prompts"
 ### Task 5: IndexedDB Shared-Draft Import and Collision Queue
 
 **Files:**
+
 - Create: `app/lib/shared-drafts.ts`
 - Create: `app/lib/shared-drafts.test.ts`
 - Create: `app/components/SharedDraftNotice.tsx`
@@ -480,6 +509,7 @@ git commit -m "feat: send card attachments in initial prompts"
 - Modify: `bun.lock`
 
 **Interfaces:**
+
 - Produces: `SharedDraft { id; destination: 'card' | 'chat'; text; files: File[]; errors; createdAt }`
 - Produces: `importNativeSharedDrafts(destination): Promise<SharedDraft[]>`
 - Produces: `getActiveDraft(destination): Promise<SharedDraft | null>`
@@ -507,11 +537,21 @@ it('acknowledges native content only after files and manifest are persisted', as
   expect(order).toEqual(['persist', 'ack']);
 });
 
-it('does not acknowledge when file conversion or persistence fails', async () => { /* ack absent */ });
-it('imports duplicate manifest ids only once', async () => { /* one durable record */ });
-it('fills an empty active draft but queues incoming content behind a non-empty draft', async () => { /* preserve old */ });
-it('keeps valid files and records one failed native-file conversion inline', async () => { /* partial success */ });
-it('prunes acknowledged browser drafts only after submission or explicit discard', async () => { /* retry retention */ });
+it('does not acknowledge when file conversion or persistence fails', async () => {
+  /* ack absent */
+});
+it('imports duplicate manifest ids only once', async () => {
+  /* one durable record */
+});
+it('fills an empty active draft but queues incoming content behind a non-empty draft', async () => {
+  /* preserve old */
+});
+it('keeps valid files and records one failed native-file conversion inline', async () => {
+  /* partial success */
+});
+it('prunes acknowledged browser drafts only after submission or explicit discard', async () => {
+  /* retry retention */
+});
 ```
 
 - [ ] **Step 3: Run and confirm RED**
@@ -555,6 +595,7 @@ git commit -m "feat: import native shares into durable drafts"
 ### Task 6: Standard New-Card and New-Chat Draft Integration
 
 **Files:**
+
 - Modify: `app/components/CardDetail.tsx:694-905`
 - Modify: `app/components/CardDetail.test.tsx`
 - Modify: `app/routes/board.tsx`
@@ -563,6 +604,7 @@ git commit -m "feat: import native shares into durable drafts"
 - Modify: `app/routes/chat.test.tsx` or create `app/routes/chat.$projectId.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `FileAttachments`, `uploadFiles`, and shared-draft APIs from Tasks 1 and 5.
 - Consumes: `createCard/createChatCard({ pendingInitialFiles })` from Task 2.
 - Produces: standard new-card/new-chat UIs that can receive native shares and ordinary picker/paste files.
@@ -646,6 +688,7 @@ git commit -m "feat: open shared content in card and chat drafts"
 ### Task 7: Native SharedDraft Plugin for Both Apps
 
 **Files:**
+
 - Create: `mobile/orchestrel/ios/App/App/SharedDraftPlugin.swift`
 - Create: `mobile/orchestrel/ios/App/App/App.entitlements`
 - Modify: `mobile/orchestrel/ios/App/App/AppDelegate.swift`
@@ -657,6 +700,7 @@ git commit -m "feat: open shared content in card and chat drafts"
 - Modify: both `ios/App/App.xcodeproj/project.pbxproj`
 
 **Interfaces:**
+
 - Consumes: App Group manifests defined in the spec.
 - Produces Capacitor plugin: `list()`, `read({ id })`, `acknowledge({ id })`, `discard({ id })`, event `sharedDraftReceived`.
 - Produces app deep-link routing to hosted `/` (new-card opening occurs in React) and `/chat/19`.
@@ -724,6 +768,7 @@ git commit -m "feat: bridge shared drafts into iOS apps"
 ### Task 8: Native Share Extension Targets
 
 **Files:**
+
 - Create: `mobile/orchestrel/ios/ShareExtension/ShareViewController.swift`
 - Create: `mobile/orchestrel/ios/ShareExtension/Info.plist`
 - Create: `mobile/orchestrel/ios/ShareExtension/ShareExtension.entitlements`
@@ -733,6 +778,7 @@ git commit -m "feat: bridge shared drafts into iOS apps"
 - Modify: both `mobile/*/ios/App/App.xcodeproj/project.pbxproj`
 
 **Interfaces:**
+
 - Produces atomic `SharedDraftManifest` version 1 exactly matching Task 5/plugin schemas.
 - Produces embedded `.appex` targets with bundle IDs from Global Constraints.
 
@@ -806,10 +852,12 @@ git commit -m "feat: add Orchestrel iOS share extensions"
 ### Task 9: End-to-End Verification and Documentation
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `docs/specs/2026-07-24-ios-share-to-design.md` only if implementation discovered a factual correction
 
 **Interfaces:**
+
 - Verifies all prior task interfaces together; produces no new runtime abstraction.
 
 - [ ] **Step 1: Run the complete automated suite**

@@ -15,40 +15,43 @@
 ## File Map
 
 ### New files
-| File | Responsibility |
-|------|---------------|
-| `src/server/agents/types.ts` | `AgentType`, `AgentMessage`, `SessionStatus`, `AgentSession` abstract class |
-| `src/server/agents/claude/messages.ts` | Claude SDK → `AgentMessage` normalization functions |
-| `src/server/agents/claude/session.ts` | `ClaudeSession` extending `AgentSession` (moved from `src/server/claude/protocol.ts`) |
-| `src/server/agents/claude/session-path.ts` | SDK session file path util (moved from `src/server/claude/session-path.ts`) |
-| `src/server/agents/factory.ts` | `createAgentSession()` factory |
-| `src/server/agents/manager.ts` | Agent-agnostic `SessionManager` (moved from `src/server/claude/manager.ts`) |
-| `src/server/agents/begin-session.ts` | Session orchestration (moved from `src/server/claude/begin-session.ts`) |
-| `src/server/agents/tailer.ts` | `SessionTailer` (moved from `src/server/claude/tailer.ts`) |
-| `src/server/ws/handlers/agents.ts` | WS handlers (moved from `src/server/ws/handlers/claude.ts`) |
+
+| File                                       | Responsibility                                                                        |
+| ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `src/server/agents/types.ts`               | `AgentType`, `AgentMessage`, `SessionStatus`, `AgentSession` abstract class           |
+| `src/server/agents/claude/messages.ts`     | Claude SDK → `AgentMessage` normalization functions                                   |
+| `src/server/agents/claude/session.ts`      | `ClaudeSession` extending `AgentSession` (moved from `src/server/claude/protocol.ts`) |
+| `src/server/agents/claude/session-path.ts` | SDK session file path util (moved from `src/server/claude/session-path.ts`)           |
+| `src/server/agents/factory.ts`             | `createAgentSession()` factory                                                        |
+| `src/server/agents/manager.ts`             | Agent-agnostic `SessionManager` (moved from `src/server/claude/manager.ts`)           |
+| `src/server/agents/begin-session.ts`       | Session orchestration (moved from `src/server/claude/begin-session.ts`)               |
+| `src/server/agents/tailer.ts`              | `SessionTailer` (moved from `src/server/claude/tailer.ts`)                            |
+| `src/server/ws/handlers/agents.ts`         | WS handlers (moved from `src/server/ws/handlers/claude.ts`)                           |
 
 ### Modified files
-| File | Changes |
-|------|---------|
-| `src/server/db/schema.ts` | Add `agentType`, `agentProfile` to projects |
-| `src/shared/ws-protocol.ts` | Rename `claude:*` → `agent:*`, use `AgentMessage` schema |
-| `src/server/ws/handlers.ts` | Update imports and case labels |
-| `src/server/ws/handlers/sessions.ts` | Normalize history to `AgentMessage[]`, update event names |
-| `app/stores/session-store.ts` | Store `AgentMessage`, new ingest logic, rename methods |
-| `app/stores/root-store.ts` | Route `agent:message`, `agent:status` |
-| `app/components/MessageBlock.tsx` | Render `AgentMessage` types instead of Claude content arrays |
-| `app/components/SessionView.tsx` | Update `toolOutputs` memo, types |
+
+| File                                 | Changes                                                      |
+| ------------------------------------ | ------------------------------------------------------------ |
+| `src/server/db/schema.ts`            | Add `agentType`, `agentProfile` to projects                  |
+| `src/shared/ws-protocol.ts`          | Rename `claude:*` → `agent:*`, use `AgentMessage` schema     |
+| `src/server/ws/handlers.ts`          | Update imports and case labels                               |
+| `src/server/ws/handlers/sessions.ts` | Normalize history to `AgentMessage[]`, update event names    |
+| `app/stores/session-store.ts`        | Store `AgentMessage`, new ingest logic, rename methods       |
+| `app/stores/root-store.ts`           | Route `agent:message`, `agent:status`                        |
+| `app/components/MessageBlock.tsx`    | Render `AgentMessage` types instead of Claude content arrays |
+| `app/components/SessionView.tsx`     | Update `toolOutputs` memo, types                             |
 
 ### Deleted files
-| File | Reason |
-|------|--------|
-| `src/server/claude/protocol.ts` | Moved to `agents/claude/session.ts` |
-| `src/server/claude/manager.ts` | Moved to `agents/manager.ts` |
-| `src/server/claude/begin-session.ts` | Moved to `agents/begin-session.ts` |
-| `src/server/claude/tailer.ts` | Moved to `agents/tailer.ts` |
-| `src/server/claude/session-path.ts` | Moved to `agents/claude/session-path.ts` |
-| `src/server/claude/types.ts` | Replaced by `agents/types.ts` |
-| `src/server/ws/handlers/claude.ts` | Moved to `handlers/agents.ts` |
+
+| File                                 | Reason                                   |
+| ------------------------------------ | ---------------------------------------- |
+| `src/server/claude/protocol.ts`      | Moved to `agents/claude/session.ts`      |
+| `src/server/claude/manager.ts`       | Moved to `agents/manager.ts`             |
+| `src/server/claude/begin-session.ts` | Moved to `agents/begin-session.ts`       |
+| `src/server/claude/tailer.ts`        | Moved to `agents/tailer.ts`              |
+| `src/server/claude/session-path.ts`  | Moved to `agents/claude/session-path.ts` |
+| `src/server/claude/types.ts`         | Replaced by `agents/types.ts`            |
+| `src/server/ws/handlers/claude.ts`   | Moved to `handlers/agents.ts`            |
 
 ---
 
@@ -59,70 +62,74 @@ These files are additive — they don't break any existing code.
 ### Task 1: Create `src/server/agents/types.ts`
 
 **Files:**
+
 - Create: `src/server/agents/types.ts`
 
 - [ ] **Step 1: Create the types file**
 
 ```ts
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'events';
 
-export type AgentType = 'claude' | 'kiro'
+export type AgentType = 'claude' | 'kiro';
 
-export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped'
+export type SessionStatus = 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
 
 export type AgentMessage = {
-  type: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'system' | 'turn_end' | 'error' | 'user' | 'tool_progress'
-  role: 'user' | 'assistant' | 'system'
-  content: string
+  type: 'text' | 'tool_call' | 'tool_result' | 'thinking' | 'system' | 'turn_end' | 'error' | 'user' | 'tool_progress';
+  role: 'user' | 'assistant' | 'system';
+  content: string;
   toolCall?: {
-    id: string
-    name: string
-    params?: Record<string, unknown>
-  }
+    id: string;
+    name: string;
+    params?: Record<string, unknown>;
+  };
   toolResult?: {
-    id: string
-    output: string
-    isError?: boolean
-  }
+    id: string;
+    output: string;
+    isError?: boolean;
+  };
   usage?: {
-    inputTokens: number
-    outputTokens: number
-    cacheRead?: number
-    cacheWrite?: number
-    contextWindow?: number
-  }
-  modelUsage?: Record<string, {
-    inputTokens: number
-    outputTokens: number
-    cacheReadInputTokens: number
-    cacheCreationInputTokens: number
-    costUSD: number
-    contextWindow?: number
-  }>
-  meta?: Record<string, unknown>
-  timestamp: number
-}
+    inputTokens: number;
+    outputTokens: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    contextWindow?: number;
+  };
+  modelUsage?: Record<
+    string,
+    {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadInputTokens: number;
+      cacheCreationInputTokens: number;
+      costUSD: number;
+      contextWindow?: number;
+    }
+  >;
+  meta?: Record<string, unknown>;
+  timestamp: number;
+};
 
 export interface AgentSessionEvents {
-  message: (msg: AgentMessage) => void
-  exit: (code: number) => void
+  message: (msg: AgentMessage) => void;
+  exit: (code: number) => void;
 }
 
 export abstract class AgentSession extends EventEmitter {
-  abstract sessionId: string | null
-  abstract status: SessionStatus
-  abstract promptsSent: number
-  abstract turnsCompleted: number
+  abstract sessionId: string | null;
+  abstract status: SessionStatus;
+  abstract promptsSent: number;
+  abstract turnsCompleted: number;
 
-  model?: string
-  thinkingLevel?: string
+  model?: string;
+  thinkingLevel?: string;
 
-  queryStartIndex = 0
+  queryStartIndex = 0;
 
-  abstract start(prompt: string): Promise<void>
-  abstract sendMessage(content: string): Promise<void>
-  abstract kill(): Promise<void>
-  abstract waitForReady(): Promise<void>
+  abstract start(prompt: string): Promise<void>;
+  abstract sendMessage(content: string): Promise<void>;
+  abstract kill(): Promise<void>;
+  abstract waitForReady(): Promise<void>;
 }
 ```
 
@@ -143,6 +150,7 @@ git commit -m "feat: add AgentSession abstract class and AgentMessage types"
 ### Task 2: Create `src/server/agents/claude/messages.ts`
 
 **Files:**
+
 - Create: `src/server/agents/claude/messages.ts`
 
 This file converts raw Claude SDK messages into `AgentMessage[]`. A single SDK message (e.g., an assistant message with `[text, tool_use, thinking]` content) becomes multiple `AgentMessage` events.
@@ -150,89 +158,95 @@ This file converts raw Claude SDK messages into `AgentMessage[]`. A single SDK m
 - [ ] **Step 1: Create the normalization module**
 
 ```ts
-import type { AgentMessage } from '../types'
+import type { AgentMessage } from '../types';
 
 type ContentBlock = {
-  type: string
-  text?: string
-  id?: string
-  name?: string
-  input?: Record<string, unknown>
-  thinking?: string
-}
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  thinking?: string;
+};
 
 /**
  * Convert a raw Claude SDK message into one or more AgentMessages.
  * An assistant message with multiple content blocks becomes multiple events.
  */
 export function normalizeClaudeMessage(msg: Record<string, unknown>): AgentMessage[] {
-  const now = Date.now()
-  const type = msg.type as string
+  const now = Date.now();
+  const type = msg.type as string;
 
   if (type === 'user') {
-    return [normalizeUserMessage(msg, now)]
+    return [normalizeUserMessage(msg, now)];
   }
 
   if (type === 'assistant') {
-    return normalizeAssistantMessage(msg, now)
+    return normalizeAssistantMessage(msg, now);
   }
 
   if (type === 'result') {
-    return [normalizeResultMessage(msg, now)]
+    return [normalizeResultMessage(msg, now)];
   }
 
   if (type === 'system') {
-    return [normalizeSystemMessage(msg, now)]
+    return [normalizeSystemMessage(msg, now)];
   }
 
   if (type === 'tool_progress') {
-    const inner = (msg.message ?? msg) as Record<string, unknown>
-    return [{
-      type: 'tool_progress' as const,
-      role: 'assistant' as const,
-      content: (inner.tool_name as string) ?? '',
-      meta: { elapsedSeconds: inner.elapsed_time_seconds },
-      timestamp: now,
-    }]
+    const inner = (msg.message ?? msg) as Record<string, unknown>;
+    return [
+      {
+        type: 'tool_progress' as const,
+        role: 'assistant' as const,
+        content: (inner.tool_name as string) ?? '',
+        meta: { elapsedSeconds: inner.elapsed_time_seconds },
+        timestamp: now,
+      },
+    ];
   }
 
   // Skip unknown types
-  return []
+  return [];
 }
 
 function normalizeUserMessage(msg: Record<string, unknown>, ts: number): AgentMessage {
-  const inner = msg.message as { role?: string; content?: unknown } | undefined
-  let content = ''
+  const inner = msg.message as { role?: string; content?: unknown } | undefined;
+  let content = '';
   if (typeof inner?.content === 'string') {
-    content = inner.content
+    content = inner.content;
   } else if (Array.isArray(inner?.content)) {
     content = (inner!.content as Array<{ type: string; text?: string }>)
-      .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text!)
-      .join('\n')
+      .filter((b) => b.type === 'text' && b.text)
+      .map((b) => b.text!)
+      .join('\n');
   }
-  return { type: 'user', role: 'user', content, timestamp: ts }
+  return { type: 'user', role: 'user', content, timestamp: ts };
 }
 
 function normalizeAssistantMessage(msg: Record<string, unknown>, ts: number): AgentMessage[] {
-  const inner = msg.message as {
-    content?: ContentBlock[]
-    usage?: Record<string, number>
-    model?: string
-  } | undefined
-  const content = inner?.content
-  if (!content || !Array.isArray(content)) return []
+  const inner = msg.message as
+    | {
+        content?: ContentBlock[];
+        usage?: Record<string, number>;
+        model?: string;
+      }
+    | undefined;
+  const content = inner?.content;
+  if (!content || !Array.isArray(content)) return [];
 
-  const isSidechain = msg.isSidechain as boolean | undefined
-  const usage = inner?.usage
-  const usageData = usage ? {
-    inputTokens: (usage.input_tokens as number) ?? 0,
-    outputTokens: (usage.output_tokens as number) ?? 0,
-    cacheRead: (usage.cache_read_input_tokens as number) ?? 0,
-    cacheWrite: (usage.cache_creation_input_tokens as number) ?? 0,
-  } : undefined
+  const isSidechain = msg.isSidechain as boolean | undefined;
+  const usage = inner?.usage;
+  const usageData = usage
+    ? {
+        inputTokens: (usage.input_tokens as number) ?? 0,
+        outputTokens: (usage.output_tokens as number) ?? 0,
+        cacheRead: (usage.cache_read_input_tokens as number) ?? 0,
+        cacheWrite: (usage.cache_creation_input_tokens as number) ?? 0,
+      }
+    : undefined;
 
-  const results: AgentMessage[] = []
+  const results: AgentMessage[] = [];
 
   for (const block of content) {
     if (block.type === 'text' && block.text) {
@@ -243,7 +257,7 @@ function normalizeAssistantMessage(msg: Record<string, unknown>, ts: number): Ag
         usage: usageData,
         meta: isSidechain ? { isSidechain: true } : undefined,
         timestamp: ts,
-      })
+      });
     } else if (block.type === 'tool_use' && block.name && block.input) {
       results.push({
         type: 'tool_call',
@@ -255,14 +269,14 @@ function normalizeAssistantMessage(msg: Record<string, unknown>, ts: number): Ag
           params: block.input,
         },
         timestamp: ts,
-      })
+      });
     } else if (block.type === 'thinking' && block.thinking) {
       results.push({
         type: 'thinking',
         role: 'assistant',
         content: block.thinking,
         timestamp: ts,
-      })
+      });
     }
   }
 
@@ -270,33 +284,38 @@ function normalizeAssistantMessage(msg: Record<string, unknown>, ts: number): Ag
   // If no text block, attach to first result
   if (usageData && results.length > 1) {
     for (let i = 1; i < results.length; i++) {
-      if (results[i].usage) results[i].usage = undefined
+      if (results[i].usage) results[i].usage = undefined;
     }
   }
 
-  return results
+  return results;
 }
 
 function normalizeResultMessage(msg: Record<string, unknown>, ts: number): AgentMessage {
-  const inner = (msg.message ?? msg) as Record<string, unknown>
-  const subtype = inner.subtype as string | undefined
-  const rawTs = (msg.ts ?? inner.ts ?? inner._mtime) as string | undefined
-  const timestamp = rawTs ? new Date(rawTs).getTime() : ts
+  const inner = (msg.message ?? msg) as Record<string, unknown>;
+  const subtype = inner.subtype as string | undefined;
+  const rawTs = (msg.ts ?? inner.ts ?? inner._mtime) as string | undefined;
+  const timestamp = rawTs ? new Date(rawTs).getTime() : ts;
 
-  const modelUsage = inner.modelUsage as Record<string, {
-    inputTokens: number
-    outputTokens: number
-    cacheReadInputTokens: number
-    cacheCreationInputTokens: number
-    costUSD: number
-    contextWindow?: number
-  }> | undefined
+  const modelUsage = inner.modelUsage as
+    | Record<
+        string,
+        {
+          inputTokens: number;
+          outputTokens: number;
+          cacheReadInputTokens: number;
+          cacheCreationInputTokens: number;
+          costUSD: number;
+          contextWindow?: number;
+        }
+      >
+    | undefined;
 
   // Extract contextWindow from first model entry
-  let contextWindow: number | undefined
+  let contextWindow: number | undefined;
   if (modelUsage) {
-    const first = Object.values(modelUsage)[0]
-    if (first?.contextWindow) contextWindow = first.contextWindow
+    const first = Object.values(modelUsage)[0];
+    if (first?.contextWindow) contextWindow = first.contextWindow;
   }
 
   return {
@@ -312,12 +331,12 @@ function normalizeResultMessage(msg: Record<string, unknown>, ts: number): Agent
       errors: inner.errors,
     },
     timestamp,
-  }
+  };
 }
 
 function normalizeSystemMessage(msg: Record<string, unknown>, ts: number): AgentMessage {
-  const inner = (msg.message ?? msg) as Record<string, unknown>
-  const subtype = inner.subtype as string | undefined
+  const inner = (msg.message ?? msg) as Record<string, unknown>;
+  const subtype = inner.subtype as string | undefined;
 
   return {
     type: 'system',
@@ -330,28 +349,31 @@ function normalizeSystemMessage(msg: Record<string, unknown>, ts: number): Agent
       ...(subtype === 'compact_boundary' && { compactMetadata: inner.compact_metadata }),
     },
     timestamp: ts,
-  }
+  };
 }
 
 /**
  * Normalize a tool_result from a user message's content array.
  * Called separately when processing history to extract tool results as standalone messages.
  */
-export function normalizeToolResult(block: {
-  type: string
-  tool_use_id?: string
-  content?: unknown
-}, ts: number): AgentMessage | null {
-  if (block.type !== 'tool_result' || !block.tool_use_id) return null
+export function normalizeToolResult(
+  block: {
+    type: string;
+    tool_use_id?: string;
+    content?: unknown;
+  },
+  ts: number,
+): AgentMessage | null {
+  if (block.type !== 'tool_result' || !block.tool_use_id) return null;
 
-  let output = ''
+  let output = '';
   if (typeof block.content === 'string') {
-    output = block.content
+    output = block.content;
   } else if (Array.isArray(block.content)) {
     output = (block.content as Array<{ type: string; text?: string }>)
-      .filter(b => b.text)
-      .map(b => b.text!)
-      .join('\n')
+      .filter((b) => b.text)
+      .map((b) => b.text!)
+      .join('\n');
   }
 
   return {
@@ -363,7 +385,7 @@ export function normalizeToolResult(block: {
       output,
     },
     timestamp: ts,
-  }
+  };
 }
 ```
 
@@ -381,22 +403,23 @@ git commit -m "feat: Claude SDK → AgentMessage normalization functions"
 ### Task 3: Create `src/server/agents/factory.ts`
 
 **Files:**
+
 - Create: `src/server/agents/factory.ts`
 
 - [ ] **Step 1: Create factory (Phase 1 — only Claude)**
 
 ```ts
-import type { AgentType, AgentSession } from './types'
-import { ClaudeSession } from './claude/session'
+import type { AgentType, AgentSession } from './types';
+import { ClaudeSession } from './claude/session';
 
 export interface CreateSessionOpts {
-  agentType: AgentType
-  cwd: string
-  resumeSessionId?: string
-  projectName?: string
-  model?: string
-  thinkingLevel?: string
-  agentProfile?: string
+  agentType: AgentType;
+  cwd: string;
+  resumeSessionId?: string;
+  projectName?: string;
+  model?: string;
+  thinkingLevel?: string;
+  agentProfile?: string;
 }
 
 export function createAgentSession(opts: CreateSessionOpts): AgentSession {
@@ -408,11 +431,11 @@ export function createAgentSession(opts: CreateSessionOpts): AgentSession {
         opts.projectName,
         (opts.model as 'sonnet' | 'opus') ?? 'sonnet',
         (opts.thinkingLevel as 'off' | 'low' | 'medium' | 'high') ?? 'high',
-      )
+      );
     case 'kiro':
-      throw new Error('Kiro agent not yet implemented')
+      throw new Error('Kiro agent not yet implemented');
     default:
-      throw new Error(`Unknown agent type: ${opts.agentType}`)
+      throw new Error(`Unknown agent type: ${opts.agentType}`);
   }
 }
 ```
@@ -428,12 +451,14 @@ All server-side `src/server/claude/*` files move to `src/server/agents/` and get
 ### Task 4: Move and refactor ClaudeSession
 
 **Files:**
+
 - Create: `src/server/agents/claude/session.ts` (from `src/server/claude/protocol.ts`)
 - Delete: `src/server/claude/protocol.ts`
 
 - [ ] **Step 1: Create `src/server/agents/claude/session.ts`**
 
 This is the existing `ClaudeSession` refactored to:
+
 1. Extend `AgentSession` instead of raw `EventEmitter`
 2. Use `normalizeClaudeMessage()` in `handleMessage()` to emit `AgentMessage` events
 3. Rename `sendUserMessage()` → `sendMessage()`
@@ -441,43 +466,45 @@ This is the existing `ClaudeSession` refactored to:
 5. Import `SessionStatus` from `../types` instead of `./types`
 
 ```ts
-import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { Options as SDKOptions, Query } from '@anthropic-ai/claude-agent-sdk'
-import { readFileSync } from 'fs'
-import { homedir } from 'os'
-import { join } from 'path'
-import { AgentSession } from '../types'
-import type { SessionStatus } from '../types'
-import { normalizeClaudeMessage } from './messages'
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { Options as SDKOptions, Query } from '@anthropic-ai/claude-agent-sdk';
+import { readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+import { AgentSession } from '../types';
+import type { SessionStatus } from '../types';
+import { normalizeClaudeMessage } from './messages';
 
-const MEMORY_MCP_BIN = '/home/ryan/Code/memory-mcp/dist/index.js'
-const DEFAULT_QDRANT_URL = 'http://localhost:6333'
+const MEMORY_MCP_BIN = '/home/ryan/Code/memory-mcp/dist/index.js';
+const DEFAULT_QDRANT_URL = 'http://localhost:6333';
 
 function getMemoryMcpEnv(cwd: string): Record<string, string> {
   try {
-    const raw = readFileSync(join(cwd, '.mcp.json'), 'utf8')
-    const cfg = JSON.parse(raw) as { mcpServers?: Record<string, { env?: Record<string, string> }> }
-    const env = cfg.mcpServers?.['shared-memory']?.env
-    if (env) return env
-  } catch { /* not found or invalid */ }
-  try {
-    const raw = readFileSync(join(homedir(), '.claude.json'), 'utf8')
-    const cfg = JSON.parse(raw) as { mcpServers?: Record<string, { env?: Record<string, string> }> }
-    return cfg.mcpServers?.['shared-memory']?.env ?? {}
+    const raw = readFileSync(join(cwd, '.mcp.json'), 'utf8');
+    const cfg = JSON.parse(raw) as { mcpServers?: Record<string, { env?: Record<string, string> }> };
+    const env = cfg.mcpServers?.['shared-memory']?.env;
+    if (env) return env;
   } catch {
-    return {}
+    /* not found or invalid */
+  }
+  try {
+    const raw = readFileSync(join(homedir(), '.claude.json'), 'utf8');
+    const cfg = JSON.parse(raw) as { mcpServers?: Record<string, { env?: Record<string, string> }> };
+    return cfg.mcpServers?.['shared-memory']?.env ?? {};
+  } catch {
+    return {};
   }
 }
 
 export class ClaudeSession extends AgentSession {
-  sessionId: string | null = null
-  status: SessionStatus = 'starting'
-  promptsSent = 0
-  turnsCompleted = 0
+  sessionId: string | null = null;
+  status: SessionStatus = 'starting';
+  promptsSent = 0;
+  turnsCompleted = 0;
 
-  private queryInstance: Query | null = null
-  private abortController: AbortController | null = null
-  private resumeSessionId?: string
+  private queryInstance: Query | null = null;
+  private abortController: AbortController | null = null;
+  private resumeSessionId?: string;
 
   constructor(
     private cwd: string,
@@ -486,51 +513,51 @@ export class ClaudeSession extends AgentSession {
     model: 'sonnet' | 'opus' = 'sonnet',
     thinkingLevel: 'off' | 'low' | 'medium' | 'high' = 'high',
   ) {
-    super()
-    this.resumeSessionId = resumeSessionId
+    super();
+    this.resumeSessionId = resumeSessionId;
     // For resumed sessions, set sessionId immediately so waitForReady() resolves
-    if (resumeSessionId) this.sessionId = resumeSessionId
-    this.model = model
-    this.thinkingLevel = thinkingLevel
+    if (resumeSessionId) this.sessionId = resumeSessionId;
+    this.model = model;
+    this.thinkingLevel = thinkingLevel;
   }
 
   async waitForReady(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timed out waiting for session init')), 30_000)
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for session init')), 30_000);
       const onMessage = () => {
         if (this.sessionId) {
-          clearTimeout(timeout)
-          this.off('message', onMessage)
-          resolve()
+          clearTimeout(timeout);
+          this.off('message', onMessage);
+          resolve();
         }
-      }
-      this.on('message', onMessage)
+      };
+      this.on('message', onMessage);
       this.on('exit', () => {
-        clearTimeout(timeout)
-        this.off('message', onMessage)
-        reject(new Error('Session exited before init'))
-      })
-    })
+        clearTimeout(timeout);
+        this.off('message', onMessage);
+        reject(new Error('Session exited before init'));
+      });
+    });
   }
 
   async start(prompt: string): Promise<void> {
-    console.log(`[session] start() called, cwd=${this.cwd}, prompt length=${prompt.length}`)
+    console.log(`[session] start() called, cwd=${this.cwd}, prompt length=${prompt.length}`);
     const userMsgs = normalizeClaudeMessage({
       type: 'user',
       message: { role: 'user', content: prompt },
-    })
-    for (const m of userMsgs) this.emit('message', m)
-    await this.runQuery(prompt, this.resumeSessionId)
+    });
+    for (const m of userMsgs) this.emit('message', m);
+    await this.runQuery(prompt, this.resumeSessionId);
   }
 
   private async runQuery(prompt: string, resumeId?: string): Promise<void> {
-    this.abortController = new AbortController()
+    this.abortController = new AbortController();
 
-    const env = { ...process.env }
-    delete env.CLAUDECODE
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
 
-    const model = this.model as string
-    const thinkingLevel = this.thinkingLevel as string
+    const model = this.model as string;
+    const thinkingLevel = this.thinkingLevel as string;
 
     const opts: SDKOptions = {
       cwd: this.cwd,
@@ -544,12 +571,12 @@ export class ClaudeSession extends AgentSession {
       model: model === 'opus' ? 'claude-opus-4-6' : 'claude-sonnet-4-6',
       thinking: thinkingLevel === 'off' ? { type: 'disabled' } : { type: 'adaptive' },
       effort: thinkingLevel === 'off' ? 'low' : thinkingLevel,
-    }
+    };
 
-    if (resumeId) opts.resume = resumeId
+    if (resumeId) opts.resume = resumeId;
 
     if (this.projectName) {
-      const mcpEnv = getMemoryMcpEnv(this.cwd)
+      const mcpEnv = getMemoryMcpEnv(this.cwd);
       opts.mcpServers = {
         'shared-memory': {
           command: 'node',
@@ -561,39 +588,39 @@ export class ClaudeSession extends AgentSession {
             DEFAULT_PROJECT: this.projectName,
           },
         },
-      }
+      };
     }
 
-    this.queryInstance = query({ prompt, options: opts })
+    this.queryInstance = query({ prompt, options: opts });
 
     this.consumeMessages().catch((err) => {
-      console.error('Query consumption error:', err)
-      this.status = 'errored'
-      this.emit('exit', 1)
-    })
+      console.error('Query consumption error:', err);
+      this.status = 'errored';
+      this.emit('exit', 1);
+    });
   }
 
   private async consumeMessages(): Promise<void> {
-    if (!this.queryInstance) return
+    if (!this.queryInstance) return;
     try {
       for await (const msg of this.queryInstance) {
-        this.handleMessage(msg as Record<string, unknown>)
+        this.handleMessage(msg as Record<string, unknown>);
       }
-      this.status = 'completed'
-      console.log(`[session] completed normally, turns=${this.turnsCompleted}`)
-      this.emit('exit', 0)
+      this.status = 'completed';
+      console.log(`[session] completed normally, turns=${this.turnsCompleted}`);
+      this.emit('exit', 0);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
-        this.status = 'completed'
-        this.emit('exit', 0)
+        this.status = 'completed';
+        this.emit('exit', 0);
       } else {
-        console.error('[session] SDK query error:', err)
-        this.status = 'errored'
-        this.emit('exit', 1)
+        console.error('[session] SDK query error:', err);
+        this.status = 'errored';
+        this.emit('exit', 1);
       }
     } finally {
-      this.queryInstance = null
-      this.abortController = null
+      this.queryInstance = null;
+      this.abortController = null;
     }
   }
 
@@ -601,47 +628,55 @@ export class ClaudeSession extends AgentSession {
     // Capture session ID from system init (fresh sessions only)
     if (msg.type === 'system' && typeof msg.session_id === 'string') {
       if (!this.sessionId && !this.resumeSessionId) {
-        this.sessionId = msg.session_id
+        this.sessionId = msg.session_id;
       }
-      this.status = 'running'
-      console.log(`[session] status → running, sessionId=${this.sessionId ?? this.resumeSessionId}`)
+      this.status = 'running';
+      console.log(`[session] status → running, sessionId=${this.sessionId ?? this.resumeSessionId}`);
     }
 
     // Normalize and emit each AgentMessage
-    const agentMsgs = normalizeClaudeMessage(msg)
+    const agentMsgs = normalizeClaudeMessage(msg);
     for (const am of agentMsgs) {
-      this.emit('message', am)
+      this.emit('message', am);
     }
 
     if (msg.type === 'result') {
-      this.turnsCompleted++
+      this.turnsCompleted++;
     }
   }
 
   async sendMessage(content: string): Promise<void> {
-    console.log(`[session] sendMessage, length=${content.length}, promptsSent=${this.promptsSent + 1}`)
-    this.promptsSent++
-    this.queryStartIndex = 0 // Reset for subscription replay
+    console.log(`[session] sendMessage, length=${content.length}, promptsSent=${this.promptsSent + 1}`);
+    this.promptsSent++;
+    this.queryStartIndex = 0; // Reset for subscription replay
 
     const userMsgs = normalizeClaudeMessage({
       type: 'user',
       message: { role: 'user', content },
-    })
-    for (const m of userMsgs) this.emit('message', m)
+    });
+    for (const m of userMsgs) this.emit('message', m);
 
     if (this.queryInstance) {
-      try { await this.queryInstance.interrupt() } catch { /* ignore */ }
+      try {
+        await this.queryInstance.interrupt();
+      } catch {
+        /* ignore */
+      }
     }
-    const resumeId = this.sessionId ?? this.resumeSessionId
-    if (!resumeId) return
-    this.status = 'starting'
-    await this.runQuery(content, resumeId)
+    const resumeId = this.sessionId ?? this.resumeSessionId;
+    if (!resumeId) return;
+    this.status = 'starting';
+    await this.runQuery(content, resumeId);
   }
 
   async kill(): Promise<void> {
-    if (this.abortController) this.abortController.abort()
+    if (this.abortController) this.abortController.abort();
     if (this.queryInstance) {
-      try { await this.queryInstance.interrupt() } catch { /* ignore */ }
+      try {
+        await this.queryInstance.interrupt();
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -656,6 +691,7 @@ rm src/server/claude/protocol.ts
 ### Task 5: Move session-path.ts
 
 **Files:**
+
 - Create: `src/server/agents/claude/session-path.ts` (copy from `src/server/claude/session-path.ts`)
 - Delete: `src/server/claude/session-path.ts`
 
@@ -669,6 +705,7 @@ rm src/server/claude/session-path.ts
 ### Task 6: Move and refactor SessionManager
 
 **Files:**
+
 - Create: `src/server/agents/manager.ts` (from `src/server/claude/manager.ts`)
 - Delete: `src/server/claude/manager.ts`
 
@@ -677,67 +714,74 @@ rm src/server/claude/session-path.ts
 Key changes: Use `AgentSession` instead of `ClaudeSession`. Use `createAgentSession` factory. Updated `create()` signature to accept `CreateSessionOpts`.
 
 ```ts
-import { EventEmitter } from 'events'
-import type { AgentSession } from './types'
-import { createAgentSession } from './factory'
-import type { CreateSessionOpts } from './factory'
-import { SessionTailer } from './tailer'
+import { EventEmitter } from 'events';
+import type { AgentSession } from './types';
+import { createAgentSession } from './factory';
+import type { CreateSessionOpts } from './factory';
+import { SessionTailer } from './tailer';
 
 class SessionManager extends EventEmitter {
-  private sessions = new Map<string, AgentSession>()
-  private tailers = new Map<string, SessionTailer>()
+  private sessions = new Map<string, AgentSession>();
+  private tailers = new Map<string, SessionTailer>();
 
   create(cardId: number, opts: CreateSessionOpts): AgentSession {
-    const key = `card-${cardId}`
-    const existing = this.sessions.get(key)
+    const key = `card-${cardId}`;
+    const existing = this.sessions.get(key);
     if (existing && (existing.status === 'running' || existing.status === 'starting')) {
-      console.log(`[session:${cardId}] blocked: session already ${existing.status}`)
-      throw new Error(`Session already ${existing.status} for card ${cardId}`)
+      console.log(`[session:${cardId}] blocked: session already ${existing.status}`);
+      throw new Error(`Session already ${existing.status} for card ${cardId}`);
     }
-    const session = createAgentSession(opts)
-    console.log(`[session:${cardId}] created, agent=${opts.agentType}, model=${opts.model}, resume=${!!opts.resumeSessionId}`)
-    this.sessions.set(key, session)
-    this.emit('session', cardId, session)
-    return session
+    const session = createAgentSession(opts);
+    console.log(
+      `[session:${cardId}] created, agent=${opts.agentType}, model=${opts.model}, resume=${!!opts.resumeSessionId}`,
+    );
+    this.sessions.set(key, session);
+    this.emit('session', cardId, session);
+    return session;
   }
 
   get(cardId: number): AgentSession | undefined {
-    return this.sessions.get(`card-${cardId}`)
+    return this.sessions.get(`card-${cardId}`);
   }
 
   async kill(cardId: number): Promise<void> {
-    const key = `card-${cardId}`
-    const session = this.sessions.get(key)
+    const key = `card-${cardId}`;
+    const session = this.sessions.get(key);
     if (session) {
-      console.log(`[session:${cardId}] kill() called`)
-      await session.kill()
-      this.sessions.delete(key)
+      console.log(`[session:${cardId}] kill() called`);
+      await session.kill();
+      this.sessions.delete(key);
     }
   }
 
   startTailing(cardId: number, filePath: string): SessionTailer {
-    const key = `card-${cardId}`
-    const existing = this.tailers.get(key)
-    if (existing) return existing
-    const tailer = new SessionTailer(filePath, cardId)
-    this.tailers.set(key, tailer)
-    tailer.start()
-    tailer.on('stale', () => { this.tailers.delete(key) })
-    return tailer
+    const key = `card-${cardId}`;
+    const existing = this.tailers.get(key);
+    if (existing) return existing;
+    const tailer = new SessionTailer(filePath, cardId);
+    this.tailers.set(key, tailer);
+    tailer.start();
+    tailer.on('stale', () => {
+      this.tailers.delete(key);
+    });
+    return tailer;
   }
 
   getTailer(cardId: number): SessionTailer | undefined {
-    return this.tailers.get(`card-${cardId}`)
+    return this.tailers.get(`card-${cardId}`);
   }
 
   stopTailing(cardId: number): void {
-    const key = `card-${cardId}`
-    const tailer = this.tailers.get(key)
-    if (tailer) { tailer.stop(); this.tailers.delete(key) }
+    const key = `card-${cardId}`;
+    const tailer = this.tailers.get(key);
+    if (tailer) {
+      tailer.stop();
+      this.tailers.delete(key);
+    }
   }
 }
 
-export const sessionManager = new SessionManager()
+export const sessionManager = new SessionManager();
 ```
 
 - [ ] **Step 2: Delete old file**
@@ -749,6 +793,7 @@ rm src/server/claude/manager.ts
 ### Task 7: Move tailer.ts (unchanged)
 
 **Files:**
+
 - Create: `src/server/agents/tailer.ts`
 - Delete: `src/server/claude/tailer.ts`
 
@@ -762,10 +807,12 @@ rm src/server/claude/tailer.ts
 ### Task 8: Move and refactor begin-session.ts
 
 **Files:**
+
 - Create: `src/server/agents/begin-session.ts` (from `src/server/claude/begin-session.ts`)
 - Delete: `src/server/claude/begin-session.ts`
 
 Key changes:
+
 - Use `AgentSession` type and `sessionManager.create()` with opts object
 - Replace `waitForInit()` with `session.waitForReady()`
 - Replace `sendUserMessage()` with `sendMessage()`
@@ -776,21 +823,16 @@ Key changes:
 - [ ] **Step 1: Create `src/server/agents/begin-session.ts`**
 
 ```ts
-import type { WebSocket } from 'ws'
-import { db } from '../db/index'
-import { cards, projects } from '../db/schema'
-import { eq } from 'drizzle-orm'
-import { sessionManager } from './manager'
-import type { AgentSession } from './types'
-import type { AgentMessage, SessionStatus } from './types'
-import type { ConnectionManager } from '../ws/connections'
-import type { DbMutator } from '../db/mutator'
-import {
-  createWorktree,
-  runSetupCommands,
-  slugify,
-  worktreeExists,
-} from '../worktree'
+import type { WebSocket } from 'ws';
+import { db } from '../db/index';
+import { cards, projects } from '../db/schema';
+import { eq } from 'drizzle-orm';
+import { sessionManager } from './manager';
+import type { AgentSession } from './types';
+import type { AgentMessage, SessionStatus } from './types';
+import type { ConnectionManager } from '../ws/connections';
+import type { DbMutator } from '../db/mutator';
+import { createWorktree, runSetupCommands, slugify, worktreeExists } from '../worktree';
 
 function registerHandlers(
   session: AgentSession,
@@ -801,38 +843,48 @@ function registerHandlers(
 ) {
   session.on('message', (msg: AgentMessage) => {
     // Only forward displayable types
-    const display = new Set(['user', 'text', 'tool_call', 'tool_result', 'tool_progress', 'thinking', 'system', 'turn_end', 'error'])
-    if (!display.has(msg.type)) return
+    const display = new Set([
+      'user',
+      'text',
+      'tool_call',
+      'tool_result',
+      'tool_progress',
+      'thinking',
+      'system',
+      'turn_end',
+      'error',
+    ]);
+    if (!display.has(msg.type)) return;
 
     connections.send(ws, {
       type: 'agent:message',
       cardId,
       data: msg,
-    })
+    });
 
     if (msg.type === 'turn_end') {
       try {
         mutator.updateCard(cardId, {
           promptsSent: session.promptsSent,
           turnsCompleted: session.turnsCompleted,
-        })
+        });
       } catch (err) {
-        console.error(`[session:${cardId}] failed to persist counters:`, err)
+        console.error(`[session:${cardId}] failed to persist counters:`, err);
       }
     }
-  })
+  });
 
   session.on('exit', () => {
-    console.log(`[session:${cardId}] exit, status=${session.status}`)
-    if (session.status !== 'completed' && session.status !== 'errored') return
+    console.log(`[session:${cardId}] exit, status=${session.status}`);
+    if (session.status !== 'completed' && session.status !== 'errored') return;
     try {
       mutator.updateCard(cardId, {
         column: 'review',
         promptsSent: session.promptsSent,
         turnsCompleted: session.turnsCompleted,
-      })
+      });
     } catch (err) {
-      console.error(`[session:${cardId}] failed to auto-move to review:`, err)
+      console.error(`[session:${cardId}] failed to auto-move to review:`, err);
     }
     connections.send(ws, {
       type: 'agent:status',
@@ -844,38 +896,41 @@ function registerHandlers(
         promptsSent: session.promptsSent,
         turnsCompleted: session.turnsCompleted,
       },
-    })
-  })
+    });
+  });
 }
 
-function ensureWorktree(card: {
-  id: number
-  projectId: number | null
-  useWorktree: boolean
-  worktreePath: string | null
-  worktreeBranch: string | null
-  sourceBranch: string | null
-  title: string
-}, mutator: DbMutator): string {
-  if (card.worktreePath) return card.worktreePath
-  if (!card.projectId) throw new Error(`Card ${card.id} has no project`)
-  const proj = db.select().from(projects).where(eq(projects.id, card.projectId)).get()
-  if (!proj) throw new Error(`Project ${card.projectId} not found`)
+function ensureWorktree(
+  card: {
+    id: number;
+    projectId: number | null;
+    useWorktree: boolean;
+    worktreePath: string | null;
+    worktreeBranch: string | null;
+    sourceBranch: string | null;
+    title: string;
+  },
+  mutator: DbMutator,
+): string {
+  if (card.worktreePath) return card.worktreePath;
+  if (!card.projectId) throw new Error(`Card ${card.id} has no project`);
+  const proj = db.select().from(projects).where(eq(projects.id, card.projectId)).get();
+  if (!proj) throw new Error(`Project ${card.projectId} not found`);
   if (!card.useWorktree) {
-    mutator.updateCard(card.id, { worktreePath: proj.path })
-    return proj.path
+    mutator.updateCard(card.id, { worktreePath: proj.path });
+    return proj.path;
   }
-  const slug = card.worktreeBranch || slugify(card.title)
-  const wtPath = `${proj.path}/.worktrees/${slug}`
-  const branch = slug
-  const source = card.sourceBranch ?? proj.defaultBranch ?? undefined
+  const slug = card.worktreeBranch || slugify(card.title);
+  const wtPath = `${proj.path}/.worktrees/${slug}`;
+  const branch = slug;
+  const source = card.sourceBranch ?? proj.defaultBranch ?? undefined;
   if (!worktreeExists(wtPath)) {
-    console.log(`[session:${card.id}] worktree setup at ${wtPath}`)
-    createWorktree(proj.path, wtPath, branch, source ?? undefined)
-    if (proj.setupCommands) runSetupCommands(wtPath, proj.setupCommands)
+    console.log(`[session:${card.id}] worktree setup at ${wtPath}`);
+    createWorktree(proj.path, wtPath, branch, source ?? undefined);
+    if (proj.setupCommands) runSetupCommands(wtPath, proj.setupCommands);
   }
-  mutator.updateCard(card.id, { worktreePath: wtPath, worktreeBranch: branch })
-  return wtPath
+  mutator.updateCard(card.id, { worktreePath: wtPath, worktreeBranch: branch });
+  return wtPath;
 }
 
 export async function beginSession(
@@ -885,27 +940,27 @@ export async function beginSession(
   connections: ConnectionManager,
   mutator: DbMutator,
 ): Promise<void> {
-  const card = db.select().from(cards).where(eq(cards.id, cardId)).get()
-  if (!card) throw new Error(`Card ${cardId} not found`)
-  if (!card.description) throw new Error(`Card ${cardId} has no description`)
+  const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
+  if (!card) throw new Error(`Card ${cardId} not found`);
+  if (!card.description) throw new Error(`Card ${cardId} has no description`);
 
-  const existingSession = sessionManager.get(cardId)
-  console.log(`[session:${cardId}] beginSession called, existingSession=${!!existingSession}, message=${!!message}`)
+  const existingSession = sessionManager.get(cardId);
+  console.log(`[session:${cardId}] beginSession called, existingSession=${!!existingSession}, message=${!!message}`);
 
   if (existingSession) {
-    if (!message) throw new Error(`No message to send to existing session for card ${cardId}`)
-    console.log(`[session:${cardId}] existing session, sending follow-up`)
+    if (!message) throw new Error(`No message to send to existing session for card ${cardId}`);
+    console.log(`[session:${cardId}] existing session, sending follow-up`);
 
-    existingSession.removeAllListeners('message')
-    existingSession.removeAllListeners('exit')
-    registerHandlers(existingSession, cardId, ws, connections, mutator)
+    existingSession.removeAllListeners('message');
+    existingSession.removeAllListeners('exit');
+    registerHandlers(existingSession, cardId, ws, connections, mutator);
 
-    existingSession.model = card.model
-    existingSession.thinkingLevel = card.thinkingLevel
+    existingSession.model = card.model;
+    existingSession.thinkingLevel = card.thinkingLevel;
 
-    await existingSession.sendMessage(message)
+    await existingSession.sendMessage(message);
 
-    mutator.updateCard(cardId, { promptsSent: existingSession.promptsSent })
+    mutator.updateCard(cardId, { promptsSent: existingSession.promptsSent });
 
     connections.send(ws, {
       type: 'agent:status',
@@ -917,24 +972,24 @@ export async function beginSession(
         promptsSent: existingSession.promptsSent,
         turnsCompleted: existingSession.turnsCompleted,
       },
-    })
+    });
   } else {
-    const prompt = message ? card.description + '\n' + message : card.description
-    console.log(`[session:${cardId}] no session, creating. prompt length=${prompt.length}`)
+    const prompt = message ? card.description + '\n' + message : card.description;
+    console.log(`[session:${cardId}] no session, creating. prompt length=${prompt.length}`);
 
-    const cwd = ensureWorktree(card, mutator)
+    const cwd = ensureWorktree(card, mutator);
 
-    let projectName: string | undefined
-    let agentType: 'claude' | 'kiro' = 'claude'
+    let projectName: string | undefined;
+    let agentType: 'claude' | 'kiro' = 'claude';
     if (card.projectId) {
-      const proj = db.select().from(projects).where(eq(projects.id, card.projectId)).get()
+      const proj = db.select().from(projects).where(eq(projects.id, card.projectId)).get();
       if (proj) {
-        projectName = proj.name.toLowerCase()
-        agentType = (proj.agentType as 'claude' | 'kiro') ?? 'claude'
+        projectName = proj.name.toLowerCase();
+        agentType = (proj.agentType as 'claude' | 'kiro') ?? 'claude';
       }
     }
 
-    const isResume = !!card.sessionId
+    const isResume = !!card.sessionId;
     const session = sessionManager.create(cardId, {
       agentType,
       cwd,
@@ -942,25 +997,25 @@ export async function beginSession(
       projectName,
       model: card.model,
       thinkingLevel: card.thinkingLevel,
-    })
+    });
 
     if (isResume) {
-      session.promptsSent = card.promptsSent ?? 0
-      session.turnsCompleted = card.turnsCompleted ?? 0
+      session.promptsSent = card.promptsSent ?? 0;
+      session.turnsCompleted = card.turnsCompleted ?? 0;
     }
 
-    registerHandlers(session, cardId, ws, connections, mutator)
+    registerHandlers(session, cardId, ws, connections, mutator);
 
-    session.promptsSent++
-    await session.start(prompt)
-    await session.waitForReady()
+    session.promptsSent++;
+    await session.start(prompt);
+    await session.waitForReady();
 
     if (!isResume) {
       mutator.updateCard(cardId, {
         sessionId: session.sessionId,
         promptsSent: 1,
         turnsCompleted: 0,
-      })
+      });
     }
 
     connections.send(ws, {
@@ -973,7 +1028,7 @@ export async function beginSession(
         promptsSent: session.promptsSent,
         turnsCompleted: session.turnsCompleted,
       },
-    })
+    });
   }
 }
 ```
@@ -1002,6 +1057,7 @@ Update the wire protocol and server-side message handlers to use `agent:*` event
 ### Task 9: Update `src/shared/ws-protocol.ts`
 
 **Files:**
+
 - Modify: `src/shared/ws-protocol.ts`
 
 Rename `claude:*` → `agent:*`, replace `ClaudeMessage` with `AgentMessage`-based schema.
@@ -1009,6 +1065,7 @@ Rename `claude:*` → `agent:*`, replace `ClaudeMessage` with `AgentMessage`-bas
 - [ ] **Step 1: Rewrite ws-protocol.ts**
 
 Replace the Claude-specific schemas and message types. The key changes:
+
 - `claudeSendSchema` → `agentSendSchema`
 - `claudeStatusSchema` → `agentStatusSchema`
 - `claudeMessageSchema` → `agentMessageSchema` (matches `AgentMessage` type)
@@ -1026,7 +1083,7 @@ export const agentSendSchema = z.object({
   cardId: z.number(),
   message: z.string(),
   files: z.array(fileRefSchema).optional(),
-})
+});
 
 export const agentStatusSchema = z.object({
   cardId: z.number(),
@@ -1035,56 +1092,70 @@ export const agentStatusSchema = z.object({
   sessionId: z.string().nullable(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
-})
+});
 
 export const agentMessageSchema = z.object({
   type: z.string(),
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
-  toolCall: z.object({
-    id: z.string(),
-    name: z.string(),
-    params: z.record(z.string(), z.unknown()).optional(),
-  }).optional(),
-  toolResult: z.object({
-    id: z.string(),
-    output: z.string(),
-    isError: z.boolean().optional(),
-  }).optional(),
-  usage: z.object({
-    inputTokens: z.number(),
-    outputTokens: z.number(),
-    cacheRead: z.number().optional(),
-    cacheWrite: z.number().optional(),
-    contextWindow: z.number().optional(),
-  }).optional(),
-  modelUsage: z.record(z.string(), z.object({
-    inputTokens: z.number(),
-    outputTokens: z.number(),
-    cacheReadInputTokens: z.number(),
-    cacheCreationInputTokens: z.number(),
-    costUSD: z.number(),
-    contextWindow: z.number().optional(),
-  })).optional(),
+  toolCall: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      params: z.record(z.string(), z.unknown()).optional(),
+    })
+    .optional(),
+  toolResult: z
+    .object({
+      id: z.string(),
+      output: z.string(),
+      isError: z.boolean().optional(),
+    })
+    .optional(),
+  usage: z
+    .object({
+      inputTokens: z.number(),
+      outputTokens: z.number(),
+      cacheRead: z.number().optional(),
+      cacheWrite: z.number().optional(),
+      contextWindow: z.number().optional(),
+    })
+    .optional(),
+  modelUsage: z
+    .record(
+      z.string(),
+      z.object({
+        inputTokens: z.number(),
+        outputTokens: z.number(),
+        cacheReadInputTokens: z.number(),
+        cacheCreationInputTokens: z.number(),
+        costUSD: z.number(),
+        contextWindow: z.number().optional(),
+      }),
+    )
+    .optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
   timestamp: z.number(),
-})
+});
 
-export type AgentStatus = z.infer<typeof agentStatusSchema>
-export type AgentMessage = z.infer<typeof agentMessageSchema>
+export type AgentStatus = z.infer<typeof agentStatusSchema>;
+export type AgentMessage = z.infer<typeof agentMessageSchema>;
 ```
 
 In the `clientMessage` discriminated union, replace:
+
 - `claude:send` → `agent:send` with `agentSendSchema`
 - `claude:stop` → `agent:stop`
 - `claude:status` → `agent:status`
 
 In the `serverMessage` discriminated union, replace:
+
 - `claude:message` → `agent:message` with `agentMessageSchema`
 - `claude:status` → `agent:status` with `agentStatusSchema`
 - `session:history` messages array uses `agentMessageSchema`
 
 In `serverMessage`, also update the `session:history` entry:
+
 ```ts
 z.object({ type: z.literal('session:history'), requestId: z.string(), cardId: z.number(), messages: z.array(agentMessageSchema) }),
 ```
@@ -1101,6 +1172,7 @@ git commit -m "refactor: rename WS protocol claude:* → agent:*, use AgentMessa
 ### Task 10: Create `src/server/ws/handlers/agents.ts`
 
 **Files:**
+
 - Create: `src/server/ws/handlers/agents.ts` (from `handlers/claude.ts`)
 - Delete: `src/server/ws/handlers/claude.ts`
 
@@ -1109,17 +1181,17 @@ git commit -m "refactor: rename WS protocol claude:* → agent:*, use AgentMessa
 Update imports to use new paths, update `ClientMessage` extract types to use `agent:*`:
 
 ```ts
-import { resolve } from 'path'
-import type { WebSocket } from 'ws'
-import type { ClientMessage } from '../../../shared/ws-protocol'
-import type { ConnectionManager } from '../connections'
-import type { DbMutator } from '../../db/mutator'
-import { db } from '../../db/index'
-import { cards } from '../../db/schema'
-import { eq } from 'drizzle-orm'
-import { sessionManager } from '../../agents/manager'
-import { beginSession } from '../../agents/begin-session'
-import type { SessionStatus } from '../../agents/types'
+import { resolve } from 'path';
+import type { WebSocket } from 'ws';
+import type { ClientMessage } from '../../../shared/ws-protocol';
+import type { ConnectionManager } from '../connections';
+import type { DbMutator } from '../../db/mutator';
+import { db } from '../../db/index';
+import { cards } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { sessionManager } from '../../agents/manager';
+import { beginSession } from '../../agents/begin-session';
+import type { SessionStatus } from '../../agents/types';
 
 export async function handleAgentSend(
   ws: WebSocket,
@@ -1127,36 +1199,39 @@ export async function handleAgentSend(
   connections: ConnectionManager,
   mutator: DbMutator,
 ): Promise<void> {
-  const { requestId, data: { cardId, message, files } } = msg
-  console.log(`[session:${cardId}] agent:send received, message length=${message.length}, files=${files?.length ?? 0}`)
+  const {
+    requestId,
+    data: { cardId, message, files },
+  } = msg;
+  console.log(`[session:${cardId}] agent:send received, message length=${message.length}, files=${files?.length ?? 0}`);
 
   try {
-    const existing = db.select().from(cards).where(eq(cards.id, cardId)).get()
-    if (!existing) throw new Error(`Card ${cardId} not found`)
+    const existing = db.select().from(cards).where(eq(cards.id, cardId)).get();
+    if (!existing) throw new Error(`Card ${cardId} not found`);
 
     if (existing.column !== 'running') {
-      if (!existing.title?.trim()) throw new Error('Title is required for running')
-      if (!existing.description?.trim()) throw new Error('Description is required for running')
-      mutator.updateCard(cardId, { column: 'running' })
+      if (!existing.title?.trim()) throw new Error('Title is required for running');
+      if (!existing.description?.trim()) throw new Error('Description is required for running');
+      mutator.updateCard(cardId, { column: 'running' });
     }
 
-    let prompt = message
+    let prompt = message;
     if (files?.length) {
       for (const f of files) {
         if (!resolve(f.path).startsWith('/tmp/orchestrel-uploads/')) {
-          throw new Error(`Invalid file path: ${f.path}`)
+          throw new Error(`Invalid file path: ${f.path}`);
         }
       }
-      const fileList = files.map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`).join('\n')
-      prompt = `I've attached the following files for you to review. Use the Read tool to read them:\n${fileList}\n\n${prompt}`
+      const fileList = files.map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`).join('\n');
+      prompt = `I've attached the following files for you to review. Use the Read tool to read them:\n${fileList}\n\n${prompt}`;
     }
 
-    await beginSession(cardId, prompt, ws, connections, mutator)
-    connections.send(ws, { type: 'mutation:ok', requestId })
+    await beginSession(cardId, prompt, ws, connections, mutator);
+    connections.send(ws, { type: 'mutation:ok', requestId });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    console.error(`[session:${cardId}] agent:send error:`, error)
-    connections.send(ws, { type: 'mutation:error', requestId, error })
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[session:${cardId}] agent:send error:`, error);
+    connections.send(ws, { type: 'mutation:error', requestId, error });
   }
 }
 
@@ -1166,17 +1241,20 @@ export async function handleAgentStop(
   connections: ConnectionManager,
   mutator: DbMutator,
 ): Promise<void> {
-  const { requestId, data: { cardId } } = msg
-  console.log(`[session:${cardId}] agent:stop received`)
+  const {
+    requestId,
+    data: { cardId },
+  } = msg;
+  console.log(`[session:${cardId}] agent:stop received`);
 
   try {
-    await sessionManager.kill(cardId)
-    mutator.updateCard(cardId, { column: 'review' })
-    connections.send(ws, { type: 'mutation:ok', requestId })
+    await sessionManager.kill(cardId);
+    mutator.updateCard(cardId, { column: 'review' });
+    connections.send(ws, { type: 'mutation:ok', requestId });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    console.error(`[session:${cardId}] agent:stop error:`, error)
-    connections.send(ws, { type: 'mutation:error', requestId, error })
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[session:${cardId}] agent:stop error:`, error);
+    connections.send(ws, { type: 'mutation:error', requestId, error });
   }
 }
 
@@ -1186,19 +1264,22 @@ export async function handleAgentStatus(
   connections: ConnectionManager,
   _mutator: DbMutator,
 ): Promise<void> {
-  const { requestId, data: { cardId } } = msg
+  const {
+    requestId,
+    data: { cardId },
+  } = msg;
 
   try {
-    const session = sessionManager.get(cardId)
+    const session = sessionManager.get(cardId);
 
     let statusData: {
-      cardId: number
-      active: boolean
-      status: SessionStatus
-      sessionId: string | null
-      promptsSent: number
-      turnsCompleted: number
-    }
+      cardId: number;
+      active: boolean;
+      status: SessionStatus;
+      sessionId: string | null;
+      promptsSent: number;
+      turnsCompleted: number;
+    };
 
     if (session) {
       statusData = {
@@ -1208,13 +1289,17 @@ export async function handleAgentStatus(
         sessionId: session.sessionId,
         promptsSent: session.promptsSent,
         turnsCompleted: session.turnsCompleted,
-      }
+      };
     } else {
-      const card = db.select({
-        promptsSent: cards.promptsSent,
-        turnsCompleted: cards.turnsCompleted,
-        sessionId: cards.sessionId,
-      }).from(cards).where(eq(cards.id, cardId)).get()
+      const card = db
+        .select({
+          promptsSent: cards.promptsSent,
+          turnsCompleted: cards.turnsCompleted,
+          sessionId: cards.sessionId,
+        })
+        .from(cards)
+        .where(eq(cards.id, cardId))
+        .get();
 
       statusData = {
         cardId,
@@ -1223,14 +1308,14 @@ export async function handleAgentStatus(
         sessionId: card?.sessionId ?? null,
         promptsSent: card?.promptsSent ?? 0,
         turnsCompleted: card?.turnsCompleted ?? 0,
-      }
+      };
     }
 
-    connections.send(ws, { type: 'agent:status', data: statusData })
-    connections.send(ws, { type: 'mutation:ok', requestId })
+    connections.send(ws, { type: 'agent:status', data: statusData });
+    connections.send(ws, { type: 'mutation:ok', requestId });
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    connections.send(ws, { type: 'mutation:error', requestId, error })
+    const error = err instanceof Error ? err.message : String(err);
+    connections.send(ws, { type: 'mutation:error', requestId, error });
   }
 }
 ```
@@ -1244,9 +1329,11 @@ rm src/server/ws/handlers/claude.ts
 ### Task 11: Update `src/server/ws/handlers/sessions.ts`
 
 **Files:**
+
 - Modify: `src/server/ws/handlers/sessions.ts`
 
 Key changes:
+
 - Import from `../../agents/` paths
 - Normalize history messages to `AgentMessage[]` using `normalizeClaudeMessage`
 - Update tailer messages to use `normalizeClaudeMessage`
@@ -1255,6 +1342,7 @@ Key changes:
 - [ ] **Step 1: Rewrite sessions.ts**
 
 Replace the full file. The main structural changes:
+
 1. Import `normalizeClaudeMessage` and `normalizeToolResult` from `../../agents/claude/messages`
 2. Import `sessionManager` from `../../agents/manager`
 3. Import `getSDKSessionPath` from `../../agents/claude/session-path`
@@ -1269,31 +1357,32 @@ The critical normalization happens after `injectTurnDividers` and `filter`:
 
 ```ts
 // After filtered = withDividers.filter(...)
-const normalized: AgentMessage[] = []
+const normalized: AgentMessage[] = [];
 for (const m of filtered) {
-  normalized.push(...normalizeClaudeMessage(m))
+  normalized.push(...normalizeClaudeMessage(m));
   // Also extract tool_result blocks from user messages
   if (m.type === 'user') {
-    const inner = m.message as { content?: unknown } | undefined
+    const inner = m.message as { content?: unknown } | undefined;
     if (Array.isArray(inner?.content)) {
       for (const block of inner!.content as Array<Record<string, unknown>>) {
-        const tr = normalizeToolResult(block as { type: string; tool_use_id?: string; content?: unknown }, Date.now())
-        if (tr) normalized.push(tr)
+        const tr = normalizeToolResult(block as { type: string; tool_use_id?: string; content?: unknown }, Date.now());
+        if (tr) normalized.push(tr);
       }
     }
   }
 }
-messages = normalized
+messages = normalized;
 ```
 
 For the tailer:
+
 ```ts
 tailer.on('message', (rawMsg: Record<string, unknown>) => {
-  const agentMsgs = normalizeClaudeMessage(rawMsg)
+  const agentMsgs = normalizeClaudeMessage(rawMsg);
   for (const am of agentMsgs) {
-    connections.send(ws, { type: 'agent:message', cardId, data: am })
+    connections.send(ws, { type: 'agent:message', cardId, data: am });
   }
-})
+});
 ```
 
 - [ ] **Step 2: Commit**
@@ -1301,28 +1390,25 @@ tailer.on('message', (rawMsg: Record<string, unknown>) => {
 ### Task 12: Update `src/server/ws/handlers.ts`
 
 **Files:**
+
 - Modify: `src/server/ws/handlers.ts`
 
 - [ ] **Step 1: Update imports and case labels**
 
 Replace:
+
 ```ts
-import {
-  handleClaudeSend,
-  handleClaudeStop,
-  handleClaudeStatus,
-} from './handlers/claude'
+import { handleClaudeSend, handleClaudeStop, handleClaudeStatus } from './handlers/claude';
 ```
+
 With:
+
 ```ts
-import {
-  handleAgentSend,
-  handleAgentStop,
-  handleAgentStatus,
-} from './handlers/agents'
+import { handleAgentSend, handleAgentStop, handleAgentStatus } from './handlers/agents';
 ```
 
 Replace case labels:
+
 ```ts
 case 'agent:send':
   void handleAgentSend(ws, msg, connections, mutator)
@@ -1351,9 +1437,11 @@ git commit -m "refactor: rename WS handlers claude:* → agent:*, normalize sess
 ### Task 13: Update `app/stores/session-store.ts`
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts`
 
 Key changes:
+
 - Import `AgentMessage`, `AgentStatus` instead of `ClaudeMessage`, `ClaudeStatus`
 - `ConversationRow` changes: `type` field expands to include `AgentMessage` types, `message` field removed (data is flat on the row)
 - `ingest()` takes `AgentMessage` and stores it directly
@@ -1368,7 +1456,7 @@ The `ConversationRow` becomes simpler — it's essentially `AgentMessage` with a
 
 ```ts
 export interface ConversationRow extends AgentMessage {
-  id: string  // content hash for dedup
+  id: string; // content hash for dedup
 }
 ```
 
@@ -1405,11 +1493,13 @@ Update `sendMessage`, `stopSession`, `requestStatus` to use `agent:*` message ty
 ### Task 14: Update `app/stores/root-store.ts`
 
 **Files:**
+
 - Modify: `app/stores/root-store.ts`
 
 - [ ] **Step 1: Update message routing**
 
 Replace:
+
 ```ts
 case 'claude:message':
   this.sessions.ingest(msg.cardId, msg.data)
@@ -1418,7 +1508,9 @@ case 'claude:status':
   this.sessions.handleClaudeStatus(msg.data)
   break
 ```
+
 With:
+
 ```ts
 case 'agent:message':
   this.sessions.ingest(msg.cardId, msg.data)
@@ -1444,6 +1536,7 @@ git commit -m "refactor: update client stores for agent:* protocol and AgentMess
 ### Task 15: Rewrite `app/components/MessageBlock.tsx`
 
 **Files:**
+
 - Modify: `app/components/MessageBlock.tsx`
 
 The current `MessageBlock` receives a Claude-native message shape and internally dispatches to `AssistantBlock` (which iterates over content arrays), `ResultBlock`, `SystemBlock`, `UserBlock`, etc.
@@ -1463,15 +1556,17 @@ In the new model, each `AgentMessage` is a single block — no content array ite
 - [ ] **Step 1: Rewrite MessageBlock**
 
 The component signature changes:
+
 ```ts
 type Props = {
-  message: AgentMessage & { id: string }
-  toolOutputs: Map<string, string>
-  accentColor?: string | null
-}
+  message: AgentMessage & { id: string };
+  toolOutputs: Map<string, string>;
+  accentColor?: string | null;
+};
 ```
 
 Key implementation details:
+
 - `TextBlock`: Renders `message.content` as Markdown. Shows `CopyButton`. Preserves accent-colored links.
 - `ToolCallBlock`: Uses `ToolUseBlock` component (unchanged). Gets `toolCall.name`, `toolCall.params`, output from `toolOutputs.get(toolCall.id)`.
 - `ThinkingBlock`: Unchanged (renders `message.content`).
@@ -1487,6 +1582,7 @@ The `MODEL_PRICING` table, `calcCostFromModelUsage`, `Markdown`, `CopyButton`, `
 ### Task 16: Update `app/components/SessionView.tsx`
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx`
 
 - [ ] **Step 1: Update toolOutputs memo**
@@ -1495,15 +1591,15 @@ The current `toolOutputs` memo scans user messages for `tool_result` content blo
 
 ```ts
 const toolOutputs = useMemo(() => {
-  const map = new Map<string, string>()
+  const map = new Map<string, string>();
   for (const row of conversation) {
-    if (row.type !== 'tool_result' || !row.toolResult) continue
+    if (row.type !== 'tool_result' || !row.toolResult) continue;
     if (row.toolResult.output) {
-      map.set(row.toolResult.id, row.toolResult.output)
+      map.set(row.toolResult.id, row.toolResult.output);
     }
   }
-  return map
-}, [conversation.length])
+  return map;
+}, [conversation.length]);
 ```
 
 - [ ] **Step 2: Update MessageBlock props**
@@ -1511,14 +1607,11 @@ const toolOutputs = useMemo(() => {
 The `MessageBlock` now receives the row directly (which is `AgentMessage & { id: string }`):
 
 ```tsx
-{conversation.map((row) => (
-  <MessageBlock
-    key={row.id}
-    message={row}
-    toolOutputs={toolOutputs}
-    accentColor={accentColor}
-  />
-))}
+{
+  conversation.map((row) => (
+    <MessageBlock key={row.id} message={row} toolOutputs={toolOutputs} accentColor={accentColor} />
+  ));
+}
 ```
 
 - [ ] **Step 3: Update compaction detection**
@@ -1542,11 +1635,13 @@ git commit -m "refactor: rewrite MessageBlock and SessionView for AgentMessage f
 ### Task 17: Update schema and create migration
 
 **Files:**
+
 - Modify: `src/server/db/schema.ts`
 
 - [ ] **Step 1: Add fields to projects table**
 
 Add after `defaultThinkingLevel`:
+
 ```ts
 agentType: text('agent_type', { enum: ['claude', 'kiro'] }).notNull().default('claude'),
 agentProfile: text('agent_profile'),
@@ -1562,6 +1657,7 @@ npx drizzle-kit push
 - [ ] **Step 3: Update ws-protocol.ts project schemas**
 
 The `projectCreateSchema` and `projectUpdateSchema` need to include the new fields. Add to `projectCreateSchema.pick()`:
+
 ```ts
 agentType: true,
 agentProfile: true,
@@ -1584,6 +1680,7 @@ Expected: Clean compile (or only pre-existing warnings)
 - [ ] **Step 2: Manual smoke test**
 
 Restart the service and verify:
+
 1. Board loads correctly
 2. Existing sessions display history
 3. New session starts and streams output

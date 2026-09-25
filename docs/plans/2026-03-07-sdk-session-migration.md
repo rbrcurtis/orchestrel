@@ -13,6 +13,7 @@
 ### Task 1: Install the SDK dependency
 
 **Files:**
+
 - Modify: `package.json`
 
 **Step 1: Add the dependency**
@@ -38,11 +39,13 @@ git commit -m "feat: add @anthropic-ai/claude-agent-sdk dependency"
 This is the core change. Replace the subprocess spawn with `query()`.
 
 **Files:**
+
 - Rewrite: `src/server/claude/protocol.ts`
 
 **Step 1: Write the new ClaudeSession class**
 
 The new implementation:
+
 - Calls `query({ prompt, options })` which returns an `AsyncGenerator<SDKMessage>`
 - Iterates the generator in a background async loop, emitting each message
 - For follow-ups, calls `query()` again with `options.resume = sessionId`
@@ -167,7 +170,11 @@ export class ClaudeSession extends EventEmitter {
     // Always spawn a new query with --resume for follow-ups
     // (the previous query has completed or we abort it first)
     if (this.queryInstance) {
-      try { await this.queryInstance.interrupt(); } catch { /* ignore */ }
+      try {
+        await this.queryInstance.interrupt();
+      } catch {
+        /* ignore */
+      }
     }
     if (!this.sessionId) return;
     this.status = 'starting';
@@ -177,11 +184,10 @@ export class ClaudeSession extends EventEmitter {
   private persistMessage(msg: Record<string, unknown>): void {
     if (!this.sessionId) return;
     try {
-      appendFileSync(
-        join(SESSIONS_DIR, `${this.sessionId}.jsonl`),
-        JSON.stringify(msg) + '\n',
-      );
-    } catch { /* ignore */ }
+      appendFileSync(join(SESSIONS_DIR, `${this.sessionId}.jsonl`), JSON.stringify(msg) + '\n');
+    } catch {
+      /* ignore */
+    }
   }
 
   async kill(): Promise<void> {
@@ -189,13 +195,18 @@ export class ClaudeSession extends EventEmitter {
       this.abortController.abort();
     }
     if (this.queryInstance) {
-      try { await this.queryInstance.interrupt(); } catch { /* ignore */ }
+      try {
+        await this.queryInstance.interrupt();
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
 ```
 
 Key differences from the old code:
+
 - No `spawn()`, no `ChildProcess`, no `readline`
 - `query()` returns an async generator — iterate with `for await`
 - `kill()` uses `abortController.abort()` and `queryInstance.interrupt()`
@@ -223,6 +234,7 @@ git commit -m "feat: replace subprocess spawn with claude-agent-sdk query()"
 The router (`src/server/routers/claude.ts`) has comments referencing `--max-turns 1` and the subprocess model. Clean up these references. The actual logic mostly stays the same since `ClaudeSession` still exposes the same interface (start, sendUserMessage, kill, events).
 
 **Files:**
+
 - Modify: `src/server/routers/claude.ts`
 
 **Step 1: Remove stale comments**
@@ -241,7 +253,8 @@ session.on('exit', async () => {
   // Only move to review if the session actually finished (not interrupted for follow-up)
   if (session.status === 'completed' || session.status === 'errored') {
     try {
-      await db.update(cards)
+      await db
+        .update(cards)
         .set({
           column: 'review',
           promptsSent: session.promptsSent,
@@ -274,6 +287,7 @@ git commit -m "refactor: update claude router for SDK session lifecycle"
 The `ControlRequest` type is no longer needed (the SDK handles permissions internally). The rest of the types are still used by the frontend for rendering messages.
 
 **Files:**
+
 - Modify: `src/server/claude/types.ts`
 
 **Step 1: Remove ControlRequest type**
@@ -302,6 +316,7 @@ Navigate to `http://192.168.4.200:6194`, open the "Icons" card.
 **Step 3: Start a session**
 
 Type a simple prompt like "List the files in the current directory" and click Send. Verify:
+
 - Status badge shows "Running"
 - Messages stream in (system init, assistant response with tool uses, result)
 - Session completes naturally (shows "Turn complete" divider)
@@ -310,6 +325,7 @@ Type a simple prompt like "List the files in the current directory" and click Se
 **Step 4: Test follow-up**
 
 Click the card again, send a follow-up message. Verify:
+
 - New query starts with resume
 - Previous context is maintained
 - New messages appear after the history
@@ -317,6 +333,7 @@ Click the card again, send a follow-up message. Verify:
 **Step 5: Test stop button**
 
 Start a new session with a longer prompt, click Stop. Verify:
+
 - Session stops cleanly
 - No error messages
 
@@ -336,6 +353,7 @@ Once everything works, start the Icons card with its actual prompt to verify Cla
 **Step 1: Open Icons card and start session**
 
 Use the card's description as the prompt. Claude should be able to:
+
 - Create a new route file
 - Add components
 - Update the header

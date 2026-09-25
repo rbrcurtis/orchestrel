@@ -56,6 +56,7 @@ When the SSE event loop encounters a child session event (currently filtered at 
 - Emit these as `AgentMessage` with `type: 'subagent'` on the existing `this.emit('message', ...)` path
 
 **SdkClient interface update** — add to the `SdkClient` interface in `session.ts`:
+
 ```typescript
 session: {
   // ... existing methods ...
@@ -125,20 +126,20 @@ Child session retry states are not surfaced in the UI — only logged for diagno
 
 Replace the current `console.log` calls with structured, scannable lines. All prefixed for grep:
 
-| Event | Log line |
-|-------|----------|
-| State transition | `[session:${id}] status: ${old} → ${new}` |
-| Prompt sent | `[session:${id}] prompt:send length=${n}` |
-| Prompt ack | `[session:${id}] prompt:ack` |
-| Prompt error | `[session:${id}] prompt:error ${reason}` |
-| SSE connected | `[session:${id}] sse:connect` |
-| SSE disconnected | `[session:${id}] sse:disconnect reason=${reason}` |
-| Child discovered | `[session:${id}] child:discovered ${childId} title="${title}"` |
-| Child activity | `[session:${id}:child:${childId}] tool:${name} → ${target} (${status})` |
-| Child completed | `[session:${id}:child:${childId}] idle` |
-| Child retry | `[session:${id}:child:${childId}] retry attempt=${n} next=${ms}ms` |
-| Retry | `[session:${id}] retry attempt=${n} next=${ms}ms message="${msg}"` |
-| Permission | `[session:${id}] permission:approve ${permId} type=${type}` |
+| Event               | Log line                                                                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State transition    | `[session:${id}] status: ${old} → ${new}`                                                                                                          |
+| Prompt sent         | `[session:${id}] prompt:send length=${n}`                                                                                                          |
+| Prompt ack          | `[session:${id}] prompt:ack`                                                                                                                       |
+| Prompt error        | `[session:${id}] prompt:error ${reason}`                                                                                                           |
+| SSE connected       | `[session:${id}] sse:connect`                                                                                                                      |
+| SSE disconnected    | `[session:${id}] sse:disconnect reason=${reason}`                                                                                                  |
+| Child discovered    | `[session:${id}] child:discovered ${childId} title="${title}"`                                                                                     |
+| Child activity      | `[session:${id}:child:${childId}] tool:${name} → ${target} (${status})`                                                                            |
+| Child completed     | `[session:${id}:child:${childId}] idle`                                                                                                            |
+| Child retry         | `[session:${id}:child:${childId}] retry attempt=${n} next=${ms}ms`                                                                                 |
+| Retry               | `[session:${id}] retry attempt=${n} next=${ms}ms message="${msg}"`                                                                                 |
+| Permission          | `[session:${id}] permission:approve ${permId} type=${type}`                                                                                        |
 | SSE event (verbose) | Remove current `JSON.stringify(event.properties)` per-event logging. Only log event type + session ID + key identifiers (e.g. tool name, part ID). |
 
 ### 3. Client — SubagentFeed Component
@@ -159,6 +160,7 @@ Rendered in `SessionView` between the status bar and the prompt input.
 ```
 
 **Behavior:**
+
 - Each row: colored dot (green=running, muted=completed) + truncated title + latest tool activity
 - Rows appear when first `subagent` message arrives for a child session
 - On `subtype: 'completed'`, row fades (opacity 0.4, dot turns gray, text shows "done") for ~2s, then removes
@@ -169,17 +171,22 @@ Rendered in `SessionView` between the status bar and the prompt input.
 **SessionStore changes (`app/stores/session-store.ts`):**
 
 Add to `SessionState`:
+
 ```typescript
-subagents: ObservableMap<string, {
-  title: string;
-  lastActivity: string;
-  status: 'running' | 'idle';
-}>
+subagents: ObservableMap<
+  string,
+  {
+    title: string;
+    lastActivity: string;
+    status: 'running' | 'idle';
+  }
+>;
 ```
 
 Initialize with `observable.map()` in `defaultSession()`.
 
 `ingestMessage` handles `type: 'subagent'`:
+
 - `subtype: 'activity'` → upsert into map with `lastActivity: "${tool} → ${target}"`
 - `subtype: 'completed'` → set status to `'idle'`, schedule removal after 2s using `runInAction` in the callback
 
@@ -203,18 +210,22 @@ The retry message and attempt count display in the status bar next to the badge 
 ### 5. Type Updates
 
 **Files that need `'subagent'` added to `AgentMessage.type`:**
+
 - `src/server/agents/types.ts` — the server-side `AgentMessage` type union (used by `satisfies AgentMessage`)
 - `src/shared/ws-protocol.ts` — the Zod `agentMessageSchema` enum (validated on client receive)
 
 **Files that need `'retry'` added to `SessionStatus`:**
+
 - `src/server/agents/types.ts` — `SessionStatus` type union
 - `src/shared/ws-protocol.ts` — `agentStatusSchema` if it mirrors session status
 - `app/stores/session-store.ts` — `SessionState.status` type union (so `retry` doesn't fall through to the `default` "Errored" case in StatusBadge)
 
 **`DISPLAY_TYPES` update:**
+
 - `src/server/services/session.ts` — add `'subagent'` to the `DISPLAY_TYPES` set so subagent messages are forwarded to the bus
 
 **`getStatus()` update:**
+
 - `src/server/services/session.ts` — treat `retry` as active: `active: session.status === 'running' || session.status === 'starting' || session.status === 'retry'`
 
 No new WS message types — subagent and retry messages ride on the existing `card:${cardId}:message` bus topic and `agent:message` server→client message.
@@ -222,6 +233,7 @@ No new WS message types — subagent and retry messages ride on the existing `ca
 ## Testing
 
 Manual smoke test:
+
 1. Start a card with a project that has subagent-heavy prompts (e.g. "explore the codebase and implement X")
 2. Verify subagent rows appear in the feed with live tool activity
 3. Verify completed subagents fade and remove

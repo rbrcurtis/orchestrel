@@ -67,12 +67,12 @@ Spawns `kiro-cli acp` over stdio with `HOME` set to the `agentProfile` path and 
 
 `src/server/agents/kiro/messages.ts` — `normalizeKiroMessage()` maps ACP notification events to `AgentMessage`:
 
-| ACP Event | AgentMessage type | Key fields to extract |
-|---|---|---|
-| `AgentMessageChunk` | `text` | `chunk.content` → message text |
-| `ToolCall` | `tool_call` | `toolName`, `toolCallId`, `input` (params) |
-| `ToolCallUpdate` | `tool_progress` | `toolCallId`, `content` (partial output) |
-| `TurnEnd` | `turn_end` | `usage` if present (for context tracking) |
+| ACP Event           | AgentMessage type | Key fields to extract                      |
+| ------------------- | ----------------- | ------------------------------------------ |
+| `AgentMessageChunk` | `text`            | `chunk.content` → message text             |
+| `ToolCall`          | `tool_call`       | `toolName`, `toolCallId`, `input` (params) |
+| `ToolCallUpdate`    | `tool_progress`   | `toolCallId`, `content` (partial output)   |
+| `TurnEnd`           | `turn_end`        | `usage` if present (for context tracking)  |
 
 **Note:** Exact ACP event field names are based on documented ACP protocol. During implementation, inspect actual `kiro-cli acp` JSON-RPC output to confirm field names and adjust mappings. The normalization function should log unrecognized event types at debug level for discovery.
 
@@ -119,16 +119,19 @@ Create `KiroSessionTailer` as a subclass of `SessionTailer` with an overridden p
 ## Files Changed
 
 ### Stage 1
+
 - Directory browser component (enhance with typeahead, paste, new folder)
 - Server endpoint for creating directories
 - `app/components/ProjectForm.tsx` (add agent type dropdown, conditional Kiro HOME picker)
 
 ### Stage 2
+
 - `src/server/agents/kiro/session.ts` (new — KiroSession class)
 - `src/server/agents/kiro/messages.ts` (new — normalizeKiroMessage)
 - `src/server/agents/factory.ts` (wire up KiroSession)
 
 ### Stage 3
+
 - `src/server/agents/kiro/tailer.ts` (new — Kiro session file reading/tailing)
 - Potentially refactor `SessionTailer` for agent-aware path resolution
 

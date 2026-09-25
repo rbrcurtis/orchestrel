@@ -29,11 +29,13 @@
 ### Task 1: Shared config — `memory` section
 
 **Files:**
+
 - Modify: `src/shared/config.ts`
 - Modify: `orcd.example.yaml`
 - Test: `src/shared/config.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing `OrchestrelConfig`, `parseConfig`, `resolveEnvVars`.
 - Produces: `MemoryConfig`, `MemoryProjectConfig`; `OrchestrelConfig.memory?: MemoryConfig`.
 
@@ -83,7 +85,10 @@ describe('memory config', () => {
 
   it('honors mode: write and telegram config', () => {
     const cfg = parseConfig(
-      MINIMAL.replace('memory:', 'memory:\n  mode: write\n  telegram:\n    botToken: "${TELEGRAM_BOT_TOKEN}"\n    chatId: "123"'),
+      MINIMAL.replace(
+        'memory:',
+        'memory:\n  mode: write\n  telegram:\n    botToken: "${TELEGRAM_BOT_TOKEN}"\n    chatId: "123"',
+      ),
       { TELEGRAM_BOT_TOKEN: 't' },
     );
     expect(cfg.memory?.mode).toBe('write');
@@ -147,50 +152,50 @@ Add `memory?: MemoryConfig;` to `OrchestrelConfig`.
 In `parseConfig`, after the `listen` block and before `return`, add:
 
 ```ts
-  let memory: MemoryConfig | undefined;
-  const rawMemory = raw.memory;
-  if (rawMemory && typeof rawMemory === 'object') {
-    const m = rawMemory as Record<string, unknown>;
-    if (!m.provider || !m.model) {
-      throw new Error('config: memory requires provider and model');
+let memory: MemoryConfig | undefined;
+const rawMemory = raw.memory;
+if (rawMemory && typeof rawMemory === 'object') {
+  const m = rawMemory as Record<string, unknown>;
+  if (!m.provider || !m.model) {
+    throw new Error('config: memory requires provider and model');
+  }
+  if (!m.projects || typeof m.projects !== 'object') {
+    throw new Error('config: memory requires a projects map');
+  }
+  const projects: Record<string, MemoryProjectConfig> = {};
+  for (const [key, p] of Object.entries(m.projects as Record<string, Record<string, unknown>>)) {
+    if (!Array.isArray(p.match) || p.match.length === 0) {
+      throw new Error(`config: memory project "${key}" requires match paths`);
     }
-    if (!m.projects || typeof m.projects !== 'object') {
-      throw new Error('config: memory requires a projects map');
+    if (!p.apiUrl || !p.apiKey || !p.project) {
+      throw new Error(`config: memory project "${key}" requires apiUrl, apiKey, project`);
     }
-    const projects: Record<string, MemoryProjectConfig> = {};
-    for (const [key, p] of Object.entries(m.projects as Record<string, Record<string, unknown>>)) {
-      if (!Array.isArray(p.match) || p.match.length === 0) {
-        throw new Error(`config: memory project "${key}" requires match paths`);
-      }
-      if (!p.apiUrl || !p.apiKey || !p.project) {
-        throw new Error(`config: memory project "${key}" requires apiUrl, apiKey, project`);
-      }
-      projects[key] = {
-        match: p.match.map((x) => resolveEnvVars(String(x), env)),
-        apiUrl: resolveEnvVars(String(p.apiUrl), env),
-        apiKey: resolveEnvVars(String(p.apiKey), env),
-        project: resolveEnvVars(String(p.project), env),
-      };
-    }
-    memory = {
-      mode: m.mode === 'write' ? 'write' : 'stage',
-      provider: String(m.provider),
-      model: String(m.model),
-      maxTurns: Number(m.maxTurns ?? 30),
-      excerptTokens: Number(m.excerptTokens ?? 24000),
-      stageDir: String(m.stageDir ?? 'data/memory-staging'),
-      settleMs: Number(m.settleMs ?? 600000),
-      ...(m.telegram && typeof m.telegram === 'object'
-        ? {
-            telegram: {
-              botToken: resolveEnvVars(String((m.telegram as Record<string, unknown>).botToken ?? ''), env),
-              chatId: resolveEnvVars(String((m.telegram as Record<string, unknown>).chatId ?? ''), env),
-            },
-          }
-        : {}),
-      projects,
+    projects[key] = {
+      match: p.match.map((x) => resolveEnvVars(String(x), env)),
+      apiUrl: resolveEnvVars(String(p.apiUrl), env),
+      apiKey: resolveEnvVars(String(p.apiKey), env),
+      project: resolveEnvVars(String(p.project), env),
     };
   }
+  memory = {
+    mode: m.mode === 'write' ? 'write' : 'stage',
+    provider: String(m.provider),
+    model: String(m.model),
+    maxTurns: Number(m.maxTurns ?? 30),
+    excerptTokens: Number(m.excerptTokens ?? 24000),
+    stageDir: String(m.stageDir ?? 'data/memory-staging'),
+    settleMs: Number(m.settleMs ?? 600000),
+    ...(m.telegram && typeof m.telegram === 'object'
+      ? {
+          telegram: {
+            botToken: resolveEnvVars(String((m.telegram as Record<string, unknown>).botToken ?? ''), env),
+            chatId: resolveEnvVars(String((m.telegram as Record<string, unknown>).chatId ?? ''), env),
+          },
+        }
+      : {}),
+    projects,
+  };
+}
 ```
 
 Then add `...(memory ? { memory } : {})` to the returned object.
@@ -208,19 +213,19 @@ Append to `orcd.example.yaml`:
 # Memory maintainer (optional). Omit to disable. See
 # docs/specs/2026-08-31-memory-maintainer-design.md
 memory:
-  mode: stage                 # stage = write proposals to data/memory-staging/ + Telegram alert; write = apply to the API
-  provider: max               # provider id from providers map (orcd.yaml)
-  model: assistant            # alias in providers.<provider>.models
-  maxTurns: 30                # agent loop cap per session
-  excerptTokens: 24000        # token cap for the session excerpt fed to the agent
-  settleMs: 600000            # session must be idle this long (ms) before processing
+  mode: stage # stage = write proposals to data/memory-staging/ + Telegram alert; write = apply to the API
+  provider: max # provider id from providers map (orcd.yaml)
+  model: assistant # alias in providers.<provider>.models
+  maxTurns: 30 # agent loop cap per session
+  excerptTokens: 24000 # token cap for the session excerpt fed to the agent
+  settleMs: 600000 # session must be idle this long (ms) before processing
   stageDir: data/memory-staging
-  telegram:                   # optional; without it, alerts are logged only
+  telegram: # optional; without it, alerts are logged only
     botToken: ${TELEGRAM_BOT_TOKEN}
     chatId: ${TELEGRAM_CHAT_ID}
-  projects:                   # only listed projects are maintained
+  projects: # only listed projects are maintained
     trackable:
-      match: ["/home/ryan/Code/trackable", "/home/ryan/Code/transcription"]
+      match: ['/home/ryan/Code/trackable', '/home/ryan/Code/transcription']
       apiUrl: https://memory.trackable.io
       apiKey: ${TRACKABLE_MEMORY_API_KEY}
       project: trackable
@@ -240,12 +245,14 @@ git commit -m "feat(config): memory maintainer section in shared config"
 ### Task 2: Routing + memory REST client
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/config.ts`
 - Create: `src/lib/memory-maintainer/memory-api.ts`
 - Test: `src/lib/memory-maintainer/config.test.ts`
 - Test: `src/lib/memory-maintainer/memory-api.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MemoryConfig`, `MemoryProjectConfig` from Task 1.
 - Produces:
   - `routeProject(cwd: string, memory: MemoryConfig): { key: string; cfg: MemoryProjectConfig } | null`
@@ -314,12 +321,15 @@ import { searchMemories, storeMemory, updateMemory, deleteMemory } from './memor
 const SERVER: MemoryServer = { apiUrl: 'http://mem.test', apiKey: 'sek', project: 'trackable' };
 
 function mockFetch(status: number, body: unknown) {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    text: () => Promise.resolve('err'),
-    json: () => Promise.resolve(body),
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve('err'),
+      json: () => Promise.resolve(body),
+    }),
+  );
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -489,12 +499,14 @@ git commit -m "feat(memory-maintainer): project routing and memory REST client"
 ### Task 3: DB state + session sweep
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/db.ts`
 - Create: `src/lib/memory-maintainer/sweep.ts`
 - Test: `src/lib/memory-maintainer/db.test.ts`
 - Test: `src/lib/memory-maintainer/sweep.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MemoryConfig` (Task 1), `routeProject` (Task 2).
 - Produces:
   - `getDb(): Database` (better-sqlite3, lazy singleton; tables created IF NOT EXISTS; path from `ORCHESTREL_DB_PATH` env, default `data/orchestrel.db`)
@@ -557,8 +569,13 @@ import { getDb, resetDb } from './db';
 import { sweepSessions } from './sweep';
 
 const MEMORY: MemoryConfig = {
-  mode: 'stage', provider: 'max', model: 'assistant', maxTurns: 30,
-  excerptTokens: 24000, stageDir: 'data/memory-staging', settleMs: 600000,
+  mode: 'stage',
+  provider: 'max',
+  model: 'assistant',
+  maxTurns: 30,
+  excerptTokens: 24000,
+  stageDir: 'data/memory-staging',
+  settleMs: 600000,
   projects: {
     trackable: { match: ['/home/ryan/Code/trackable'], apiUrl: 'http://mem', apiKey: 'k', project: 'trackable' },
   },
@@ -583,15 +600,20 @@ function session(name: string, cwd: string, turns: number, mtimeMs: number): str
   mkdirSync(join(p, '..'), { recursive: true });
   const lines = [
     JSON.stringify({ type: 'session', id: name, timestamp: '2026-08-31T00:00:00Z', cwd }),
-    ...Array.from({ length: turns }, (_, i) => JSON.stringify({
-      type: 'message', id: `m${i}`, timestamp: '2026-08-31T00:00:01Z',
-      message: { role: 'assistant', content: [{ type: 'text', text: 'x' }] },
-    })),
+    ...Array.from({ length: turns }, (_, i) =>
+      JSON.stringify({
+        type: 'message',
+        id: `m${i}`,
+        timestamp: '2026-08-31T00:00:01Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'x' }] },
+      }),
+    ),
   ];
   writeFileSync(p, lines.join('\n'));
   const now = new Date().getTime();
   // mtime cannot be set directly; rely on the settle filter with a synthetic check below.
-  void mtimeMs; void now;
+  void mtimeMs;
+  void now;
   return p;
 }
 
@@ -606,8 +628,12 @@ describe('sweepSessions', () => {
   it('skips noisy sessions (no assistant turns) and already-seen files', () => {
     const p = session('c.jsonl', '/home/ryan/Code/trackable', 0, 0);
     const db = getDb();
-    db.prepare('INSERT INTO memory_maintainer_watermark (path, mtime_ms, size, processed_at) VALUES (?, ?, ?, ?)')
-      .run(p, 0, 0, '2026-08-31T00:00:00Z');
+    db.prepare('INSERT INTO memory_maintainer_watermark (path, mtime_ms, size, processed_at) VALUES (?, ?, ?, ?)').run(
+      p,
+      0,
+      0,
+      '2026-08-31T00:00:00Z',
+    );
     expect(sweepSessions(MEMORY).files).toHaveLength(0);
   });
 });
@@ -758,9 +784,8 @@ export function sweepSessions(memory: MemoryConfig): SweepResult {
         result.droppedUnsettled += 1;
         continue;
       }
-      const seen = db
-        .prepare('SELECT mtime_ms, size FROM memory_maintainer_watermark WHERE path = ?')
-        .get(path) as { mtime_ms: number; size: number } | undefined;
+      const seen = db.prepare('SELECT mtime_ms, size FROM memory_maintainer_watermark WHERE path = ?').get(path) as
+        { mtime_ms: number; size: number } | undefined;
       if (seen && seen.mtime_ms === st.mtimeMs && seen.size === st.size) continue;
 
       const header = readHeader(path);
@@ -840,10 +865,12 @@ git commit -m "feat(memory-maintainer): db state tables and session sweep"
 ### Task 4: Session excerpt builder
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/excerpt.ts`
 - Test: `src/lib/memory-maintainer/excerpt.test.ts`
 
 **Interfaces:**
+
 - Consumes: pi session JSONL format (entries: `session`, `message` with role `user`/`assistant`/`toolResult`; assistant content blocks `text`/`thinking`/`toolCall`).
 - Produces:
   - `Excerpt = { sessionId: string; cwd: string; startedAt: string; text: string; tokenEstimate: number }`
@@ -864,11 +891,15 @@ const LINES = [
   { type: 'session', id: 's1', timestamp: '2026-08-31T00:00:00Z', cwd: '/home/ryan/Code/trackable' },
   { type: 'model_change', id: 'mc', timestamp: '2026-08-31T00:00:01Z', provider: 'qwen', modelId: 'qwen3.8-max' },
   {
-    type: 'message', id: 'u1', timestamp: '2026-08-31T00:00:02Z',
+    type: 'message',
+    id: 'u1',
+    timestamp: '2026-08-31T00:00:02Z',
     message: { role: 'user', content: [{ type: 'text', text: 'fix the pipeline retry bug' }] },
   },
   {
-    type: 'message', id: 'a1', timestamp: '2026-08-31T00:00:03Z',
+    type: 'message',
+    id: 'a1',
+    timestamp: '2026-08-31T00:00:03Z',
     message: {
       role: 'assistant',
       content: [
@@ -879,7 +910,9 @@ const LINES = [
     },
   },
   {
-    type: 'message', id: 'r1', timestamp: '2026-08-31T00:00:04Z',
+    type: 'message',
+    id: 'r1',
+    timestamp: '2026-08-31T00:00:04Z',
     message: { role: 'toolResult', toolCallId: 't1', toolName: 'edit', content: [{ type: 'text', text: 'ok' }] },
   },
 ];
@@ -908,7 +941,9 @@ describe('buildExcerpt', () => {
     const long = [
       ...LINES,
       {
-        type: 'message', id: 'u2', timestamp: '2026-08-31T00:00:05Z',
+        type: 'message',
+        id: 'u2',
+        timestamp: '2026-08-31T00:00:05Z',
         message: { role: 'user', content: [{ type: 'text', text: 'Z'.repeat(5000) }] },
       },
     ];
@@ -985,7 +1020,8 @@ export function buildExcerpt(path: string, maxTokens: number): Excerpt {
     } else if (role === 'assistant') {
       for (const block of contentBlocks(content)) {
         if (block.type === 'text') parts.push(`ASSISTANT: ${block.text}`);
-        else if (block.type === 'toolCall') parts.push(`TOOL CALL: ${block.name}(${truncate(JSON.stringify(block.arguments), TOOL_ARGS_CAP)})`);
+        else if (block.type === 'toolCall')
+          parts.push(`TOOL CALL: ${block.name}(${truncate(JSON.stringify(block.arguments), TOOL_ARGS_CAP)})`);
         // thinking blocks intentionally dropped
       }
     } else if (role === 'toolResult') {
@@ -1061,10 +1097,12 @@ git commit -m "feat(memory-maintainer): bounded session excerpt builder"
 ### Task 5: Consolidation agent (pi-ai tool loop)
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/consolidate.ts`
 - Test: `src/lib/memory-maintainer/consolidate.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MemoryServer`, `StagedOp`, `searchMemories`, `storeMemory`, `updateMemory`, `deleteMemory` (Task 2); `Excerpt` (Task 4); pi-ai `ModelRuntime`, `ModelRegistry`, `Tool`, `Message`, `ToolCall`, `ToolResultMessage`; `OrchestrelConfig`, `MemoryConfig` (Task 1).
 - Produces:
   - `buildModel(cfg: OrchestrelConfig, memory: MemoryConfig): Promise<{ runtime: ModelRuntime; model: Model }>`
@@ -1085,14 +1123,24 @@ const SERVER: MemoryServer = { apiUrl: 'http://mem.test', apiKey: 'k', project: 
 
 const MODEL = { provider: 'max', id: 'qwen3.8-27b-oq8' } as unknown as Model;
 
-function assistant(content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown }>, stop: string): AssistantMessage {
+function assistant(
+  content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown }>,
+  stop: string,
+): AssistantMessage {
   return {
     role: 'assistant',
-    content: content.map((c) => ({ ...c, type: c.type } as AssistantMessage['content'][number])),
+    content: content.map((c) => ({ ...c, type: c.type }) as AssistantMessage['content'][number]),
     api: 'anthropic-messages',
     provider: 'max',
     model: 'qwen3.8-27b-oq8',
-    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
     stopReason: stop === 'stop' ? 'stop' : 'toolUse',
     timestamp: 1,
   };
@@ -1107,12 +1155,15 @@ describe('consolidate', () => {
     const complete = vi
       .fn()
       .mockResolvedValueOnce(
-        assistant([
-          toolCall('search_memory', { query: 'retry' }),
-          toolCall('store_memory', { title: 'Retry policy', text: 'Use backoff.', tags: ['infra'] }),
-          toolCall('update_memory', { id: '9', text: 'new' }),
-          toolCall('delete_memory', { id: '2', reason: 'stale' }),
-        ], 'toolUse'),
+        assistant(
+          [
+            toolCall('search_memory', { query: 'retry' }),
+            toolCall('store_memory', { title: 'Retry policy', text: 'Use backoff.', tags: ['infra'] }),
+            toolCall('update_memory', { id: '9', text: 'new' }),
+            toolCall('delete_memory', { id: '2', reason: 'stale' }),
+          ],
+          'toolUse',
+        ),
       )
       .mockResolvedValueOnce(assistant([{ type: 'text', text: 'done' }], 'stop'));
     const runtime = { completeSimple: complete } as unknown as ModelRuntime;
@@ -1139,7 +1190,17 @@ describe('consolidate', () => {
 
   it('executes search and stops when the model makes no tool calls', async () => {
     const complete = vi.fn().mockResolvedValueOnce(assistant([{ type: 'text', text: 'no ops needed' }], 'stop'));
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ data: [] }), text: () => Promise.resolve('') }));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(''),
+        }),
+    );
     const ops = await consolidate({
       excerpt: { sessionId: 's1', cwd: '/x', startedAt: '', text: 't', tokenEstimate: 1 },
       server: SERVER,
@@ -1209,7 +1270,10 @@ export async function buildModel(
   if (!modelDef) throw new Error(`memory: model "${memory.model}" not in provider "${memory.provider}"`);
 
   const agentDir = getAgentDir();
-  const runtime = await ModelRuntime.create({ authPath: `${agentDir}/auth.json`, modelsPath: `${agentDir}/models.json` });
+  const runtime = await ModelRuntime.create({
+    authPath: `${agentDir}/auth.json`,
+    modelsPath: `${agentDir}/models.json`,
+  });
   const registry = new ModelRegistry(runtime);
   registry.registerProvider(memory.provider, toProviderConfig(provider, modelDef.modelID));
   const model = registry.find(memory.provider, modelDef.modelID);
@@ -1279,7 +1343,10 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   const { excerpt, server, runtime, model, maxTurns, mode } = opts;
   const ops: StagedOp[] = [];
   const messages: Array<{ role: 'user' | 'assistant' | 'toolResult'; content: unknown; timestamp?: number }> = [
-    { role: 'user', content: [{ type: 'text', text: `Session: ${excerpt.sessionId} (${excerpt.cwd})\n\n${excerpt.text}` }] },
+    {
+      role: 'user',
+      content: [{ type: 'text', text: `Session: ${excerpt.sessionId} (${excerpt.cwd})\n\n${excerpt.text}` }],
+    },
   ];
 
   for (let turn = 0; turn < maxTurns; turn++) {
@@ -1296,7 +1363,12 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   return dedupeOps(ops);
 }
 
-async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'write', ops: StagedOp[]): Promise<ToolResultMessage> {
+async function runTool(
+  call: ToolCall,
+  server: MemoryServer,
+  mode: 'stage' | 'write',
+  ops: StagedOp[],
+): Promise<ToolResultMessage> {
   try {
     const args = call.arguments as Record<string, unknown>;
     const text = (s: string): string => (mode === 'write' && secretsPattern.test(s) ? '[redacted]' : s);
@@ -1308,7 +1380,12 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
       case 'store_memory': {
         const title = String(args.title);
         const body = text(String(args.text));
-        ops.push({ op: 'store', title, text: body, ...(Array.isArray(args.tags) ? { tags: args.tags.map(String) } : {}) });
+        ops.push({
+          op: 'store',
+          title,
+          text: body,
+          ...(Array.isArray(args.tags) ? { tags: args.tags.map(String) } : {}),
+        });
         if (mode === 'write') {
           const { id } = await storeMemory(server, { title, text: body });
           return toolResult(call, JSON.stringify({ id }));
@@ -1320,7 +1397,11 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
         const body = text(String(args.text));
         ops.push({ op: 'update', id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
         if (mode === 'write') {
-          const { success } = await updateMemory(server, { id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
+          const { success } = await updateMemory(server, {
+            id,
+            text: body,
+            ...(args.title ? { title: String(args.title) } : {}),
+          });
           return toolResult(call, JSON.stringify({ success }));
         }
         return toolResult(call, 'recorded (stage mode)');
@@ -1386,12 +1467,14 @@ git commit -m "feat(memory-maintainer): pi-ai consolidation agent with stage/wri
 ### Task 6: Staging writer + Telegram alert
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/staging.ts`
 - Create: `src/lib/memory-maintainer/telegram.ts`
 - Test: `src/lib/memory-maintainer/staging.test.ts`
 - Test: `src/lib/memory-maintainer/telegram.test.ts`
 
 **Interfaces:**
+
 - Consumes: `StagedOp` (Task 2).
 - Produces:
   - `StagingEntry = { project: string; apiUrl: string; sessionId: string; source: string; ops: StagedOp[] }`
@@ -1439,7 +1522,12 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('sendTelegramAlert', () => {
   it('posts to the sendMessage endpoint and returns true on ok', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve('') }));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}), text: () => Promise.resolve('') }),
+    );
     await expect(sendTelegramAlert('bot', 'chat', 'hello')).resolves.toBe(true);
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.telegram.org/botbot/sendMessage');
@@ -1541,10 +1629,12 @@ git commit -m "feat(memory-maintainer): staging writer and telegram alert"
 ### Task 7: Daily orchestration (`runMaintain`)
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/maintain.ts`
 - Test: `src/lib/memory-maintainer/maintain.test.ts`
 
 **Interfaces:**
+
 - Consumes: `sweepSessions` (Task 3), `buildExcerpt` (Task 4), `buildModel`/`consolidate` (Task 5), `appendStaging` (Task 6), `sendTelegramAlert` (Task 6), `getDb`/`insertRun`/`finishRun`/`upsertWatermark` (Task 3), `OrchestrelConfig` (Task 1).
 - Produces:
   - `MaintainSummary = { runId: number; projects: ProjectSummary[]; stagingFiles: string[]; durationMs: number }`
@@ -1568,7 +1658,13 @@ const BASE: OrchestrelConfig = {
   defaultProvider: 'max',
   defaultModel: 'assistant',
   ringBufferSize: 100,
-  providers: { max: { baseUrl: 'http://max.local:11434', apiKey: 'x', models: { assistant: { label: 'a', modelID: 'm', contextWindow: 1000 } } } },
+  providers: {
+    max: {
+      baseUrl: 'http://max.local:11434',
+      apiKey: 'x',
+      models: { assistant: { label: 'a', modelID: 'm', contextWindow: 1000 } },
+    },
+  },
 };
 
 describe('runMaintain', () => {
@@ -1665,11 +1761,27 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
         apiKey: memory.projects[key].apiKey,
         project: memory.projects[key].project,
       };
-      const summary: ProjectSummary = { project: key, sessions: 0, ops: 0, stores: 0, updates: 0, deletes: 0, skips: 0, errors: [] };
+      const summary: ProjectSummary = {
+        project: key,
+        sessions: 0,
+        ops: 0,
+        stores: 0,
+        updates: 0,
+        deletes: 0,
+        skips: 0,
+        errors: [],
+      };
       for (const file of files) {
         try {
           const excerpt = buildExcerpt(file.path, memory.excerptTokens);
-          const ops = await consolidate({ excerpt, server, runtime, model, maxTurns: memory.maxTurns, mode: memory.mode });
+          const ops = await consolidate({
+            excerpt,
+            server,
+            runtime,
+            model,
+            maxTurns: memory.maxTurns,
+            mode: memory.mode,
+          });
           const stagingFile = appendStaging(memory.stageDir, {
             project: key,
             apiUrl: server.apiUrl,
@@ -1695,11 +1807,20 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
       projects.push(summary);
     }
 
-    const summary: MaintainSummary = { runId, projects, stagingFiles: [...stagingFiles], durationMs: Date.now() - started };
+    const summary: MaintainSummary = {
+      runId,
+      projects,
+      stagingFiles: [...stagingFiles],
+      durationMs: Date.now() - started,
+    };
     finishRun(db, runId, 'done', JSON.stringify(summary));
     if (memory.telegram) {
       try {
-        await sendTelegramAlert(memory.telegram.botToken, memory.telegram.chatId, buildAlertText(summary, memory.stageDir));
+        await sendTelegramAlert(
+          memory.telegram.botToken,
+          memory.telegram.chatId,
+          buildAlertText(summary, memory.stageDir),
+        );
       } catch (err) {
         console.error('[memory-maintainer] telegram alert failed:', err);
       }
@@ -1744,10 +1865,12 @@ git commit -m "feat(memory-maintainer): daily run orchestration"
 ### Task 8: Weekly merge pass
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/merge.ts`
 - Test: `src/lib/memory-maintainer/merge.test.ts`
 
 **Interfaces:**
+
 - Consumes: `readStagingFile`, `appendStaging` (Task 6); `buildModel`, `consolidate` (Task 5 — reuses the loop with a merge prompt and search-only tools); `OrchestrelConfig`.
 - Produces:
   - `MergeSummary = { groups: number; ops: number; stagingFile: string }`
@@ -1765,9 +1888,27 @@ import type { StagingEntry } from './staging';
 describe('merge grouping', () => {
   it('groups staging entries strictly within one memory server set', () => {
     const entries: StagingEntry[] = [
-      { project: 'trackable', apiUrl: 'https://memory.trackable.io', sessionId: 'a', source: 'a', ops: [{ op: 'store', title: 't1', text: 'x' }] },
-      { project: 'trackable', apiUrl: 'https://memory.trackable.io', sessionId: 'b', source: 'b', ops: [{ op: 'store', title: 't2', text: 'y' }] },
-      { project: 'okkanti', apiUrl: 'http://localhost:3100', sessionId: 'c', source: 'c', ops: [{ op: 'store', title: 't3', text: 'z' }] },
+      {
+        project: 'trackable',
+        apiUrl: 'https://memory.trackable.io',
+        sessionId: 'a',
+        source: 'a',
+        ops: [{ op: 'store', title: 't1', text: 'x' }],
+      },
+      {
+        project: 'trackable',
+        apiUrl: 'https://memory.trackable.io',
+        sessionId: 'b',
+        source: 'b',
+        ops: [{ op: 'store', title: 't2', text: 'y' }],
+      },
+      {
+        project: 'okkanti',
+        apiUrl: 'http://localhost:3100',
+        sessionId: 'c',
+        source: 'c',
+        ops: [{ op: 'store', title: 't3', text: 'z' }],
+      },
     ];
     const groups = groupByServer(entries);
     expect(groups).toHaveLength(2);
@@ -1865,7 +2006,9 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
     const cfgEntry = memory.projects[project];
     if (!cfgEntry) continue;
     server.apiKey = cfgEntry.apiKey;
-    const stores = group.entries.flatMap((e) => e.ops).filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
+    const stores = group.entries
+      .flatMap((e) => e.ops)
+      .filter((op): op is Extract<StagedOp, { op: 'store' }> => op.op === 'store');
     if (stores.length === 0) continue;
     const prompt = `Merge these memory candidates from one week of sessions (${group.entries.length} sessions, ${stores.length} candidates):\n\n${stores.map((s) => `- ${s.title}: ${s.text}`).join('\n')}\n\nGroup near-duplicates into one durable memory. Recurring themes across 2+ sessions become durable memories with a short evidence note. Search existing memories first; update instead of creating duplicates.`;
     const ops = await consolidate({
@@ -1918,12 +2061,14 @@ git commit -m "feat(memory-maintainer): weekly scoped merge pass"
 ### Task 9: Scheduler + server wiring
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/scheduler.ts`
 - Modify: `src/server/init.ts`
 - Modify: `src/server/ws/server.ts`
 - Test: `src/lib/memory-maintainer/scheduler.test.ts`
 
 **Interfaces:**
+
 - Consumes: `runMaintain` (Task 7), `runMerge` (Task 8), `loadConfig` (Task 1).
 - Produces: `startMemoryMaintainer(): () => void` — starts the daily + weekly timers, returns a stop function; idempotent (subsequent calls are no-ops until stopped).
 
@@ -1997,10 +2142,16 @@ async function fire(kind: 'daily' | 'weekly'): Promise<void> {
     const start = Date.now();
     if (kind === 'daily') {
       const summary = await runMaintain(cfg);
-      console.log(`[memory-maintainer] daily run done in ${Date.now() - start}ms`, summary ? `${summary.projects.length} projects` : 'disabled');
+      console.log(
+        `[memory-maintainer] daily run done in ${Date.now() - start}ms`,
+        summary ? `${summary.projects.length} projects` : 'disabled',
+      );
     } else {
       const summary = await runMerge(cfg);
-      console.log(`[memory-maintainer] weekly merge done in ${Date.now() - start}ms`, summary ? `${summary.groups} groups` : 'disabled');
+      console.log(
+        `[memory-maintainer] weekly merge done in ${Date.now() - start}ms`,
+        summary ? `${summary.groups} groups` : 'disabled',
+      );
     }
   } catch (err) {
     console.error('[memory-maintainer] run failed:', err);
@@ -2011,10 +2162,13 @@ async function fire(kind: 'daily' | 'weekly'): Promise<void> {
 
 function schedule(fn: () => void, ms: number): void {
   const max = 2_147_483_647;
-  const t = setTimeout(() => {
-    fn();
-    schedule(fn, msUntil(DAILY_HOUR, 0));
-  }, Math.min(ms, max));
+  const t = setTimeout(
+    () => {
+      fn();
+      schedule(fn, msUntil(DAILY_HOUR, 0));
+    },
+    Math.min(ms, max),
+  );
   timers.push(t);
 }
 
@@ -2074,10 +2228,12 @@ git commit -m "feat(memory-maintainer): in-process daily and weekly scheduler"
 ### Task 10: CLI
 
 **Files:**
+
 - Create: `src/lib/memory-maintainer/cli.ts`
 - Modify: `package.json` (add script)
 
 **Interfaces:**
+
 - Consumes: `runMaintain` (Task 7), `runMerge` (Task 8), `loadConfig` (Task 1).
 - Produces: a `bun run memory-maintainer --run|--weekly|--status` entrypoint.
 
@@ -2105,7 +2261,9 @@ async function main(): Promise<void> {
   if (args['--status']) {
     const db = getDb();
     const rows = db
-      .prepare('SELECT id, run_type, status, started_at, finished_at FROM memory_maintainer_runs ORDER BY id DESC LIMIT 10')
+      .prepare(
+        'SELECT id, run_type, status, started_at, finished_at FROM memory_maintainer_runs ORDER BY id DESC LIMIT 10',
+      )
       .all() as Array<Record<string, unknown>>;
     console.table(rows);
     return;
@@ -2113,7 +2271,10 @@ async function main(): Promise<void> {
 
   if (args['--weekly']) {
     const summary = await runMerge(cfg);
-    console.log('merge:', summary ? `${summary.groups} groups, ${summary.ops} ops → ${summary.stagingFile}` : 'disabled (no memory config)');
+    console.log(
+      'merge:',
+      summary ? `${summary.groups} groups, ${summary.ops} ops → ${summary.stagingFile}` : 'disabled (no memory config)',
+    );
     return;
   }
 
@@ -2163,9 +2324,11 @@ git commit -m "feat(memory-maintainer): CLI for manual runs and status"
 ### Task 11: End-to-end verification on real sessions
 
 **Files:**
+
 - Modify: `orcd.yaml` (local, gitignored — add the `memory:` section; do NOT commit)
 
 **Interfaces:**
+
 - Consumes: everything above.
 
 - [ ] **Step 1: Add the memory section to the local config**

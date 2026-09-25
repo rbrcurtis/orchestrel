@@ -16,66 +16,67 @@
 
 ### New files (orcd daemon)
 
-| File | Responsibility |
-|------|---------------|
-| `src/orcd/index.ts` | Entry point: load config, start socket server |
-| `src/orcd/config.ts` | YAML config parser with env var interpolation |
-| `src/orcd/socket-server.ts` | Unix socket listener, connection handling, message routing |
-| `src/orcd/session.ts` | Wraps Agent SDK `query()`, manages one CC session |
-| `src/orcd/session-store.ts` | In-memory map of active sessions |
-| `src/orcd/ring-buffer.ts` | Per-session circular event buffer for reconnection |
-| `src/orcd/types.ts` | Internal orcd types (non-protocol) |
-| `src/orcd/__tests__/ring-buffer.test.ts` | Ring buffer unit tests |
-| `src/orcd/__tests__/config.test.ts` | Config loader unit tests |
+| File                                     | Responsibility                                             |
+| ---------------------------------------- | ---------------------------------------------------------- |
+| `src/orcd/index.ts`                      | Entry point: load config, start socket server              |
+| `src/orcd/config.ts`                     | YAML config parser with env var interpolation              |
+| `src/orcd/socket-server.ts`              | Unix socket listener, connection handling, message routing |
+| `src/orcd/session.ts`                    | Wraps Agent SDK `query()`, manages one CC session          |
+| `src/orcd/session-store.ts`              | In-memory map of active sessions                           |
+| `src/orcd/ring-buffer.ts`                | Per-session circular event buffer for reconnection         |
+| `src/orcd/types.ts`                      | Internal orcd types (non-protocol)                         |
+| `src/orcd/__tests__/ring-buffer.test.ts` | Ring buffer unit tests                                     |
+| `src/orcd/__tests__/config.test.ts`      | Config loader unit tests                                   |
 
 ### New files (shared)
 
-| File | Responsibility |
-|------|---------------|
+| File                          | Responsibility                                       |
+| ----------------------------- | ---------------------------------------------------- |
 | `src/shared/orcd-protocol.ts` | Message types for client ↔ orcd Unix socket protocol |
 
 ### New files (orc bridge)
 
-| File | Responsibility |
-|------|---------------|
+| File                        | Responsibility                                     |
+| --------------------------- | -------------------------------------------------- |
 | `src/server/orcd-client.ts` | Unix socket client, connect/send/receive/reconnect |
 
 ### Modified files
 
-| File | Change |
-|------|--------|
-| `src/server/init-state.ts` | Replace SessionManager with OrcdClient |
-| `src/server/ws/handlers/agents.ts` | Use OrcdClient instead of SessionManager |
-| `src/server/ws/handlers/sessions.ts` | Use `getSessionMessages()` from Agent SDK |
-| `src/server/controllers/oc.ts` | Auto-start sends "create" to orcd client |
-| `src/server/ws/server.ts` | Connect OrcdClient in dev mode |
-| `src/server/init.ts` | Connect OrcdClient in production |
-| `package.json` | Add `@anthropic-ai/claude-agent-sdk`, `yaml` deps; add `orcd` script |
+| File                                 | Change                                                               |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| `src/server/init-state.ts`           | Replace SessionManager with OrcdClient                               |
+| `src/server/ws/handlers/agents.ts`   | Use OrcdClient instead of SessionManager                             |
+| `src/server/ws/handlers/sessions.ts` | Use `getSessionMessages()` from Agent SDK                            |
+| `src/server/controllers/oc.ts`       | Auto-start sends "create" to orcd client                             |
+| `src/server/ws/server.ts`            | Connect OrcdClient in dev mode                                       |
+| `src/server/init.ts`                 | Connect OrcdClient in production                                     |
+| `package.json`                       | Add `@anthropic-ai/claude-agent-sdk`, `yaml` deps; add `orcd` script |
 
 ### Deleted files
 
-| File | Reason |
-|------|--------|
-| `src/server/sessions/consumer.ts` | Replaced by orcd session wrapper |
-| `src/server/sessions/manager.ts` | Replaced by OrcdClient |
-| `src/server/sessions/meridian-client.ts` | Replaced by Agent SDK in orcd |
-| `src/server/sessions/event-translator.ts` | Agent SDK emits proper types directly |
-| `src/server/sessions/sse-parser.ts` | No more raw SSE parsing |
-| `src/server/sessions/jsonl-reader.ts` | Replaced by SDK `getSessionMessages()` |
+| File                                      | Reason                                 |
+| ----------------------------------------- | -------------------------------------- |
+| `src/server/sessions/consumer.ts`         | Replaced by orcd session wrapper       |
+| `src/server/sessions/manager.ts`          | Replaced by OrcdClient                 |
+| `src/server/sessions/meridian-client.ts`  | Replaced by Agent SDK in orcd          |
+| `src/server/sessions/event-translator.ts` | Agent SDK emits proper types directly  |
+| `src/server/sessions/sse-parser.ts`       | No more raw SSE parsing                |
+| `src/server/sessions/jsonl-reader.ts`     | Replaced by SDK `getSessionMessages()` |
 
 ### KPP files (separate repo: `/home/ryan/Code/kiro-pool-proxy`)
 
-| File | Change |
-|------|--------|
-| `src/proxy/types.ts` | Add thinking fields to AnthropicRequest |
-| `src/proxy/convert-request.ts` | Map thinking config to CW format |
-| `tests/convert-request.test.ts` | Add thinking conversion tests |
+| File                            | Change                                  |
+| ------------------------------- | --------------------------------------- |
+| `src/proxy/types.ts`            | Add thinking fields to AnthropicRequest |
+| `src/proxy/convert-request.ts`  | Map thinking config to CW format        |
+| `tests/convert-request.test.ts` | Add thinking conversion tests           |
 
 ---
 
 ### Task 1: Shared Protocol Types & Project Scaffolding
 
 **Files:**
+
 - Create: `src/shared/orcd-protocol.ts`
 - Modify: `package.json`
 
@@ -109,9 +110,9 @@ export interface CreateAction {
   cwd: string;
   provider: string;
   model: string;
-  effort?: string;       // 'high' | 'medium' | 'low' | 'disabled'
-  sessionId?: string;    // Resume existing session
-  env?: Record<string, string>;  // ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY
+  effort?: string; // 'high' | 'medium' | 'low' | 'disabled'
+  sessionId?: string; // Resume existing session
+  env?: Record<string, string>; // ANTHROPIC_BASE_URL, ANTHROPIC_API_KEY
 }
 
 export interface MessageAction {
@@ -147,13 +148,7 @@ export interface CancelAction {
 }
 
 export type OrcdAction =
-  | CreateAction
-  | MessageAction
-  | SetEffortAction
-  | SubscribeAction
-  | UnsubscribeAction
-  | ListAction
-  | CancelAction;
+  CreateAction | MessageAction | SetEffortAction | SubscribeAction | UnsubscribeAction | ListAction | CancelAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -166,14 +161,14 @@ export interface StreamEventMessage {
   type: 'stream_event';
   sessionId: string;
   eventIndex: number;
-  event: unknown;        // SDKMessage from Agent SDK
+  event: unknown; // SDKMessage from Agent SDK
 }
 
 export interface SessionResultMessage {
   type: 'result';
   sessionId: string;
   eventIndex: number;
-  result: unknown;       // SDKResultMessage from Agent SDK
+  result: unknown; // SDKResultMessage from Agent SDK
 }
 
 export interface SessionErrorMessage {
@@ -192,11 +187,7 @@ export interface SessionListMessage {
 }
 
 export type OrcdMessage =
-  | SessionCreatedMessage
-  | StreamEventMessage
-  | SessionResultMessage
-  | SessionErrorMessage
-  | SessionListMessage;
+  SessionCreatedMessage | StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionListMessage;
 ```
 
 - [ ] **Step 4: Commit**
@@ -211,6 +202,7 @@ git commit -m "feat: add orcd protocol types and Agent SDK dependency"
 ### Task 2: Ring Buffer
 
 **Files:**
+
 - Create: `src/orcd/ring-buffer.ts`
 - Create: `src/orcd/__tests__/ring-buffer.test.ts`
 
@@ -321,8 +313,8 @@ export interface IndexedItem<T> {
  */
 export class RingBuffer<T> {
   private items: Array<T | undefined>;
-  private head = 0;     // write position in items[]
-  private count = 0;    // total items currently stored
+  private head = 0; // write position in items[]
+  private count = 0; // total items currently stored
   private nextIndex = 0; // monotonic event index
 
   constructor(private capacity: number) {
@@ -355,7 +347,7 @@ export class RingBuffer<T> {
 
     const result: IndexedItem<T>[] = [];
     for (let idx = startIndex; idx < this.nextIndex; idx++) {
-      const pos = ((this.head - this.count + (idx - oldestIndex)) % this.capacity + this.capacity) % this.capacity;
+      const pos = (((this.head - this.count + (idx - oldestIndex)) % this.capacity) + this.capacity) % this.capacity;
       result.push({ index: idx, item: this.items[pos]! });
     }
     return result;
@@ -383,6 +375,7 @@ git commit -m "feat(orcd): add ring buffer for event replay"
 ### Task 3: YAML Config Loader
 
 **Files:**
+
 - Create: `src/orcd/config.ts`
 - Create: `src/orcd/__tests__/config.test.ts`
 
@@ -584,6 +577,7 @@ git commit -m "feat(orcd): add YAML config loader with env var interpolation"
 ### Task 4: Session Wrapper (Agent SDK)
 
 **Files:**
+
 - Create: `src/orcd/session.ts`
 - Create: `src/orcd/types.ts`
 
@@ -642,12 +636,18 @@ function effortToThinking(effort: string | undefined): Record<string, unknown> {
  */
 function effortToTokenBudget(effort: string): number | null {
   switch (effort) {
-    case 'disabled': return 0;
-    case 'low': return 2000;
-    case 'medium': return 10000;
-    case 'high': return null; // unlimited
-    case 'max': return null;
-    default: return null;
+    case 'disabled':
+      return 0;
+    case 'low':
+      return 2000;
+    case 'medium':
+      return 10000;
+    case 'high':
+      return null; // unlimited
+    case 'max':
+      return null;
+    default:
+      return null;
   }
 }
 
@@ -667,7 +667,7 @@ export class OrcdSession {
     model: string;
     provider: string;
     bufferSize?: number;
-    sessionId?: string;  // For resume — use existing CC session UUID
+    sessionId?: string; // For resume — use existing CC session UUID
   }) {
     this.id = opts.sessionId ?? randomUUID();
     this.cwd = opts.cwd;
@@ -703,12 +703,7 @@ export class OrcdSession {
    * Start or resume a session.
    * Consumes the Agent SDK async iterator and broadcasts events.
    */
-  async run(opts: {
-    prompt: string;
-    resume?: boolean;
-    env?: Record<string, string>;
-    effort?: string;
-  }): Promise<void> {
+  async run(opts: { prompt: string; resume?: boolean; env?: Record<string, string>; effort?: string }): Promise<void> {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
 
     const thinkingOpts = effortToThinking(opts.effort);
@@ -824,6 +819,7 @@ git commit -m "feat(orcd): add session wrapper around Agent SDK query()"
 ### Task 5: Socket Server & Session Store
 
 **Files:**
+
 - Create: `src/orcd/session-store.ts`
 - Create: `src/orcd/socket-server.ts`
 
@@ -1004,7 +1000,7 @@ export class OrcdServer {
       cwd: action.cwd,
       model: action.model,
       provider: action.provider,
-      sessionId: action.sessionId,  // Resume: reuse existing UUID
+      sessionId: action.sessionId, // Resume: reuse existing UUID
     });
 
     this.store.add(session);
@@ -1028,16 +1024,18 @@ export class OrcdServer {
     };
 
     // Fire-and-forget: run session, clean up on exit
-    session.run({
-      prompt: action.prompt,
-      resume: !!action.sessionId,
-      env,
-      effort,
-    }).finally(() => {
-      // Don't remove — session stays in store for history/status queries.
-      // It will be removed on explicit cancel or orcd restart.
-      console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
-    });
+    session
+      .run({
+        prompt: action.prompt,
+        resume: !!action.sessionId,
+        env,
+        effort,
+      })
+      .finally(() => {
+        // Don't remove — session stays in store for history/status queries.
+        // It will be removed on explicit cancel or orcd restart.
+        console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
+      });
   }
 
   private handleMessage(client: ClientState, action: OrcdAction & { action: 'message' }): void {
@@ -1120,6 +1118,7 @@ git commit -m "feat(orcd): add socket server and session store"
 ### Task 6: orcd Entry Point & Systemd Service
 
 **Files:**
+
 - Create: `src/orcd/index.ts`
 - Create: `systemd/orcd.service` (or add to existing service setup)
 
@@ -1246,6 +1245,7 @@ git commit -m "feat(orcd): add entry point and systemd service"
 ### Task 7: OrcdClient (Orc Web Server Side)
 
 **Files:**
+
 - Create: `src/server/orcd-client.ts`
 
 The web server connects to orcd as a Unix socket client. It sends actions and receives events. This replaces `SessionManager` as the session management interface for the web server.
@@ -1492,6 +1492,7 @@ git commit -m "feat: add OrcdClient for web server → orcd communication"
 ### Task 8: Backend Bridge (Replace Session Management)
 
 **Files:**
+
 - Modify: `src/server/init-state.ts`
 - Modify: `src/server/ws/handlers/agents.ts`
 - Modify: `src/server/controllers/oc.ts`
@@ -1507,39 +1508,50 @@ Replace the SessionManager imports and functions with OrcdClient:
 
 ```typescript
 // src/server/init-state.ts
-import type { Server as HttpServer } from 'http'
-import type { Http2SecureServer } from 'http2'
-import type { Server as IoServer } from 'socket.io'
+import type { Server as HttpServer } from 'http';
+import type { Http2SecureServer } from 'http2';
+import type { Server as IoServer } from 'socket.io';
 
-type AnyHttpServer = HttpServer | Http2SecureServer
+type AnyHttpServer = HttpServer | Http2SecureServer;
 
 /** OrcdClient — survives Vite restarts. */
-import type { OrcdClient } from './orcd-client'
-let _orcdClient: OrcdClient | null = null
-export function getOrcdClient(): OrcdClient | null { return _orcdClient }
-export function setOrcdClient(client: OrcdClient): void { _orcdClient = client }
+import type { OrcdClient } from './orcd-client';
+let _orcdClient: OrcdClient | null = null;
+export function getOrcdClient(): OrcdClient | null {
+  return _orcdClient;
+}
+export function setOrcdClient(client: OrcdClient): void {
+  _orcdClient = client;
+}
 
 /** True after IO server, bus listeners, and OrcdClient are initialized. */
-export let initialized = false
-export function markInitialized() { initialized = true }
+export let initialized = false;
+export function markInitialized() {
+  initialized = true;
+}
 
 /** Cached Socket.IO Server — reused across Vite restarts. */
-export let io: IoServer | null = null
-export function setIo(instance: IoServer) { io = instance }
+export let io: IoServer | null = null;
+export function setIo(instance: IoServer) {
+  io = instance;
+}
 
 /** httpServer from server.js — arrives via process event, persists across restarts. */
-let _httpServer: AnyHttpServer | null = null
+let _httpServer: AnyHttpServer | null = null;
 const _httpServerReady = new Promise<AnyHttpServer>((resolve) => {
-  if (_httpServer) { resolve(_httpServer); return }
+  if (_httpServer) {
+    resolve(_httpServer);
+    return;
+  }
   process.once('orchestrel:httpServer', (server: AnyHttpServer) => {
-    _httpServer = server
-    resolve(server)
-  })
-})
+    _httpServer = server;
+    resolve(server);
+  });
+});
 
 export function getHttpServer(): Promise<AnyHttpServer> {
-  if (_httpServer) return Promise.resolve(_httpServer)
-  return _httpServerReady
+  if (_httpServer) return Promise.resolve(_httpServer);
+  return _httpServerReady;
 }
 ```
 
@@ -1554,7 +1566,11 @@ import { registerCardSession } from '../../controllers/oc';
 import { ensureWorktree } from '../../sessions/worktree';
 
 export async function handleAgentSend(
-  data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
+  data: {
+    cardId: number;
+    message: string;
+    files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }>;
+  },
   callback: (res: AckResponse) => void,
 ): Promise<void> {
   const { cardId, message, files } = data;
@@ -1581,7 +1597,7 @@ export async function handleAgentSend(
         cwd,
         provider: card.provider,
         model: card.model,
-        sessionId: card.sessionId ?? undefined,  // Resume if exists
+        sessionId: card.sessionId ?? undefined, // Resume if exists
       });
 
       card.sessionId = sessionId;
@@ -1611,17 +1627,17 @@ export async function handleAgentCompact(
     const client = initState.getOrcdClient();
     const card = await Card.findOneBy({ id: cardId });
     if (client && card?.sessionId && client.isActive(card.sessionId)) {
-      client.message(card.sessionId, 'Please compact your context window. Summarize the conversation so far and continue.');
+      client.message(
+        card.sessionId,
+        'Please compact your context window. Summarize the conversation so far and continue.',
+      );
     }
   } catch (err) {
     console.error(`[session:${cardId}] agent:compact error:`, err);
   }
 }
 
-export async function handleAgentStop(
-  data: { cardId: number },
-  callback: (res: AckResponse) => void,
-): Promise<void> {
+export async function handleAgentStop(data: { cardId: number }, callback: (res: AckResponse) => void): Promise<void> {
   const { cardId } = data;
   console.log(`[session:${cardId}] agent:stop received`);
   callback({});
@@ -1812,7 +1828,7 @@ export function registerAutoStart(bus: MessageBus = messageBus): void {
       // Direct start (worktree or no project)
       const { ensureWorktree } = await import('../sessions/worktree');
       const cwd = await ensureWorktree(fullCard);
-      const prompt = fullCard.pendingPrompt ?? (fullCard.sessionId ? '' : fullCard.description ?? '');
+      const prompt = fullCard.pendingPrompt ?? (fullCard.sessionId ? '' : (fullCard.description ?? ''));
       fullCard.pendingPrompt = null;
       fullCard.pendingFiles = null;
       await repo().save(fullCard);
@@ -1921,6 +1937,7 @@ git commit -m "feat: wire OrcdClient into web server, replace SessionManager"
 ### Task 9: History Loading via Agent SDK
 
 **Files:**
+
 - Modify: `src/server/ws/handlers/sessions.ts`
 
 Replace the JSONL reader with the Agent SDK's `getSessionMessages()` function. This runs in the web server process (not orcd) since it just reads files from disk.
@@ -2004,10 +2021,12 @@ git commit -m "feat: load session history via Agent SDK getSessionMessages()"
 ### Task 10: Frontend Type Alignment
 
 **Files:**
+
 - Modify: `app/lib/sdk-types.ts`
 - Modify: `app/lib/message-accumulator.ts`
 
 The frontend types already closely match Agent SDK output. Minor updates needed:
+
 - Agent SDK `SDKResultMessage` has `modelUsage` (not `model_usage`) — check and align field names.
 - Agent SDK `SDKPartialAssistantMessage` uses `type: 'stream_event'` which already matches.
 - Add handling for `SDKUserMessageReplay` (type: 'user') for resumed sessions showing replayed history.
@@ -2022,10 +2041,20 @@ In `src/app/lib/sdk-types.ts`, update the `SdkResultMessage` interface:
 // Change model_usage to modelUsage to match SDK output:
 export interface SdkResultMessage {
   type: 'result';
-  subtype: 'success' | 'error_max_turns' | 'error_during_execution' | 'error_max_budget_usd' | 'error_max_structured_output_retries';
+  subtype:
+    | 'success'
+    | 'error_max_turns'
+    | 'error_during_execution'
+    | 'error_max_budget_usd'
+    | 'error_max_structured_output_retries';
   result?: string;
   total_cost_usd: number;
-  usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
   num_turns: number;
   duration_ms: number;
   duration_api_ms?: number;
@@ -2064,6 +2093,7 @@ git commit -m "fix: align frontend SDK types with Agent SDK output format"
 ### Task 11: Dead Code Removal
 
 **Files:**
+
 - Delete: `src/server/sessions/consumer.ts`
 - Delete: `src/server/sessions/meridian-client.ts`
 - Delete: `src/server/sessions/event-translator.ts`
@@ -2140,6 +2170,7 @@ git commit -m "refactor: remove meridian session backend, slim types"
 ### Task 12: KPP Effort/Thinking Support
 
 **Files (in `/home/ryan/Code/kiro-pool-proxy/`):**
+
 - Modify: `src/proxy/types.ts`
 - Modify: `src/proxy/convert-request.ts`
 - Modify: `tests/convert-request.test.ts`
@@ -2233,12 +2264,10 @@ const thinkingConfig = buildThinkingConfig(req.thinking);
 Add the helper function:
 
 ```typescript
-function buildThinkingConfig(
-  thinking: AnthropicRequest['thinking']
-): { thinkingBudget: number } | undefined {
+function buildThinkingConfig(thinking: AnthropicRequest['thinking']): { thinkingBudget: number } | undefined {
   if (!thinking) return undefined;
   if (thinking.type === 'disabled') return undefined;
-  if (!thinking.budget_tokens) return undefined;  // Adaptive — no explicit budget
+  if (!thinking.budget_tokens) return undefined; // Adaptive — no explicit budget
   return { thinkingBudget: thinking.budget_tokens };
 }
 ```
@@ -2265,30 +2294,30 @@ git commit -m "feat: add thinking/effort support to CW request conversion"
 
 ### Spec Coverage Check
 
-| Spec Requirement | Task |
-|-----------------|------|
-| orcd daemon with Unix socket | Tasks 4-6 |
-| Agent SDK query() + resume | Task 4 |
-| Newline-delimited JSON protocol | Tasks 1, 5, 7 |
-| Ring buffer for reconnection | Task 2, used in Task 5 |
-| Session lifecycle (create, follow-up, cancel) | Tasks 4-5 |
-| Event streaming to subscribers | Task 5 |
-| Provider config YAML | Task 3 |
-| Env var interpolation | Task 3 |
-| Effort levels + runtime changes | Tasks 3, 4, 5 |
-| Orc connects to orcd | Task 7 |
-| Replace SessionManager | Task 8 |
-| History via getSessionMessages() | Task 9 |
-| Frontend type alignment | Task 10 |
-| Remove meridian code | Task 11 |
-| KPP effort/thinking | Task 12 |
-| Worktree support | Task 8 (ensureWorktree still called) |
-| Queue processing | Task 8 (processQueue still called) |
-| Session discovery on reconnect | Task 7 (OrcdClient.list()) |
-| CC TUI interop | Inherent — CC sessions have standard UUIDs, JSONL files |
-| settingSources: ["user", "project"] | Task 4 |
-| permissionMode: bypassPermissions | Task 4 |
-| includePartialMessages: true | Task 4 |
+| Spec Requirement                              | Task                                                    |
+| --------------------------------------------- | ------------------------------------------------------- |
+| orcd daemon with Unix socket                  | Tasks 4-6                                               |
+| Agent SDK query() + resume                    | Task 4                                                  |
+| Newline-delimited JSON protocol               | Tasks 1, 5, 7                                           |
+| Ring buffer for reconnection                  | Task 2, used in Task 5                                  |
+| Session lifecycle (create, follow-up, cancel) | Tasks 4-5                                               |
+| Event streaming to subscribers                | Task 5                                                  |
+| Provider config YAML                          | Task 3                                                  |
+| Env var interpolation                         | Task 3                                                  |
+| Effort levels + runtime changes               | Tasks 3, 4, 5                                           |
+| Orc connects to orcd                          | Task 7                                                  |
+| Replace SessionManager                        | Task 8                                                  |
+| History via getSessionMessages()              | Task 9                                                  |
+| Frontend type alignment                       | Task 10                                                 |
+| Remove meridian code                          | Task 11                                                 |
+| KPP effort/thinking                           | Task 12                                                 |
+| Worktree support                              | Task 8 (ensureWorktree still called)                    |
+| Queue processing                              | Task 8 (processQueue still called)                      |
+| Session discovery on reconnect                | Task 7 (OrcdClient.list())                              |
+| CC TUI interop                                | Inherent — CC sessions have standard UUIDs, JSONL files |
+| settingSources: ["user", "project"]           | Task 4                                                  |
+| permissionMode: bypassPermissions             | Task 4                                                  |
+| includePartialMessages: true                  | Task 4                                                  |
 
 ### Type Consistency Check
 
@@ -2310,14 +2339,15 @@ Plan saved to `docs/superpowers/plans/2026-04-10-orcd-architecture.md`.
 
 **Parallelism map for agent teams:**
 
-| Stream | Tasks | Dependencies | Can start immediately |
-|--------|-------|--------------|-----------------------|
-| A: orcd core | 1, 2, 3, 4, 5, 6 | Task 4 needs 1,2; Task 5 needs 4 | Yes (1, 2, 3 in parallel) |
-| B: Orc rewire | 7, 8, 9, 10 | Needs Task 1 types | After Task 1 |
-| C: Cleanup | 11 | After A + B | After A + B |
-| D: KPP | 12 | None | Yes |
+| Stream        | Tasks            | Dependencies                     | Can start immediately     |
+| ------------- | ---------------- | -------------------------------- | ------------------------- |
+| A: orcd core  | 1, 2, 3, 4, 5, 6 | Task 4 needs 1,2; Task 5 needs 4 | Yes (1, 2, 3 in parallel) |
+| B: Orc rewire | 7, 8, 9, 10      | Needs Task 1 types               | After Task 1              |
+| C: Cleanup    | 11               | After A + B                      | After A + B               |
+| D: KPP        | 12               | None                             | Yes                       |
 
 **Teammate assignment:**
+
 - **Teammate 1:** Tasks 1-6 (orcd daemon, in `src/orcd/`)
 - **Teammate 2:** Task 12 (KPP, in `/home/ryan/Code/kiro-pool-proxy/`)
 - **Teammate 3:** Tasks 7-10 (Orc rewire, in `src/server/` + `app/`)

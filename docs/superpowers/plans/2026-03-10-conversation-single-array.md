@@ -12,13 +12,13 @@
 
 ## File Structure
 
-| File | Responsibility |
-|------|---------------|
-| `app/stores/session-store.ts` | `SessionState` with `conversation[]` + `conversationIds` Set. `ingest()`, `ingestBatch()`, `clearConversation()` methods. Remove `history`/`liveMessages`. |
-| `app/lib/content-hash.ts` | **New.** `contentHash(row)` — deterministic SHA-256 of `{type, message}`. Browser-compatible (Web Crypto). |
-| `app/stores/root-store.ts` | Update message routing: `claude:message` → `store.ingest()`, `session:history` → `store.ingestBatch()`. |
-| `app/components/SessionView.tsx` | Remove `pendingPrompt` useState, `prevLiveLen` ref, `prevStatus` ref, history-merge useMemo, ~6 useEffects. Read `conversation` directly from store. |
-| `app/components/MessageBlock.tsx` | No changes needed — already receives `Record<string, unknown>` and dispatches by type. |
+| File                              | Responsibility                                                                                                                                             |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app/stores/session-store.ts`     | `SessionState` with `conversation[]` + `conversationIds` Set. `ingest()`, `ingestBatch()`, `clearConversation()` methods. Remove `history`/`liveMessages`. |
+| `app/lib/content-hash.ts`         | **New.** `contentHash(row)` — deterministic SHA-256 of `{type, message}`. Browser-compatible (Web Crypto).                                                 |
+| `app/stores/root-store.ts`        | Update message routing: `claude:message` → `store.ingest()`, `session:history` → `store.ingestBatch()`.                                                    |
+| `app/components/SessionView.tsx`  | Remove `pendingPrompt` useState, `prevLiveLen` ref, `prevStatus` ref, history-merge useMemo, ~6 useEffects. Read `conversation` directly from store.       |
+| `app/components/MessageBlock.tsx` | No changes needed — already receives `Record<string, unknown>` and dispatches by type.                                                                     |
 
 ---
 
@@ -27,6 +27,7 @@
 ### Task 1: Create content-hash utility
 
 **Files:**
+
 - Create: `app/lib/content-hash.ts`
 
 - [ ] **Step 1: Write `contentHash()` function**
@@ -40,19 +41,19 @@
  * Falls back to simple string hash if crypto.subtle unavailable.
  */
 export async function contentHash(type: string, message: Record<string, unknown>): Promise<string> {
-  const payload = JSON.stringify({ type, message })
+  const payload = JSON.stringify({ type, message });
   if (typeof crypto !== 'undefined' && crypto.subtle) {
-    const buf = new TextEncoder().encode(payload)
-    const hash = await crypto.subtle.digest('SHA-256', buf)
-    const arr = new Uint8Array(hash)
-    return Array.from(arr.slice(0, 8), b => b.toString(16).padStart(2, '0')).join('')
+    const buf = new TextEncoder().encode(payload);
+    const hash = await crypto.subtle.digest('SHA-256', buf);
+    const arr = new Uint8Array(hash);
+    return Array.from(arr.slice(0, 8), (b) => b.toString(16).padStart(2, '0')).join('');
   }
   // Fallback: simple djb2 hash
-  let h = 5381
+  let h = 5381;
   for (let i = 0; i < payload.length; i++) {
-    h = ((h << 5) + h + payload.charCodeAt(i)) >>> 0
+    h = ((h << 5) + h + payload.charCodeAt(i)) >>> 0;
   }
-  return h.toString(16)
+  return h.toString(16);
 }
 
 /**
@@ -60,18 +61,19 @@ export async function contentHash(type: string, message: Record<string, unknown>
  * (e.g., inside MobX actions that must be synchronous).
  */
 export function contentHashSync(type: string, message: Record<string, unknown>): string {
-  const payload = JSON.stringify({ type, message })
-  let h = 5381
+  const payload = JSON.stringify({ type, message });
+  let h = 5381;
   for (let i = 0; i < payload.length; i++) {
-    h = ((h << 5) + h + payload.charCodeAt(i)) >>> 0
+    h = ((h << 5) + h + payload.charCodeAt(i)) >>> 0;
   }
-  return h.toString(16)
+  return h.toString(16);
 }
 ```
 
 - [ ] **Step 2: Verify hash function works**
 
 Open browser console or run:
+
 ```bash
 cd /home/ryan/Code/orchestrel && node -e "
 const {contentHashSync} = require('./app/lib/content-hash.ts');
@@ -90,6 +92,7 @@ console.log('diff input diff hash:', a !== c);
 console.log('hash a:', a, 'hash c:', c);
 "
 ```
+
 Expected: `same input same hash: true`, `diff input diff hash: true`
 
 - [ ] **Step 3: Commit**
@@ -104,6 +107,7 @@ git commit -m "feat: add content-hash utility for conversation row dedup"
 ### Task 2: Refactor SessionState and SessionStore
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts` (full rewrite of state shape and methods)
 
 The key change: replace `liveMessages: ClaudeMessage[]` and `history: ClaudeMessage[]` with a single `conversation` array and `conversationIds` Set.
@@ -113,42 +117,42 @@ The key change: replace `liveMessages: ClaudeMessage[]` and `history: ClaudeMess
 In `app/stores/session-store.ts`, replace the current `SessionState` interface and `defaultSession()`:
 
 ```typescript
-import { makeAutoObservable, observable } from 'mobx'
-import type { ClaudeMessage, ClaudeStatus, FileRef } from '../../src/shared/ws-protocol'
-import type { WsClient } from '../lib/ws-client'
-import { uuid } from '../lib/utils'
-import { contentHashSync } from '../lib/content-hash'
+import { makeAutoObservable, observable } from 'mobx';
+import type { ClaudeMessage, ClaudeStatus, FileRef } from '../../src/shared/ws-protocol';
+import type { WsClient } from '../lib/ws-client';
+import { uuid } from '../lib/utils';
+import { contentHashSync } from '../lib/content-hash';
 
-let _ws: WsClient | null = null
+let _ws: WsClient | null = null;
 
 export function setSessionStoreWs(ws: WsClient) {
-  _ws = ws
+  _ws = ws;
 }
 
 function ws(): WsClient {
-  if (!_ws) throw new Error('WsClient not set')
-  return _ws
+  if (!_ws) throw new Error('WsClient not set');
+  return _ws;
 }
 
 export interface ConversationRow {
-  id: string                              // content hash for dedup
-  type: 'user' | 'assistant' | 'result' | 'system'
-  message: Record<string, unknown>
-  isSidechain?: boolean
-  ts?: string
+  id: string; // content hash for dedup
+  type: 'user' | 'assistant' | 'result' | 'system';
+  message: Record<string, unknown>;
+  isSidechain?: boolean;
+  ts?: string;
 }
 
 export interface SessionState {
-  active: boolean
-  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped'
-  sessionId: string | null
-  promptsSent: number
-  turnsCompleted: number
-  conversation: ConversationRow[]
-  conversationIds: Set<string>            // O(1) dedup lookup
-  historyLoaded: boolean                  // true after first history load
-  contextTokens: number
-  contextWindow: number
+  active: boolean;
+  status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
+  sessionId: string | null;
+  promptsSent: number;
+  turnsCompleted: number;
+  conversation: ConversationRow[];
+  conversationIds: Set<string>; // O(1) dedup lookup
+  historyLoaded: boolean; // true after first history load
+  contextTokens: number;
+  contextWindow: number;
 }
 
 function defaultSession(): SessionState {
@@ -163,7 +167,7 @@ function defaultSession(): SessionState {
     historyLoaded: false,
     contextTokens: 0,
     contextWindow: 200_000,
-  }
+  };
 }
 ```
 
@@ -343,6 +347,7 @@ Optimistic sends get same hash as server echo → natural dedup."
 ### Task 3: Update message routing in root-store
 
 **Files:**
+
 - Modify: `app/stores/root-store.ts` — change `claude:message` and `session:history` routing
 
 - [ ] **Step 1: Update the `handleMessage` routing**
@@ -387,6 +392,7 @@ git commit -m "refactor: route WS messages to store.ingest/ingestBatch"
 ### Task 4: Rewrite SessionView to use conversation array
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx` — major simplification
 
 This is the biggest change. We're removing ~6 useEffects and the 3-source merge, replacing with a direct read from the store's `conversation` array.
@@ -394,21 +400,23 @@ This is the biggest change. We're removing ~6 useEffects and the 3-source merge,
 - [ ] **Step 1: Remove old state and refs**
 
 Delete these from SessionView:
+
 - `const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)`
 - `const prevLiveLen = useRef(0)` (or similar ref tracking live message count)
 - `const [historyLoading, setHistoryLoading] = useState(false)`
 - `const prevStatus = useRef<string>(...)`
 
 Replace with:
+
 ```typescript
-const [startError, setStartError] = useState<string | null>(null)
-const [isStarting, setIsStarting] = useState(false)
-const bottomRef = useRef<HTMLDivElement>(null)
-const scrollRef = useRef<HTMLDivElement>(null)
-const [showScrollBtn, setShowScrollBtn] = useState(false)
-const [contextTokens, setContextTokens] = useState(0)
-const [contextWindow, setContextWindow] = useState(200_000)
-const [compacted, setCompacted] = useState(false)
+const [startError, setStartError] = useState<string | null>(null);
+const [isStarting, setIsStarting] = useState(false);
+const bottomRef = useRef<HTMLDivElement>(null);
+const scrollRef = useRef<HTMLDivElement>(null);
+const [showScrollBtn, setShowScrollBtn] = useState(false);
+const [contextTokens, setContextTokens] = useState(0);
+const [contextWindow, setContextWindow] = useState(200_000);
+const [compacted, setCompacted] = useState(false);
 ```
 
 - [ ] **Step 2: Read conversation directly from store**
@@ -416,12 +424,12 @@ const [compacted, setCompacted] = useState(false)
 Replace the old `useMemo` merge with a direct store read:
 
 ```typescript
-const session = sessionStore.getSession(cardId)
-const conversation = session?.conversation ?? []
-const sessionStatus = session?.status ?? 'stopped'
-const sessionActive = session?.active ?? false
-const sessionId = session?.sessionId ?? card?.sessionId ?? null
-const isStreaming = sessionActive || isStarting
+const session = sessionStore.getSession(cardId);
+const conversation = session?.conversation ?? [];
+const sessionStatus = session?.status ?? 'stopped';
+const sessionActive = session?.active ?? false;
+const sessionId = session?.sessionId ?? card?.sessionId ?? null;
+const isStreaming = sessionActive || isStarting;
 ```
 
 The `messages` array that was previously computed by useMemo is now just `conversation`.
@@ -431,14 +439,15 @@ The `messages` array that was previously computed by useMemo is now just `conver
 Delete these effects:
 
 1. **Load history on sessionId change** — replace with a single mount-time effect:
+
 ```typescript
 // Load history once on mount (or when sessionId first becomes available)
 useEffect(() => {
-  const sid = session?.sessionId ?? card?.sessionId
+  const sid = session?.sessionId ?? card?.sessionId;
   if (sid && !session?.historyLoaded) {
-    sessionStore.loadHistory(cardId, sid)
+    sessionStore.loadHistory(cardId, sid);
   }
-}, [cardId, session?.sessionId, card?.sessionId])
+}, [cardId, session?.sessionId, card?.sessionId]);
 ```
 
 2. **Reload on completion** — DELETE entirely. Live messages are already in conversation[]. History load on turn-end was only needed because liveMessages were cleared.
@@ -448,39 +457,40 @@ useEffect(() => {
 4. **Clear pendingPrompt on session end** — DELETE entirely.
 
 5. **Extract context from live messages** — Replace with a reaction to conversation changes:
+
 ```typescript
 // Extract context tokens from the latest result message
 useEffect(() => {
-  if (conversation.length === 0) return
+  if (conversation.length === 0) return;
   // Scan backwards for latest context data
   for (let i = conversation.length - 1; i >= 0; i--) {
-    const row = conversation[i]
+    const row = conversation[i];
     if (row.type === 'result') {
-      const m = row.message
+      const m = row.message;
       if (typeof m.usage === 'object' && m.usage !== null) {
-        const usage = m.usage as Record<string, unknown>
+        const usage = m.usage as Record<string, unknown>;
         if (typeof usage.input_tokens === 'number') {
-          setContextTokens(usage.input_tokens)
+          setContextTokens(usage.input_tokens);
         }
       }
       if (typeof m.context_window === 'number') {
-        setContextWindow(m.context_window)
+        setContextWindow(m.context_window);
       }
-      break
+      break;
     }
     // Check assistant messages for per-message usage
     if (row.type === 'assistant') {
-      const m = row.message
+      const m = row.message;
       if (typeof m.usage === 'object' && m.usage !== null) {
-        const usage = m.usage as Record<string, unknown>
+        const usage = m.usage as Record<string, unknown>;
         if (typeof usage.input_tokens === 'number') {
-          setContextTokens(usage.input_tokens)
+          setContextTokens(usage.input_tokens);
         }
       }
-      break
+      break;
     }
   }
-}, [conversation.length])
+}, [conversation.length]);
 ```
 
 6. **Extract context from history** — DELETE entirely. The effect above covers both live and history messages.
@@ -489,26 +499,26 @@ useEffect(() => {
 
 ```typescript
 const handleStart = async (prompt: string) => {
-  setIsStarting(true)
-  setStartError(null)
+  setIsStarting(true);
+  setStartError(null);
   try {
-    await sessionStore.startSession(cardId, prompt)
+    await sessionStore.startSession(cardId, prompt);
     // Optimistic message is already in conversation via store.ingest()
   } catch (err) {
-    setStartError(err instanceof Error ? err.message : String(err))
-    setIsStarting(false)
+    setStartError(err instanceof Error ? err.message : String(err));
+    setIsStarting(false);
   }
-}
+};
 
 const handleSend = async (prompt: string, files?: FileRef[]) => {
-  setStartError(null)
+  setStartError(null);
   try {
-    await sessionStore.sendMessage(cardId, prompt, files)
+    await sessionStore.sendMessage(cardId, prompt, files);
     // Optimistic message is already in conversation via store.ingest()
   } catch (err) {
-    setStartError(err instanceof Error ? err.message : String(err))
+    setStartError(err instanceof Error ? err.message : String(err));
   }
-}
+};
 ```
 
 No `setPendingPrompt()` calls. No `addOptimisticUser()` helper.
@@ -517,13 +527,13 @@ No `setPendingPrompt()` calls. No `addOptimisticUser()` helper.
 
 ```typescript
 useEffect(() => {
-  setStartError(null)
-  setIsStarting(false)
-  setContextTokens(0)
-  setContextWindow(200_000)
-  setCompacted(false)
+  setStartError(null);
+  setIsStarting(false);
+  setContextTokens(0);
+  setContextWindow(200_000);
+  setCompacted(false);
   // Don't clear conversation here — store handles it per card via getOrCreate()
-}, [cardId])
+}, [cardId]);
 ```
 
 - [ ] **Step 6: Keep auto-scroll effects (simplify deps)**
@@ -531,14 +541,14 @@ useEffect(() => {
 ```typescript
 // Auto-scroll on new messages
 useEffect(() => {
-  if (conversation.length === 0) return
-  const el = scrollRef.current
-  if (!el) return
-  const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150
+  if (conversation.length === 0) return;
+  const el = scrollRef.current;
+  if (!el) return;
+  const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
   if (nearBottom) {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }
-}, [conversation.length])
+}, [conversation.length]);
 ```
 
 - [ ] **Step 7: Update render — use conversation array**
@@ -546,13 +556,15 @@ useEffect(() => {
 Replace the message mapping:
 
 ```tsx
-{conversation.map((row) => (
-  <MessageBlock
-    key={row.id}
-    message={{ type: row.type, message: row.message, isSidechain: row.isSidechain, ts: row.ts }}
-    toolResults={toolResults}
-  />
-))}
+{
+  conversation.map((row) => (
+    <MessageBlock
+      key={row.id}
+      message={{ type: row.type, message: row.message, isSidechain: row.isSidechain, ts: row.ts }}
+      toolResults={toolResults}
+    />
+  ));
+}
 ```
 
 Note: `row.id` is the content hash — stable, unique, and doesn't change position. This gives React stable keys and eliminates unnecessary re-renders.
@@ -561,40 +573,40 @@ Also update `toolResults` extraction to use `conversation` instead of the old `m
 
 ```typescript
 const toolResults = useMemo(() => {
-  const map = new Map<string, string>()
+  const map = new Map<string, string>();
   for (const row of conversation) {
-    if (row.type !== 'user') continue
-    const content = row.message.content
-    if (!Array.isArray(content)) continue
+    if (row.type !== 'user') continue;
+    const content = row.message.content;
+    if (!Array.isArray(content)) continue;
     for (const block of content) {
       if ((block as Record<string, unknown>).type === 'tool_result') {
-        const tr = block as Record<string, unknown>
-        const id = tr.tool_use_id as string
-        const innerContent = tr.content
+        const tr = block as Record<string, unknown>;
+        const id = tr.tool_use_id as string;
+        const innerContent = tr.content;
         if (typeof innerContent === 'string') {
-          map.set(id, innerContent)
+          map.set(id, innerContent);
         } else if (Array.isArray(innerContent)) {
           const text = (innerContent as Record<string, unknown>[])
-            .filter(b => b.type === 'text')
-            .map(b => b.text as string)
-            .join('\n')
-          if (text) map.set(id, text)
+            .filter((b) => b.type === 'text')
+            .map((b) => b.text as string)
+            .join('\n');
+          if (text) map.set(id, text);
         }
       }
     }
   }
-  return map
-}, [conversation.length])
+  return map;
+}, [conversation.length]);
 ```
 
 - [ ] **Step 8: Update the auto-start prompt effect**
 
 ```typescript
 useEffect(() => {
-  if (!autoStartPrompt || isStarting || sessionActive) return
-  handleStart(autoStartPrompt)
-  onAutoStartConsumed?.()
-}, [autoStartPrompt])
+  if (!autoStartPrompt || isStarting || sessionActive) return;
+  handleStart(autoStartPrompt);
+  onAutoStartConsumed?.();
+}, [autoStartPrompt]);
 ```
 
 No `addOptimisticUser()` — the store's `startSession()` already ingests the optimistic message.
@@ -606,6 +618,7 @@ cd /home/ryan/Code/orchestrel && npx tsc --noEmit 2>&1 | head -30
 ```
 
 Then open the app in a browser and test:
+
 1. Load a card with existing session history — messages should render
 2. Send a message — should appear immediately, no flicker
 3. Watch assistant response stream in — messages append smoothly
@@ -630,6 +643,7 @@ Conversation is now a direct MobX observable read — no merge step."
 ### Task 5: Handle compaction detection
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts` — detect compaction in `ingest()`
 - Modify: `app/components/SessionView.tsx` — react to compaction
 
@@ -664,14 +678,14 @@ No additional state needed — the system message itself in `conversation` is th
 ```typescript
 // Detect compaction for visual indicator
 useEffect(() => {
-  if (conversation.length === 0) return
-  const last = conversation[conversation.length - 1]
+  if (conversation.length === 0) return;
+  const last = conversation[conversation.length - 1];
   if (last.type === 'system' && last.message.subtype === 'compact_boundary') {
-    setCompacted(true)
-    const t = setTimeout(() => setCompacted(false), 3000)
-    return () => clearTimeout(t)
+    setCompacted(true);
+    const t = setTimeout(() => setCompacted(false), 3000);
+    return () => clearTimeout(t);
   }
-}, [conversation.length])
+}, [conversation.length]);
 ```
 
 - [ ] **Step 3: Commit**
@@ -686,11 +700,12 @@ git commit -m "feat: compaction detection via conversation array"
 ### Task 6: Handle file-augmented prompts in optimistic messages
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts` — `sendMessage()` with files
 
 - [ ] **Step 1: Update optimistic message for file sends**
 
-When files are attached, the server augments the prompt with file paths. The optimistic message should match what the user typed (not the augmented version), since the server will echo the *augmented* prompt. This means the optimistic message will NOT dedup with the server echo — which is actually fine because the user sees their original message, then the server echo (with file paths) arrives as a separate row. But this could show duplicates.
+When files are attached, the server augments the prompt with file paths. The optimistic message should match what the user typed (not the augmented version), since the server will echo the _augmented_ prompt. This means the optimistic message will NOT dedup with the server echo — which is actually fine because the user sees their original message, then the server echo (with file paths) arrives as a separate row. But this could show duplicates.
 
 Better approach: don't send optimistic message when files are attached (file upload takes time anyway):
 
@@ -725,6 +740,7 @@ git commit -m "fix: skip optimistic message for file sends (server augments prom
 ### Task 7: Handle model/thinking level selectors
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx` — model and thinking level selectors still read from cardStore
 
 - [ ] **Step 1: Verify model/thinking selectors still work**
@@ -745,6 +761,7 @@ No code changes needed if they already read from `cardStore`. Just verify.
 ### Task 8: Verify the isStarting flag lifecycle
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx`
 
 - [ ] **Step 1: Ensure isStarting clears on status update**
@@ -752,11 +769,15 @@ No code changes needed if they already read from `cardStore`. Just verify.
 ```typescript
 // Clear isStarting when session actually starts running
 useEffect(() => {
-  if (sessionStatus === 'running' || sessionStatus === 'completed' ||
-      sessionStatus === 'errored' || sessionStatus === 'stopped') {
-    setIsStarting(false)
+  if (
+    sessionStatus === 'running' ||
+    sessionStatus === 'completed' ||
+    sessionStatus === 'errored' ||
+    sessionStatus === 'stopped'
+  ) {
+    setIsStarting(false);
   }
-}, [sessionStatus])
+}, [sessionStatus]);
 ```
 
 This replaces the old `prevStatus` ref logic.

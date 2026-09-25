@@ -45,10 +45,18 @@ describe('OrcdSession BGC event mapping', () => {
       provider: 'anthropic',
       sessionId: 'window',
       contextWindow: 200000, // stale card value
-      providerConfig: { type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '', models: { fable: { label: 'Fable 5', modelID: 'claude-fable-5', contextWindow: 1000000 } } },
+      providerConfig: {
+        type: 'anthropic',
+        label: 'Anthropic',
+        baseUrl: '',
+        apiKey: '',
+        models: { fable: { label: 'Fable 5', modelID: 'claude-fable-5', contextWindow: 1000000 } },
+      },
     });
     let win = 0;
-    s.subscribe((m) => { if (m.type === 'context_usage') win = m.contextWindow; });
+    s.subscribe((m) => {
+      if (m.type === 'context_usage') win = m.contextWindow;
+    });
     s['emitMappedPiEvent']({ type: 'turn_end', message: { role: 'assistant', usage: { totalTokens: 186825 } } });
     expect(win).toBe(1000000);
   });
@@ -56,10 +64,17 @@ describe('OrcdSession BGC event mapping', () => {
   it('does not swallow non-compaction events', () => {
     const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'passthru' });
     const events: unknown[] = [];
-    s.subscribe((m) => { if (m.type === 'stream_event') events.push(m.event); });
-    s['emitMappedPiEvent']({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'hi', contentIndex: 0 } });
+    s.subscribe((m) => {
+      if (m.type === 'stream_event') events.push(m.event);
+    });
+    s['emitMappedPiEvent']({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_delta', delta: 'hi', contentIndex: 0 },
+    });
     expect(events.length).toBeGreaterThan(0);
-    const subtypes = events.filter((e): e is { subtype?: string } => typeof e === 'object' && e !== null).map((e) => e.subtype);
+    const subtypes = events
+      .filter((e): e is { subtype?: string } => typeof e === 'object' && e !== null)
+      .map((e) => e.subtype);
     expect(subtypes).not.toContain('bgc_started');
     expect(subtypes).not.toContain('compact_boundary');
   });

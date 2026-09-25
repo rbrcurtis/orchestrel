@@ -15,50 +15,54 @@
 ## File Structure
 
 ### New Files
-| File | Responsibility |
-|------|---------------|
-| `src/server/sessions/types.ts` | ActiveSession interface, SessionStatus type, SessionOpts |
-| `src/server/sessions/manager.ts` | SessionManager: Query lifecycle, start/stop/follow-up/resume |
-| `src/server/sessions/consumer.ts` | consumeSession loop: iterate Query, filter, publish to bus |
-| `src/server/sessions/worktree.ts` | ensureWorktree helper (extracted from services/session.ts) |
-| `~/.claude-code-router/custom-router.js` | CCR custom router: prefix parsing + failover |
-| `app/lib/sdk-types.ts` | Frontend SDK message type definitions (mirrors SDK shapes) |
-| `app/lib/message-accumulator.ts` | Builds renderable state from streaming SDK messages |
+
+| File                                     | Responsibility                                               |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| `src/server/sessions/types.ts`           | ActiveSession interface, SessionStatus type, SessionOpts     |
+| `src/server/sessions/manager.ts`         | SessionManager: Query lifecycle, start/stop/follow-up/resume |
+| `src/server/sessions/consumer.ts`        | consumeSession loop: iterate Query, filter, publish to bus   |
+| `src/server/sessions/worktree.ts`        | ensureWorktree helper (extracted from services/session.ts)   |
+| `~/.claude-code-router/custom-router.js` | CCR custom router: prefix parsing + failover                 |
+| `app/lib/sdk-types.ts`                   | Frontend SDK message type definitions (mirrors SDK shapes)   |
+| `app/lib/message-accumulator.ts`         | Builds renderable state from streaming SDK messages          |
 
 ### Modified Files
-| File | Changes |
-|------|---------|
-| `package.json` | Remove `@opencode-ai/sdk`, add `@anthropic-ai/claude-agent-sdk` + `@anthropic-ai/claude-code` |
-| `providers.json` | Simplified: remove `ocProviderID`, key = CCR prefix |
-| `src/shared/ws-protocol.ts` | Replace `agentMessageSchema` with SDK message passthrough, new WS message types |
-| `src/server/init-state.ts` | Add SessionManager to persistent state |
-| `src/server/config/providers.ts` | Remove `getOcProviderID`, simplify types |
-| `src/server/models/Card.ts` | Add `provider` column |
-| `src/server/bus.ts` | Update topic type comments, add `card:${id}:sdk` |
-| `src/server/controllers/oc.ts` | Replace wireSession with consumer-based event handling, update autoStart/worktreeCleanup |
-| `src/server/services/queue-gate.ts` | Import new SessionManager, call `manager.start()` |
-| `src/server/ws/handlers.ts` | Add `session:set-model` dispatch |
-| `src/server/ws/handlers/agents.ts` | Call new SessionManager methods |
-| `src/server/ws/handlers/sessions.ts` | Use Agent SDK `getSessionMessages()` for history |
-| `src/server/ws/server.ts` | Remove OpenCode server init, use new SessionManager |
-| `app/stores/session-store.ts` | Rewrite ingest/ingestBatch for SDK message types |
-| `app/stores/root-store.ts` | Route `session:message`/`session:status`/`session:exit` |
-| `app/components/MessageBlock.tsx` | Render SDK content blocks instead of AgentMessage |
-| `app/components/SessionView.tsx` | Add provider dropdown, update streaming detection |
-| `app/components/SubagentFeed.tsx` | Handle `task_*` SDK messages |
+
+| File                                 | Changes                                                                                       |
+| ------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `package.json`                       | Remove `@opencode-ai/sdk`, add `@anthropic-ai/claude-agent-sdk` + `@anthropic-ai/claude-code` |
+| `providers.json`                     | Simplified: remove `ocProviderID`, key = CCR prefix                                           |
+| `src/shared/ws-protocol.ts`          | Replace `agentMessageSchema` with SDK message passthrough, new WS message types               |
+| `src/server/init-state.ts`           | Add SessionManager to persistent state                                                        |
+| `src/server/config/providers.ts`     | Remove `getOcProviderID`, simplify types                                                      |
+| `src/server/models/Card.ts`          | Add `provider` column                                                                         |
+| `src/server/bus.ts`                  | Update topic type comments, add `card:${id}:sdk`                                              |
+| `src/server/controllers/oc.ts`       | Replace wireSession with consumer-based event handling, update autoStart/worktreeCleanup      |
+| `src/server/services/queue-gate.ts`  | Import new SessionManager, call `manager.start()`                                             |
+| `src/server/ws/handlers.ts`          | Add `session:set-model` dispatch                                                              |
+| `src/server/ws/handlers/agents.ts`   | Call new SessionManager methods                                                               |
+| `src/server/ws/handlers/sessions.ts` | Use Agent SDK `getSessionMessages()` for history                                              |
+| `src/server/ws/server.ts`            | Remove OpenCode server init, use new SessionManager                                           |
+| `app/stores/session-store.ts`        | Rewrite ingest/ingestBatch for SDK message types                                              |
+| `app/stores/root-store.ts`           | Route `session:message`/`session:status`/`session:exit`                                       |
+| `app/components/MessageBlock.tsx`    | Render SDK content blocks instead of AgentMessage                                             |
+| `app/components/SessionView.tsx`     | Add provider dropdown, update streaming detection                                             |
+| `app/components/SubagentFeed.tsx`    | Handle `task_*` SDK messages                                                                  |
 
 ### Deleted Files
-| File | Reason |
-|------|--------|
-| `src/server/agents/` (entire dir) | Replaced by `src/server/sessions/` |
-| `src/server/opencode/` (entire dir) | No external daemon |
-| `src/server/services/session.ts` | Merged into SessionManager |
+
+| File                                | Reason                             |
+| ----------------------------------- | ---------------------------------- |
+| `src/server/agents/` (entire dir)   | Replaced by `src/server/sessions/` |
+| `src/server/opencode/` (entire dir) | No external daemon                 |
+| `src/server/services/session.ts`    | Merged into SessionManager         |
 
 ---
 
 ## Task 1: Install Dependencies + CCR Setup
 
 **Files:**
+
 - Modify: `package.json`
 - Create: `~/.claude-code-router/custom-router.js`
 
@@ -171,6 +175,7 @@ git commit -m "chore: swap @opencode-ai/sdk for @anthropic-ai/claude-agent-sdk"
 ## Task 2: Server Session Types
 
 **Files:**
+
 - Create: `src/server/sessions/types.ts`
 
 - [ ] **Step 1: Create the sessions directory**
@@ -235,6 +240,7 @@ git commit -m "feat: add session types for Agent SDK refactor"
 ## Task 3: Worktree Helper Extraction
 
 **Files:**
+
 - Create: `src/server/sessions/worktree.ts`
 - Reference: `src/server/services/session.ts:23-71` (current `ensureWorktree`)
 
@@ -319,6 +325,7 @@ git commit -m "refactor: extract ensureWorktree to sessions module"
 ## Task 4: Consumer Loop
 
 **Files:**
+
 - Create: `src/server/sessions/consumer.ts`
 
 The consumer loop iterates over a `Query` async generator, filters messages, updates session state, and publishes to the event bus. This is the core replacement for the 800-line `OpenCodeSession`.
@@ -351,10 +358,7 @@ const FORWARD_TYPES = new Set([
  * Updates session state, publishes forwarded messages to the bus.
  * Runs as a fire-and-forget async task — one per active session.
  */
-export async function consumeSession(
-  session: ActiveSession,
-  onExit: (session: ActiveSession) => void,
-): Promise<void> {
+export async function consumeSession(session: ActiveSession, onExit: (session: ActiveSession) => void): Promise<void> {
   const { cardId } = session;
   const log = (msg: string) => console.log(`[session:${session.sessionId ?? cardId}] ${msg}`);
 
@@ -474,6 +478,7 @@ git commit -m "feat: add SDK consumer loop for session messages"
 ## Task 5: SessionManager
 
 **Files:**
+
 - Create: `src/server/sessions/manager.ts`
 
 - [ ] **Step 1: Write SessionManager**
@@ -491,11 +496,7 @@ import { AppDataSource } from '../models/index';
 export class SessionManager {
   private sessions = new Map<number, ActiveSession>();
 
-  async start(
-    cardId: number,
-    prompt: string,
-    opts: SessionStartOpts,
-  ): Promise<ActiveSession> {
+  async start(cardId: number, prompt: string, opts: SessionStartOpts): Promise<ActiveSession> {
     // If session already active, send as follow-up instead
     const existing = this.sessions.get(cardId);
     if (existing && (existing.status === 'running' || existing.status === 'starting' || existing.status === 'retry')) {
@@ -618,6 +619,7 @@ git commit -m "feat: add SessionManager with Agent SDK Query lifecycle"
 ## Task 6: Provider Config Simplification
 
 **Files:**
+
 - Modify: `providers.json`
 - Modify: `src/server/config/providers.ts`
 - Modify: `src/shared/ws-protocol.ts` (providerConfigSchema)
@@ -679,6 +681,7 @@ git commit -m "refactor: simplify provider config, remove ocProviderID"
 ## Task 7: Card Model — Add Provider Column
 
 **Files:**
+
 - Modify: `src/server/models/Card.ts`
 - Modify: `src/shared/ws-protocol.ts` (cardSchema)
 - DB migration (ALTER TABLE via sqlite3)
@@ -726,6 +729,7 @@ git commit -m "feat: add provider column to Card model"
 ## Task 8: Init-State Integration
 
 **Files:**
+
 - Modify: `src/server/init-state.ts`
 
 - [ ] **Step 1: Add SessionManager to init-state**
@@ -736,8 +740,12 @@ In `src/server/init-state.ts`, add SessionManager to the persistent state that s
 import type { SessionManager } from './sessions/manager';
 
 let _sessionManager: SessionManager | null = null;
-export function getSessionManager(): SessionManager | null { return _sessionManager; }
-export function setSessionManager(sm: SessionManager): void { _sessionManager = sm; }
+export function getSessionManager(): SessionManager | null {
+  return _sessionManager;
+}
+export function setSessionManager(sm: SessionManager): void {
+  _sessionManager = sm;
+}
 ```
 
 Note: The import must be a `type` import since init-state.ts is dynamically imported and we don't want to pull in the full SessionManager module at the type level.
@@ -764,6 +772,7 @@ git commit -m "refactor: add SessionManager to init-state for Vite survival"
 ## Task 9: Update Controllers (oc.ts)
 
 **Files:**
+
 - Modify: `src/server/controllers/oc.ts`
 
 This is the heaviest server-side change. `wireSession` (lines 25-157) is deleted entirely — its work is now done by the consumer loop. `registerAutoStart` and `registerWorktreeCleanup` are updated to call the new SessionManager.
@@ -945,6 +954,7 @@ git commit -m "refactor: replace wireSession with SDK consumer-based event handl
 ## Task 10: Update Queue-Gate
 
 **Files:**
+
 - Modify: `src/server/services/queue-gate.ts`
 
 - [ ] **Step 1: Replace launchSession call**
@@ -1004,6 +1014,7 @@ git commit -m "refactor: queue-gate uses new SessionManager"
 ## Task 11: Update WS Handlers
 
 **Files:**
+
 - Modify: `src/server/ws/handlers/agents.ts`
 - Modify: `src/server/ws/handlers.ts`
 - Modify: `src/server/ws/handlers/sessions.ts`
@@ -1089,6 +1100,7 @@ git commit -m "refactor: WS handlers use new SessionManager"
 ## Task 12: Update WS Protocol + Bus Topics
 
 **Files:**
+
 - Modify: `src/shared/ws-protocol.ts`
 - Modify: `src/server/bus.ts`
 - Modify: `src/server/ws/handlers.ts` (subscribe handler)
@@ -1148,11 +1160,13 @@ git commit -m "refactor: update WS protocol and bus topics for SDK messages"
 ## Task 13: Update ws/server.ts Initialization
 
 **Files:**
+
 - Modify: `src/server/ws/server.ts`
 
 - [ ] **Step 1: Remove OpenCode server initialization**
 
 In `src/server/ws/server.ts`:
+
 - Remove the import of `openCodeServer` from `../opencode/server`
 - Remove the `openCodeServer.start()` call and the post-restart session reattachment logic (lines ~199-226)
 - Replace with SessionManager initialization:
@@ -1192,6 +1206,7 @@ git commit -m "refactor: initialize SessionManager instead of OpenCode server"
 ## Task 14: Frontend SDK Types
 
 **Files:**
+
 - Create: `app/lib/sdk-types.ts`
 
 Define TypeScript types that mirror the SDK message shapes the UI needs to render. These are standalone — no SDK import on the frontend.
@@ -1205,32 +1220,54 @@ Write `app/lib/sdk-types.ts`:
 
 // Content blocks (inside stream_event deltas)
 
-export interface TextDelta { type: 'text_delta'; text: string }
-export interface ThinkingDelta { type: 'thinking_delta'; thinking: string }
-export interface InputJsonDelta { type: 'input_json_delta'; partial_json: string }
+export interface TextDelta {
+  type: 'text_delta';
+  text: string;
+}
+export interface ThinkingDelta {
+  type: 'thinking_delta';
+  thinking: string;
+}
+export interface InputJsonDelta {
+  type: 'input_json_delta';
+  partial_json: string;
+}
 
 export interface ContentBlockStart {
   type: 'content_block_start';
   index: number;
-  content_block: { type: 'text' | 'thinking' | 'tool_use'; id?: string; name?: string; text?: string; thinking?: string };
+  content_block: {
+    type: 'text' | 'thinking' | 'tool_use';
+    id?: string;
+    name?: string;
+    text?: string;
+    thinking?: string;
+  };
 }
 export interface ContentBlockDelta {
   type: 'content_block_delta';
   index: number;
   delta: TextDelta | ThinkingDelta | InputJsonDelta;
 }
-export interface ContentBlockStop { type: 'content_block_stop'; index: number }
-export interface MessageStart { type: 'message_start'; message: { id: string; role: string; model: string } }
-export interface MessageDelta { type: 'message_delta'; delta: { stop_reason?: string }; usage?: { output_tokens: number } }
-export interface MessageStop { type: 'message_stop' }
+export interface ContentBlockStop {
+  type: 'content_block_stop';
+  index: number;
+}
+export interface MessageStart {
+  type: 'message_start';
+  message: { id: string; role: string; model: string };
+}
+export interface MessageDelta {
+  type: 'message_delta';
+  delta: { stop_reason?: string };
+  usage?: { output_tokens: number };
+}
+export interface MessageStop {
+  type: 'message_stop';
+}
 
 export type StreamEvent =
-  | ContentBlockStart
-  | ContentBlockDelta
-  | ContentBlockStop
-  | MessageStart
-  | MessageDelta
-  | MessageStop;
+  ContentBlockStart | ContentBlockDelta | ContentBlockStop | MessageStart | MessageDelta | MessageStop;
 
 // Top-level SDK message types
 
@@ -1257,7 +1294,12 @@ export interface SdkResultMessage {
   subtype: 'success' | 'error_max_turns' | 'error_during_execution' | 'error_max_budget_usd';
   result?: string;
   total_cost_usd: number;
-  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
   num_turns: number;
   duration_ms: number;
   model_usage?: Record<string, { input_tokens: number; output_tokens: number; cost_usd: number }>;
@@ -1345,6 +1387,7 @@ git commit -m "feat: add frontend SDK message type definitions"
 ## Task 15: MessageAccumulator
 
 **Files:**
+
 - Create: `app/lib/message-accumulator.ts`
 
 Builds renderable state from streaming SDK messages. This is the core frontend change that replaces the delta accumulation logic in SessionStore.
@@ -1622,6 +1665,7 @@ git commit -m "feat: add MessageAccumulator for SDK stream rendering"
 ## Task 16: Rewrite SessionStore
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts`
 - Modify: `app/stores/root-store.ts`
 
@@ -1630,6 +1674,7 @@ git commit -m "feat: add MessageAccumulator for SDK stream rendering"
 Replace the `ingest()` / `ingestBatch()` methods and the `ConversationRow` / `SessionState` types to use `MessageAccumulator` and `SdkMessage`:
 
 Key changes:
+
 - `SessionState.conversation` replaced by `MessageAccumulator` instance (`accumulator` field)
 - `ingest(cardId, msg: AgentMessage)` replaced by `ingestSdkMessage(cardId, msg: SdkMessage)` which delegates to `accumulator.handleMessage(msg)`
 - `ingestBatch(cardId, messages: AgentMessage[])` replaced by `ingestHistory(cardId, messages: unknown[])` which iterates and calls `accumulator.handleMessage()` for each
@@ -1676,6 +1721,7 @@ git commit -m "refactor: SessionStore uses MessageAccumulator for SDK messages"
 ## Task 17: Update Message Rendering Components
 
 **Files:**
+
 - Modify: `app/components/MessageBlock.tsx`
 - Modify: `app/components/SessionView.tsx`
 - Modify: `app/components/SubagentFeed.tsx`
@@ -1687,6 +1733,7 @@ Replace the current `MessageBlock` component that renders `AgentMessage` with on
 The dispatch changes from `switch (message.type)` where type is `'text' | 'tool_call' | ...` to `switch (entry.kind)` where kind is `'blocks' | 'result' | 'tool_activity' | 'user' | 'system' | 'error' | 'compact'`.
 
 For `kind: 'blocks'`, render each `ContentBlock` in the blocks array:
+
 - `block.type === 'text'` — `TextBlock` (same markdown rendering)
 - `block.type === 'thinking'` — `ThinkingBlock` (same muted rendering)
 - `block.type === 'tool_use'` — `ToolUseBlock` (show name, input, progress)
@@ -1700,6 +1747,7 @@ For `kind: 'compact'` — compact boundary marker (same)
 - [ ] **Step 2: Update SessionView for new data flow**
 
 In `SessionView.tsx`:
+
 - The message list now comes from `session.accumulator.conversation` instead of `session.conversation`
 - Also render `session.accumulator.currentBlocks` at the end (in-progress blocks not yet finalized)
 - Streaming detection: check `session.status === 'running' || session.status === 'starting'`
@@ -1716,7 +1764,9 @@ Add a provider `<select>` alongside the existing model and thinking-level select
   className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground min-w-0 truncate"
 >
   {Object.entries(config.providers).map(([id, p]) => (
-    <option key={id} value={id}>{p.label}</option>
+    <option key={id} value={id}>
+      {p.label}
+    </option>
   ))}
 </select>
 ```
@@ -1758,6 +1808,7 @@ git commit -m "feat: render SDK messages via MessageAccumulator, add provider sw
 ## Task 18: Delete Old Code
 
 **Files:**
+
 - Delete: `src/server/agents/` (entire directory)
 - Delete: `src/server/opencode/` (entire directory)
 - Delete: `src/server/services/session.ts`
@@ -1797,6 +1848,7 @@ sudo systemctl restart orchestrel
 ```
 
 Open `http://localhost:6194` and verify:
+
 - Board loads correctly
 - Can create a card and move to running
 - Agent session starts (check terminal logs for `[session:...]` messages)
@@ -1819,6 +1871,7 @@ git commit -m "chore: delete old OpenCode agent code"
 ## Post-Implementation Notes
 
 **Manual testing checklist:**
+
 - Create card, move to running: verify session starts via CCR
 - Send follow-up message: verify streaming response
 - Switch model mid-session: verify next turn uses new model
@@ -1830,6 +1883,7 @@ git commit -m "chore: delete old OpenCode agent code"
 - Context gauge: verify it reflects usage from result messages
 
 **Known unknowns to verify during implementation:**
+
 1. Model prefix passthrough — Task 1, Step 6 tests this
 2. `streamInput()` behavior between turns — does the generator pause after result?
 3. `getSessionMessages()` return format — may need adjustment in session:load handler

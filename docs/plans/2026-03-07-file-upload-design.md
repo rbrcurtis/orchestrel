@@ -24,6 +24,7 @@ Separate Express upload endpoint (`POST /api/upload`) with multer. Files saved t
 ## UI Details
 
 ### Prompt Input Area
+
 - Paperclip icon button: absolutely positioned bottom-right inside textarea
 - Drag-and-drop: drop zone overlay with subtle border highlight on drag-over
 - Clipboard paste: handler on textarea intercepts image paste data
@@ -33,6 +34,7 @@ Separate Express upload endpoint (`POST /api/upload`) with multer. Files saved t
 - Client-side 25 MB per file validation
 
 ### Chat History (UserBlock)
+
 - Images: inline thumbnail if file still exists in `/tmp`, otherwise "file no longer available" placeholder
 - Non-images: compact filename chip with icon
 - File metadata stored in user message content blocks — SDK handles persistence
@@ -40,26 +42,29 @@ Separate Express upload endpoint (`POST /api/upload`) with multer. Files saved t
 ## Server Changes
 
 ### New Express Route
+
 - `POST /api/upload` — multer middleware, 25 MB limit
 - Saves to `/tmp/orchestrel-uploads/{sessionId}/{uuid}-{originalname}`
 - Returns `FileRef[]`: `{ id, name, mimeType, path }`
 
 ### tRPC Changes
+
 - `sendMessage` input: add optional `files: z.array(fileRefSchema)`
 - Build content blocks array from text + file refs
 - Pass content blocks to `session.sendUserMessage()`
 
 ### protocol.ts
+
 - `sendUserMessage()` accepts string | ContentBlock[] (currently string only)
 
 ## File Type Handling
 
-| Type | MIME | Claude API Block |
-|------|------|-----------------|
-| Images | image/png, image/jpeg, image/gif, image/webp | `image` block with base64 source |
-| PDFs | application/pdf | `document` block with base64 source |
-| Text/code | text/*, application/json, application/xml, etc. | `text` block with file content |
-| Other | anything else | `text` block noting filename and type |
+| Type      | MIME                                            | Claude API Block                      |
+| --------- | ----------------------------------------------- | ------------------------------------- |
+| Images    | image/png, image/jpeg, image/gif, image/webp    | `image` block with base64 source      |
+| PDFs      | application/pdf                                 | `document` block with base64 source   |
+| Text/code | text/*, application/json, application/xml, etc. | `text` block with file content        |
+| Other     | anything else                                   | `text` block noting filename and type |
 
 ## Not Building
 

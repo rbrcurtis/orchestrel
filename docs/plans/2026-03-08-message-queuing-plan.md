@@ -13,6 +13,7 @@
 ### Task 1: Add input queue infrastructure to ClaudeSession
 
 **Files:**
+
 - Modify: `src/server/claude/protocol.ts`
 
 **Step 1: Add imports and new members**
@@ -57,6 +58,7 @@ git commit -m "feat: add input queue infrastructure for message queuing"
 ### Task 2: Wire `streamInput` into query lifecycle
 
 **Files:**
+
 - Modify: `src/server/claude/protocol.ts`
 
 **Step 1: Wire streamInput in `runQuery()`**
@@ -89,6 +91,7 @@ git commit -m "feat: wire streamInput into query lifecycle"
 ### Task 3: Rewrite `sendUserMessage()` to use queue
 
 **Files:**
+
 - Modify: `src/server/claude/protocol.ts`
 
 **Step 1: Replace `sendUserMessage()` implementation**

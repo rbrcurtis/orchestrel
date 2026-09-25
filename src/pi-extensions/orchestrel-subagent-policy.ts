@@ -1,8 +1,5 @@
 import type { ExtensionAPI, ExtensionFactory } from '@earendil-works/pi-coding-agent';
-import {
-  parseSubagentPolicy,
-  type OrchestrelSubagentPolicy,
-} from '../shared/subagent-policy';
+import { parseSubagentPolicy, type OrchestrelSubagentPolicy } from '../shared/subagent-policy';
 
 export const ORCHESTREL_SUBAGENT_POLICY_ENV = 'ORCHESTREL_SUBAGENT_POLICY';
 
@@ -34,7 +31,9 @@ function validateRequest(raw: unknown): SubagentModelPolicyRequest {
   }
   const [provider] = req.parentModel.split('/');
   if (provider !== req.parentProvider) {
-    throw new Error(`subagent model policy request parentModel provider must equal parentProvider "${req.parentProvider}"`);
+    throw new Error(
+      `subagent model policy request parentModel provider must equal parentProvider "${req.parentProvider}"`,
+    );
   }
   if (req.requestedModel !== undefined && (typeof req.requestedModel !== 'string' || !req.requestedModel)) {
     throw new Error('subagent model policy request requestedModel must be a non-empty string');
@@ -44,10 +43,7 @@ function validateRequest(raw: unknown): SubagentModelPolicyRequest {
 }
 
 export interface OrchestrelSubagentPolicyExtensionOptions {
-  onDecision?: (input: {
-    agentType: string;
-    decision: { model: string; source: string } | { error: string };
-  }) => void;
+  onDecision?: (input: { agentType: string; decision: { model: string; source: string } | { error: string } }) => void;
 }
 
 function notifyDecision(
@@ -88,11 +84,12 @@ function register(
       // Accept both qualified and bare names, but only models this session's
       // provider actually offers — the LLM sometimes drops the provider
       // prefix or invents model ids.
-      req.decision = provider === policy.parentProvider && policy.parentModels.includes(modelId)
-        ? { model: `${policy.parentProvider}/${modelId}`, source: 'explicit' }
-        : {
-          error: `Subagent model "${req.requestedModel}" is not allowed. This session uses provider "${policy.parentProvider}".`,
-        };
+      req.decision =
+        provider === policy.parentProvider && policy.parentModels.includes(modelId)
+          ? { model: `${policy.parentProvider}/${modelId}`, source: 'explicit' }
+          : {
+              error: `Subagent model "${req.requestedModel}" is not allowed. This session uses provider "${policy.parentProvider}".`,
+            };
       notifyDecision(opts.onDecision, req.agentType, req.decision);
       return;
     }

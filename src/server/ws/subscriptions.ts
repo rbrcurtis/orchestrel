@@ -162,9 +162,7 @@ export const busRoomBridge = {
     }
     const room = `card:${cardId}`;
     const roomSockets = _io.sockets.adapter.rooms.get(room);
-    const remaining = roomSockets
-      ? [...roomSockets].filter((id) => id !== leavingSocketId).length
-      : 0;
+    const remaining = roomSockets ? [...roomSockets].filter((id) => id !== leavingSocketId).length : 0;
     if (remaining > 0) {
       console.log(`[bus-bridge] cleanupCardIfEmpty card:${cardId} skipped — ${remaining} socket(s) still in room`);
       return;

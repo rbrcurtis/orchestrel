@@ -7,7 +7,11 @@ import { windowForCard } from '../../config/capabilities';
 import { compactCardSession, stopCardExecution, submitCardPrompt } from '../../services/card-execution';
 
 export async function handleAgentSend(
-  data: { cardId: number; message: string; files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }> },
+  data: {
+    cardId: number;
+    message: string;
+    files?: Array<{ id: string; name: string; mimeType: string; path: string; size: number }>;
+  },
   callback: (res: AckResponse) => void,
   socket: import('../types').AppSocket,
 ): Promise<void> {
@@ -50,10 +54,7 @@ export async function handleAgentCompact(
   }
 }
 
-export async function handleAgentStop(
-  data: { cardId: number },
-  callback: (res: AckResponse) => void,
-): Promise<void> {
+export async function handleAgentStop(data: { cardId: number }, callback: (res: AckResponse) => void): Promise<void> {
   const { cardId } = data;
   console.log(`[session:${cardId}] agent:stop received`);
   try {

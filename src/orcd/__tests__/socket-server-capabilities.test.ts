@@ -7,7 +7,10 @@ describe('buildCapabilities', () => {
       { listen: { host: '127.0.0.1', port: 0 }, authToken: 't', name: 'gpubox' },
       {
         anthropic: {
-          type: 'anthropic', label: 'Anthropic', baseUrl: '', apiKey: '',
+          type: 'anthropic',
+          label: 'Anthropic',
+          baseUrl: '',
+          apiKey: '',
           models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet-4-6', contextWindow: 1000000 } },
           modelLabels: { 'claude-sonnet-4-6': { alias: 'sonnet', label: 'Sonnet', contextWindow: 1000000 } },
         },
@@ -16,7 +19,9 @@ describe('buildCapabilities', () => {
     );
     const caps = server['buildCapabilities']('h1');
     expect(caps).toMatchObject({
-      type: 'capabilities', requestId: 'h1', name: 'gpubox',
+      type: 'capabilities',
+      requestId: 'h1',
+      name: 'gpubox',
       defaults: { provider: 'anthropic', model: 'sonnet', thinkingLevel: 'medium' },
     });
     expect(caps.providers[0]).toMatchObject({ id: 'anthropic', label: 'Anthropic' });

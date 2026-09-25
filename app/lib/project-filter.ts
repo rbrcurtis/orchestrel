@@ -54,9 +54,7 @@ export function parseProjectFilter(raw: string | null): ProjectFilter {
       if ('ids' in o && Array.isArray(o.ids)) {
         // Previous format: {exclude: boolean, ids: number[]}.
         const ids = new Set(o.ids.filter((n): n is number => typeof n === 'number'));
-        return o.exclude === true
-          ? { include: new Set(), exclude: ids }
-          : { include: ids, exclude: new Set() };
+        return o.exclude === true ? { include: new Set(), exclude: ids } : { include: ids, exclude: new Set() };
       }
     }
   } catch {

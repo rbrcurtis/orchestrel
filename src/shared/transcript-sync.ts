@@ -18,8 +18,7 @@ export interface TranscriptEnvelope<T> {
 }
 
 export type ReplayDecision<E, S> =
-  | { type: 'replay'; events: TranscriptEnvelope<E>[] }
-  | { type: 'snapshot'; cursor: TranscriptCursor; state: S };
+  { type: 'replay'; events: TranscriptEnvelope<E>[] } | { type: 'snapshot'; cursor: TranscriptCursor; state: S };
 
 export interface TranscriptEntryProjection {
   entryId: string;
@@ -70,10 +69,7 @@ export interface TranscriptState {
   events: TranscriptPassthroughEvent[];
 }
 
-export type TranscriptReplicaResult =
-  | { type: 'accepted' }
-  | { type: 'duplicate' }
-  | { type: 'snapshot_required' };
+export type TranscriptReplicaResult = { type: 'accepted' } | { type: 'duplicate' } | { type: 'snapshot_required' };
 
 /** Explicit authorization to replace a replica with a new stream incarnation. */
 export interface TranscriptStreamSwitch {

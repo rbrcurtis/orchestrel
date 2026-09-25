@@ -13,17 +13,20 @@
 ### Task 1: Schema — add columns to projects and cards
 
 **Files:**
+
 - Modify: `src/server/db/schema.ts`
 
 **Step 1: Add the new columns**
 
 In `schema.ts`, add to the `projects` table after `defaultWorktree`:
+
 ```ts
 defaultModel: text('default_model', { enum: ['sonnet', 'opus'] }).notNull().default('sonnet'),
 defaultThinkingLevel: text('default_thinking_level', { enum: ['off', 'low', 'medium', 'high'] }).notNull().default('high'),
 ```
 
 Add to the `cards` table after `sourceBranch`:
+
 ```ts
 model: text('model', { enum: ['sonnet', 'opus'] }).notNull().default('sonnet'),
 thinkingLevel: text('thinking_level', { enum: ['off', 'low', 'medium', 'high'] }).notNull().default('high'),
@@ -49,6 +52,7 @@ git commit -m "feat: add model+thinkingLevel to projects and cards schema"
 ### Task 2: Backend — ClaudeSession accepts model + thinkingLevel
 
 **Files:**
+
 - Modify: `src/server/claude/protocol.ts`
 
 **Step 1: Update constructor signature**
@@ -70,6 +74,7 @@ constructor(
 **Step 2: Replace the hardcoded model/thinking/effort in `runQuery()`**
 
 Replace lines 78–80:
+
 ```ts
 model: 'claude-sonnet-4-6',
 thinking: { type: 'adaptive' },
@@ -77,6 +82,7 @@ effort: 'high',
 ```
 
 With:
+
 ```ts
 model: this.model === 'opus' ? 'claude-opus-4-6' : 'claude-sonnet-4-6',
 thinking: this.thinkingLevel === 'off' ? { type: 'disabled' } : { type: 'adaptive' },
@@ -95,6 +101,7 @@ git commit -m "feat: ClaudeSession accepts model and thinkingLevel"
 ### Task 3: Backend — SessionManager.create() passes model + thinkingLevel
 
 **Files:**
+
 - Modify: `src/server/claude/manager.ts`
 
 **Step 1: Update `create()` signature**
@@ -124,6 +131,7 @@ git commit -m "feat: SessionManager.create() passes model and thinkingLevel"
 ### Task 4: Backend — projects router exposes defaultModel + defaultThinkingLevel
 
 **Files:**
+
 - Modify: `src/server/routers/projects.ts`
 
 **Step 1: Add to `create` input schema**
@@ -154,11 +162,13 @@ git commit -m "feat: projects router exposes defaultModel and defaultThinkingLev
 ### Task 5: Backend — cards router copies project defaults on create; update accepts model + thinkingLevel
 
 **Files:**
+
 - Modify: `src/server/routers/cards.ts`
 
 **Step 1: Add model + thinkingLevel to `update` input**
 
 In the `update` procedure's input schema, add:
+
 ```ts
 model: z.enum(['sonnet', 'opus']).optional(),
 thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
@@ -212,11 +222,13 @@ git commit -m "feat: cards inherit model+thinkingLevel from project on create"
 ### Task 6: Backend — claude router passes card's model + thinkingLevel to sessionManager
 
 **Files:**
+
 - Modify: `src/server/routers/claude.ts`
 
 **Step 1: Update `start` mutation — pass card.model and card.thinkingLevel**
 
 In the `start` mutation, change the `sessionManager.create()` call (around line 54):
+
 ```ts
 const session = sessionManager.create(
   input.cardId,
@@ -233,12 +245,14 @@ const session = sessionManager.create(
 In the `sendMessage` mutation, the session-recreation block (around line 132) also calls `sessionManager.create()`. Update it the same way:
 
 First, add `model` and `thinkingLevel` to the select from cards:
+
 ```ts
 const [card] = await ctx.db.select().from(cards).where(eq(cards.id, input.cardId));
 // card now has model and thinkingLevel
 ```
 
 Then pass them to `sessionManager.create()`:
+
 ```ts
 session = sessionManager.create(
   input.cardId,
@@ -262,17 +276,22 @@ git commit -m "feat: claude router passes model+thinkingLevel to sessions"
 ### Task 7: UI — project form adds defaultModel + defaultThinkingLevel selectors
 
 **Files:**
+
 - Modify: `app/components/ProjectForm.tsx`
 
 **Step 1: Add state and form fields**
 
 Add state:
+
 ```ts
 const [defaultModel, setDefaultModel] = useState<'sonnet' | 'opus'>(project?.defaultModel ?? 'sonnet');
-const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(project?.defaultThinkingLevel ?? 'high');
+const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<'off' | 'low' | 'medium' | 'high'>(
+  project?.defaultThinkingLevel ?? 'high',
+);
 ```
 
 Update the `Project` interface to include the new fields:
+
 ```ts
 defaultModel: 'sonnet' | 'opus';
 defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
@@ -283,7 +302,9 @@ defaultThinkingLevel: 'off' | 'low' | 'medium' | 'high';
 Add after the "Default Branch" / worktree section, before the submit button area:
 
 ```tsx
-{/* Model */}
+{
+  /* Model */
+}
 <div>
   <label className="block text-sm font-medium text-muted-foreground mb-1">Default Model</label>
   <Select value={defaultModel} onValueChange={(v) => setDefaultModel(v as 'sonnet' | 'opus')}>
@@ -295,12 +316,17 @@ Add after the "Default Branch" / worktree section, before the submit button area
       <SelectItem value="opus">Opus 4.6</SelectItem>
     </SelectContent>
   </Select>
-</div>
+</div>;
 
-{/* Thinking Level */}
+{
+  /* Thinking Level */
+}
 <div>
   <label className="block text-sm font-medium text-muted-foreground mb-1">Default Thinking</label>
-  <Select value={defaultThinkingLevel} onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high')}>
+  <Select
+    value={defaultThinkingLevel}
+    onValueChange={(v) => setDefaultThinkingLevel(v as 'off' | 'low' | 'medium' | 'high')}
+  >
     <SelectTrigger className="w-full">
       <SelectValue />
     </SelectTrigger>
@@ -311,12 +337,13 @@ Add after the "Default Branch" / worktree section, before the submit button area
       <SelectItem value="high">High</SelectItem>
     </SelectContent>
   </Select>
-</div>
+</div>;
 ```
 
 **Step 3: Pass values in handleSubmit**
 
 In `handleSubmit`, add to the `data` object:
+
 ```ts
 defaultModel,
 defaultThinkingLevel,
@@ -334,11 +361,13 @@ git commit -m "feat: project form includes defaultModel and defaultThinkingLevel
 ### Task 8: UI — SessionView status bar adds inline model + thinking selectors
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx`
 
 **Step 1: Update SessionView Props**
 
 Add to the `Props` type:
+
 ```ts
 cardId: number;
 sessionId?: string | null;
@@ -350,13 +379,14 @@ thinkingLevel: 'off' | 'low' | 'medium' | 'high';
 **Step 2: Add an update mutation**
 
 Inside `SessionView`, add:
+
 ```ts
 const updateCardMutation = useMutation(
   trpc.cards.update.mutationOptions({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: trpc.cards.list.queryKey() });
     },
-  })
+  }),
 );
 ```
 
@@ -365,7 +395,9 @@ const updateCardMutation = useMutation(
 The status bar is the `div` around line 337–358 (the one containing `StatusBadge`, turn counters, and the Stop button). Add the two selectors on the left side, between the turn counters and the stop button:
 
 ```tsx
-{/* Model selector */}
+{
+  /* Model selector */
+}
 <select
   value={model}
   onChange={(e) => updateCardMutation.mutate({ id: cardId, model: e.target.value as 'sonnet' | 'opus' })}
@@ -373,19 +405,23 @@ The status bar is the `div` around line 337–358 (the one containing `StatusBad
 >
   <option value="sonnet">Sonnet</option>
   <option value="opus">Opus</option>
-</select>
+</select>;
 
-{/* Thinking selector */}
+{
+  /* Thinking selector */
+}
 <select
   value={thinkingLevel}
-  onChange={(e) => updateCardMutation.mutate({ id: cardId, thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })}
+  onChange={(e) =>
+    updateCardMutation.mutate({ id: cardId, thinkingLevel: e.target.value as 'off' | 'low' | 'medium' | 'high' })
+  }
   className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground"
 >
   <option value="off">Off</option>
   <option value="low">Low</option>
   <option value="medium">Medium</option>
   <option value="high">High</option>
-</select>
+</select>;
 ```
 
 Note: Use native `<select>` rather than shadcn Select to keep these tiny and inline. Style to match the `text-[11px] text-muted-foreground` style of the turn counter.
@@ -393,6 +429,7 @@ Note: Use native `<select>` rather than shadcn Select to keep these tiny and inl
 **Step 4: Find where SessionView is rendered and pass the new props**
 
 Search for `<SessionView` usages:
+
 ```bash
 grep -r "SessionView" app/ --include="*.tsx" -l
 ```
@@ -411,6 +448,7 @@ git commit -m "feat: SessionView status bar includes model+thinking selectors"
 ### Task 9: Wire SessionView callsite(s) — pass model + thinkingLevel from card
 
 **Files:**
+
 - Modify: `app/components/CardDetail.tsx` (and any other callsite found in Task 8 Step 4)
 
 **Step 1: Read CardDetail.tsx to find how card data is passed**

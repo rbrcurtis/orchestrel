@@ -57,17 +57,19 @@
 **Repository:** `/home/ryan/Code/pi-subagents`
 
 **Files:**
+
 - Create: `src/model-policy.ts`
 - Create: `test/model-policy.test.ts`
 - Modify: `src/agent-manager.ts`
 - Modify: `src/types.ts`
 
 **Interfaces:**
+
 - Consumes: Pi `ExtensionAPI.events`, `ExtensionContext.modelRegistry`, and `ExtensionContext.model`.
 - Produces:
 
 ```ts
-export const SUBAGENT_MODEL_POLICY_CHANNEL = "subagents:model-policy";
+export const SUBAGENT_MODEL_POLICY_CHANNEL = 'subagents:model-policy';
 
 export interface SubagentModelPolicyRequest {
   agentType: string;
@@ -77,9 +79,7 @@ export interface SubagentModelPolicyRequest {
   decision?: SubagentModelPolicyDecision;
 }
 
-export type SubagentModelPolicyDecision =
-  | { model: string; source: string }
-  | { error: string };
+export type SubagentModelPolicyDecision = { model: string; source: string } | { error: string };
 
 export function selectSpawnModel(
   pi: ExtensionAPI,
@@ -98,42 +98,45 @@ export function selectSpawnModel(
 Create `test/model-policy.test.ts` with these behavior cases:
 
 ```ts
-it("uses an explicit same-provider model before the policy mapping", () => {
-  const { pi, ctx, models } = fixture("trackable", ["auto", "claude-sonnet-4-6"]);
+it('uses an explicit same-provider model before the policy mapping', () => {
+  const { pi, ctx, models } = fixture('trackable', ['auto', 'claude-sonnet-4-6']);
   installPolicy(pi.events, (req) => {
-    expect(req.requestedModel).toBe("trackable/claude-sonnet-4-6");
-    req.decision = { model: req.requestedModel!, source: "explicit" };
+    expect(req.requestedModel).toBe('trackable/claude-sonnet-4-6');
+    req.decision = { model: req.requestedModel!, source: 'explicit' };
   });
 
-  expect(selectSpawnModel(pi, ctx, "Explore", "sonnet").model).toBe(models.sonnet);
+  expect(selectSpawnModel(pi, ctx, 'Explore', 'sonnet').model).toBe(models.sonnet);
 });
 
-it("uses the policy-selected exact model when no explicit model is supplied", () => {
-  const { pi, ctx, models } = fixture("trackable", ["auto", "claude-opus-4-6"]);
+it('uses the policy-selected exact model when no explicit model is supplied', () => {
+  const { pi, ctx, models } = fixture('trackable', ['auto', 'claude-opus-4-6']);
   installPolicy(pi.events, (req) => {
-    req.decision = { model: "trackable/claude-opus-4-6", source: "lightweight tier" };
+    req.decision = { model: 'trackable/claude-opus-4-6', source: 'lightweight tier' };
   });
 
-  expect(selectSpawnModel(pi, ctx, "Explore").model).toBe(models.opus);
+  expect(selectSpawnModel(pi, ctx, 'Explore').model).toBe(models.opus);
 });
 
-it("throws a policy rejection before spawn", () => {
-  const { pi, ctx } = fixture("trackable", ["auto"]);
+it('throws a policy rejection before spawn', () => {
+  const { pi, ctx } = fixture('trackable', ['auto']);
   installPolicy(pi.events, (req) => {
-    req.decision = { error: 'Subagent model "anthropic/claude-haiku-4-5" is not allowed. This session uses provider "trackable".' };
+    req.decision = {
+      error: 'Subagent model "anthropic/claude-haiku-4-5" is not allowed. This session uses provider "trackable".',
+    };
   });
 
-  expect(() => selectSpawnModel(pi, ctx, "Explore", "anthropic/claude-haiku-4-5"))
-    .toThrow('This session uses provider "trackable"');
+  expect(() => selectSpawnModel(pi, ctx, 'Explore', 'anthropic/claude-haiku-4-5')).toThrow(
+    'This session uses provider "trackable"',
+  );
 });
 
-it("falls back to the supplied model or parent when no policy is installed", () => {
-  const { pi, ctx, models } = fixture("trackable", ["auto", "claude-sonnet-4-6"]);
-  expect(selectSpawnModel(pi, ctx, "Explore", undefined, models.sonnet).model).toBe(models.sonnet);
-  expect(selectSpawnModel(pi, ctx, "Explore").model).toBe(models.auto);
+it('falls back to the supplied model or parent when no policy is installed', () => {
+  const { pi, ctx, models } = fixture('trackable', ['auto', 'claude-sonnet-4-6']);
+  expect(selectSpawnModel(pi, ctx, 'Explore', undefined, models.sonnet).model).toBe(models.sonnet);
+  expect(selectSpawnModel(pi, ctx, 'Explore').model).toBe(models.auto);
 });
 
-it("rejects malformed decisions and unknown exact policy models", () => {
+it('rejects malformed decisions and unknown exact policy models', () => {
   // Assert separate errors for an envelope containing both model+error and for
   // policy model trackable/missing, rather than silently inheriting the parent.
 });
@@ -161,12 +164,12 @@ export function selectSpawnModel(pi, ctx, agentType, requestedModel, fallbackMod
   let explicit: Model<unknown> | undefined;
   if (requestedModel) {
     const resolved = resolveModel(requestedModel, ctx.modelRegistry);
-    if (typeof resolved === "string") throw new Error(resolved);
+    if (typeof resolved === 'string') throw new Error(resolved);
     explicit = resolved;
   }
 
   const parent = ctx.model;
-  if (!parent) throw new Error("Cannot select a subagent model without a parent model");
+  if (!parent) throw new Error('Cannot select a subagent model without a parent model');
 
   const request: SubagentModelPolicyRequest = {
     agentType,
@@ -177,9 +180,9 @@ export function selectSpawnModel(pi, ctx, agentType, requestedModel, fallbackMod
   pi.events.emit(SUBAGENT_MODEL_POLICY_CHANNEL, request);
 
   if (!request.decision) return { model: explicit ?? fallbackModel ?? parent };
-  if ("error" in request.decision) throw new Error(request.decision.error);
+  if ('error' in request.decision) throw new Error(request.decision.error);
 
-  const slash = request.decision.model.indexOf("/");
+  const slash = request.decision.model.indexOf('/');
   if (slash <= 0) throw new Error(`Invalid subagent policy model: "${request.decision.model}"`);
   const provider = request.decision.model.slice(0, slash);
   const modelId = request.decision.model.slice(slash + 1);
@@ -226,6 +229,7 @@ git commit -m "feat: add runtime subagent model policy hook"
 **Repository:** `/home/ryan/Code/pi-subagents`
 
 **Files:**
+
 - Modify: `src/index.ts`
 - Modify: `src/invocation-config.ts`
 - Modify: `src/default-agents.ts`
@@ -237,6 +241,7 @@ git commit -m "feat: add runtime subagent model policy hook"
 - Modify: `test/status-note-wiring.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AgentManager.spawn(..., { requestedModel?: string, model?: Model })` from Task 1.
 - Produces: every new subagent creation conveys the caller's model text to the manager; no path resolves a policy model independently.
 
@@ -245,12 +250,11 @@ git commit -m "feat: add runtime subagent model policy hook"
 Update tests to require:
 
 ```ts
-it("lets the explicit Agent model parameter outrank agent config", () => {
-  const resolved = resolveAgentInvocationConfig(
-    { model: "provider/config-model" } as AgentConfig,
-    { model: "provider/explicit-model" },
-  );
-  expect(resolved.modelInput).toBe("provider/explicit-model");
+it('lets the explicit Agent model parameter outrank agent config', () => {
+  const resolved = resolveAgentInvocationConfig({ model: 'provider/config-model' } as AgentConfig, {
+    model: 'provider/explicit-model',
+  });
+  expect(resolved.modelInput).toBe('provider/explicit-model');
   expect(resolved.modelFromParams).toBe(true);
 });
 ```
@@ -261,9 +265,9 @@ For schedule and RPC tests, assert the manager receives model text without early
 expect(manager.spawn).toHaveBeenCalledWith(
   pi,
   ctx,
-  "Explore",
+  'Explore',
   expect.any(String),
-  expect.objectContaining({ requestedModel: "trackable/claude-opus-4-6" }),
+  expect.objectContaining({ requestedModel: 'trackable/claude-opus-4-6' }),
 );
 ```
 
@@ -330,7 +334,7 @@ In `src/cross-extension-rpc.ts`, remove its model-string resolution branch and n
 ```ts
 const normalizedOptions = {
   ...(options ?? {}),
-  ...(typeof options?.model === "string" ? { requestedModel: options.model, model: undefined } : {}),
+  ...(typeof options?.model === 'string' ? { requestedModel: options.model, model: undefined } : {}),
 };
 ```
 
@@ -361,12 +365,14 @@ git commit -m "feat: enforce model policy across subagent spawn paths"
 **Repository:** `/home/ryan/Code/orchestrel`
 
 **Files:**
+
 - Create: `src/shared/subagent-policy.ts`
 - Create: `src/shared/subagent-policy.test.ts`
 - Modify: `src/shared/config.ts`
 - Modify: `src/orcd/config.ts`
 
 **Interfaces:**
+
 - Produces:
 
 ```ts
@@ -380,7 +386,7 @@ export interface OrchestrelSubagentPolicy {
 export function buildSubagentPolicy(
   providerId: string,
   parentModelId: string,
-  provider: Pick<ProviderDef, "models" | "aliases" | "agents">,
+  provider: Pick<ProviderDef, 'models' | 'aliases' | 'agents'>,
 ): OrchestrelSubagentPolicy;
 
 export function serializeSubagentPolicy(policy: OrchestrelSubagentPolicy): string;
@@ -393,36 +399,40 @@ export function cleanupManagedSubagentFiles(cwd: string): void;
 Cover exact outcomes:
 
 ```ts
-it("maps aliases and granular overrides to fully qualified models", () => {
-  expect(buildSubagentPolicy("chatgpt", "gpt-5.5", {
-    models: {
-      main: model("gpt-5.5"),
-      mini: model("gpt-5.4-mini"),
-      nano: model("gpt-5.4-nano"),
-    },
-    aliases: { subagent: "mini", lightweight: "nano" },
-    agents: { Plan: "main" },
-  })).toMatchObject({
-    parentProvider: "chatgpt",
-    parentModel: "chatgpt/gpt-5.5",
+it('maps aliases and granular overrides to fully qualified models', () => {
+  expect(
+    buildSubagentPolicy('chatgpt', 'gpt-5.5', {
+      models: {
+        main: model('gpt-5.5'),
+        mini: model('gpt-5.4-mini'),
+        nano: model('gpt-5.4-nano'),
+      },
+      aliases: { subagent: 'mini', lightweight: 'nano' },
+      agents: { Plan: 'main' },
+    }),
+  ).toMatchObject({
+    parentProvider: 'chatgpt',
+    parentModel: 'chatgpt/gpt-5.5',
     agents: {
-      "general-purpose": { model: "chatgpt/gpt-5.4-mini", source: "subagent tier" },
-      Explore: { model: "chatgpt/gpt-5.4-nano", source: "lightweight tier" },
-      Plan: { model: "chatgpt/gpt-5.5", source: "agent override" },
+      'general-purpose': { model: 'chatgpt/gpt-5.4-mini', source: 'subagent tier' },
+      Explore: { model: 'chatgpt/gpt-5.4-nano', source: 'lightweight tier' },
+      Plan: { model: 'chatgpt/gpt-5.5', source: 'agent override' },
     },
   });
 });
 
-it("uses positional fallback and parent model for Plan", () => {
+it('uses positional fallback and parent model for Plan', () => {
   // first=main, second=worker, third=small
   // general-purpose -> worker; Explore -> small; Plan -> parent
 });
 
-it("throws for a configured unknown agent model key", () => {
-  expect(() => buildSubagentPolicy("trackable", "auto", {
-    models: { main: model("auto") },
-    agents: { Explore: "missing" },
-  })).toThrow('unknown model key "missing" for agent "Explore"');
+it('throws for a configured unknown agent model key', () => {
+  expect(() =>
+    buildSubagentPolicy('trackable', 'auto', {
+      models: { main: model('auto') },
+      agents: { Explore: 'missing' },
+    }),
+  ).toThrow('unknown model key "missing" for agent "Explore"');
 });
 ```
 
@@ -433,14 +443,14 @@ Unlike the old synchronizer, unknown configured keys must fail configuration ins
 Use a temporary directory and verify:
 
 ```ts
-it("deletes only Orchestrel-managed agent files and prunes empty directories", () => {
+it('deletes only Orchestrel-managed agent files and prunes empty directories', () => {
   // managed Explore.md is removed; unmarked Custom.md survives;
   // .pi/settings.json survives; directories are removed only when empty.
 });
 
-it("does not create .pi in a clean project", () => {
+it('does not create .pi in a clean project', () => {
   cleanupManagedSubagentFiles(dir);
-  expect(existsSync(join(dir, ".pi"))).toBe(false);
+  expect(existsSync(join(dir, '.pi'))).toBe(false);
 });
 ```
 
@@ -460,8 +470,8 @@ Implement named agent defaults without copying prompts:
 
 ```ts
 const DEFAULT_TIERS = {
-  "general-purpose": "subagent",
-  Explore: "lightweight",
+  'general-purpose': 'subagent',
+  Explore: 'lightweight',
 } as const;
 ```
 
@@ -493,18 +503,18 @@ git commit -m "feat: build runtime subagent policies"
 **Repository:** `/home/ryan/Code/orchestrel`
 
 **Files:**
+
 - Create: `src/pi-extensions/orchestrel-subagent-policy.ts`
 - Create: `src/pi-extensions/orchestrel-subagent-policy.test.ts`
 
 **Interfaces:**
+
 - Consumes: `OrchestrelSubagentPolicy` and pi-subagents channel `subagents:model-policy`.
 - Produces:
 
 ```ts
-export const ORCHESTREL_SUBAGENT_POLICY_ENV = "ORCHESTREL_SUBAGENT_POLICY";
-export function createOrchestrelSubagentPolicyExtension(
-  policy: OrchestrelSubagentPolicy,
-): ExtensionFactory;
+export const ORCHESTREL_SUBAGENT_POLICY_ENV = 'ORCHESTREL_SUBAGENT_POLICY';
+export function createOrchestrelSubagentPolicyExtension(policy: OrchestrelSubagentPolicy): ExtensionFactory;
 export default function orchestrelSubagentPolicyFromEnv(pi: ExtensionAPI): void;
 ```
 
@@ -513,22 +523,27 @@ export default function orchestrelSubagentPolicyFromEnv(pi: ExtensionAPI): void;
 Use `createEventBus()` and a minimal fake `ExtensionAPI` carrying that bus. Test:
 
 ```ts
-it("returns mapped models and lets explicit same-provider models win", () => {
+it('returns mapped models and lets explicit same-provider models win', () => {
   const bus = createEventBus();
   loadPolicyFactory(bus, trackablePolicy);
 
-  const mapped = request(bus, { agentType: "Explore", parentProvider: "trackable", parentModel: "trackable/auto" });
-  expect(mapped.decision).toEqual({ model: "trackable/claude-opus-4-6", source: "lightweight tier" });
+  const mapped = request(bus, { agentType: 'Explore', parentProvider: 'trackable', parentModel: 'trackable/auto' });
+  expect(mapped.decision).toEqual({ model: 'trackable/claude-opus-4-6', source: 'lightweight tier' });
 
-  const explicit = request(bus, { agentType: "Explore", requestedModel: "trackable/auto", parentProvider: "trackable", parentModel: "trackable/auto" });
-  expect(explicit.decision).toEqual({ model: "trackable/auto", source: "explicit" });
+  const explicit = request(bus, {
+    agentType: 'Explore',
+    requestedModel: 'trackable/auto',
+    parentProvider: 'trackable',
+    parentModel: 'trackable/auto',
+  });
+  expect(explicit.decision).toEqual({ model: 'trackable/auto', source: 'explicit' });
 });
 
-it("rejects explicit and parent providers that do not match policy", () => {
+it('rejects explicit and parent providers that do not match policy', () => {
   // Assert descriptive decisions for both mismatch cases.
 });
 
-it("keeps two event bus policies independent", () => {
+it('keeps two event bus policies independent', () => {
   // Install trackable on bus A and chatgpt on bus B; request Explore from both.
 });
 ```
@@ -549,24 +564,29 @@ The handler mutates only a request with no existing decision:
 
 ```ts
 function register(pi: ExtensionAPI, policy: OrchestrelSubagentPolicy) {
-  const unsubscribe = pi.events.on("subagents:model-policy", (raw) => {
+  const unsubscribe = pi.events.on('subagents:model-policy', (raw) => {
     const req = validateRequest(raw);
     if (req.decision) return;
     if (req.parentProvider !== policy.parentProvider) {
-      req.decision = { error: `Subagent policy provider "${policy.parentProvider}" does not match parent provider "${req.parentProvider}".` };
+      req.decision = {
+        error: `Subagent policy provider "${policy.parentProvider}" does not match parent provider "${req.parentProvider}".`,
+      };
       return;
     }
     if (req.requestedModel) {
-      const provider = req.requestedModel.slice(0, req.requestedModel.indexOf("/"));
-      req.decision = provider === policy.parentProvider
-        ? { model: req.requestedModel, source: "explicit" }
-        : { error: `Subagent model "${req.requestedModel}" is not allowed. This session uses provider "${policy.parentProvider}".` };
+      const provider = req.requestedModel.slice(0, req.requestedModel.indexOf('/'));
+      req.decision =
+        provider === policy.parentProvider
+          ? { model: req.requestedModel, source: 'explicit' }
+          : {
+              error: `Subagent model "${req.requestedModel}" is not allowed. This session uses provider "${policy.parentProvider}".`,
+            };
       return;
     }
     const mapped = policy.agents[req.agentType];
-    req.decision = mapped ?? { model: policy.parentModel, source: "parent model" };
+    req.decision = mapped ?? { model: policy.parentModel, source: 'parent model' };
   });
-  pi.on("session_shutdown", () => unsubscribe());
+  pi.on('session_shutdown', () => unsubscribe());
 }
 ```
 
@@ -594,11 +614,13 @@ git commit -m "feat: add Orchestrel subagent policy extension"
 **Repository:** `/home/ryan/Code/orchestrel`
 
 **Files:**
+
 - Modify: `src/orcd/pi-runtime.ts`
 - Modify: `src/orcd/__tests__/pi-runtime.test.ts`
 - Modify: `src/orcd/__tests__/pi-runtime-bgc.test.ts` only if its SDK mock needs the new loader API
 
 **Interfaces:**
+
 - Consumes: `buildSubagentPolicy()`, `cleanupManagedSubagentFiles()`, and `createOrchestrelSubagentPolicyExtension()`.
 - Produces: every `createPiRuntimeSession()` uses its own `EventBus` and `DefaultResourceLoader` containing the policy factory.
 
@@ -610,9 +632,11 @@ Mock `createEventBus` and `DefaultResourceLoader`. Capture constructor options a
 expect(createEventBus).toHaveBeenCalledTimes(2); // two separate sessions
 expect(loaderOptions[0].eventBus).not.toBe(loaderOptions[1].eventBus);
 expect(loaderOptions[0].extensionFactories).toHaveLength(1);
-expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-  resourceLoader: expect.any(Object),
-}));
+expect(createAgentSession).toHaveBeenCalledWith(
+  expect.objectContaining({
+    resourceLoader: expect.any(Object),
+  }),
+);
 ```
 
 Add a temp-cwd assertion that session creation removes a legacy marked file but does not create `.pi` in a clean cwd.
@@ -652,8 +676,8 @@ Have the policy extension optionally accept an `onDecision` callback in its fact
 
 ```ts
 ({ agentType, decision }) => {
-  if ("model" in decision) console.log(`[orcd] subagent ${agentType} -> ${decision.model} (${decision.source})`);
-}
+  if ('model' in decision) console.log(`[orcd] subagent ${agentType} -> ${decision.model} (${decision.source})`);
+};
 ```
 
 Do not log policy JSON, prompts, or credentials.
@@ -680,10 +704,12 @@ git commit -m "feat(orcd): inject session-local subagent policy"
 **Repository:** `/home/ryan/Code/orchestrel`
 
 **Files:**
+
 - Modify: `bin/orc`
 - Modify: `bin/orc.test.ts`
 
 **Interfaces:**
+
 - Consumes: `buildSubagentPolicy()`, `serializeSubagentPolicy()`, `cleanupManagedSubagentFiles()`, and `ORCHESTREL_SUBAGENT_POLICY_ENV`.
 - Produces: Pi argv includes `-e <absolute-extension-path>`; child env includes serialized policy; `--print-env` reports non-secret policy metadata without mutating the cwd.
 
@@ -692,13 +718,13 @@ git commit -m "feat(orcd): inject session-local subagent policy"
 Extend the existing executable Pi stub to write argv/env to a temp output file. Run `orc` without `--print-env` from a clean temp cwd and assert:
 
 ```ts
-expect(stub.args).toContain("-e");
-expect(stub.args).toContain(resolve(repoRoot, "src/pi-extensions/orchestrel-subagent-policy.ts"));
+expect(stub.args).toContain('-e');
+expect(stub.args).toContain(resolve(repoRoot, 'src/pi-extensions/orchestrel-subagent-policy.ts'));
 expect(JSON.parse(stub.env.ORCHESTREL_SUBAGENT_POLICY)).toMatchObject({
-  parentProvider: "trackable",
-  parentModel: "trackable/auto",
+  parentProvider: 'trackable',
+  parentModel: 'trackable/auto',
 });
-expect(existsSync(join(cwd, ".pi"))).toBe(false);
+expect(existsSync(join(cwd, '.pi'))).toBe(false);
 ```
 
 Add a second test with a marked legacy file and an unmarked file: marked is removed, unmarked survives.
@@ -718,7 +744,7 @@ Expected: FAIL because `orc` still calls `syncAgentOverrides()` and does not loa
 Resolve the extension path relative to `REPO_ROOT`:
 
 ```ts
-const SUBAGENT_POLICY_EXTENSION = resolve(REPO_ROOT, "src/pi-extensions/orchestrel-subagent-policy.ts");
+const SUBAGENT_POLICY_EXTENSION = resolve(REPO_ROOT, 'src/pi-extensions/orchestrel-subagent-policy.ts');
 const policy = buildSubagentPolicy(resolved.providerId, model.modelID, provider);
 const policyJson = serializeSubagentPolicy(policy);
 ```
@@ -780,6 +806,7 @@ git commit -m "feat(orc): inject runtime subagent policy"
 **Repositories:** `/home/ryan/Code/orchestrel` and `/home/ryan/Code/pi-subagents`
 
 **Files:**
+
 - Delete: `src/orcd/subagent-agents.ts`
 - Delete: `src/orcd/__tests__/subagent-agents.test.ts`
 - Modify: `src/shared/config.ts`
@@ -788,6 +815,7 @@ git commit -m "feat(orc): inject runtime subagent policy"
 - Verify: approved design and implementation docs remain accurate
 
 **Interfaces:**
+
 - Consumes: all runtime policy wiring from Tasks 1–6.
 - Produces: no production reference to generated `.pi/agents` files except marker-only legacy cleanup.
 

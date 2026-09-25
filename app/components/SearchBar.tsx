@@ -8,33 +8,31 @@ interface SearchBarProps {
   onChange: (value: string) => void;
 }
 
-export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
-  function SearchBar({ value, onChange }, ref) {
-    return (
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-        <Input
-          ref={ref}
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape' && value) onChange('');
-          }}
-          placeholder="Search cards..."
-          className="pl-9 sm:pl-10 pr-8"
-        />
-        {value && (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-            onClick={() => onChange('')}
-          >
-            <X className="size-3" />
-          </Button>
-        )}
-      </div>
-    );
-  }
-);
+export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBar({ value, onChange }, ref) {
+  return (
+    <div className="relative min-w-0 flex-1 sm:max-w-sm">
+      <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+      <Input
+        ref={ref}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && value) onChange('');
+        }}
+        placeholder="Search cards..."
+        className="pl-9 sm:pl-10 pr-8"
+      />
+      {value && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+          onClick={() => onChange('')}
+        >
+          <X className="size-3" />
+        </Button>
+      )}
+    </div>
+  );
+});

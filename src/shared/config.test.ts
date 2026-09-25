@@ -77,7 +77,10 @@ describe('memory config', () => {
 
   it('honors mode: write and telegram config', () => {
     const cfg = parseConfig(
-      MINIMAL.replace('memory:', 'memory:\n  mode: write\n  telegram:\n    botToken: "${TELEGRAM_BOT_TOKEN}"\n    chatId: "123"'),
+      MINIMAL.replace(
+        'memory:',
+        'memory:\n  mode: write\n  telegram:\n    botToken: "${TELEGRAM_BOT_TOKEN}"\n    chatId: "123"',
+      ),
       { TELEGRAM_BOT_TOKEN: 't' },
     );
     expect(cfg.memory?.mode).toBe('write');

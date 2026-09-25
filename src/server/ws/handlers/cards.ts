@@ -2,7 +2,19 @@ import type { AckResponse, Card } from '../../../shared/ws-protocol';
 import { cardService } from '../../services/card';
 
 export async function handleCardCreate(
-  data: { title: string; description?: string; column?: string; projectId?: number | null; model?: string; provider?: string; thinkingLevel?: string; summarizeThreshold?: number; useWorktree?: boolean; sourceBranch?: 'HEAD' | 'main' | 'dev' | null; archiveOthers?: boolean },
+  data: {
+    title: string;
+    description?: string;
+    column?: string;
+    projectId?: number | null;
+    model?: string;
+    provider?: string;
+    thinkingLevel?: string;
+    summarizeThreshold?: number;
+    useWorktree?: boolean;
+    sourceBranch?: 'HEAD' | 'main' | 'dev' | null;
+    archiveOthers?: boolean;
+  },
   callback: (res: AckResponse<Card>) => void,
 ): Promise<void> {
   try {
@@ -29,10 +41,7 @@ export async function handleCardUpdate(
   }
 }
 
-export async function handleCardDelete(
-  data: { id: number },
-  callback: (res: AckResponse) => void,
-): Promise<void> {
+export async function handleCardDelete(data: { id: number }, callback: (res: AckResponse) => void): Promise<void> {
   try {
     await cardService.deleteCard(data.id);
     callback({});

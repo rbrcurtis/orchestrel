@@ -27,12 +27,8 @@ export const SubagentFeed = observer(function SubagentFeed({ subagents }: Props)
                 boxShadow: isRunning ? '0 0 4px #39ff1466' : 'none',
               }}
             />
-            <span className="text-foreground truncate min-w-0 flex-1">
-              {entry.description.slice(0, 40)}
-            </span>
-            <span className="text-muted-foreground truncate min-w-0 shrink-0 max-w-[50%]">
-              {entry.lastProgress}
-            </span>
+            <span className="text-foreground truncate min-w-0 flex-1">{entry.description.slice(0, 40)}</span>
+            <span className="text-muted-foreground truncate min-w-0 shrink-0 max-w-[50%]">{entry.lastProgress}</span>
           </div>
         );
       })}

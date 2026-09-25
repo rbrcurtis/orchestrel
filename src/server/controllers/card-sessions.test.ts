@@ -19,7 +19,22 @@ type MockCard = {
 };
 
 const mockCards: MockCard[] = [
-  { id: 42, sessionId: 'sess-abc', column: 'running', promptsSent: 1, contextTokens: 0, contextWindow: 200000, turnsCompleted: 0, provider: 'anthropic', model: 'sonnet', nodeName: 'local', summarizeThreshold: 0.6, updatedAt: '', save: vi.fn(), description: '' },
+  {
+    id: 42,
+    sessionId: 'sess-abc',
+    column: 'running',
+    promptsSent: 1,
+    contextTokens: 0,
+    contextWindow: 200000,
+    turnsCompleted: 0,
+    provider: 'anthropic',
+    model: 'sonnet',
+    nodeName: 'local',
+    summarizeThreshold: 0.6,
+    updatedAt: '',
+    save: vi.fn(),
+    description: '',
+  },
 ];
 const mockRepo = {
   findOneBy: vi.fn(async (where: { id?: number; sessionId?: string }) => {
@@ -46,7 +61,7 @@ vi.mock('../sessions/worktree', () => ({
   ensureWorktree: mockEnsureWorktree,
 }));
 vi.mock('../init-state', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../init-state')>(),
+  ...(await importOriginal<typeof import('../init-state')>()),
   getOrcdClient: mockGetOrcdClient,
   getClientByNode: mockGetClientByNode,
 }));
@@ -60,7 +75,9 @@ describe('orcd message router', () => {
 
   // Minimal mock OrcdClient — captures the onMessage handler
   const mockClient = {
-    onMessage: vi.fn((h: (msg: unknown) => void) => { handler = h; }),
+    onMessage: vi.fn((h: (msg: unknown) => void) => {
+      handler = h;
+    }),
     offMessage: vi.fn(),
   };
 
@@ -721,7 +738,9 @@ describe('reconcileRunningCards', () => {
 
     const client = {
       nodeName: 'local',
-      onMessage: vi.fn((h: (msg: unknown) => void | Promise<void>) => { earlyHandler = h; }),
+      onMessage: vi.fn((h: (msg: unknown) => void | Promise<void>) => {
+        earlyHandler = h;
+      }),
       offMessage: vi.fn(),
       list: vi.fn(async () => ({
         type: 'session_list',

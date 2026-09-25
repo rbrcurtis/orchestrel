@@ -15,11 +15,11 @@ Replace React Query + tRPC with:
 
 ### Communication Channels
 
-| Channel | Direction | Purpose |
-|---------|-----------|---------|
-| WebSocket | Bidirectional | Internal app: reads, writes, subscriptions, search, pagination |
-| REST | External → Server | External API consumers (home mesh services) |
-| WS broadcast | Server → Client | Any DB mutation (from WS or REST) pushes updates to subscribed clients |
+| Channel      | Direction         | Purpose                                                                |
+| ------------ | ----------------- | ---------------------------------------------------------------------- |
+| WebSocket    | Bidirectional     | Internal app: reads, writes, subscriptions, search, pagination         |
+| REST         | External → Server | External API consumers (home mesh services)                            |
+| WS broadcast | Server → Client   | Any DB mutation (from WS or REST) pushes updates to subscribed clients |
 
 ### Data Flow
 
@@ -69,36 +69,52 @@ Entity schemas use `createSelectSchema()` for read types (full row). Mutation in
 // src/shared/ws-protocol.ts
 
 // Entity schemas (derived from Drizzle — read types)
-const cardSchema = createSelectSchema(cards)
-const projectSchema = createSelectSchema(projects)
+const cardSchema = createSelectSchema(cards);
+const projectSchema = createSelectSchema(projects);
 
-type Card = z.infer<typeof cardSchema>
-type Project = z.infer<typeof projectSchema>
+type Card = z.infer<typeof cardSchema>;
+type Project = z.infer<typeof projectSchema>;
 
 // Mutation input schemas (derived from Drizzle — write types)
 const cardCreateSchema = createInsertSchema(cards).pick({
-  title: true, description: true, column: true, projectId: true,
-  model: true, thinkingLevel: true, useWorktree: true, sourceBranch: true,
-})
-const cardUpdateSchema = z.object({
-  id: z.number(),
-}).merge(cardCreateSchema.partial())
+  title: true,
+  description: true,
+  column: true,
+  projectId: true,
+  model: true,
+  thinkingLevel: true,
+  useWorktree: true,
+  sourceBranch: true,
+});
+const cardUpdateSchema = z
+  .object({
+    id: z.number(),
+  })
+  .merge(cardCreateSchema.partial());
 const cardMoveSchema = z.object({
   id: z.number(),
   column: columnEnum,
   position: z.number(),
-})
+});
 
 const projectCreateSchema = createInsertSchema(projects).pick({
-  name: true, path: true, setupCommands: true, defaultBranch: true,
-  defaultWorktree: true, defaultModel: true, defaultThinkingLevel: true, color: true,
-})
-const projectUpdateSchema = z.object({
-  id: z.number(),
-}).merge(projectCreateSchema.partial())
+  name: true,
+  path: true,
+  setupCommands: true,
+  defaultBranch: true,
+  defaultWorktree: true,
+  defaultModel: true,
+  defaultThinkingLevel: true,
+  color: true,
+});
+const projectUpdateSchema = z
+  .object({
+    id: z.number(),
+  })
+  .merge(projectCreateSchema.partial());
 
 // Column enum (shared)
-const columnEnum = z.enum(['backlog','ready','in_progress','review','done','archive'])
+const columnEnum = z.enum(['backlog', 'ready', 'in_progress', 'review', 'done', 'archive']);
 
 // File ref (for Claude message attachments — uploaded via POST /api/upload, which is retained)
 const fileRefSchema = z.object({
@@ -107,18 +123,18 @@ const fileRefSchema = z.object({
   mimeType: z.string(),
   path: z.string(),
   size: z.number(),
-})
+});
 
 // Claude schemas
 const claudeStartSchema = z.object({
   cardId: z.number(),
   prompt: z.string().min(1),
-})
+});
 const claudeSendSchema = z.object({
   cardId: z.number(),
   message: z.string().min(1),
   files: z.array(fileRefSchema).optional(),
-})
+});
 const claudeStatusSchema = z.object({
   cardId: z.number(),
   active: z.boolean(),
@@ -126,13 +142,13 @@ const claudeStatusSchema = z.object({
   sessionId: z.string().nullable(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
-})
+});
 const claudeMessageSchema = z.object({
   type: z.enum(['user', 'assistant', 'result', 'system']),
   message: z.record(z.unknown()),
   isSidechain: z.boolean().optional(),
   ts: z.string().optional(),
-})
+});
 
 // Client → Server
 const clientMessage = z.discriminatedUnion('type', [
@@ -158,7 +174,7 @@ const clientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('claude:send'), requestId: z.string(), data: claudeSendSchema }),
   z.object({ type: z.literal('claude:stop'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
   z.object({ type: z.literal('claude:status'), requestId: z.string(), data: z.object({ cardId: z.number() }) }),
-])
+]);
 
 // Server → Client
 const serverMessage = z.discriminatedUnion('type', [
@@ -174,7 +190,13 @@ const serverMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('project:deleted'), data: z.object({ id: z.number() }) }),
 
   // Pagination
-  z.object({ type: z.literal('page:result'), column: columnEnum, cards: z.array(cardSchema), nextCursor: z.number().optional(), total: z.number() }),
+  z.object({
+    type: z.literal('page:result'),
+    column: columnEnum,
+    cards: z.array(cardSchema),
+    nextCursor: z.number().optional(),
+    total: z.number(),
+  }),
 
   // Search
   z.object({ type: z.literal('search:result'), requestId: z.string(), cards: z.array(cardSchema), total: z.number() }),
@@ -182,10 +204,10 @@ const serverMessage = z.discriminatedUnion('type', [
   // Claude session streaming
   z.object({ type: z.literal('claude:message'), cardId: z.number(), data: claudeMessageSchema }),
   z.object({ type: z.literal('claude:status'), data: claudeStatusSchema }),
-])
+]);
 
-type ClientMessage = z.infer<typeof clientMessage>
-type ServerMessage = z.infer<typeof serverMessage>
+type ClientMessage = z.infer<typeof clientMessage>;
+type ServerMessage = z.infer<typeof serverMessage>;
 ```
 
 ## Server: WebSocket Handler
@@ -208,23 +230,27 @@ All DB writes go through a central mutator that emits WS broadcasts. Methods are
 ```typescript
 // src/server/db/mutator.ts
 class DbMutator {
-  constructor(private db: Database, private broadcast: BroadcastFn) {}
+  constructor(
+    private db: Database,
+    private broadcast: BroadcastFn,
+  ) {}
 
   updateCard(id: number, data: Partial<Card>): Card {
-    const [updated] = db.update(cards).set(data).where(eq(cards.id, id)).returning()
-    this.broadcast({ type: 'card:updated', data: updated }, updated.column)
-    return updated
+    const [updated] = db.update(cards).set(data).where(eq(cards.id, id)).returning();
+    this.broadcast({ type: 'card:updated', data: updated }, updated.column);
+    return updated;
   }
 
   moveCard(id: number, column: string, position: number): Card {
-    const [prev] = db.select().from(cards).where(eq(cards.id, id))
-    const [updated] = db.update(cards)
+    const [prev] = db.select().from(cards).where(eq(cards.id, id));
+    const [updated] = db
+      .update(cards)
       .set({ column, position, updatedAt: new Date().toISOString() })
       .where(eq(cards.id, id))
-      .returning()
+      .returning();
     // Broadcast to both old and new column subscribers
-    this.broadcast({ type: 'card:updated', data: updated }, prev.column, updated.column)
-    return updated
+    this.broadcast({ type: 'card:updated', data: updated }, prev.column, updated.column);
+    return updated;
   }
   // ... same pattern for all mutations
 }
@@ -260,57 +286,85 @@ When a card moves between columns, broadcast to connections subscribed to **eith
 ```typescript
 // app/stores/card-store.ts
 class CardStore {
-  cards = observable.map<number, Card>()
+  cards = observable.map<number, Card>();
 
   // Computed views
-  get cardsByColumn(): Record<string, Card[]> { /* grouped + sorted by position */ }
-  cardsByColumnName(col: string): Card[] { /* single column sorted */ }
+  get cardsByColumn(): Record<string, Card[]> {
+    /* grouped + sorted by position */
+  }
+  cardsByColumnName(col: string): Card[] {
+    /* single column sorted */
+  }
 
   // Hydrate from sync or IDB cache
-  hydrate(cards: Card[]) { cards.forEach(c => this.cards.set(c.id, c)) }
+  hydrate(cards: Card[]) {
+    cards.forEach((c) => this.cards.set(c.id, c));
+  }
 
   // Handle server push
-  handleUpdated(card: Card) { this.cards.set(card.id, card) }
-  handleDeleted(id: number) { this.cards.delete(id) }
+  handleUpdated(card: Card) {
+    this.cards.set(card.id, card);
+  }
+  handleDeleted(id: number) {
+    this.cards.delete(id);
+  }
 
   // Serialization for IDB persistence
-  serialize(): Card[] { return [...this.cards.values()] }
+  serialize(): Card[] {
+    return [...this.cards.values()];
+  }
 }
 
 // app/stores/project-store.ts
 class ProjectStore {
-  projects = observable.map<number, Project>()
+  projects = observable.map<number, Project>();
 
-  hydrate(projects: Project[]) { projects.forEach(p => this.projects.set(p.id, p)) }
-  handleUpdated(project: Project) { this.projects.set(project.id, project) }
-  handleDeleted(id: number) { this.projects.delete(id) }
-  serialize(): Project[] { return [...this.projects.values()] }
+  hydrate(projects: Project[]) {
+    projects.forEach((p) => this.projects.set(p.id, p));
+  }
+  handleUpdated(project: Project) {
+    this.projects.set(project.id, project);
+  }
+  handleDeleted(id: number) {
+    this.projects.delete(id);
+  }
+  serialize(): Project[] {
+    return [...this.projects.values()];
+  }
 }
 
 // app/stores/root-store.ts
 class RootStore {
-  cards = new CardStore()
-  projects = new ProjectStore()
-  ws: WsClient
+  cards = new CardStore();
+  projects = new ProjectStore();
+  ws: WsClient;
 
   constructor() {
-    this.ws = new WsClient(this.handleMessage)
+    this.ws = new WsClient(this.handleMessage);
   }
 
   handleMessage = (msg: ServerMessage) => {
     switch (msg.type) {
       case 'sync':
-        this.cards.hydrate(msg.cards)
-        this.projects.hydrate(msg.projects)
-        break
-      case 'card:updated': this.cards.handleUpdated(msg.data); break
-      case 'card:deleted': this.cards.handleDeleted(msg.data.id); break
-      case 'project:updated': this.projects.handleUpdated(msg.data); break
-      case 'project:deleted': this.projects.handleDeleted(msg.data.id); break
+        this.cards.hydrate(msg.cards);
+        this.projects.hydrate(msg.projects);
+        break;
+      case 'card:updated':
+        this.cards.handleUpdated(msg.data);
+        break;
+      case 'card:deleted':
+        this.cards.handleDeleted(msg.data.id);
+        break;
+      case 'project:updated':
+        this.projects.handleUpdated(msg.data);
+        break;
+      case 'project:deleted':
+        this.projects.handleDeleted(msg.data.id);
+        break;
       // page:result, search:result, claude:message, claude:status
       // handled by dedicated sub-stores or forwarded to components
     }
-  }
+  };
 }
 ```
 
@@ -319,57 +373,57 @@ class RootStore {
 ```typescript
 // app/lib/ws-client.ts
 class WsClient {
-  private ws: WebSocket | null = null
-  private pending = new Map<string, { resolve, reject, timeout: ReturnType<typeof setTimeout> }>()
-  private onEntityMessage: (msg: ServerMessage) => void
-  private subscribedColumns: string[] = []
-  private reconnectAttempt = 0
-  private maxReconnectDelay = 30_000
+  private ws: WebSocket | null = null;
+  private pending = new Map<string, { resolve; reject; timeout: ReturnType<typeof setTimeout> }>();
+  private onEntityMessage: (msg: ServerMessage) => void;
+  private subscribedColumns: string[] = [];
+  private reconnectAttempt = 0;
+  private maxReconnectDelay = 30_000;
 
   constructor(onEntityMessage: (msg: ServerMessage) => void) {
-    this.onEntityMessage = onEntityMessage
-    this.connect()
+    this.onEntityMessage = onEntityMessage;
+    this.connect();
   }
 
   // --- Connection Management ---
 
   private connect() {
-    this.ws = new WebSocket(wsUrl())
+    this.ws = new WebSocket(wsUrl());
     this.ws.onopen = () => {
-      this.reconnectAttempt = 0
+      this.reconnectAttempt = 0;
       // Re-subscribe on reconnect — server sends fresh sync
       if (this.subscribedColumns.length > 0) {
-        this.send({ type: 'subscribe', columns: this.subscribedColumns })
+        this.send({ type: 'subscribe', columns: this.subscribedColumns });
       }
-    }
-    this.ws.onmessage = (evt) => this.onMessage(evt.data)
-    this.ws.onclose = () => this.scheduleReconnect()
-    this.ws.onerror = () => this.ws?.close()
+    };
+    this.ws.onmessage = (evt) => this.onMessage(evt.data);
+    this.ws.onclose = () => this.scheduleReconnect();
+    this.ws.onerror = () => this.ws?.close();
   }
 
   private scheduleReconnect() {
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, this.maxReconnectDelay)
-    this.reconnectAttempt++
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, this.maxReconnectDelay);
+    this.reconnectAttempt++;
     // Reject all pending mutations — callers will rollback optimistic state
     for (const [id, p] of this.pending) {
-      clearTimeout(p.timeout)
-      p.reject(new Error('WebSocket disconnected'))
+      clearTimeout(p.timeout);
+      p.reject(new Error('WebSocket disconnected'));
     }
-    this.pending.clear()
-    setTimeout(() => this.connect(), delay)
+    this.pending.clear();
+    setTimeout(() => this.connect(), delay);
   }
 
   // --- Typed Send ---
 
   send(msg: ClientMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg))
+      this.ws.send(JSON.stringify(msg));
     }
   }
 
   subscribe(columns: string[]) {
-    this.subscribedColumns = columns
-    this.send({ type: 'subscribe', columns })
+    this.subscribedColumns = columns;
+    this.send({ type: 'subscribe', columns });
   }
 
   // --- Mutation with request/response correlation ---
@@ -377,33 +431,34 @@ class WsClient {
   async mutate(msg: ClientMessage & { requestId: string }): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.pending.delete(msg.requestId)
-        reject(new Error('Mutation timeout'))
-      }, 15_000)
-      this.pending.set(msg.requestId, { resolve, reject, timeout })
-      this.send(msg)
-    })
+        this.pending.delete(msg.requestId);
+        reject(new Error('Mutation timeout'));
+      }, 15_000);
+      this.pending.set(msg.requestId, { resolve, reject, timeout });
+      this.send(msg);
+    });
   }
 
   // --- Message Router ---
 
   private onMessage(raw: string) {
-    const msg = serverMessage.parse(JSON.parse(raw))
+    const msg = serverMessage.parse(JSON.parse(raw));
     if (msg.type === 'mutation:ok' || msg.type === 'mutation:error') {
-      const p = this.pending.get(msg.requestId)
+      const p = this.pending.get(msg.requestId);
       if (p) {
-        clearTimeout(p.timeout)
-        this.pending.delete(msg.requestId)
-        msg.type === 'mutation:ok' ? p.resolve(msg.data) : p.reject(new Error(msg.error))
+        clearTimeout(p.timeout);
+        this.pending.delete(msg.requestId);
+        msg.type === 'mutation:ok' ? p.resolve(msg.data) : p.reject(new Error(msg.error));
       }
     } else {
-      this.onEntityMessage(msg)
+      this.onEntityMessage(msg);
     }
   }
 }
 ```
 
 Key reconnection behavior:
+
 - Exponential backoff (1s, 2s, 4s, ... up to 30s)
 - All pending mutations rejected on disconnect → optimistic updates roll back
 - Re-sends `subscribe` on reconnect → server sends fresh `sync` → store reconciles
@@ -432,31 +487,32 @@ moveCard(id: number, column: string, position: number) {
 
 ```typescript
 // app/lib/store-persist.ts
-import { autorun, toJS } from 'mobx'
-import { get, set } from 'idb-keyval'
+import { autorun, toJS } from 'mobx';
+import { get, set } from 'idb-keyval';
 
-function persistStore<T extends { serialize(): unknown[]; hydrate(data: unknown[]): void }>(
-  store: T,
-  key: string,
-) {
+function persistStore<T extends { serialize(): unknown[]; hydrate(data: unknown[]): void }>(store: T, key: string) {
   // Load from IDB on init
-  get(key).then(cached => {
-    if (cached) store.hydrate(cached as unknown[])
-  })
+  get(key).then((cached) => {
+    if (cached) store.hydrate(cached as unknown[]);
+  });
 
   // Save to IDB on change (debounced 1s)
-  autorun(() => {
-    const data = store.serialize()
-    set(key, toJS(data))
-  }, { delay: 1000 })
+  autorun(
+    () => {
+      const data = store.serialize();
+      set(key, toJS(data));
+    },
+    { delay: 1000 },
+  );
 }
 
 // Usage
-persistStore(rootStore.cards, 'orchestrel:cards')
-persistStore(rootStore.projects, 'orchestrel:projects')
+persistStore(rootStore.cards, 'orchestrel:cards');
+persistStore(rootStore.projects, 'orchestrel:projects');
 ```
 
 Startup order:
+
 1. Create MobX stores
 2. Hydrate from IndexedDB (instant render with cached data)
 3. Connect WebSocket → send `subscribe` with current view's columns → receive `sync` → store reconciles
@@ -510,16 +566,16 @@ Thin Hono routes, validated with the same Zod schemas, using the same DbMutator:
 ```typescript
 // src/server/api/rest.ts
 app.post('/api/cards', (c) => {
-  const body = cardCreateSchema.parse(c.req.json())
-  const card = mutator.createCard(body)  // sync, triggers WS broadcast
-  return c.json(card, 201)
-})
+  const body = cardCreateSchema.parse(c.req.json());
+  const card = mutator.createCard(body); // sync, triggers WS broadcast
+  return c.json(card, 201);
+});
 
 app.patch('/api/cards/:id', (c) => {
-  const body = cardUpdateSchema.parse(c.req.json())
-  const card = mutator.updateCard(+c.req.param('id'), body)
-  return c.json(card)
-})
+  const body = cardUpdateSchema.parse(c.req.json());
+  const card = mutator.updateCard(+c.req.param('id'), body);
+  return c.json(card);
+});
 ```
 
 OpenAPI spec generated from the same Zod schemas via `@hono/zod-openapi`, served at `/api/docs`.

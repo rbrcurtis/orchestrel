@@ -15,6 +15,7 @@ Move all session lifecycle decisions to the server. The client becomes a dumb te
 Columns: `backlog` | `ready` | `running` | `review` | `done` | `archive`
 
 Semantic meaning:
+
 - `running` = active Claude session. Card enters this column only when a session is starting/running.
 - `review` = session ended (completed, stopped, or errored). Card lands here automatically.
 
@@ -118,10 +119,12 @@ if (existing && (existing.status === 'running' || existing.status === 'starting'
 Structured logging throughout session lifecycle, prefixed for easy filtering.
 
 **Card transitions:**
+
 - `[card:${id}] column ${old} → ${new}`
 - `[card:${id}] rejected: missing title/description for running`
 
 **Session lifecycle:**
+
 - `[session:${cardId}] beginSession called, existingSession=${exists}, message=${!!message}`
 - `[session:${cardId}] no session, creating. prompt length=${n}`
 - `[session:${cardId}] existing session, sending follow-up`

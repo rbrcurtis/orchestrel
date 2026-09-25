@@ -20,7 +20,14 @@ import type {
 import type { TaskNotificationEvent, TaskProgressEvent, TaskStartedEvent } from './async-task-tracker';
 
 export type SessionEventCallback = (
-  msg: StreamEventMessage | SessionResultMessage | TurnCompleteMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
+  msg:
+    | StreamEventMessage
+    | SessionResultMessage
+    | TurnCompleteMessage
+    | SessionErrorMessage
+    | SessionExitMessage
+    | ContextUsageMessage
+    | SessionIdUpdateMessage,
 ) => void;
 
 export class OrcdSession {
@@ -270,7 +277,9 @@ export class OrcdSession {
     const s = this.piSession.debugLeafState(this.probePrevLeafId);
     const tag = `[orcd:${this.id.slice(0, 8)}][leaf-probe] where=${where} mgr=${s.tag} leaf=${s.leafId ?? 'null'} count=${s.count} last=${s.lastId ?? 'null'}<-${s.lastParentId ?? 'null'} prevLeaf=${this.probePrevLeafId ?? 'null'}`;
     if (!s.prevIsAncestor) {
-      console.log(`${tag} *** LEAF-FORK: prevLeaf orphaned — interleaved entries after it are off the active branch ***`);
+      console.log(
+        `${tag} *** LEAF-FORK: prevLeaf orphaned — interleaved entries after it are off the active branch ***`,
+      );
     } else {
       console.log(tag);
     }
@@ -368,11 +377,7 @@ export class OrcdSession {
   /**
    * Start or resume a session.
    */
-  async run(opts: {
-    prompt: string;
-    resume?: boolean;
-    effort?: string;
-  }): Promise<void> {
+  async run(opts: { prompt: string; resume?: boolean; effort?: string }): Promise<void> {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
 
     if (this.running) {
@@ -450,7 +455,11 @@ export class OrcdSession {
         for (const cb of this.subscribers) cb(errMsg);
       }
 
-      if (this.state !== 'stopped' && this.state !== 'errored' && (this.asyncTasks.hasPending() || this.piSession?.isStreaming())) {
+      if (
+        this.state !== 'stopped' &&
+        this.state !== 'errored' &&
+        (this.asyncTasks.hasPending() || this.piSession?.isStreaming())
+      ) {
         log('waiting for background work to settle before session_exit');
         await this.waitForAsyncTasks();
       }
@@ -679,7 +688,11 @@ export class OrcdSession {
   }
 
   /** Run an out-of-band BGC summary. Parallel-safe; null = nothing to compact. */
-  async prepareBgCompaction(keepFraction: number, signal: AbortSignal, onStart?: () => void): Promise<CompactionResult | null> {
+  async prepareBgCompaction(
+    keepFraction: number,
+    signal: AbortSignal,
+    onStart?: () => void,
+  ): Promise<CompactionResult | null> {
     const session = await this.getOrCreatePiSession(undefined);
     return session.prepareBgCompaction(keepFraction, this.lastContextTokens, signal, onStart);
   }

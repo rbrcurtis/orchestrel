@@ -21,7 +21,10 @@ export function ShareComposer({ mode, projectId }: { mode: Mode; projectId?: num
   const [files, setFiles] = useState<File[] | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [complete, setComplete] = useState(false);
-  const native = useMemo(() => typeof window !== 'undefined' && Boolean(window.webkit?.messageHandlers?.orchestrelShare), []);
+  const native = useMemo(
+    () => typeof window !== 'undefined' && Boolean(window.webkit?.messageHandlers?.orchestrelShare),
+    [],
+  );
 
   useEffect(() => {
     store.subscribe(['ready', 'running', 'review', 'done']);
@@ -53,7 +56,9 @@ export function ShareComposer({ mode, projectId }: { mode: Mode; projectId?: num
         setErrors((current) => [...current, ...importErrors]);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [manifest, transport]);
 
   function finish() {
@@ -62,8 +67,16 @@ export function ShareComposer({ mode, projectId }: { mode: Mode; projectId?: num
   }
 
   if (!native) return <CenteredMessage title="iOS Share" body="Open this page from the iOS share sheet." />;
-  if (!manifest || !files) return <CenteredMessage title="Preparing share" body="Reading the items you shared…" loading />;
-  if (complete) return <CenteredMessage title={mode === 'chat' ? 'Chat started' : 'Card created'} body="Returning to the app you shared from." success />;
+  if (!manifest || !files)
+    return <CenteredMessage title="Preparing share" body="Reading the items you shared…" loading />;
+  if (complete)
+    return (
+      <CenteredMessage
+        title={mode === 'chat' ? 'Chat started' : 'Card created'}
+        body="Returning to the app you shared from."
+        success
+      />
+    );
 
   if (mode === 'chat') {
     const project = projectId != null ? projectStore.getProject(projectId) : undefined;
@@ -98,6 +111,28 @@ export function ShareComposer({ mode, projectId }: { mode: Mode; projectId?: num
   );
 }
 
-function CenteredMessage({ title, body, loading, success }: { title: string; body: string; loading?: boolean; success?: boolean }) {
-  return <main className="grid min-h-dvh place-items-center bg-background px-6 text-center"><div>{loading ? <LoaderCircle className="mx-auto mb-4 size-7 animate-spin text-primary" /> : success ? <Check className="mx-auto mb-4 size-8 text-primary" /> : null}<h1 className="text-xl font-semibold">{title}</h1><p className="mt-2 text-sm text-muted-foreground">{body}</p></div></main>;
+function CenteredMessage({
+  title,
+  body,
+  loading,
+  success,
+}: {
+  title: string;
+  body: string;
+  loading?: boolean;
+  success?: boolean;
+}) {
+  return (
+    <main className="grid min-h-dvh place-items-center bg-background px-6 text-center">
+      <div>
+        {loading ? (
+          <LoaderCircle className="mx-auto mb-4 size-7 animate-spin text-primary" />
+        ) : success ? (
+          <Check className="mx-auto mb-4 size-8 text-primary" />
+        ) : null}
+        <h1 className="text-xl font-semibold">{title}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+      </div>
+    </main>
+  );
 }

@@ -27,7 +27,15 @@ export class ContentBlock {
   output?: string;
   complete: boolean;
 
-  constructor(init: { type: 'text' | 'thinking' | 'tool_use'; content: string; id?: string; name?: string; input?: string; output?: string; complete: boolean }) {
+  constructor(init: {
+    type: 'text' | 'thinking' | 'tool_use';
+    content: string;
+    id?: string;
+    name?: string;
+    input?: string;
+    output?: string;
+    complete: boolean;
+  }) {
     this.type = init.type;
     this.content = init.content;
     this.id = init.id;
@@ -86,7 +94,7 @@ function parseToolInput(input: string | undefined): Record<string, unknown> {
   if (!input) return {};
   try {
     const parsed = JSON.parse(input) as unknown;
-    return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
+    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
   }
@@ -105,10 +113,7 @@ function displayUserContent(content: string): string {
   // commands in the same prompt.
   const stripped = stripInjectedCommands(content);
   if (stripped !== content) return stripped;
-  return content.replace(
-    /<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g,
-    (_block, name: string) => `/${name}`,
-  );
+  return content.replace(/<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g, (_block, name: string) => `/${name}`);
 }
 
 function textFromToolResultContent(content: unknown): string {
@@ -137,7 +142,6 @@ export class MessageAccumulator {
     this.finalizeBlocks();
     this.conversation.push({ kind: 'compact', label, timestamp });
   }
-
 
   constructor() {
     makeAutoObservable<this, 'historyPendingResultTimestamp' | 'historyTurnCount' | 'blockingSubagentToolIds'>(this, {
@@ -186,7 +190,12 @@ export class MessageAccumulator {
       case 'system':
         if (msg.subtype === 'init') {
           this.finalizeBlocks();
-          this.conversation.push({ kind: 'system', subtype: 'init', model: msg.model, timestamp: msg.timestamp ?? Date.now() });
+          this.conversation.push({
+            kind: 'system',
+            subtype: 'init',
+            model: msg.model,
+            timestamp: msg.timestamp ?? Date.now(),
+          });
         } else if (msg.subtype === 'compact_boundary') {
           this.finalizeBlocks();
           const label = msg.source === 'orchestrel-bgc' ? 'Background compaction applied' : undefined;
@@ -284,7 +293,12 @@ export class MessageAccumulator {
       case 'system':
         if (msg.subtype === 'init') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
-          this.conversation.push({ kind: 'system', subtype: 'init', model: msg.model, timestamp: normalizeTimestamp(msg.timestamp) });
+          this.conversation.push({
+            kind: 'system',
+            subtype: 'init',
+            model: msg.model,
+            timestamp: normalizeTimestamp(msg.timestamp),
+          });
         } else if (msg.subtype === 'compact_boundary') {
           const timestamp = normalizeTimestamp(msg.timestamp);
           this.finalizePendingHistoryTurn(timestamp);
@@ -292,13 +306,25 @@ export class MessageAccumulator {
           this.conversation.push({ kind: 'compact', label, timestamp });
         } else if (msg.subtype === 'bgc_started') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
-          this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: normalizeTimestamp(msg.timestamp) });
+          this.conversation.push({
+            kind: 'compact',
+            label: 'Background compaction started',
+            timestamp: normalizeTimestamp(msg.timestamp),
+          });
         } else if (msg.subtype === 'compact_started') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
-          this.conversation.push({ kind: 'compact', label: 'Context compacting', timestamp: normalizeTimestamp(msg.timestamp) });
+          this.conversation.push({
+            kind: 'compact',
+            label: 'Context compacting',
+            timestamp: normalizeTimestamp(msg.timestamp),
+          });
         } else if (msg.subtype === 'compact_done') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
-          this.conversation.push({ kind: 'compact', label: 'Context compacted', timestamp: normalizeTimestamp(msg.timestamp) });
+          this.conversation.push({
+            kind: 'compact',
+            label: 'Context compacted',
+            timestamp: normalizeTimestamp(msg.timestamp),
+          });
         }
         break;
     }
@@ -369,9 +395,8 @@ export class MessageAccumulator {
     const input = parseToolInput(block.input);
     if (input.run_in_background === true) return;
 
-    const description = typeof input.description === 'string' && input.description.trim()
-      ? input.description.trim()
-      : 'Subagent';
+    const description =
+      typeof input.description === 'string' && input.description.trim() ? input.description.trim() : 'Subagent';
     this.blockingSubagentToolIds.set(block.id, description);
     this.subagents.set(block.id, {
       taskId: block.id,
@@ -555,7 +580,8 @@ export class MessageAccumulator {
   private backfillHistoryInitModel(model: string | undefined): void {
     if (!model) return;
     const initEntry = this.conversation.find(
-      (entry): entry is Extract<ConversationEntry, { kind: 'system' }> => entry.kind === 'system' && entry.subtype === 'init',
+      (entry): entry is Extract<ConversationEntry, { kind: 'system' }> =>
+        entry.kind === 'system' && entry.subtype === 'init',
     );
     if (initEntry && !initEntry.model) initEntry.model = model;
   }
@@ -567,5 +593,4 @@ export class MessageAccumulator {
     this.historyPendingResultTimestamp = undefined;
     this.historyTurnCount = 0;
   }
-
 }

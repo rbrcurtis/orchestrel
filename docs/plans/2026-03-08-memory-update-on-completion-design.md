@@ -13,12 +13,14 @@ Server-side, in the `cards.move` mutation (`src/server/routers/cards.ts`). When 
 ### Flow
 
 **Moving to `done`:**
+
 1. Card status updates immediately in DB (existing behavior)
 2. Fire-and-forget: resume the existing session via `sessionManager` and send `/m`
 3. Worktree still exists — resume works normally
 4. Session exit handler skips auto-move-to-review (card already in `done`)
 
 **Moving to `archive`:**
+
 1. Fire-and-forget: resume the existing session and send `/m` BEFORE removing the worktree (worktree must exist for SDK resume since session storage is keyed by cwd)
 2. Card status updates immediately in DB
 3. Worktree removal is deferred to the `/m` session's exit callback instead of happening inline

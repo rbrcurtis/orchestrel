@@ -99,10 +99,7 @@ export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
 /** Socket.IO middleware — validates the upstream identity and attaches it to socket.data */
-export async function socketAuthMiddleware(
-  socket: AppSocket,
-  next: (err?: Error) => void,
-): Promise<void> {
+export async function socketAuthMiddleware(socket: AppSocket, next: (err?: Error) => void): Promise<void> {
   try {
     const req = socket.request;
     const auth = await validateCfAccess(req);

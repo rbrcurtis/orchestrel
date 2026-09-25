@@ -74,7 +74,10 @@ async function main(): Promise<void> {
       `  ${p.project}: ${p.sessions} session(s) — ${p.stores} store, ${p.updates} update, ${p.deletes} delete, ${p.skips} skip${p.errors.length ? `, ${p.errors.length} error(s)` : ''}`,
     );
   }
-  printMutations(summary.stagingFiles, summary.projects.flatMap((p) => p.sessionIds));
+  printMutations(
+    summary.stagingFiles,
+    summary.projects.flatMap((p) => p.sessionIds),
+  );
 }
 
 main().catch((err) => {

@@ -1,8 +1,5 @@
 import { createConnection, type Socket } from 'net';
-import type {
-  OrcdAction,
-  OrcdMessage,
-} from '../shared/orcd-protocol';
+import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
 import type { FileRef } from '../shared/ws-protocol';
 
 export interface OrcdClientOpts {
@@ -39,7 +36,10 @@ export class OrcdClient {
   }> = [];
 
   /** Generic requestId-based pending requests */
-  private pending = new Map<string, { resolve: (m: OrcdMessage) => void; reject: (e: Error) => void; timeout: ReturnType<typeof setTimeout> }>();
+  private pending = new Map<
+    string,
+    { resolve: (m: OrcdMessage) => void; reject: (e: Error) => void; timeout: ReturnType<typeof setTimeout> }
+  >();
   private reqCounter = 0;
 
   /** Cached capabilities from hello handshake */
@@ -82,8 +82,14 @@ export class OrcdClient {
         this.hasConnectedBefore = true;
         console.log(`[orcd-client:${this.nodeName}] ${isReconnect ? 're' : ''}connected`);
         this.sayHello()
-          .then(() => { if (isReconnect) this.reconnectCallback?.(); resolve(); })
-          .catch((err: Error) => { console.error(`[orcd-client:${this.nodeName}] hello failed:`, err.message); reject(err); });
+          .then(() => {
+            if (isReconnect) this.reconnectCallback?.();
+            resolve();
+          })
+          .catch((err: Error) => {
+            console.error(`[orcd-client:${this.nodeName}] hello failed:`, err.message);
+            reject(err);
+          });
       });
 
       sock.on('data', (data) => {
@@ -97,7 +103,12 @@ export class OrcdClient {
             const msg = JSON.parse(line) as OrcdMessage;
             this.dispatch(msg);
           } catch (err) {
-            console.warn(`[orcd-client:${this.nodeName}] skipping malformed message:`, err instanceof Error ? err.message : err, 'line:', line.slice(0, 120));
+            console.warn(
+              `[orcd-client:${this.nodeName}] skipping malformed message:`,
+              err instanceof Error ? err.message : err,
+              'line:',
+              line.slice(0, 120),
+            );
           }
         }
       });
@@ -124,7 +135,9 @@ export class OrcdClient {
           if (!this.destroyed && !this.reconnectTimer) {
             this.reconnectTimer = setTimeout(() => {
               this.reconnectTimer = null;
-              this.connect().catch((e) => console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (e as Error).message));
+              this.connect().catch((e) =>
+                console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (e as Error).message),
+              );
             }, 2000);
           }
           reject(err);
@@ -378,16 +391,28 @@ export class OrcdClient {
   /**
    * Validate that a path exists on the remote node.
    */
-  async pathValidate(path: string): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null; gitCommonDir: string | null }> {
+  async pathValidate(
+    path: string,
+  ): Promise<{ exists: boolean; isGitRepo: boolean; defaultBranch: string | null; gitCommonDir: string | null }> {
     const msg = await this.request({ action: 'path_validate', path } as OrcdAction);
     if (msg.type !== 'path_validated') throw new Error('expected path_validated reply');
-    return { exists: msg.exists, isGitRepo: msg.isGitRepo, defaultBranch: msg.defaultBranch, gitCommonDir: msg.gitCommonDir };
+    return {
+      exists: msg.exists,
+      isGitRepo: msg.isGitRepo,
+      defaultBranch: msg.defaultBranch,
+      gitCommonDir: msg.gitCommonDir,
+    };
   }
 
   /**
    * Prepare a worktree on the remote node.
    */
-  async worktreePrepare(opts: { projectPath: string; branch: string; sourceBranch?: string; setupCommands?: string }): Promise<{ path: string; branch: string }> {
+  async worktreePrepare(opts: {
+    projectPath: string;
+    branch: string;
+    sourceBranch?: string;
+    setupCommands?: string;
+  }): Promise<{ path: string; branch: string }> {
     const msg = await this.request({ action: 'worktree_prepare', ...opts } as OrcdAction);
     if (msg.type !== 'worktree_ready') throw new Error('expected worktree_ready reply');
     return { path: msg.path, branch: msg.branch };
@@ -424,7 +449,11 @@ export class OrcdClient {
     return msg.snapshot;
   }
 
-  async getHistoryPage(sessionId: string, cwd: string, page: import('../shared/transcript-history').TranscriptHistoryRequest) {
+  async getHistoryPage(
+    sessionId: string,
+    cwd: string,
+    page: import('../shared/transcript-history').TranscriptHistoryRequest,
+  ) {
     const msg = await this.request({ action: 'get_history_page', sessionId, cwd, page });
     if (msg.type !== 'history_page') throw new Error('Expected history page reply');
     return msg.page;

@@ -80,70 +80,103 @@ export async function initDatabase(): Promise<void> {
     try {
       await runner.query(`ALTER TABLE projects ADD COLUMN node_name TEXT NOT NULL DEFAULT 'local'`);
     } catch (err) {
-      console.log(`[db:migrate] projects.node_name add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] projects.node_name add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE cards ADD COLUMN node_name TEXT NOT NULL DEFAULT 'local'`);
     } catch (err) {
-      console.log(`[db:migrate] cards.node_name add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] cards.node_name add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`);
     } catch (err) {
-      console.log(`[db:migrate] archived column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] archived column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     await runner.query(`UPDATE projects SET archived = 0 WHERE archived IS NULL`);
     try {
       await runner.query(`ALTER TABLE projects ADD COLUMN default_sandbox INTEGER NOT NULL DEFAULT 0`);
     } catch (err) {
-      console.log(`[db:migrate] default_sandbox column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] default_sandbox column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE cards ADD COLUMN sandbox INTEGER NOT NULL DEFAULT 0`);
     } catch (err) {
-      console.log(`[db:migrate] cards.sandbox column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] cards.sandbox column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE cards ADD COLUMN session_cwd TEXT`);
     } catch (err) {
-      console.log(`[db:migrate] cards.session_cwd column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] cards.session_cwd column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE cards ADD COLUMN pending_initial_files TEXT NOT NULL DEFAULT '[]'`);
     } catch (err) {
-      console.log(`[db:migrate] cards.pending_initial_files column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] cards.pending_initial_files column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE cards ADD COLUMN sleep_until INTEGER`);
     } catch (err) {
-      console.log(`[db:migrate] cards.sleep_until column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] cards.sleep_until column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE cards ADD COLUMN sleep_prompt TEXT`);
     } catch (err) {
-      console.log(`[db:migrate] cards.sleep_prompt column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] cards.sleep_prompt column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE cards ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
     } catch (err) {
-      console.log(`[db:migrate] cards.version column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] cards.version column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     try {
       await runner.query(`ALTER TABLE projects ADD COLUMN default_summarize_threshold REAL NOT NULL DEFAULT 0`);
     } catch (err) {
-      console.log(`[db:migrate] projects.default_summarize_threshold column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
+      console.log(
+        `[db:migrate] projects.default_summarize_threshold column add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
     }
     await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
     await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
     await runner.query(`UPDATE cards SET pending_initial_files = '[]' WHERE pending_initial_files IS NULL`);
-    const duplicateSessions = await runner.query(`
+    const duplicateSessions = (await runner.query(`
       SELECT session_id, GROUP_CONCAT(id) AS card_ids
       FROM cards
       WHERE session_id IS NOT NULL
       GROUP BY session_id
       HAVING COUNT(*) > 1
       LIMIT 1
-    `) as Array<{ session_id: string; card_ids: string }>;
+    `)) as Array<{ session_id: string; card_ids: string }>;
     if (duplicateSessions[0]) {
       const duplicate = duplicateSessions[0];
       throw new Error(

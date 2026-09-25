@@ -5,19 +5,13 @@ import { isProjectHidden, projectFilterActive } from './project-filter';
 export type PinTarget = number | 'all';
 
 export type SlotState =
-  | { type: 'pinned'; projectId: PinTarget; cardId?: number }
-  | { type: 'manual'; cardId: number }
-  | { type: 'empty' };
+  { type: 'pinned'; projectId: PinTarget; cardId?: number } | { type: 'manual'; cardId: number } | { type: 'empty' };
 
 /** Rank eligible cards: review (oldest updatedAt) → running (newest updatedAt). */
 function rankCards(eligible: Card[]): Card[] {
-  const review = eligible
-    .filter((c) => c.column === 'review')
-    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+  const review = eligible.filter((c) => c.column === 'review').sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
 
-  const running = eligible
-    .filter((c) => c.column === 'running')
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const running = eligible.filter((c) => c.column === 'running').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   return [...review, ...running];
 }

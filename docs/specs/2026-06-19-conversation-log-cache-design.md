@@ -89,4 +89,7 @@ Rewrite the `fetch` handler in `public/sw.js`:
 - Unit: `MessageAccumulator.serialize()` → `hydrate()` round-trip preserves rendered conversation (especially `kind:'blocks'` reconstructed as `ContentBlock` instances). This catches the realistic bug where a JSON round-trip silently drops class behavior — unit level is right because it's pure data transformation.
 - Unit: LRU eviction — over-budget writes evict oldest first and never evict the active card.
 - Manual: open a long-session card cold (cache miss) → reopen (instant paint from cache, then refresh). Reload mid-active-session and confirm streamed turns survive. Stop the backend and confirm the transcript still renders from cache.
+
+```
+
 ```

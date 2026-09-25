@@ -24,6 +24,7 @@ Orchestrel Server
 ```
 
 Key changes from current architecture:
+
 - No external daemon. OpenCode ran on port 4097. Agent SDK spawns Claude Code as a subprocess per session.
 - No SSE. The `Query` async generator replaces SSE streaming.
 - No `AgentSession` abstract class. Sessions ARE `Query` objects.
@@ -41,8 +42,8 @@ interface ActiveSession {
   cardId: string;
   query: Query;
   sessionId: string;
-  provider: string;          // "anthropic", "trackable", "okkanti"
-  model: string;             // "claude-opus-4-6"
+  provider: string; // "anthropic", "trackable", "okkanti"
+  model: string; // "claude-opus-4-6"
   status: 'starting' | 'running' | 'completed' | 'stopped' | 'errored' | 'retry';
   promptsSent: number;
   turnsCompleted: number;
@@ -53,13 +54,13 @@ interface ActiveSession {
 class SessionManager {
   private sessions = new Map<string, ActiveSession>();
 
-  async start(cardId, prompt, opts: { provider, model, cwd, resume?, files? }): Promise<ActiveSession>
-  sendFollowUp(cardId, message, files?): void
-  stop(cardId): void
-  setModel(cardId, provider, model): void
-  get(cardId): ActiveSession | undefined
-  has(cardId): boolean
-  isActive(cardId): boolean
+  async start(cardId, prompt, opts: { provider; model; cwd; resume?; files? }): Promise<ActiveSession>;
+  sendFollowUp(cardId, message, files?): void;
+  stop(cardId): void;
+  setModel(cardId, provider, model): void;
+  get(cardId): ActiveSession | undefined;
+  has(cardId): boolean;
+  isActive(cardId): boolean;
 }
 ```
 
@@ -115,18 +116,18 @@ Use `includePartialMessages: true` on `query()`. This yields `SDKPartialAssistan
 
 ### Messages Forwarded to UI
 
-| SDK Message Type | UI Purpose |
-|---|---|
-| `system` (init) | Session started, capture sessionId |
-| `system` (compact_boundary) | Show compaction marker |
-| `stream_event` | Real-time text/thinking/tool-input streaming |
-| `assistant` | Complete message (history reconstruction) |
-| `result` | Turn complete — cost, usage, duration |
-| `tool_progress` | Tool execution status |
-| `tool_use_summary` | Tool result summary |
-| `task_started` / `task_progress` / `task_notification` | Subagent activity |
-| `rate_limit` | Retry state |
-| `status` | General status |
+| SDK Message Type                                       | UI Purpose                                   |
+| ------------------------------------------------------ | -------------------------------------------- |
+| `system` (init)                                        | Session started, capture sessionId           |
+| `system` (compact_boundary)                            | Show compaction marker                       |
+| `stream_event`                                         | Real-time text/thinking/tool-input streaming |
+| `assistant`                                            | Complete message (history reconstruction)    |
+| `result`                                               | Turn complete — cost, usage, duration        |
+| `tool_progress`                                        | Tool execution status                        |
+| `tool_use_summary`                                     | Tool result summary                          |
+| `task_started` / `task_progress` / `task_notification` | Subagent activity                            |
+| `rate_limit`                                           | Retry state                                  |
+| `status`                                               | General status                               |
 
 Filtered out (not forwarded): `hook_*`, `auth_status`, `files_persisted`, `prompt_suggestion`.
 
@@ -185,7 +186,7 @@ module.exports = async function router(req, config) {
 
 ### 429 Failover
 
-The custom router runs *before* the request and selects the primary provider. CCR's built-in `fallback` config handles error-based failover (including 429). For Trackable with 2 AWS accounts:
+The custom router runs _before_ the request and selects the primary provider. CCR's built-in `fallback` config handles error-based failover (including 429). For Trackable with 2 AWS accounts:
 
 ```json
 {
@@ -265,6 +266,7 @@ SessionManager lives in `init-state.ts` (dynamically imported). Query objects (C
 ### Environment
 
 Agent SDK sessions spawned with:
+
 ```typescript
 env: {
   ANTHROPIC_BASE_URL: 'http://127.0.0.1:3456',  // CCR
@@ -291,6 +293,7 @@ CCR installed separately, not a project dependency.
 ## File Migration
 
 ### Deleted
+
 - `src/server/agents/opencode/` (session.ts, messages.ts, models.ts)
 - `src/server/agents/types.ts`
 - `src/server/agents/factory.ts`
@@ -300,6 +303,7 @@ CCR installed separately, not a project dependency.
 - OpenCode plugins (`~/.config/opencode/plugins/anthropic-oauth.js`, etc.)
 
 ### Created
+
 - `src/server/sessions/manager.ts`
 - `src/server/sessions/types.ts`
 - `src/server/sessions/consumer.ts`
@@ -308,6 +312,7 @@ CCR installed separately, not a project dependency.
 - Frontend types mirroring SDK message shapes
 
 ### Modified
+
 - `src/server/init-state.ts` — add SessionManager, remove OpenCode refs
 - `src/server/ws/handlers/agents.ts` — call new SessionManager
 - `src/server/controllers/oc.ts` — wireSession replaced, autoStart/cleanup use new SessionManager
@@ -320,6 +325,7 @@ CCR installed separately, not a project dependency.
 - Model switcher — add provider dropdown
 
 ### Unchanged
+
 - `src/server/bus.ts`
 - `src/server/ws/server.ts` (minus OpenCode init)
 - `src/server/ws/connections.ts`

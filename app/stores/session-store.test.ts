@@ -342,10 +342,19 @@ function userHistory(id: string, text: string): HistoryMessage {
   };
 }
 
-function historyPage(overrides: Partial<TranscriptHistoryPage> & Pick<TranscriptHistoryPage, 'records'>): TranscriptHistoryPage {
+function historyPage(
+  overrides: Partial<TranscriptHistoryPage> & Pick<TranscriptHistoryPage, 'records'>,
+): TranscriptHistoryPage {
   return {
-    sessionId: 'sess-1', revision: 'r1', before: null, after: null, prefix: 'p',
-    hasOlder: false, hasNewer: false, reset: false, ...overrides,
+    sessionId: 'sess-1',
+    revision: 'r1',
+    before: null,
+    after: null,
+    prefix: 'p',
+    hasOlder: false,
+    hasNewer: false,
+    reset: false,
+    ...overrides,
   };
 }
 
@@ -354,12 +363,22 @@ function historyPage(overrides: Partial<TranscriptHistoryPage> & Pick<Transcript
 describe('SessionStore transcript paging', () => {
   it('prepends older pages so scrolling up accumulates history', async () => {
     const latest = historyPage({
-      records: [{ id: 'id3', message: userHistory('id3', 'three') }, { id: 'id4', message: userHistory('id4', 'four') }],
-      before: 'id3', after: 'id4', hasOlder: true,
+      records: [
+        { id: 'id3', message: userHistory('id3', 'three') },
+        { id: 'id4', message: userHistory('id4', 'four') },
+      ],
+      before: 'id3',
+      after: 'id4',
+      hasOlder: true,
     });
     const older = historyPage({
-      records: [{ id: 'id1', message: userHistory('id1', 'one') }, { id: 'id2', message: userHistory('id2', 'two') }],
-      before: 'id1', after: 'id2', hasNewer: true,
+      records: [
+        { id: 'id1', message: userHistory('id1', 'one') },
+        { id: 'id2', message: userHistory('id2', 'two') },
+      ],
+      before: 'id1',
+      after: 'id2',
+      hasNewer: true,
     });
     const emit = vi.fn(async (event: string, data: { page?: { before?: string } }) => {
       if (event !== 'session:history-page') return undefined;
@@ -375,8 +394,9 @@ describe('SessionStore transcript paging', () => {
 
     await store.loadOlderHistory(7);
 
-    const contents = store.getSession(7)!.accumulator.conversation
-      .filter((e) => e.kind === 'user')
+    const contents = store
+      .getSession(7)!
+      .accumulator.conversation.filter((e) => e.kind === 'user')
       .map((e) => (e.kind === 'user' ? e.content : ''));
     expect(contents).toEqual(['one', 'two', 'three', 'four']);
     expect(store.hasOlderHistory(7)).toBe(false);

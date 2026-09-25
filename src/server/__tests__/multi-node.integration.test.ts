@@ -60,13 +60,19 @@ describe('multi-node isolation', () => {
     );
     await a.start();
     await b.start();
-    cleanup.push(() => a.stop(), () => b.stop());
+    cleanup.push(
+      () => a.stop(),
+      () => b.stop(),
+    );
 
     const ca = new OrcdClient({ host: '127.0.0.1', port: portA, token: 'a-tok', name: 'nodeA' });
     const cb = new OrcdClient({ host: '127.0.0.1', port: portB, token: 'b-tok', name: 'nodeB' });
     await ca.connect();
     await cb.connect();
-    cleanup.push(() => ca.disconnect(), () => cb.disconnect());
+    cleanup.push(
+      () => ca.disconnect(),
+      () => cb.disconnect(),
+    );
 
     // capabilities are cached during the hello handshake on connect
     expect(ca.capabilities?.name).toBe('nodeA');
@@ -75,7 +81,9 @@ describe('multi-node isolation', () => {
     expect(cb.capabilities?.providers[0].models[0]).toMatchObject({ alias: 'haiku', contextWindow: 200_000 });
 
     const repoA = await tempRepo();
-    cleanup.push(async () => { await rm(repoA, { recursive: true, force: true }); });
+    cleanup.push(async () => {
+      await rm(repoA, { recursive: true, force: true });
+    });
     const wt = await ca.worktreePrepare({ projectPath: repoA, branch: 'feat-a', setupCommands: '' });
     expect(wt.path).toBe(join(repoA, '.worktrees', 'feat-a'));
   });

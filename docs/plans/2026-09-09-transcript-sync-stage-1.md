@@ -71,25 +71,25 @@ real temporary session file, and cleanup. It uses public Pi functions only:
 calls; do not copy the prior report's illustrative signatures as working code.
 
 - [ ] Read installed `README.md`, `docs/sdk.md`, `docs/sessions.md`,
-  `docs/session-format.md`, and `docs/compaction.md` completely. Follow relevant
-  API references. Inspect existing `src/orcd/__tests__/pi-runtime.test.ts` for
-  test conventions without inheriting mocks that bypass real SDK ordering.
+      `docs/session-format.md`, and `docs/compaction.md` completely. Follow relevant
+      API references. Inspect existing `src/orcd/__tests__/pi-runtime.test.ts` for
+      test conventions without inheriting mocks that bypass real SDK ordering.
 - [ ] Create the faux runtime using a temporary cwd/session directory and disable
-  discovery of user/project extensions. All responses come from the synthetic
-  provider. Fail the test if a network-backed model would be selected.
+      discovery of user/project extensions. All responses come from the synthetic
+      provider. Fail the test if a network-backed model would be selected.
 - [ ] Subscribe before submitting prompts. Clone each observed event immediately
-  with `structuredClone`; do not retain mutable Pi payload references.
+      with `structuredClone`; do not retain mutable Pi payload references.
 - [ ] Produce three responses: an initial response and two distinct responses to
-  identical follow-up text. Queue follow-ups from an earlier message callback.
+      identical follow-up text. Queue follow-ups from an earlier message callback.
 - [ ] Install a test-only async message-end extension using supported resource
-  loading. Delay it with an explicit promise gate, then replace final text. Do
-  not use arbitrary sleeps to manufacture event ordering.
+      loading. Delay it with an explicit promise gate, then replace final text. Do
+      not use arbitrary sleeps to manufacture event ordering.
 - [ ] Assert inside message-end that runtime state and persisted entries are not
-  falsely assumed equivalent. At `agent_settled`, reopen the real session file
-  and assert all six user/assistant entries are present with distinct entry IDs,
-  including the final replacement content.
+      falsely assumed equivalent. At `agent_settled`, reopen the real session file
+      and assert all six user/assistant entries are present with distinct entry IDs,
+      including the final replacement content.
 - [ ] Assert that `agent.waitForIdle()` is not used to acknowledge settlement.
-  Capture both streaming flags and record the observed earlier idle transition.
+      Capture both streaming flags and record the observed earlier idle transition.
 - [ ] Dispose the runtime, unsubscribe, and remove its directory in `finally`.
 
 Run:
@@ -128,8 +128,7 @@ export interface TranscriptEnvelope<T> {
 }
 
 export type ReplayDecision<E, S> =
-  | { type: 'replay'; events: TranscriptEnvelope<E>[] }
-  | { type: 'snapshot'; cursor: TranscriptCursor; state: S };
+  { type: 'replay'; events: TranscriptEnvelope<E>[] } | { type: 'snapshot'; cursor: TranscriptCursor; state: S };
 ```
 
 `streamId` is a random incarnation ID. Allocate a new one on daemon/session
@@ -138,31 +137,31 @@ recreation and runtime replacement, even when the persisted session ID is equal.
 separate: an event payload is not a state snapshot.
 
 - [ ] Define concrete discriminated event/state types using the public SDK event
-  union. Separate initial confirmed entry projection, transient messages, and
-  settled replacement. Preserve tool/progress metadata rather than accepting
-  text-only responses as the production contract.
+      union. Separate initial confirmed entry projection, transient messages, and
+      settled replacement. Preserve tool/progress metadata rather than accepting
+      text-only responses as the production contract.
 - [ ] Implement the reducer as a session-owned object. A synchronous `accept`
-  operation copies an event, increments sequence, reduces it, and inserts the
-  same envelope into a bounded replay buffer. Snapshot copies that reducer's
-  state and cursor together. Never read live Pi state in the snapshot method.
+      operation copies an event, increments sequence, reduces it, and inserts the
+      same envelope into a bounded replay buffer. Snapshot copies that reducer's
+      state and cursor together. Never read live Pi state in the snapshot method.
 - [ ] Use message-start sequence as transient lifecycle identity. Final
-  message-end payload replaces the corresponding transient message content,
-  including asynchronous extension replacements.
+      message-end payload replaces the corresponding transient message content,
+      including asynchronous extension replacements.
 - [ ] Keep the baseline fixed during the unsettled run. Do not project newer
-  saved entries into it while the overlapping live overlay is displayed.
+      saved entries into it while the overlapping live overlay is displayed.
 - [ ] At settlement, synchronously capture source-entry projection and produce a
-  replacement event through the same sequence/reducer path. Replace the baseline
-  and retire only the overlay covered by that boundary. No await is allowed
-  between projection capture and event sequencing.
+      replacement event through the same sequence/reducer path. Replace the baseline
+      and retire only the overlay covered by that boundary. No await is allowed
+      between projection capture and event sequencing.
 - [ ] Use a three-envelope ring in tests. Capture while the first response is
-  partial, overflow the ring, and request an old cursor. Assert an explicit
-  snapshot result, then continue the real synthetic stream and check exact
-  final displayed messages. Do not assert correctness by comparing only lengths.
+      partial, overflow the ring, and request an old cursor. Assert an explicit
+      snapshot result, then continue the real synthetic stream and check exact
+      final displayed messages. Do not assert correctness by comparing only lengths.
 - [ ] Delay delivery of a settled snapshot, begin another prompt, then deliver
-  the snapshot and buffered newer events. Assert the new prompt and response
-  remain once and in order.
+      the snapshot and buffered newer events. Assert the new prompt and response
+      remain once and in order.
 - [ ] Test duplicate delivery and unknown/future cursors. A future or foreign
-  cursor must request a snapshot, not skip data. No per-event timeout promises.
+      cursor must request a snapshot, not skip data. No per-event timeout promises.
 
 Run the integration file after each case and run `bun run typecheck`.
 
@@ -176,26 +175,26 @@ under realistic response delays. They are not duplicate SDK ordering coverage.
 **Files:** Extend `transcript-sync.integration.test.ts` and its fixture only.
 
 - [ ] Use a real loopback TCP server on an ephemeral port. Frame snapshot and
-  event messages as newline-delimited JSON, as orcd does. Keep the production
-  daemon and configured ports untouched.
+      event messages as newline-delimited JSON, as orcd does. Keep the production
+      daemon and configured ports untouched.
 - [ ] Disconnect the client while the synthetic provider is paused mid-response.
-  Advance the provider beyond the ring's retained range, reconnect with the old
-  cursor, and apply the returned snapshot followed by newer events. Assert the
-  displayed text is exact and unique without content-based deduplication.
+      Advance the provider beyond the ring's retained range, reconnect with the old
+      cursor, and apply the returned snapshot followed by newer events. Assert the
+      displayed text is exact and unique without content-based deduplication.
 - [ ] Repeat with a retained cursor to verify replay rather than reset.
 - [ ] Dispose the runtime and recreate it from its real session file. Use a new
-  stream ID with the same persisted session ID. Assert the old cursor is rejected
-  and the confirmed persisted history is restored. Do not claim unsaved partial
-  output survives daemon termination; the new epoch supersedes that output.
+      stream ID with the same persisted session ID. Assert the old cursor is rejected
+      and the confirmed persisted history is restored. Do not claim unsaved partial
+      output survives daemon termination; the new epoch supersedes that output.
 - [ ] Exercise public runtime fork during active streaming. Let the supported
-  operation perform its normal abort/replacement. Assert outgoing old-epoch
-  events cannot enter the replacement view. Do not change application fork
-  semantics to make this test pass.
+      operation perform its normal abort/replacement. Assert outgoing old-epoch
+      events cannot enter the replacement view. Do not change application fork
+      semantics to make this test pass.
 - [ ] Exercise compaction with synthetic summary output. Project entries using
-  `buildContextEntries()` and `sessionEntryToContextMessages()`. Assert the view
-  matches Pi's selected context while the append-only entry log remains intact.
+      `buildContextEntries()` and `sessionEntryToContextMessages()`. Assert the view
+      matches Pi's selected context while the append-only entry log remains intact.
 - [ ] Close client/server sockets, remove listeners, and dispose temporary
-  sessions after every test, including assertion failures.
+      sessions after every test, including assertion failures.
 
 **Why keep these cases:** Socket framing, disconnect recovery, and runtime
 replacement cannot be proven by comparing fabricated cursor objects. These tests
@@ -217,22 +216,22 @@ bun run lint
 plan with results. Do not add timers or sampling to production code.
 
 - [ ] Generate a long tool-loop response with no settlement between rounds and
-  large synthetic tool outputs. Record reducer retained payload bytes, replay
-  bytes, confirmed baseline bytes, and process heap separately.
+      large synthetic tool outputs. Record reducer retained payload bytes, replay
+      bytes, confirmed baseline bytes, and process heap separately.
 - [ ] Verify the replay ring bounds bytes as well as envelope count. Cloned full
-  partial-message objects must not accumulate once per token; store normalized
-  deltas plus final replacements, not repeated growing snapshots.
+      partial-message objects must not accumulate once per token; store normalized
+      deltas plus final replacements, not repeated growing snapshots.
 - [ ] Check that duplicate baseline/overlay copies are not retained after settled
-  replacement, runtime replacement, unsubscribe, and disposal.
+      replacement, runtime replacement, unsubscribe, and disposal.
 - [ ] Document whether completed unsettled overlay records grow with the run.
-  They currently cannot be retired by guessed correspondence with persisted
-  entries. If this prevents bounded paging, STOP and review a server-owned
-  transient spool/page mechanism before planning browser integration. Do not
-  silently turn the spec's single-active-message exception into a whole-run
-  exception.
+      They currently cannot be retired by guessed correspondence with persisted
+      entries. If this prevents bounded paging, STOP and review a server-owned
+      transient spool/page mechanism before planning browser integration. Do not
+      silently turn the spec's single-active-message exception into a whole-run
+      exception.
 - [ ] Record source file paths, tested SDK version, measured values, passing and
-  failing cases, and cleanup status. Do not retain session content from real
-  users in test fixtures or documentation.
+      failing cases, and cleanup status. Do not retain session content from real
+      users in test fixtures or documentation.
 
 **Acceptance:** Actual transport recovery and active replacement pass; the
 baseline/live ownership contract has no heuristic joins; long-run retention has
@@ -250,11 +249,11 @@ result per round, no settlement until all rounds complete, a 32-envelope/
 262,144-byte replay ring, and no real service calls. One reproducible verbose
 run measured encoded payload bytes as follows:
 
-| Point | Confirmed baseline | Live overlay | Replay | Process `heapUsed` |
-| --- | ---: | ---: | ---: | ---: |
-| Before prompt | 0 | 0 | 0 | 71,780,672 |
-| Before settlement | 0 | 42,029 | 0 (ring overflow) | 54,613,744 |
-| After `settle()` | 27,284 | 2 (empty array) | 27,414 | 55,707,472 |
+| Point             | Confirmed baseline |    Live overlay |            Replay | Process `heapUsed` |
+| ----------------- | -----------------: | --------------: | ----------------: | -----------------: |
+| Before prompt     |                  0 |               0 |                 0 |         71,780,672 |
+| Before settlement |                  0 |          42,029 | 0 (ring overflow) |         54,613,744 |
+| After `settle()`  |             27,284 | 2 (empty array) |            27,414 |         55,707,472 |
 
 Heap is recorded separately and is not a bound: V8 GC made the unsettled sample
 smaller than the before-prompt sample. Reducer payload measurements are encoded

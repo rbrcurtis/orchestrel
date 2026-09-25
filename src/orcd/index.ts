@@ -7,7 +7,11 @@ async function main() {
   const server = new OrcdServer(
     { listen: config.listen, authToken: config.authToken, name: config.name, ringBufferSize: config.ringBufferSize },
     config.providers,
-    { provider: config.defaultProvider, model: config.defaultModel, ...(config.defaultThinkingLevel ? { thinkingLevel: config.defaultThinkingLevel } : {}) },
+    {
+      provider: config.defaultProvider,
+      model: config.defaultModel,
+      ...(config.defaultThinkingLevel ? { thinkingLevel: config.defaultThinkingLevel } : {}),
+    },
   );
   await server.start();
   let shuttingDown = false;
@@ -24,4 +28,7 @@ async function main() {
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
 }
-main().catch((err) => { console.error('[orcd] fatal:', err); process.exit(1); });
+main().catch((err) => {
+  console.error('[orcd] fatal:', err);
+  process.exit(1);
+});

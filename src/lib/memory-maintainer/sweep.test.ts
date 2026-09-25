@@ -7,8 +7,14 @@ import { getDb, resetDb } from './db';
 import { sweepSessions } from './sweep';
 
 const MEMORY: MemoryConfig = {
-  mode: 'stage', provider: 'max', model: 'assistant', maxTurns: 30,
-  excerptTokens: 24000, stageDir: 'data/memory-staging', settleMs: 0, windowDays: 7,
+  mode: 'stage',
+  provider: 'max',
+  model: 'assistant',
+  maxTurns: 30,
+  excerptTokens: 24000,
+  stageDir: 'data/memory-staging',
+  settleMs: 0,
+  windowDays: 7,
   projects: {
     trackable: { match: ['/home/ryan/Code/trackable'], apiUrl: 'http://mem', apiKey: 'k', project: 'trackable' },
   },
@@ -33,10 +39,14 @@ function session(name: string, cwd: string, turns: number, mtimeMs: number): str
   mkdirSync(join(p, '..'), { recursive: true });
   const lines = [
     JSON.stringify({ type: 'session', id: name, timestamp: '2026-08-31T00:00:00Z', cwd }),
-    ...Array.from({ length: turns }, (_, i) => JSON.stringify({
-      type: 'message', id: `m${i}`, timestamp: '2026-08-31T00:00:01Z',
-      message: { role: i === 0 ? 'user' : 'assistant', content: [{ type: 'text', text: 'x' }] },
-    })),
+    ...Array.from({ length: turns }, (_, i) =>
+      JSON.stringify({
+        type: 'message',
+        id: `m${i}`,
+        timestamp: '2026-08-31T00:00:01Z',
+        message: { role: i === 0 ? 'user' : 'assistant', content: [{ type: 'text', text: 'x' }] },
+      }),
+    ),
   ];
   writeFileSync(p, lines.join('\n'));
   void mtimeMs;
@@ -55,8 +65,12 @@ describe('sweepSessions', () => {
     const p = session('c.jsonl', '/home/ryan/Code/trackable', 0, 0);
     const db = getDb();
     const st = statSync(p);
-    db.prepare('INSERT INTO memory_maintainer_watermark (path, mtime_ms, size, processed_at) VALUES (?, ?, ?, ?)')
-      .run(p, st.mtimeMs, st.size, '2026-08-31T00:00:00Z');
+    db.prepare('INSERT INTO memory_maintainer_watermark (path, mtime_ms, size, processed_at) VALUES (?, ?, ?, ?)').run(
+      p,
+      st.mtimeMs,
+      st.size,
+      '2026-08-31T00:00:00Z',
+    );
     expect(sweepSessions(MEMORY).files).toHaveLength(0);
   });
 

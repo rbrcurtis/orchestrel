@@ -41,13 +41,20 @@ function scrollToBottom(el: HTMLDivElement, behavior: ScrollBehavior = 'auto') {
 function headSignature(entry?: ConversationEntry): string | null {
   if (!entry) return null;
   switch (entry.kind) {
-    case 'user': return `user:${entry.content}`;
-    case 'blocks': return `blocks:${entry.model ?? ''}:${entry.blocks[0]?.type ?? 'empty'}`;
-    case 'system': return `system:${entry.subtype}`;
-    case 'compact': return `compact:${entry.label ?? ''}`;
-    case 'error': return `error:${entry.message}`;
-    case 'result': return 'result';
-    case 'tool_activity': return 'tool_activity';
+    case 'user':
+      return `user:${entry.content}`;
+    case 'blocks':
+      return `blocks:${entry.model ?? ''}:${entry.blocks[0]?.type ?? 'empty'}`;
+    case 'system':
+      return `system:${entry.subtype}`;
+    case 'compact':
+      return `compact:${entry.label ?? ''}`;
+    case 'error':
+      return `error:${entry.message}`;
+    case 'result':
+      return 'result';
+    case 'tool_activity':
+      return 'tool_activity';
   }
 }
 
@@ -101,10 +108,7 @@ export function LazyTranscript({
 
   const items = useMemo<ConversationEntry[]>(() => {
     if (currentBlocks.length === 0) return conversation;
-    return [
-      ...conversation,
-      { kind: 'blocks', blocks: currentBlocks },
-    ];
+    return [...conversation, { kind: 'blocks', blocks: currentBlocks }];
   }, [conversation, currentBlocks]);
 
   const startIndex = Math.max(0, items.length - visibleCount);
@@ -135,15 +139,18 @@ export function LazyTranscript({
     frameRef.current = null;
   }, []);
 
-  const scheduleScrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
-    cancelScheduledScroll();
-    frameRef.current = requestAnimationFrame(() => {
-      frameRef.current = null;
-      const el = scrollRef.current;
-      if (!el) return;
-      scrollToBottom(el, behavior);
-    });
-  }, [cancelScheduledScroll]);
+  const scheduleScrollToBottom = useCallback(
+    (behavior: ScrollBehavior = 'auto') => {
+      cancelScheduledScroll();
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = null;
+        const el = scrollRef.current;
+        if (!el) return;
+        scrollToBottom(el, behavior);
+      });
+    },
+    [cancelScheduledScroll],
+  );
 
   const loadOlder = useCallback(() => {
     const el = scrollRef.current;
@@ -229,17 +236,20 @@ export function LazyTranscript({
     const top = topSentinelRef.current;
     const bottom = bottomSentinelRef.current;
     if (!root || !top || !bottom) return;
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.target === top) {
-          topVisibleRef.current = entry.isIntersecting;
-          if (entry.isIntersecting) loadOlder();
-        } else if (entry.target === bottom) {
-          bottomVisibleRef.current = entry.isIntersecting;
-          if (entry.isIntersecting) loadNewer();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.target === top) {
+            topVisibleRef.current = entry.isIntersecting;
+            if (entry.isIntersecting) loadOlder();
+          } else if (entry.target === bottom) {
+            bottomVisibleRef.current = entry.isIntersecting;
+            if (entry.isIntersecting) loadNewer();
+          }
         }
-      }
-    }, { root, rootMargin: `${TOP_LOAD_PX}px 0px ${TOP_LOAD_PX}px 0px` });
+      },
+      { root, rootMargin: `${TOP_LOAD_PX}px 0px ${TOP_LOAD_PX}px 0px` },
+    );
     observer.observe(top);
     observer.observe(bottom);
     return () => observer.disconnect();
@@ -370,13 +380,11 @@ export function LazyTranscript({
                 <div
                   key={index}
                   data-message-row
-                  className={j === 0 && entry.kind === 'user' ? 'sticky top-0 z-10 bg-card/95 py-1 backdrop-blur-sm' : undefined}
+                  className={
+                    j === 0 && entry.kind === 'user' ? 'sticky top-0 z-10 bg-card/95 py-1 backdrop-blur-sm' : undefined
+                  }
                 >
-                  <MessageBlock
-                    entry={entry}
-                    index={index}
-                    accentColor={accentColor}
-                  />
+                  <MessageBlock entry={entry} index={index} accentColor={accentColor} />
                 </div>
               ))}
             </div>

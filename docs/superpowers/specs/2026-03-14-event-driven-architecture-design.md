@@ -47,27 +47,27 @@ Global singleton, in-process EventEmitter with typed hierarchical topics.
 
 ### Topics
 
-| Topic | Published when |
-|---|---|
-| `card:${id}:updated` | Card data changed (column, title, description, etc.) |
-| `card:${id}:status` | Session status/counters changed (promptsSent, turnsCompleted, sessionId) |
-| `card:${id}:message` | Agent message (text, tool_call, thinking, turn_end, etc.) |
-| `card:${id}:deleted` | Card removed |
-| `project:${id}:updated` | Project data changed |
-| `project:${id}:deleted` | Project removed |
-| `board:changed` | Any card moved columns (payload includes old + new column for filtering) |
-| `system:error` | System-level errors (e.g., OpenCode server crash) |
+| Topic                   | Published when                                                           |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `card:${id}:updated`    | Card data changed (column, title, description, etc.)                     |
+| `card:${id}:status`     | Session status/counters changed (promptsSent, turnsCompleted, sessionId) |
+| `card:${id}:message`    | Agent message (text, tool_call, thinking, turn_end, etc.)                |
+| `card:${id}:deleted`    | Card removed                                                             |
+| `project:${id}:updated` | Project data changed                                                     |
+| `project:${id}:deleted` | Project removed                                                          |
+| `board:changed`         | Any card moved columns (payload includes old + new column for filtering) |
+| `system:error`          | System-level errors (e.g., OpenCode server crash)                        |
 
 ### API
 
 ```typescript
 class MessageBus extends EventEmitter {
-  publish(topic: string, payload: unknown): void   // emit
-  subscribe(topic: string, handler: Function): void // on
-  unsubscribe(topic: string, handler: Function): void // removeListener
+  publish(topic: string, payload: unknown): void; // emit
+  subscribe(topic: string, handler: Function): void; // on
+  unsubscribe(topic: string, handler: Function): void; // removeListener
 }
 
-export const messageBus = new MessageBus()
+export const messageBus = new MessageBus();
 ```
 
 Thin wrapper over EventEmitter. The wrapper provides a clear API boundary and a place for debug logging.
@@ -90,58 +90,58 @@ All columns match the existing Drizzle schema exactly.
 @Entity()
 class Card extends BaseEntity {
   @PrimaryGeneratedColumn()
-  id: number
+  id: number;
 
   @Column({ type: 'text' })
-  title: string
+  title: string;
 
   @Column({ type: 'text', default: '' })
-  description: string
+  description: string;
 
   @Column({ type: 'text', default: 'backlog' })
-  column: string  // 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'archive'
+  column: string; // 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'archive'
 
   @Column({ type: 'real', default: 0 })
-  position: number
+  position: number;
 
   @Column({ type: 'integer', nullable: true })
-  projectId: number | null
+  projectId: number | null;
 
   @Column({ type: 'text', nullable: true })
-  prUrl: string | null
+  prUrl: string | null;
 
   @Column({ type: 'text', nullable: true })
-  sessionId: string | null
+  sessionId: string | null;
 
   @Column({ type: 'text', nullable: true })
-  worktreePath: string | null
+  worktreePath: string | null;
 
   @Column({ type: 'text', nullable: true })
-  worktreeBranch: string | null
+  worktreeBranch: string | null;
 
   @Column({ type: 'integer', default: true })
-  useWorktree: boolean
+  useWorktree: boolean;
 
   @Column({ type: 'text', nullable: true })
-  sourceBranch: string | null  // 'main' | 'dev'
+  sourceBranch: string | null; // 'main' | 'dev'
 
   @Column({ type: 'text', default: 'sonnet' })
-  model: string  // 'sonnet' | 'opus' | 'auto'
+  model: string; // 'sonnet' | 'opus' | 'auto'
 
   @Column({ type: 'text', default: 'high' })
-  thinkingLevel: string  // 'off' | 'low' | 'medium' | 'high'
+  thinkingLevel: string; // 'off' | 'low' | 'medium' | 'high'
 
   @Column({ type: 'integer', default: 0 })
-  promptsSent: number
+  promptsSent: number;
 
   @Column({ type: 'integer', default: 0 })
-  turnsCompleted: number
+  turnsCompleted: number;
 
   @Column({ type: 'text' })
-  createdAt: string
+  createdAt: string;
 
   @Column({ type: 'text' })
-  updatedAt: string
+  updatedAt: string;
 }
 ```
 
@@ -152,39 +152,43 @@ Change detection uses `databaseEntity` (the pre-update snapshot) vs `entity` (th
 ```typescript
 @EventSubscriber()
 class CardSubscriber implements EntitySubscriberInterface<Card> {
-  listenTo() { return Card }
+  listenTo() {
+    return Card;
+  }
 
   afterInsert(event: InsertEvent<Card>) {
-    messageBus.publish(`card:${event.entity.id}:updated`, event.entity)
+    messageBus.publish(`card:${event.entity.id}:updated`, event.entity);
     messageBus.publish('board:changed', {
       card: event.entity,
       oldColumn: null,
       newColumn: event.entity.column,
-    })
+    });
   }
 
   afterUpdate(event: UpdateEvent<Card>) {
-    const card = event.entity as Card
-    const prev = event.databaseEntity as Card
-    messageBus.publish(`card:${card.id}:updated`, card)
+    const card = event.entity as Card;
+    const prev = event.databaseEntity as Card;
+    messageBus.publish(`card:${card.id}:updated`, card);
 
     if (prev.column !== card.column) {
       messageBus.publish('board:changed', {
         card,
         oldColumn: prev.column,
         newColumn: card.column,
-      })
+      });
     }
-    if (prev.promptsSent !== card.promptsSent
-      || prev.turnsCompleted !== card.turnsCompleted
-      || prev.sessionId !== card.sessionId) {
-      messageBus.publish(`card:${card.id}:status`, card)
+    if (
+      prev.promptsSent !== card.promptsSent ||
+      prev.turnsCompleted !== card.turnsCompleted ||
+      prev.sessionId !== card.sessionId
+    ) {
+      messageBus.publish(`card:${card.id}:status`, card);
     }
   }
 
   afterRemove(event: RemoveEvent<Card>) {
-    messageBus.publish(`card:${event.entityId}:deleted`, { id: event.entityId })
-    messageBus.publish('board:changed', { card: null, oldColumn: null, newColumn: null, id: event.entityId })
+    messageBus.publish(`card:${event.entityId}:deleted`, { id: event.entityId });
+    messageBus.publish('board:changed', { card: null, oldColumn: null, newColumn: null, id: event.entityId });
   }
 }
 ```
@@ -197,40 +201,40 @@ All columns match the existing Drizzle schema.
 @Entity()
 class Project extends BaseEntity {
   @PrimaryGeneratedColumn()
-  id: number
+  id: number;
 
   @Column({ type: 'text' })
-  name: string
+  name: string;
 
   @Column({ type: 'text' })
-  path: string
+  path: string;
 
   @Column({ type: 'text', default: '' })
-  setupCommands: string
+  setupCommands: string;
 
   @Column({ type: 'integer', default: false })
-  isGitRepo: boolean
+  isGitRepo: boolean;
 
   @Column({ type: 'text', nullable: true })
-  defaultBranch: string | null  // 'main' | 'dev'
+  defaultBranch: string | null; // 'main' | 'dev'
 
   @Column({ type: 'integer', default: false })
-  defaultWorktree: boolean
+  defaultWorktree: boolean;
 
   @Column({ type: 'text', default: 'sonnet' })
-  defaultModel: string  // 'sonnet' | 'opus' | 'auto'
+  defaultModel: string; // 'sonnet' | 'opus' | 'auto'
 
   @Column({ type: 'text', default: 'high' })
-  defaultThinkingLevel: string  // 'off' | 'low' | 'medium' | 'high'
+  defaultThinkingLevel: string; // 'off' | 'low' | 'medium' | 'high'
 
   @Column({ type: 'text', default: 'anthropic' })
-  providerID: string
+  providerID: string;
 
   @Column({ type: 'text', nullable: true })
-  color: string | null
+  color: string | null;
 
   @Column({ type: 'text' })
-  createdAt: string
+  createdAt: string;
 }
 ```
 
@@ -239,18 +243,20 @@ class Project extends BaseEntity {
 ```typescript
 @EventSubscriber()
 class ProjectSubscriber implements EntitySubscriberInterface<Project> {
-  listenTo() { return Project }
+  listenTo() {
+    return Project;
+  }
 
   afterInsert(event: InsertEvent<Project>) {
-    messageBus.publish(`project:${event.entity.id}:updated`, event.entity)
+    messageBus.publish(`project:${event.entity.id}:updated`, event.entity);
   }
 
   afterUpdate(event: UpdateEvent<Project>) {
-    messageBus.publish(`project:${(event.entity as Project).id}:updated`, event.entity)
+    messageBus.publish(`project:${(event.entity as Project).id}:updated`, event.entity);
   }
 
   afterRemove(event: RemoveEvent<Project>) {
-    messageBus.publish(`project:${event.entityId}:deleted`, { id: event.entityId })
+    messageBus.publish(`project:${event.entityId}:deleted`, { id: event.entityId });
   }
 }
 ```
@@ -259,7 +265,7 @@ class ProjectSubscriber implements EntitySubscriberInterface<Project> {
 
 ```typescript
 // src/server/models/index.ts
-import { DataSource } from 'typeorm'
+import { DataSource } from 'typeorm';
 
 export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
@@ -267,7 +273,7 @@ export const AppDataSource = new DataSource({
   entities: [Card, Project],
   subscribers: [CardSubscriber, ProjectSubscriber],
   synchronize: false, // manage schema via migrations
-})
+});
 ```
 
 Points at the existing SQLite database. Entity columns match the current Drizzle schema. Existing data stays intact.
@@ -294,26 +300,34 @@ Owns the full session lifecycle. No knowledge of WebSocket or transport. Uses mo
 ```typescript
 class SessionService {
   // Commands
-  async startSession(cardId: number, message?: string, files?: FileRef[]): Promise<void>
-  async sendMessage(cardId: number, message: string): Promise<void>
-  async stopSession(cardId: number): Promise<void>
+  async startSession(cardId: number, message?: string, files?: FileRef[]): Promise<void>;
+  async sendMessage(cardId: number, message: string): Promise<void>;
+  async stopSession(cardId: number): Promise<void>;
 
   // Queries
-  getStatus(cardId: number): SessionStatusData | null
-  async getHistory(sessionId: string): Promise<AgentMessage[]>
+  getStatus(cardId: number): SessionStatusData | null;
+  async getHistory(sessionId: string): Promise<AgentMessage[]>;
 }
 
-export const sessionService = new SessionService()
+export const sessionService = new SessionService();
 ```
 
 #### Displayable message types
 
 SessionService filters agent messages through `DISPLAY_TYPES` before publishing to the bus:
+
 ```typescript
 const DISPLAY_TYPES = new Set([
-  'user', 'text', 'tool_call', 'tool_result', 'tool_progress',
-  'thinking', 'system', 'turn_end', 'error',
-])
+  'user',
+  'text',
+  'tool_call',
+  'tool_result',
+  'tool_progress',
+  'thinking',
+  'system',
+  'turn_end',
+  'error',
+]);
 ```
 
 #### `startSession` flow
@@ -321,12 +335,14 @@ const DISPLAY_TYPES = new Set([
 Handles both new sessions and follow-up messages to existing sessions.
 
 **Existing session (follow-up message):**
+
 1. `sessionManager.get(cardId)` — find running session
 2. If model/thinking changed on card, call `session.updateModel()`
 3. `session.sendMessage(message)` — send follow-up
 4. Update card counters: `card.promptsSent = session.promptsSent; await card.save()`
 
 **New session:**
+
 1. `Card.findOneBy({ id: cardId })` — load card
 2. Validate title/description (non-empty required for running)
 3. Move card to running only if not already there: `if (card.column !== 'running') { card.column = 'running'; await card.save() }`
@@ -365,17 +381,17 @@ Handles card queries, mutations, and business logic that isn't session-related.
 
 ```typescript
 class CardService {
-  async listCards(columns?: string[]): Promise<Card[]>
-  async createCard(data: Partial<Card>): Promise<Card>
-  async updateCard(id: number, data: Partial<Card>): Promise<Card>
-  async deleteCard(id: number): Promise<void>
-  async searchCards(query: string): Promise<{ cards: Card[]; total: number }>
-  async pageCards(column: string, cursor?: number, limit?: number): Promise<PageResult>
-  async generateTitle(cardId: number): Promise<Card>
-  async suggestTitle(description: string): Promise<string>
+  async listCards(columns?: string[]): Promise<Card[]>;
+  async createCard(data: Partial<Card>): Promise<Card>;
+  async updateCard(id: number, data: Partial<Card>): Promise<Card>;
+  async deleteCard(id: number): Promise<void>;
+  async searchCards(query: string): Promise<{ cards: Card[]; total: number }>;
+  async pageCards(column: string, cursor?: number, limit?: number): Promise<PageResult>;
+  async generateTitle(cardId: number): Promise<Card>;
+  async suggestTitle(description: string): Promise<string>;
 }
 
-export const cardService = new CardService()
+export const cardService = new CardService();
 ```
 
 #### Business logic in CardService
@@ -393,15 +409,15 @@ Handles project CRUD plus filesystem operations.
 
 ```typescript
 class ProjectService {
-  async listProjects(): Promise<Project[]>
-  async createProject(data: Partial<Project>): Promise<Project>
-  async updateProject(id: number, data: Partial<Project>): Promise<Project>
-  async deleteProject(id: number): Promise<void>
-  async browse(path: string): Promise<DirEntry[]>
-  async mkdir(path: string): Promise<void>
+  async listProjects(): Promise<Project[]>;
+  async createProject(data: Partial<Project>): Promise<Project>;
+  async updateProject(id: number, data: Partial<Project>): Promise<Project>;
+  async deleteProject(id: number): Promise<void>;
+  async browse(path: string): Promise<DirEntry[]>;
+  async mkdir(path: string): Promise<void>;
 }
 
-export const projectService = new ProjectService()
+export const projectService = new ProjectService();
 ```
 
 #### Business logic in ProjectService
@@ -423,24 +439,24 @@ The existing Hono REST API (`/api/cards`) currently uses `DbMutator`. Migrate to
 
 ```typescript
 export function createRestApi() {
-  const app = new Hono()
+  const app = new Hono();
 
   app.post('/api/cards', zValidator('json', cardCreateSchema), async (c) => {
-    const card = await cardService.createCard(c.req.valid('json'))
-    return c.json(card, 201)
-  })
+    const card = await cardService.createCard(c.req.valid('json'));
+    return c.json(card, 201);
+  });
 
   app.patch('/api/cards/:id', zValidator('json', cardUpdateSchema), async (c) => {
-    const card = await cardService.updateCard(Number(c.req.param('id')), c.req.valid('json'))
-    return c.json(card)
-  })
+    const card = await cardService.updateCard(Number(c.req.param('id')), c.req.valid('json'));
+    return c.json(card);
+  });
 
   app.delete('/api/cards/:id', async (c) => {
-    await cardService.deleteCard(Number(c.req.param('id')))
-    return c.json({ ok: true })
-  })
+    await cardService.deleteCard(Number(c.req.param('id')));
+    return c.json({ ok: true });
+  });
 
-  return app
+  return app;
 }
 ```
 
@@ -452,31 +468,32 @@ Thin layer with two jobs: translate client commands into service calls, and forw
 
 ### Client → Server (commands)
 
-| Client message | Handler action |
-|---|---|
-| `subscribe` | `cardService.listCards(columns)` + `projectService.listProjects()` + subscribe to bus |
-| `page` | `cardService.pageCards(column, cursor, limit)` |
-| `search` | `cardService.searchCards(query)` |
-| `card:create` | `cardService.createCard(data)` |
-| `card:update` | `cardService.updateCard(id, data)` |
-| `card:delete` | `cardService.deleteCard(id)` |
-| `card:generateTitle` | `cardService.generateTitle(id)` |
-| `card:suggestTitle` | `cardService.suggestTitle(description)` |
-| `project:create` | `projectService.createProject(data)` |
-| `project:update` | `projectService.updateProject(id, data)` |
-| `project:delete` | `projectService.deleteProject(id)` |
-| `project:browse` | `projectService.browse(path)` |
-| `project:mkdir` | `projectService.mkdir(path)` |
-| `agent:send` | `sessionService.startSession(cardId, message, files)` |
-| `agent:stop` | `sessionService.stopSession(cardId)` |
-| `agent:status` | `sessionService.getStatus(cardId)` |
-| `session:load` | `sessionService.getHistory(sessionId)` + subscribe to card messages |
+| Client message       | Handler action                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| `subscribe`          | `cardService.listCards(columns)` + `projectService.listProjects()` + subscribe to bus |
+| `page`               | `cardService.pageCards(column, cursor, limit)`                                        |
+| `search`             | `cardService.searchCards(query)`                                                      |
+| `card:create`        | `cardService.createCard(data)`                                                        |
+| `card:update`        | `cardService.updateCard(id, data)`                                                    |
+| `card:delete`        | `cardService.deleteCard(id)`                                                          |
+| `card:generateTitle` | `cardService.generateTitle(id)`                                                       |
+| `card:suggestTitle`  | `cardService.suggestTitle(description)`                                               |
+| `project:create`     | `projectService.createProject(data)`                                                  |
+| `project:update`     | `projectService.updateProject(id, data)`                                              |
+| `project:delete`     | `projectService.deleteProject(id)`                                                    |
+| `project:browse`     | `projectService.browse(path)`                                                         |
+| `project:mkdir`      | `projectService.mkdir(path)`                                                          |
+| `agent:send`         | `sessionService.startSession(cardId, message, files)`                                 |
+| `agent:stop`         | `sessionService.stopSession(cardId)`                                                  |
+| `agent:status`       | `sessionService.getStatus(cardId)`                                                    |
+| `session:load`       | `sessionService.getHistory(sessionId)` + subscribe to card messages                   |
 
 Handlers are thin: parse message, call service, send `mutation:ok` or `mutation:error` response. No DB access, no session logic.
 
 ### Server → Client (bus subscriptions)
 
 **Board subscription (`subscribe` message):**
+
 1. Query `cardService.listCards(columns)` + `projectService.listProjects()` — send `sync` message with full current state
 2. Record which columns this client cares about
 3. Subscribe to `board:changed` on the bus — payload includes `oldColumn` and `newColumn`, check if client cares about either, forward `card:updated` to client
@@ -484,6 +501,7 @@ Handlers are thin: parse message, call service, send `mutation:ok` or `mutation:
 5. Subscribe to `project:${id}:updated` and `project:${id}:deleted` — forward project changes
 
 **Card detail / session subscription (`session:load` message):**
+
 1. Call `sessionService.getHistory(sessionId)` — send `session:history` message
 2. Subscribe to `card:${id}:message` on the bus — forward live agent messages as `agent:message`
 3. Subscribe to `card:${id}:updated` — forward card data changes
@@ -498,14 +516,14 @@ Handlers are thin: parse message, call service, send `mutation:ok` or `mutation:
 ```typescript
 // src/server/ws/subscriptions.ts
 class ClientSubscriptions {
-  private subs = new Map<WebSocket, Map<string, Function>>()
+  private subs = new Map<WebSocket, Map<string, Function>>();
 
-  subscribe(ws: WebSocket, topic: string, handler: Function): void
-  unsubscribe(ws: WebSocket, topic: string): void
-  unsubscribeAll(ws: WebSocket): void  // called on disconnect
+  subscribe(ws: WebSocket, topic: string, handler: Function): void;
+  unsubscribe(ws: WebSocket, topic: string): void;
+  unsubscribeAll(ws: WebSocket): void; // called on disconnect
 }
 
-export const clientSubs = new ClientSubscriptions()
+export const clientSubs = new ClientSubscriptions();
 ```
 
 Wraps MessageBus subscribe/unsubscribe with per-client tracking. Guarantees cleanup on disconnect — no memory leaks.
@@ -526,29 +544,29 @@ Stays as WebSocket bookkeeping (track open connections, send to specific ws). Re
 
 ## What Gets Deleted
 
-| File/Code | Replacement |
-|---|---|
-| `DbMutator` class | Model `.save()` + entity subscribers + services |
-| `subscribeToSession()` / `unsubscribeFromSession()` / `unsubscribeAllSessions()` | Session-level listeners in SessionService |
-| `wsHandlers` Map in `begin-session.ts` | Per-client bus subscriptions in `subscriptions.ts` |
-| `beginSession()` free function | `sessionService.startSession()` |
-| `db/schema.ts` (Drizzle schema) | TypeORM entities |
-| `db/index.ts` (Drizzle DB init) | `models/index.ts` (TypeORM DataSource) |
-| `db/mutator.ts` | Gone — models + services |
-| `ConnectionManager.broadcast()` | Bus subscriptions in transport layer |
-| `ConnectionManager.subscribe()` / `subscribedColumns` | Bus subscriptions in transport layer |
-| Drizzle dependencies (`drizzle-orm`, `drizzle-kit`) | TypeORM + `better-sqlite3` |
+| File/Code                                                                        | Replacement                                        |
+| -------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `DbMutator` class                                                                | Model `.save()` + entity subscribers + services    |
+| `subscribeToSession()` / `unsubscribeFromSession()` / `unsubscribeAllSessions()` | Session-level listeners in SessionService          |
+| `wsHandlers` Map in `begin-session.ts`                                           | Per-client bus subscriptions in `subscriptions.ts` |
+| `beginSession()` free function                                                   | `sessionService.startSession()`                    |
+| `db/schema.ts` (Drizzle schema)                                                  | TypeORM entities                                   |
+| `db/index.ts` (Drizzle DB init)                                                  | `models/index.ts` (TypeORM DataSource)             |
+| `db/mutator.ts`                                                                  | Gone — models + services                           |
+| `ConnectionManager.broadcast()`                                                  | Bus subscriptions in transport layer               |
+| `ConnectionManager.subscribe()` / `subscribedColumns`                            | Bus subscriptions in transport layer               |
+| Drizzle dependencies (`drizzle-orm`, `drizzle-kit`)                              | TypeORM + `better-sqlite3`                         |
 
 ## What Stays Unchanged
 
-| File/Code | Reason |
-|---|---|
-| `SessionManager` | Still owns AgentSession map. SessionService uses it internally |
-| `OpenCodeSession` | Still emits `message` and `exit`. Doesn't know about layers above |
-| `AgentSession` / `AgentMessage` types | Unchanged interface |
-| `ConnectionManager` (simplified) | Still tracks open WebSockets, still has `send(ws, msg)` |
-| Worktree utilities (`worktree.ts`) | Pure functions, no coupling |
-| WS protocol types (`shared/ws-protocol.ts`) | Client message / server message shapes stay the same |
+| File/Code                                         | Reason                                                             |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| `SessionManager`                                  | Still owns AgentSession map. SessionService uses it internally     |
+| `OpenCodeSession`                                 | Still emits `message` and `exit`. Doesn't know about layers above  |
+| `AgentSession` / `AgentMessage` types             | Unchanged interface                                                |
+| `ConnectionManager` (simplified)                  | Still tracks open WebSockets, still has `send(ws, msg)`            |
+| Worktree utilities (`worktree.ts`)                | Pure functions, no coupling                                        |
+| WS protocol types (`shared/ws-protocol.ts`)       | Client message / server message shapes stay the same               |
 | OpenCode server management (`opencode/server.ts`) | Unchanged, but crash handler publishes to `system:error` bus topic |
 
 ## File Structure

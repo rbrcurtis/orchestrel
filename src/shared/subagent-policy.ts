@@ -117,11 +117,7 @@ export function parseSubagentPolicy(value: string): OrchestrelSubagentPolicy {
   if (typeof parsed.parentProvider !== 'string' || !parsed.parentProvider) {
     throw new Error('subagent policy parentProvider must be a non-empty string');
   }
-  const parentModel = validateQualifiedModel(
-    parsed.parentModel,
-    parsed.parentProvider,
-    'subagent policy parentModel',
-  );
+  const parentModel = validateQualifiedModel(parsed.parentModel, parsed.parentProvider, 'subagent policy parentModel');
   if (!Array.isArray(parsed.parentModels) || parsed.parentModels.length === 0) {
     throw new Error('subagent policy parentModels must be a non-empty array');
   }

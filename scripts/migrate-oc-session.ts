@@ -70,10 +70,16 @@ interface OrchProject {
 
 const stmts = {
   ocSession: ocDb.prepare('SELECT * FROM session WHERE id = ?'),
-  ocMessages: ocDb.prepare('SELECT id, session_id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created'),
-  ocParts: ocDb.prepare('SELECT id, message_id, time_created, data FROM part WHERE session_id = ? ORDER BY message_id, time_created'),
+  ocMessages: ocDb.prepare(
+    'SELECT id, session_id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created',
+  ),
+  ocParts: ocDb.prepare(
+    'SELECT id, message_id, time_created, data FROM part WHERE session_id = ? ORDER BY message_id, time_created',
+  ),
   orchCard: orchDb.prepare('SELECT id, title, session_id, worktree_path, project_id FROM cards WHERE session_id = ?'),
-  orchAllOcCards: orchDb.prepare("SELECT id, title, session_id, worktree_path, project_id FROM cards WHERE session_id LIKE 'ses_%'"),
+  orchAllOcCards: orchDb.prepare(
+    "SELECT id, title, session_id, worktree_path, project_id FROM cards WHERE session_id LIKE 'ses_%'",
+  ),
   orchProject: orchDb.prepare('SELECT id, path FROM projects WHERE id = ?'),
   orchUpdate: dryRun ? null : orchDb.prepare('UPDATE cards SET session_id = ? WHERE id = ?'),
 };
@@ -120,7 +126,11 @@ function migrateSession(ocSessionId: string, card: OrchCard): { ok: boolean; lin
 
   // Clean up temp dir immediately — we only needed it for realpathSync
   if (createdDir) {
-    try { rmdirRecursive(cwd); } catch { /* best effort */ }
+    try {
+      rmdirRecursive(cwd);
+    } catch {
+      /* best effort */
+    }
   }
 
   const messages = stmts.ocMessages.all(ocSessionId) as OcMessage[];
@@ -140,11 +150,13 @@ function migrateSession(ocSessionId: string, card: OrchCard): { ok: boolean; lin
   const lines: string[] = [];
 
   // Header
-  lines.push(JSON.stringify({
-    type: 'permission-mode',
-    permissionMode: 'bypassPermissions',
-    sessionId: newSessionId,
-  }));
+  lines.push(
+    JSON.stringify({
+      type: 'permission-mode',
+      permissionMode: 'bypassPermissions',
+      sessionId: newSessionId,
+    }),
+  );
 
   let prevUuid: string | null = null;
 
@@ -154,7 +166,7 @@ function migrateSession(ocSessionId: string, card: OrchCard): { ok: boolean; lin
     const role: string = msgData.role;
 
     if (role === 'user') {
-      const textPart = msgParts.find(p => {
+      const textPart = msgParts.find((p) => {
         const d = JSON.parse(p.data);
         return d.type === 'text';
       });
@@ -163,18 +175,20 @@ function migrateSession(ocSessionId: string, card: OrchCard): { ok: boolean; lin
       const textData = JSON.parse(textPart.data);
       const uuid = randomUUID();
 
-      lines.push(JSON.stringify({
-        parentUuid: prevUuid,
-        isSidechain: false,
-        type: 'user',
-        message: { role: 'user', content: textData.text },
-        uuid,
-        timestamp: ts(msg.time_created),
-        userType: 'external',
-        cwd,
-        sessionId: newSessionId,
-        version: '0.0.0-migrated',
-      }));
+      lines.push(
+        JSON.stringify({
+          parentUuid: prevUuid,
+          isSidechain: false,
+          type: 'user',
+          message: { role: 'user', content: textData.text },
+          uuid,
+          timestamp: ts(msg.time_created),
+          userType: 'external',
+          cwd,
+          sessionId: newSessionId,
+          version: '0.0.0-migrated',
+        }),
+      );
 
       prevUuid = uuid;
     } else if (role === 'assistant') {
@@ -233,54 +247,59 @@ function migrateSession(ocSessionId: string, card: OrchCard): { ok: boolean; lin
         const aUuid = randomUUID();
         const model = msgData.modelID ?? 'claude-sonnet-4-6';
 
-        lines.push(JSON.stringify({
-          parentUuid: prevUuid,
-          isSidechain: false,
-          type: 'assistant',
-          message: {
-            model,
-            id: `msg_migrated_${aUuid.slice(0, 12)}`,
-            type: 'message',
-            role: 'assistant',
-            content: contentBlocks,
-            stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn',
-            stop_sequence: null,
-            usage: { input_tokens: 0, output_tokens: 0 },
-          },
-          uuid: aUuid,
-          timestamp: ts(msg.time_created),
-          userType: 'external',
-          cwd,
-          sessionId: newSessionId,
-          version: '0.0.0-migrated',
-        }));
+        lines.push(
+          JSON.stringify({
+            parentUuid: prevUuid,
+            isSidechain: false,
+            type: 'assistant',
+            message: {
+              model,
+              id: `msg_migrated_${aUuid.slice(0, 12)}`,
+              type: 'message',
+              role: 'assistant',
+              content: contentBlocks,
+              stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn',
+              stop_sequence: null,
+              usage: { input_tokens: 0, output_tokens: 0 },
+            },
+            uuid: aUuid,
+            timestamp: ts(msg.time_created),
+            userType: 'external',
+            cwd,
+            sessionId: newSessionId,
+            version: '0.0.0-migrated',
+          }),
+        );
 
         prevUuid = aUuid;
 
         if (toolCalls.length > 0) {
           const trUuid = randomUUID();
-          const toolResults = toolCalls.map(tc => ({
+          const toolResults = toolCalls.map((tc) => ({
             type: 'tool_result',
             tool_use_id: tc.callID,
-            content: typeof tc.output === 'string'
-              ? [{ type: 'text', text: tc.output }]
-              : [{ type: 'text', text: JSON.stringify(tc.output) }],
+            content:
+              typeof tc.output === 'string'
+                ? [{ type: 'text', text: tc.output }]
+                : [{ type: 'text', text: JSON.stringify(tc.output) }],
           }));
 
-          lines.push(JSON.stringify({
-            parentUuid: prevUuid,
-            isSidechain: false,
-            type: 'user',
-            message: { role: 'user', content: toolResults },
-            uuid: trUuid,
-            timestamp: ts(msg.time_created),
-            toolUseResult: {},
-            sourceToolAssistantUUID: prevUuid,
-            userType: 'external',
-            cwd,
-            sessionId: newSessionId,
-            version: '0.0.0-migrated',
-          }));
+          lines.push(
+            JSON.stringify({
+              parentUuid: prevUuid,
+              isSidechain: false,
+              type: 'user',
+              message: { role: 'user', content: toolResults },
+              uuid: trUuid,
+              timestamp: ts(msg.time_created),
+              toolUseResult: {},
+              sourceToolAssistantUUID: prevUuid,
+              userType: 'external',
+              cwd,
+              sessionId: newSessionId,
+              version: '0.0.0-migrated',
+            }),
+          );
 
           prevUuid = trUuid;
         }
@@ -295,7 +314,7 @@ function migrateSession(ocSessionId: string, card: OrchCard): { ok: boolean; lin
 
   if (!dryRun) {
     mkdirSync(projDir, { recursive: true });
-    writeFileSync(jsonlPath, lines.map(l => l + '\n').join(''));
+    writeFileSync(jsonlPath, lines.map((l) => l + '\n').join(''));
     stmts.orchUpdate!.run(newSessionId, card.id);
   }
 

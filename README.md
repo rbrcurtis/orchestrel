@@ -10,13 +10,13 @@ The core workflow: create a card, attach it to a project, move it to **Running**
 
 Five layers, from browser to model provider:
 
-| # | Layer | Description | Location |
-|---|-------|-------------|----------|
-| 1 | **Orc UI** | React frontend, runs in browser | `app/` |
-| 2 | **Orc Backend** | Web server: Socket.IO, REST, controllers, event bus | `src/server/` |
-| 3 | **orcd** | Standalone daemon, one per node, manages Pi agent sessions | `src/orcd/` |
-| 4 | **Agent sessions** | Pi SDK sessions with native tools, extensions, MCP | managed by Pi |
-| 5 | **Providers / proxies** | Anthropic, Bedrock, local proxies, OAuth extensions | per-node config |
+| #   | Layer                   | Description                                                | Location        |
+| --- | ----------------------- | ---------------------------------------------------------- | --------------- |
+| 1   | **Orc UI**              | React frontend, runs in browser                            | `app/`          |
+| 2   | **Orc Backend**         | Web server: Socket.IO, REST, controllers, event bus        | `src/server/`   |
+| 3   | **orcd**                | Standalone daemon, one per node, manages Pi agent sessions | `src/orcd/`     |
+| 4   | **Agent sessions**      | Pi SDK sessions with native tools, extensions, MCP         | managed by Pi   |
+| 5   | **Providers / proxies** | Anthropic, Bedrock, local proxies, OAuth extensions        | per-node config |
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
@@ -69,6 +69,7 @@ Provider config lives in each node's `orcd.yaml`. orcd registers every provider 
 ## Features
 
 **Board and Chat Views**
+
 - Board route with Backlog, Ready, Running, Review, Done, and Archive states.
 - Chat route for a focused conversation-first workflow over the same card/session data.
 - Multi-column desktop detail panes with manual pinning, project-aware hotseat selection, and mobile overlays.
@@ -76,6 +77,7 @@ Provider config lives in each node's `orcd.yaml`. orcd registers every provider 
 - Inline card editing, autosaved prompt drafts, copyable session IDs, and copyable worktree paths.
 
 **Agent Sessions**
+
 - `orcd` daemons embed the Pi TypeScript SDK and manage sessions over authenticated TCP.
 - `bin/orc` wraps the `pi` CLI, applying Orchestrel provider/model defaults before handing off to Pi.
 - Server-owned lifecycle: cards entering **Running** create or resume sessions; `session_exit` moves running cards to **Review**.
@@ -86,11 +88,13 @@ Provider config lives in each node's `orcd.yaml`. orcd registers every provider 
 - Synthetic subagent activity feed from Agent/Task launches and async task notifications.
 
 **Context Management**
+
 - Per-card context gauge backed by provider/model context window metadata.
 - Configurable summarize threshold per card, including Off and 50–90% presets.
 - Background compaction is Pi-native and applies through the active Pi session at safe lifecycle boundaries.
 
 **Projects and Worktrees**
+
 - Project registry binding each project to a path and an orcd node.
 - Auto-detects git repositories and default branch metadata.
 - Optional per-card worktree branch creation, with project setup commands after worktree creation.
@@ -99,6 +103,7 @@ Provider config lives in each node's `orcd.yaml`. orcd registers every provider 
 - Project archiving and Cloudflare Access user/project visibility controls.
 
 **API and Auth**
+
 - Socket.IO is the primary app transport with typed, Zod-validated events.
 - REST API is generated with TSOA and served with Swagger UI at `/api/docs`.
 - Optional Cloudflare Access JWT auth for remote deployments; local/LAN requests use a local admin identity.
@@ -114,9 +119,9 @@ Run `npm install`, `npm run sync`, and `npm run open` from either directory to s
 
 Both apps include iOS Share Extensions for text, URLs, images, and files up to 25 MB. Orchestrel opens the standard new-card draft; Orc Chat opens the project 19 new-chat draft. Enable the matching App Group capability for both the app and extension provisioning profiles in the Apple Developer portal:
 
-| App | Share Extension | App Group |
-| --- | --- | --- |
-| `com.orchestrel.ios` | `com.orchestrel.ios.share` | `group.com.orchestrel.ios.share` |
+| App                          | Share Extension                    | App Group                                |
+| ---------------------------- | ---------------------------------- | ---------------------------------------- |
+| `com.orchestrel.ios`         | `com.orchestrel.ios.share`         | `group.com.orchestrel.ios.share`         |
 | `com.orchestrel.orcchat.ios` | `com.orchestrel.orcchat.ios.share` | `group.com.orchestrel.orcchat.ios.share` |
 
 The Share Extensions use a responder-chain handoff to launch their containing apps, which is intended for the current private distribution workflow rather than public App Store review. Abandoned native inbox entries are cleaned up after seven days.
@@ -132,19 +137,19 @@ Run `npm install`, then `npm run start:orchestrel` or `npm run start:orc-chat` f
 
 ## Tech Stack
 
-| Layer | Technology |
-| --- | --- |
-| Frontend | React 19, React Router 7 SPA mode, MobX |
-| Styling | Tailwind CSS 4, shadcn/ui-style Radix components, lucide-react |
-| Realtime | Socket.IO |
-| Server | Express 5, TSOA REST routes, Swagger UI |
-| Daemon | `orcd` TCP service (token-authenticated, one per node) |
-| Agent runtime | Pi TypeScript SDK (`@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`) |
-| CLI wrapper | `bin/orc` wrapping the `pi` CLI |
-| Database | SQLite via TypeORM and better-sqlite3 |
-| Local cache | IndexedDB via idb-keyval |
-| Drag and drop | dnd-kit |
-| Build and test | Vite 7, TypeScript 5.9, Vitest, oxlint, bun |
+| Layer          | Technology                                                                     |
+| -------------- | ------------------------------------------------------------------------------ |
+| Frontend       | React 19, React Router 7 SPA mode, MobX                                        |
+| Styling        | Tailwind CSS 4, shadcn/ui-style Radix components, lucide-react                 |
+| Realtime       | Socket.IO                                                                      |
+| Server         | Express 5, TSOA REST routes, Swagger UI                                        |
+| Daemon         | `orcd` TCP service (token-authenticated, one per node)                         |
+| Agent runtime  | Pi TypeScript SDK (`@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`) |
+| CLI wrapper    | `bin/orc` wrapping the `pi` CLI                                                |
+| Database       | SQLite via TypeORM and better-sqlite3                                          |
+| Local cache    | IndexedDB via idb-keyval                                                       |
+| Drag and drop  | dnd-kit                                                                        |
+| Build and test | Vite 7, TypeScript 5.9, Vitest, oxlint, bun                                    |
 
 ## Prerequisites
 
@@ -174,16 +179,16 @@ Development mode runs on `http://localhost:6195` by default. Production mode use
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `bun run dev` | Generate TSOA routes, start the Vite/Express development server |
-| `bun run orcd` | Start the `orcd` session daemon |
-| `bun run build` | Generate TSOA routes and build the React Router app |
-| `bun run start` | Start the production Express server from the built app |
-| `bun run test` | Run Vitest |
-| `bun run typecheck` | Generate React Router types and run TypeScript build checks |
-| `bun run lint` | Run oxlint over `app` and `src` |
-| `bun run tsoa:generate` | Regenerate REST routes and OpenAPI spec |
+| Command                 | Description                                                     |
+| ----------------------- | --------------------------------------------------------------- |
+| `bun run dev`           | Generate TSOA routes, start the Vite/Express development server |
+| `bun run orcd`          | Start the `orcd` session daemon                                 |
+| `bun run build`         | Generate TSOA routes and build the React Router app             |
+| `bun run start`         | Start the production Express server from the built app          |
+| `bun run test`          | Run Vitest                                                      |
+| `bun run typecheck`     | Generate React Router types and run TypeScript build checks     |
+| `bun run lint`          | Run oxlint over `app` and `src`                                 |
+| `bun run tsoa:generate` | Regenerate REST routes and OpenAPI spec                         |
 
 ## Configuration
 
@@ -207,41 +212,41 @@ Each project in the UI selects one of these node names; its cards run there.
 
 Resolved from `ORC_CONFIG` when set, otherwise `./config.yaml` (the symlink).
 
-| Key | Description |
-| --- | --- |
-| `listen` | `host`/`port` the daemon binds (default port 7420) |
-| `authToken` | Shared secret the BE must present; must match the node's `orc.yaml` entry |
-| `name` | Node name, must match the `orc.yaml` entry |
-| `defaultProvider` / `defaultModel` | Used when no card/project override applies |
-| `defaultCwd` | Default base directory for new work |
-| `ringBufferSize` | Per-session event buffer; size to cover the max expected BE↔node outage |
-| `providers` | Provider map exposed to the UI and used for Pi model routing |
+| Key                                | Description                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| `listen`                           | `host`/`port` the daemon binds (default port 7420)                        |
+| `authToken`                        | Shared secret the BE must present; must match the node's `orc.yaml` entry |
+| `name`                             | Node name, must match the `orc.yaml` entry                                |
+| `defaultProvider` / `defaultModel` | Used when no card/project override applies                                |
+| `defaultCwd`                       | Default base directory for new work                                       |
+| `ringBufferSize`                   | Per-session event buffer; size to cover the max expected BE↔node outage   |
+| `providers`                        | Provider map exposed to the UI and used for Pi model routing              |
 
 Provider entries:
 
-| Field | Description |
-| --- | --- |
-| `label` | UI label |
-| `type` | Omit for Anthropic-format routing; `bedrock` for AWS Bedrock |
-| `baseUrl` | Optional provider/proxy API base URL |
-| `apiKey` / `authToken` | Credentials; `${VAR}` values resolve against the daemon's environment |
-| `oauth` | Names a Pi extension that provides OAuth (e.g. `claude-max`); requires that extension installed on the node |
-| `region` / `profile` | AWS Bedrock settings |
-| `aliases` | Maps `primary`/`subagent`/`lightweight` roles to model keys for SDK subagent spawning |
-| `models` | Alias map with `label`, `modelID`, and `contextWindow` |
+| Field                  | Description                                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `label`                | UI label                                                                                                    |
+| `type`                 | Omit for Anthropic-format routing; `bedrock` for AWS Bedrock                                                |
+| `baseUrl`              | Optional provider/proxy API base URL                                                                        |
+| `apiKey` / `authToken` | Credentials; `${VAR}` values resolve against the daemon's environment                                       |
+| `oauth`                | Names a Pi extension that provides OAuth (e.g. `claude-max`); requires that extension installed on the node |
+| `region` / `profile`   | AWS Bedrock settings                                                                                        |
+| `aliases`              | Maps `primary`/`subagent`/`lightweight` roles to model keys for SDK subagent spawning                       |
+| `models`               | Alias map with `label`, `modelID`, and `contextWindow`                                                      |
 
 Pi runtime resources are intentionally separate from Orchestrel config: auth, model registry, prompt templates/commands, skills, and session storage live in Pi's canonical user config directory (`~/.pi`, agent data under `~/.pi/agent`). Project instructions are resolved by Pi from files such as `AGENTS.md` in the project tree.
 
 ### `.env` — web server
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PORT` | `6194` production, `6195` development | HTTP server port |
-| `HOST` | `0.0.0.0` | Bind address |
-| `NODE_ENV` | unset | Set to `development` for Vite middleware/HMR |
-| `HMR_HOST` | unset | Optional public HMR host for tunneled development |
-| `CF_TEAM_DOMAIN` | unset | Enables Cloudflare Access JWT verification |
-| `ADMIN_EMAILS` | unset | Comma-separated Cloudflare Access emails with admin role |
+| Variable         | Default                               | Description                                              |
+| ---------------- | ------------------------------------- | -------------------------------------------------------- |
+| `PORT`           | `6194` production, `6195` development | HTTP server port                                         |
+| `HOST`           | `0.0.0.0`                             | Bind address                                             |
+| `NODE_ENV`       | unset                                 | Set to `development` for Vite middleware/HMR             |
+| `HMR_HOST`       | unset                                 | Optional public HMR host for tunneled development        |
+| `CF_TEAM_DOMAIN` | unset                                 | Enables Cloudflare Access JWT verification               |
+| `ADMIN_EMAILS`   | unset                                 | Comma-separated Cloudflare Access emails with admin role |
 
 Runtime data:
 

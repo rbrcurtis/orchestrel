@@ -9,6 +9,7 @@
 **Tech Stack:** meridian v1.34.1, HTTP SSE streaming, socket.io, MobX
 
 **Key design decisions:**
+
 - Meridian runs as a separate systemd service (already exists on port 3456)
 - Orc sends full conversation history per request (standard Anthropic API pattern); meridian deduplicates via its lineage/session tracking and resumes existing SDK sessions
 - Working directory is passed in the system prompt `<env>` block; meridian's `extractClientCwd()` parses it
@@ -21,12 +22,14 @@
 ## File Structure
 
 ### New files
+
 - `src/server/sessions/meridian-client.ts` — HTTP client that sends requests to meridian and returns a parsed SSE event stream
 - `src/server/sessions/sse-parser.ts` — Parses `text/event-stream` response into typed event objects
 - `src/server/sessions/event-translator.ts` — Converts Anthropic SSE events to the existing socket.io message format (so frontend changes are minimal)
 - `src/server/sessions/conversation-store.ts` — In-memory conversation history per card (messages sent/received, for building follow-up requests)
 
 ### Modified files
+
 - `src/server/sessions/manager.ts` — Replace SDK `query()` with meridian HTTP client; remove prompt channel
 - `src/server/sessions/consumer.ts` — Replace SDK async generator loop with SSE stream consumption
 - `src/server/sessions/types.ts` — Update `ActiveSession` type (remove `query`, `pushMessage`, `closeInput`; add `conversationMessages`, `abortController`)
@@ -39,11 +42,13 @@
 - `package.json` — Remove `@anthropic-ai/claude-agent-sdk` dependency, remove postinstall script
 
 ### Deleted files
+
 - `src/server/anthropic-proxy.ts` — Meridian replaces this
 - `src/server/sessions/prompt-channel.ts` — No longer needed (follow-ups are new HTTP requests)
 - `scripts/patch-sdk-cache-control.sh` — No longer needed
 
 ### Config files (outside repo)
+
 - `~/.config/meridian/profiles.json` — Kiro profile configuration
 
 ---
@@ -53,6 +58,7 @@
 ### Task 1: Update and configure meridian
 
 **Files:**
+
 - Create: `~/.config/meridian/profiles.json`
 - Modify: meridian systemd service (if version update needed)
 
@@ -120,6 +126,7 @@ git commit -m "docs: add meridian session backend migration plan"
 ### Task 2: SSE stream parser
 
 **Files:**
+
 - Create: `src/server/sessions/sse-parser.ts`
 - Test: Manual verification via curl (unit tests are brittle for stream parsing; integration test in Task 5)
 
@@ -139,9 +146,7 @@ export interface SSEEvent {
  * Parse an SSE byte stream into event objects.
  * Yields one SSEEvent per double-newline-delimited block.
  */
-export async function* parseSSEStream(
-  body: AsyncIterable<Uint8Array>,
-): AsyncGenerator<SSEEvent> {
+export async function* parseSSEStream(body: AsyncIterable<Uint8Array>): AsyncGenerator<SSEEvent> {
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -192,6 +197,7 @@ git commit -m "feat: add SSE stream parser for meridian responses"
 ### Task 3: Meridian HTTP client
 
 **Files:**
+
 - Create: `src/server/sessions/meridian-client.ts`
 
 - [ ] **Step 1: Create the meridian client module**
@@ -289,6 +295,7 @@ git commit -m "feat: add meridian HTTP client with SSE streaming"
 ### Task 4: Conversation store
 
 **Files:**
+
 - Create: `src/server/sessions/conversation-store.ts`
 
 - [ ] **Step 1: Create conversation store**
@@ -340,6 +347,7 @@ git commit -m "feat: add in-memory conversation store for meridian requests"
 ### Task 5: Event translator
 
 **Files:**
+
 - Create: `src/server/sessions/event-translator.ts`
 
 - [ ] **Step 1: Create event translator**
@@ -408,10 +416,7 @@ export function translateEvent(sse: SSEEvent): TranslatedMessage | null {
 /**
  * Build a result message from the accumulated stream data.
  */
-export function buildResultMessage(
-  cost: number,
-  usage: Record<string, unknown> | null,
-): TranslatedMessage {
+export function buildResultMessage(cost: number, usage: Record<string, unknown> | null): TranslatedMessage {
   return {
     type: 'result',
     subtype: 'success',
@@ -436,6 +441,7 @@ git commit -m "feat: add Anthropic SSE to socket.io event translator"
 ### Task 6: Update session types
 
 **Files:**
+
 - Modify: `src/server/sessions/types.ts`
 
 - [ ] **Step 1: Read current types**
@@ -491,6 +497,7 @@ git commit -m "refactor: update ActiveSession type for meridian backend"
 ### Task 7: Rewrite session consumer
 
 **Files:**
+
 - Modify: `src/server/sessions/consumer.ts`
 
 - [ ] **Step 1: Read current consumer.ts**
@@ -637,6 +644,7 @@ git commit -m "refactor: rewrite consumer for meridian SSE stream"
 ### Task 8: Rewrite session manager
 
 **Files:**
+
 - Modify: `src/server/sessions/manager.ts`
 
 - [ ] **Step 1: Read current manager.ts**
@@ -679,11 +687,7 @@ function buildSystemPrompt(cwd: string): string {
 export class SessionManager {
   private sessions = new Map<number, ActiveSession>();
 
-  async start(
-    cardId: number,
-    prompt: string,
-    opts: SessionStartOpts,
-  ): Promise<ActiveSession> {
+  async start(cardId: number, prompt: string, opts: SessionStartOpts): Promise<ActiveSession> {
     // If session already active, send as follow-up instead
     const existing = this.sessions.get(cardId);
     if (existing && (existing.status === 'running' || existing.status === 'starting' || existing.status === 'retry')) {
@@ -800,6 +804,7 @@ git commit -m "refactor: rewrite session manager to use meridian HTTP client"
 ### Task 9: Update ws handlers for new session types
 
 **Files:**
+
 - Modify: `src/server/ws/handlers/agents.ts`
 
 - [ ] **Step 1: Read current agents.ts**
@@ -811,6 +816,7 @@ Read to identify what references SDK-specific types.
 The main change: remove the `import { startAnthropicProxy }` and any SDK-specific code. The handler interface (agent:send, agent:stop) should remain the same since the session manager's public API hasn't changed.
 
 Key changes:
+
 - Remove any references to `startAnthropicProxy`
 - Remove any references to SDK query types
 - The `agent:send` handler calls `sessionManager.start()` or `sendFollowUp()` — this interface is unchanged
@@ -836,6 +842,7 @@ git commit -m "refactor: update ws handlers for meridian session manager"
 ### Task 10: Add real-time text delta rendering
 
 **Files:**
+
 - Modify: `app/lib/message-accumulator.ts`
 - Modify: `app/stores/session-store.ts`
 
@@ -846,6 +853,7 @@ Understand how `stream_event` messages are currently handled.
 - [ ] **Step 2: Update MessageAccumulator to handle content_block_delta for streaming text**
 
 The accumulator should:
+
 1. On `content_block_start` with `type: "text"`: create a new in-progress text block
 2. On `content_block_delta` with `type: "text_delta"`: append delta text to the in-progress block
 3. On `content_block_stop`: finalize the block
@@ -874,6 +882,7 @@ git commit -m "feat: add real-time token streaming in chat view"
 ### Task 11: Remove SDK dependency and old proxy
 
 **Files:**
+
 - Delete: `src/server/anthropic-proxy.ts`
 - Delete: `src/server/sessions/prompt-channel.ts`
 - Delete: `scripts/patch-sdk-cache-control.sh`
@@ -902,10 +911,12 @@ rm scripts/patch-sdk-cache-control.sh
 - [ ] **Step 4: Update package.json**
 
 Remove from dependencies:
+
 - `@anthropic-ai/claude-agent-sdk`
 - `@anthropic-ai/claude-code`
 
 Remove from scripts:
+
 - `"postinstall": "bash scripts/patch-sdk-cache-control.sh"`
 
 - [ ] **Step 5: Update init-state.ts**
@@ -940,6 +951,7 @@ git commit -m "chore: remove SDK dependency, anthropic proxy, and postinstall pa
 ### Task 12: Update CLAUDE.md
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 
 - [ ] **Step 1: Update architecture section**
@@ -947,6 +959,7 @@ git commit -m "chore: remove SDK dependency, anthropic proxy, and postinstall pa
 Add meridian as the session backend. Update the dev server section to note meridian dependency. Remove references to the SDK subprocess model.
 
 Key additions:
+
 - Meridian runs on port 3456 as the session backend
 - Provider routing via `x-meridian-profile` header
 - Kiro profile configured in `~/.config/meridian/profiles.json`

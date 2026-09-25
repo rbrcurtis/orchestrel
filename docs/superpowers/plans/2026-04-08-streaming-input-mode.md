@@ -15,6 +15,7 @@
 ### Task 1: Create prompt channel
 
 **Files:**
+
 - Create: `src/server/sessions/prompt-channel.ts`
 
 - [ ] **Step 1: Create `prompt-channel.ts`**
@@ -54,7 +55,9 @@ export function createPromptChannel(): PromptChannel {
   };
 
   const iterator: AsyncIterableIterator<SDKUserMessage> = {
-    [Symbol.asyncIterator]() { return this; },
+    [Symbol.asyncIterator]() {
+      return this;
+    },
     next() {
       if (pending.length > 0) {
         return Promise.resolve({ value: pending.shift()!, done: false as const });
@@ -62,7 +65,9 @@ export function createPromptChannel(): PromptChannel {
       if (done) {
         return Promise.resolve({ value: undefined as never, done: true as const });
       }
-      return new Promise((r) => { resolve = r; });
+      return new Promise((r) => {
+        resolve = r;
+      });
     },
     return() {
       close();
@@ -100,6 +105,7 @@ git commit -m "feat: add prompt channel for streaming input mode"
 ### Task 2: Add `pushMessage`, `closeInput`, `stopTimeout` to ActiveSession
 
 **Files:**
+
 - Modify: `src/server/sessions/types.ts`
 
 - [ ] **Step 1: Update `ActiveSession` interface**
@@ -151,6 +157,7 @@ git commit -m "feat: add pushMessage, closeInput, stopTimeout to ActiveSession"
 ### Task 3: Refactor `start()` to use prompt channel
 
 **Files:**
+
 - Modify: `src/server/sessions/manager.ts:1-68`
 
 - [ ] **Step 1: Update imports**
@@ -170,6 +177,7 @@ import { createPromptChannel, userMessage } from './prompt-channel';
 - [ ] **Step 2: Refactor `start()` method**
 
 Replace the `start()` method body. The key changes:
+
 1. Create prompt channel
 2. Push initial prompt into channel
 3. Pass `channel.iterator` to `query()` instead of `prompt` string
@@ -263,6 +271,7 @@ git commit -m "feat: start() uses prompt channel for streaming input mode"
 ### Task 4: Refactor `sendFollowUp()` to use prompt channel
 
 **Files:**
+
 - Modify: `src/server/sessions/manager.ts:70-89`
 
 - [ ] **Step 1: Replace `sendFollowUp()` method**
@@ -298,11 +307,13 @@ git commit -m "feat: sendFollowUp() pushes through prompt channel"
 ### Task 5: Refactor `stop()` with interrupt + close fallback
 
 **Files:**
+
 - Modify: `src/server/sessions/manager.ts:91-100`
 
 - [ ] **Step 1: Replace `stop()` method**
 
 Replace the entire `stop` method. The strategy:
+
 1. Call `interrupt()` (works in streaming input mode)
 2. Set a 5s timeout — if the session is still in the map, call `closeInput()` + `close()` as hard kill
 3. Store the timeout ID on the session so the `onExit` callback can clear it
@@ -354,12 +365,14 @@ Run: `sudo systemctl restart orchestrel`
 - [ ] **Step 2: Test basic session**
 
 Open `http://localhost:6194`, start a session on a card. Watch the server logs for:
+
 - `init sessionId=...` — session started
 - `stream_event` messages appearing in the consumer (check if deltas arrive token-by-token vs complete blocks)
 
 - [ ] **Step 3: Test stop button during initial prompt**
 
 Start a new session. Immediately hit the stop button before the first turn completes. Watch logs for:
+
 - `stop requested`
 - `consumer stopped cleanly` (interrupt worked)
 - Should NOT see the 5s timeout fire

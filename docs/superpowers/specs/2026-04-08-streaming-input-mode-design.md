@@ -83,15 +83,16 @@ No module-level state is introduced.
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `src/server/sessions/prompt-channel.ts` | New file: `createPromptChannel()`, `userMessage()` |
-| `src/server/sessions/manager.ts` | `start()`: use channel + iterator. `sendFollowUp()`: use `pushMessage()`. `stop()`: add `close()` timeout fallback + `closeInput()`. |
-| `src/server/sessions/types.ts` | Add `pushMessage` and `closeInput` to `ActiveSession` |
+| File                                    | Change                                                                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/server/sessions/prompt-channel.ts` | New file: `createPromptChannel()`, `userMessage()`                                                                                   |
+| `src/server/sessions/manager.ts`        | `start()`: use channel + iterator. `sendFollowUp()`: use `pushMessage()`. `stop()`: add `close()` timeout fallback + `closeInput()`. |
+| `src/server/sessions/types.ts`          | Add `pushMessage` and `closeInput` to `ActiveSession`                                                                                |
 
 ## Verification
 
 After the change, confirm:
+
 1. Stop button works during initial prompt (not just after first turn)
 2. `stream_event` messages with token-by-token deltas arrive in the consumer
 3. Follow-ups still work correctly

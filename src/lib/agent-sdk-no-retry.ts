@@ -24,11 +24,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function shouldRedact(key: string): boolean {
   const k = key.toLowerCase();
-  return k.includes('api_key') || k.includes('apikey') || k.includes('auth') || k.includes('token') || k.includes('secret');
+  return (
+    k.includes('api_key') || k.includes('apikey') || k.includes('auth') || k.includes('token') || k.includes('secret')
+  );
 }
 
 function normalizeUnknown(value: unknown, seen = new WeakSet<object>()): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+    return value;
   if (typeof value === 'bigint') return value.toString();
   if (typeof value === 'undefined') return '[undefined]';
   if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
@@ -80,9 +83,7 @@ export function isAgentSdkApiRetryMessage(value: unknown): value is AgentSdkApiR
 }
 
 export function formatAgentSdkApiRetryError(msg: AgentSdkApiRetryMessage): string {
-  const status = typeof msg.error_status === 'number'
-    ? `HTTP ${msg.error_status}`
-    : 'connection error';
+  const status = typeof msg.error_status === 'number' ? `HTTP ${msg.error_status}` : 'connection error';
   return `Provider request failed (${status}: ${summarizeRetryError(msg.error)}).`;
 }
 

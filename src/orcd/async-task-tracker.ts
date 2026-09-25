@@ -93,8 +93,7 @@ export function extractSubagentLaunches(event: unknown): AsyncAgentLaunch[] {
   if (typeof agentId !== 'string' || !agentId) return [];
   if (details.status !== 'background' && details.status !== 'queued') return [];
 
-  const description =
-    typeof details.description === 'string' && details.description ? details.description : 'Subagent';
+  const description = typeof details.description === 'string' && details.description ? details.description : 'Subagent';
   return [{ taskId: agentId, description }];
 }
 

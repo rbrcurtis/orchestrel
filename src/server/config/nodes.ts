@@ -43,9 +43,7 @@ export function parseTitleGenerationConfig(
   return {
     url: resolveEnvVars(String(titleGeneration.url), env),
     model: resolveEnvVars(String(titleGeneration.model), env),
-    ...(titleGeneration.apiKey
-      ? { apiKey: resolveEnvVars(String(titleGeneration.apiKey), env) }
-      : {}),
+    ...(titleGeneration.apiKey ? { apiKey: resolveEnvVars(String(titleGeneration.apiKey), env) } : {}),
   };
 }
 
@@ -56,7 +54,10 @@ export function nodeRegistryPath(): string {
 let cached: NodeEntry[] | null = null;
 
 export function loadNodeRegistry(): NodeEntry[] {
-  if (cached) { console.log('[nodes] returning cached node registry'); return cached; }
+  if (cached) {
+    console.log('[nodes] returning cached node registry');
+    return cached;
+  }
   const path = nodeRegistryPath();
   if (!existsSync(path)) throw new Error(`orc.yaml not found at ${path}`);
   cached = parseNodeRegistry(readFileSync(path, 'utf-8'), process.env as Record<string, string | undefined>);
@@ -66,10 +67,9 @@ export function loadNodeRegistry(): NodeEntry[] {
 export function loadTitleGenerationConfig(): TitleGenerationConfig {
   const path = nodeRegistryPath();
   if (!existsSync(path)) throw new Error(`orc.yaml not found at ${path}`);
-  return parseTitleGenerationConfig(
-    readFileSync(path, 'utf-8'),
-    process.env as Record<string, string | undefined>,
-  );
+  return parseTitleGenerationConfig(readFileSync(path, 'utf-8'), process.env as Record<string, string | undefined>);
 }
 
-export function resetNodeRegistryCache(): void { cached = null; }
+export function resetNodeRegistryCache(): void {
+  cached = null;
+}

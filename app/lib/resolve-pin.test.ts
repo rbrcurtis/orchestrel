@@ -262,10 +262,7 @@ describe('resolvePinnedCards', () => {
 
   it('keeps a running card sticky even when review cards are waiting', () => {
     // Strict sticky: running card stays in its slot, review card fills empty slots only.
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 10 },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -276,13 +273,8 @@ describe('resolvePinnedCards', () => {
   });
 
   it('keeps a running card sticky when no review cards are waiting', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 10 },
-    ];
-    const cards = [
-      makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' })];
     const prev = new Map([[1, 2]]);
     const result = resolvePinnedCards(slots, cards, prev);
     expect(result.get(1)).toBe(2); // stays — no review cards to replace it
@@ -329,10 +321,7 @@ describe('resolvePinnedCards', () => {
   // ─── "all" pin resolution ──────────────────────────────────────────────────
 
   it('resolves cards from any project into an "all" pinned slot', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
@@ -416,10 +405,7 @@ describe('resolvePinnedCards', () => {
   });
 
   it('keeps running card sticky in "all" slot even when review cards are available', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -430,22 +416,14 @@ describe('resolvePinnedCards', () => {
   });
 
   it('returns empty for "all" slot when no eligible cards exist', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'backlog' }),
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'backlog' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.has(1)).toBe(false);
   });
 
   it('"all" pin respects projectFilter', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -456,10 +434,7 @@ describe('resolvePinnedCards', () => {
   });
 
   it('"all" pin shows all projects when projectFilter is empty', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -469,10 +444,7 @@ describe('resolvePinnedCards', () => {
   });
 
   it('"all" pin releases sticky card when its project leaves the filter', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -484,10 +456,7 @@ describe('resolvePinnedCards', () => {
   });
 
   it('"all" pin keeps sticky card when its project remains in the filter', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -501,18 +470,14 @@ describe('resolvePinnedCards', () => {
 
   it('resolves a review card into empty slot 0 as virtual hotseat', () => {
     const slots: SlotState[] = [{ type: 'empty' }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.get(0)).toBe(1);
   });
 
   it('resolves a running card into empty slot 0 when no review cards', () => {
     const slots: SlotState[] = [{ type: 'empty' }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.get(0)).toBe(1);
   });
@@ -529,54 +494,37 @@ describe('resolvePinnedCards', () => {
 
   it('hotseat does not fill slot 0 when it is manual', () => {
     const slots: SlotState[] = [{ type: 'manual', cardId: 99 }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.has(0)).toBe(false);
   });
 
   it('hotseat does not fill slot 0 when it is pinned', () => {
     const slots: SlotState[] = [{ type: 'pinned', projectId: 10 }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards);
     // Should be resolved by the per-project pass, not the hotseat pass
     expect(result.get(0)).toBe(1);
   });
 
   it('hotseat excludes cards claimed by per-project pins', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 10 },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.get(1)).toBe(1); // per-project pin gets it
     expect(result.has(0)).toBe(false); // hotseat gets nothing
   });
 
   it('hotseat excludes cards claimed by "all" pins', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.get(1)).toBe(1); // "all" pin gets it
     expect(result.has(0)).toBe(false); // hotseat gets nothing
   });
 
   it('hotseat gets leftover cards after real pins', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 10 },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T02:00:00Z' }),
@@ -598,18 +546,13 @@ describe('resolvePinnedCards', () => {
 
   it('hotseat shows all projects when projectFilter is empty', () => {
     const slots: SlotState[] = [{ type: 'empty' }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards, new Map(), includeFilter([]));
     expect(result.get(0)).toBe(1); // empty filter = all projects
   });
 
   it('projectFilter does not affect real pinned slots', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 10 },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
@@ -621,10 +564,7 @@ describe('resolvePinnedCards', () => {
   });
 
   it('"all" pin honors an exclude filter', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -645,10 +585,7 @@ describe('resolvePinnedCards', () => {
   });
 
   it('"all" pin releases sticky card when its project becomes excluded', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -683,21 +620,14 @@ describe('resolvePinnedCards', () => {
 
   it('hotseat returns empty when no eligible cards exist', () => {
     const slots: SlotState[] = [{ type: 'empty' }];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'backlog' }),
-    ];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'backlog' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.has(0)).toBe(false);
   });
 
   it('hotseat excludes cards in manual slots', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'manual', cardId: 1 },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'manual', cardId: 1 }];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', createdAt: '2026-03-20T01:00:00Z' })];
     const result = resolvePinnedCards(slots, cards);
     expect(result.has(0)).toBe(false); // card 1 is in manual slot, excluded
   });
@@ -705,10 +635,7 @@ describe('resolvePinnedCards', () => {
   // ─── Locked slots (focus protection) ──────────────────────────────────────
 
   it('locked slot keeps its previous card unconditionally', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 'all' },
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 'all' }];
     const cards = [
       makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
       makeCard({ id: 2, projectId: 20, column: 'review', updatedAt: '2026-03-20T02:00:00Z' }),
@@ -721,13 +648,8 @@ describe('resolvePinnedCards', () => {
   });
 
   it('locked slot card is excluded from other slots', () => {
-    const slots: SlotState[] = [
-      { type: 'empty' },
-      { type: 'pinned', projectId: 10 },
-    ];
-    const cards = [
-      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
-    ];
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' })];
     const prev = new Map([[0, 1]]); // hotseat showing card 1
     // Lock hotseat — card 1 stays and is excluded from the pinned slot
     const result = resolvePinnedCards(slots, cards, prev, undefined, new Set([0]));

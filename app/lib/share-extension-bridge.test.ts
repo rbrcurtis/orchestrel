@@ -11,12 +11,16 @@ describe('assembleSharedFile', () => {
       },
     };
 
-    const file = await assembleSharedFile(transport, {
-      id: 'file-1',
-      name: 'note.txt',
-      mimeType: 'text/plain',
-      size: source.length,
-    }, 5);
+    const file = await assembleSharedFile(
+      transport,
+      {
+        id: 'file-1',
+        name: 'note.txt',
+        mimeType: 'text/plain',
+        size: source.length,
+      },
+      5,
+    );
 
     expect(file.name).toBe('note.txt');
     expect(file.type).toBe('text/plain');
@@ -28,11 +32,13 @@ describe('assembleSharedFile', () => {
       readChunk: async () => ({ offset: 3, bytes: new Uint8Array([1]), done: true }),
     };
 
-    await expect(assembleSharedFile(transport, {
-      id: 'file-1',
-      name: 'bad.bin',
-      mimeType: 'application/octet-stream',
-      size: 1,
-    })).rejects.toThrow('Unexpected file chunk offset');
+    await expect(
+      assembleSharedFile(transport, {
+        id: 'file-1',
+        name: 'bad.bin',
+        mimeType: 'application/octet-stream',
+        size: 1,
+      }),
+    ).rejects.toThrow('Unexpected file chunk offset');
   });
 });

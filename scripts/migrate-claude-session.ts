@@ -43,7 +43,12 @@ interface ClaudeLine {
     model?: string;
     content?: unknown;
     stop_reason?: string | null;
-    usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+    };
   };
 }
 
@@ -84,12 +89,16 @@ function migrate(sessionId: string): { ok: boolean; error?: string; out?: string
   const lines: ClaudeLine[] = [];
   for (const raw of readFileSync(src, 'utf8').split('\n')) {
     if (!raw.trim()) continue;
-    try { lines.push(JSON.parse(raw) as ClaudeLine); } catch { /* skip corrupt line */ }
+    try {
+      lines.push(JSON.parse(raw) as ClaudeLine);
+    } catch {
+      /* skip corrupt line */
+    }
   }
 
-  const cwd = lines.find(l => typeof l.cwd === 'string' && l.cwd)?.cwd;
+  const cwd = lines.find((l) => typeof l.cwd === 'string' && l.cwd)?.cwd;
   if (!cwd) return { ok: false, error: 'no cwd found in session' };
-  const headerTs = lines.find(l => l.timestamp)?.timestamp ?? new Date().toISOString();
+  const headerTs = lines.find((l) => l.timestamp)?.timestamp ?? new Date().toISOString();
 
   // tool_use id → tool name, for toolResult messages
   const toolNames = new Map<string, string>();
@@ -120,8 +129,14 @@ function migrate(sessionId: string): { ok: boolean; error?: string; out?: string
     const content: Array<Record<string, unknown>> = [];
     for (const b of blocks) {
       if (b.type === 'text' && typeof b.text === 'string') content.push({ type: 'text', text: b.text });
-      else if (b.type === 'thinking') content.push({ type: 'thinking', thinking: b.thinking ?? '', ...(typeof b.signature === 'string' ? { thinkingSignature: b.signature } : {}) });
-      else if (b.type === 'tool_use') content.push({ type: 'toolCall', id: b.id, name: b.name, arguments: b.input ?? {} });
+      else if (b.type === 'thinking')
+        content.push({
+          type: 'thinking',
+          thinking: b.thinking ?? '',
+          ...(typeof b.signature === 'string' ? { thinkingSignature: b.signature } : {}),
+        });
+      else if (b.type === 'tool_use')
+        content.push({ type: 'toolCall', id: b.id, name: b.name, arguments: b.input ?? {} });
     }
     if (content.length === 0) return;
     const u = line.message?.usage ?? {};
@@ -129,16 +144,27 @@ function migrate(sessionId: string): { ok: boolean; error?: string; out?: string
     const output = u.output_tokens ?? 0;
     const cacheRead = u.cache_read_input_tokens ?? 0;
     const cacheWrite = u.cache_creation_input_tokens ?? 0;
-    push({
-      role: 'assistant',
-      content,
-      api: 'anthropic-messages',
-      provider: 'anthropic',
-      model: line.message?.model ?? 'unknown',
-      usage: { input, output, cacheRead, cacheWrite, totalTokens: input + output + cacheRead + cacheWrite, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-      stopReason: mapStopReason(line.message?.stop_reason),
-      timestamp: epochMs(line.timestamp),
-    }, line.timestamp, line.uuid);
+    push(
+      {
+        role: 'assistant',
+        content,
+        api: 'anthropic-messages',
+        provider: 'anthropic',
+        model: line.message?.model ?? 'unknown',
+        usage: {
+          input,
+          output,
+          cacheRead,
+          cacheWrite,
+          totalTokens: input + output + cacheRead + cacheWrite,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: mapStopReason(line.message?.stop_reason),
+        timestamp: epochMs(line.timestamp),
+      },
+      line.timestamp,
+      line.uuid,
+    );
   };
 
   for (const l of lines) {
@@ -149,10 +175,15 @@ function migrate(sessionId: string): { ok: boolean; error?: string; out?: string
 
     if (l.type === 'assistant') {
       if (pendingAssistant && pendingAssistant.line.message?.id === msg.id) {
-        pendingAssistant.blocks.push(...(Array.isArray(msg.content) ? (msg.content as Array<Record<string, unknown>>) : []));
+        pendingAssistant.blocks.push(
+          ...(Array.isArray(msg.content) ? (msg.content as Array<Record<string, unknown>>) : []),
+        );
       } else {
         flushAssistant();
-        pendingAssistant = { blocks: Array.isArray(msg.content) ? [...(msg.content as Array<Record<string, unknown>>)] : [], line: l };
+        pendingAssistant = {
+          blocks: Array.isArray(msg.content) ? [...(msg.content as Array<Record<string, unknown>>)] : [],
+          line: l,
+        };
       }
       continue;
     }
@@ -161,30 +192,38 @@ function migrate(sessionId: string): { ok: boolean; error?: string; out?: string
 
     // user line: either real user text or tool_result carrier
     const content = msg.content;
-    if (Array.isArray(content) && (content as Array<Record<string, unknown>>).some(b => b?.type === 'tool_result')) {
+    if (Array.isArray(content) && (content as Array<Record<string, unknown>>).some((b) => b?.type === 'tool_result')) {
       for (const b of content as Array<Record<string, unknown>>) {
         if (b?.type !== 'tool_result') continue;
         const toolCallId = typeof b.tool_use_id === 'string' ? b.tool_use_id : '';
         const blocks = textBlocksOf(b.content);
-        push({
-          role: 'toolResult',
-          toolCallId,
-          toolName: toolNames.get(toolCallId) ?? 'unknown',
-          content: blocks.length > 0 ? blocks : [{ type: 'text', text: '' }],
-          isError: b.is_error === true,
-          timestamp: epochMs(l.timestamp),
-        }, l.timestamp, l.uuid);
+        push(
+          {
+            role: 'toolResult',
+            toolCallId,
+            toolName: toolNames.get(toolCallId) ?? 'unknown',
+            content: blocks.length > 0 ? blocks : [{ type: 'text', text: '' }],
+            isError: b.is_error === true,
+            timestamp: epochMs(l.timestamp),
+          },
+          l.timestamp,
+          l.uuid,
+        );
       }
       continue;
     }
 
     const blocks = textBlocksOf(content);
     if (blocks.length === 0) continue;
-    push({
-      role: 'user',
-      content: typeof content === 'string' ? content : blocks,
-      timestamp: epochMs(l.timestamp),
-    }, l.timestamp, l.uuid);
+    push(
+      {
+        role: 'user',
+        content: typeof content === 'string' ? content : blocks,
+        timestamp: epochMs(l.timestamp),
+      },
+      l.timestamp,
+      l.uuid,
+    );
   }
   flushAssistant();
 
@@ -196,7 +235,7 @@ function migrate(sessionId: string): { ok: boolean; error?: string; out?: string
 
   if (!dryRun) {
     mkdirSync(dir, { recursive: true });
-    writeFileSync(out, entries.map(e => e + '\n').join(''));
+    writeFileSync(out, entries.map((e) => e + '\n').join(''));
   }
   return { ok: true, out, entries: entries.length - 1 };
 }
@@ -207,7 +246,11 @@ const db = new Database(join(process.cwd(), 'data/orchestrel.db'), { readonly: t
 db.exec('PRAGMA query_only = 1');
 const cards = singleSession
   ? db.prepare('SELECT id, title, session_id FROM cards WHERE session_id = ?').all(singleSession)
-  : db.prepare("SELECT id, title, session_id FROM cards WHERE session_id IS NOT NULL AND session_id != '' AND column != 'archive'").all();
+  : db
+      .prepare(
+        "SELECT id, title, session_id FROM cards WHERE session_id IS NOT NULL AND session_id != '' AND column != 'archive'",
+      )
+      .all();
 db.close();
 
 if (cards.length === 0) {

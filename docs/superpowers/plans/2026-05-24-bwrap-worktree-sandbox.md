@@ -42,6 +42,7 @@
 ## Task 1: Persist sandbox defaults on projects and cards
 
 **Files:**
+
 - Modify: `src/server/models/Project.ts`
 - Modify: `src/server/models/Card.ts`
 - Modify: `src/server/models/index.ts`
@@ -54,44 +55,44 @@
 Add these tests inside `describe('ProjectService', () => { ... })` in `src/server/services/project.test.ts`:
 
 ```ts
-  it('persists defaultSandbox for git projects', async () => {
-    const { mkdtemp, mkdir } = await import('fs/promises')
-    const { tmpdir } = await import('os')
-    const { join } = await import('path')
-    const { projectService } = await import('./project')
+it('persists defaultSandbox for git projects', async () => {
+  const { mkdtemp, mkdir } = await import('fs/promises');
+  const { tmpdir } = await import('os');
+  const { join } = await import('path');
+  const { projectService } = await import('./project');
 
-    const path = await mkdtemp(join(tmpdir(), 'orchestrel-git-project-'))
-    await mkdir(join(path, '.git'))
+  const path = await mkdtemp(join(tmpdir(), 'orchestrel-git-project-'));
+  await mkdir(join(path, '.git'));
 
-    const created = await projectService.createProject({
-      name: 'Sandbox Git',
-      path,
-      defaultWorktree: true,
-      defaultSandbox: true,
-    })
+  const created = await projectService.createProject({
+    name: 'Sandbox Git',
+    path,
+    defaultWorktree: true,
+    defaultSandbox: true,
+  });
 
-    expect(created.isGitRepo).toBe(true)
-    expect(created.defaultWorktree).toBe(true)
-    expect(created.defaultSandbox).toBe(true)
+  expect(created.isGitRepo).toBe(true);
+  expect(created.defaultWorktree).toBe(true);
+  expect(created.defaultSandbox).toBe(true);
 
-    const updated = await projectService.updateProject(created.id, { defaultSandbox: false })
-    expect(updated.defaultSandbox).toBe(false)
-  })
+  const updated = await projectService.updateProject(created.id, { defaultSandbox: false });
+  expect(updated.defaultSandbox).toBe(false);
+});
 
-  it('clears defaultSandbox when project is not a git repo', async () => {
-    const { projectService } = await import('./project')
+it('clears defaultSandbox when project is not a git repo', async () => {
+  const { projectService } = await import('./project');
 
-    const project = await projectService.createProject({
-      name: 'No Sandbox',
-      path: tmpdir(),
-      defaultWorktree: true,
-      defaultSandbox: true,
-    })
+  const project = await projectService.createProject({
+    name: 'No Sandbox',
+    path: tmpdir(),
+    defaultWorktree: true,
+    defaultSandbox: true,
+  });
 
-    expect(project.isGitRepo).toBe(false)
-    expect(project.defaultWorktree).toBe(false)
-    expect(project.defaultSandbox).toBe(false)
-  })
+  expect(project.isGitRepo).toBe(false);
+  expect(project.defaultWorktree).toBe(false);
+  expect(project.defaultSandbox).toBe(false);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -125,18 +126,24 @@ In `src/server/models/Card.ts`, add after `worktreeBranch`:
 In `src/server/models/index.ts`, after the existing `archived` migration block and before `await runner.release();`, add:
 
 ```ts
-    try {
-      await runner.query(`ALTER TABLE projects ADD COLUMN default_sandbox INTEGER NOT NULL DEFAULT 0`);
-    } catch (err) {
-      console.log(`[db:migrate] default_sandbox column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
-    }
-    try {
-      await runner.query(`ALTER TABLE cards ADD COLUMN sandbox INTEGER NOT NULL DEFAULT 0`);
-    } catch (err) {
-      console.log(`[db:migrate] cards.sandbox column add skipped (likely already exists):`, err instanceof Error ? err.message : err);
-    }
-    await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
-    await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
+try {
+  await runner.query(`ALTER TABLE projects ADD COLUMN default_sandbox INTEGER NOT NULL DEFAULT 0`);
+} catch (err) {
+  console.log(
+    `[db:migrate] default_sandbox column add skipped (likely already exists):`,
+    err instanceof Error ? err.message : err,
+  );
+}
+try {
+  await runner.query(`ALTER TABLE cards ADD COLUMN sandbox INTEGER NOT NULL DEFAULT 0`);
+} catch (err) {
+  console.log(
+    `[db:migrate] cards.sandbox column add skipped (likely already exists):`,
+    err instanceof Error ? err.message : err,
+  );
+}
+await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
+await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
 ```
 
 - [ ] **Step 5: Add protocol fields**
@@ -172,25 +179,25 @@ Add to `projectCreateSchema` after `defaultWorktree`:
 In `src/server/services/project.ts`, inside `createProject()` after detecting `isGitRepo`, add:
 
 ```ts
-    if (!data.isGitRepo) {
-      data.defaultWorktree = false;
-      data.defaultSandbox = false;
-    } else if (!data.defaultWorktree) {
-      data.defaultSandbox = false;
-    }
+if (!data.isGitRepo) {
+  data.defaultWorktree = false;
+  data.defaultSandbox = false;
+} else if (!data.defaultWorktree) {
+  data.defaultSandbox = false;
+}
 ```
 
 Inside `updateProject()`, after detecting `isGitRepo`, add:
 
 ```ts
-    const nextIsGitRepo = data.isGitRepo ?? proj.isGitRepo;
-    const nextDefaultWorktree = data.defaultWorktree ?? proj.defaultWorktree;
-    if (!nextIsGitRepo) {
-      data.defaultWorktree = false;
-      data.defaultSandbox = false;
-    } else if (!nextDefaultWorktree) {
-      data.defaultSandbox = false;
-    }
+const nextIsGitRepo = data.isGitRepo ?? proj.isGitRepo;
+const nextDefaultWorktree = data.defaultWorktree ?? proj.defaultWorktree;
+if (!nextIsGitRepo) {
+  data.defaultWorktree = false;
+  data.defaultSandbox = false;
+} else if (!nextDefaultWorktree) {
+  data.defaultSandbox = false;
+}
 ```
 
 - [ ] **Step 7: Run project service tests**
@@ -215,6 +222,7 @@ git commit -m "Add sandbox persistence fields"
 ## Task 2: Inherit and clear card sandbox state
 
 **Files:**
+
 - Modify: `src/server/services/card.ts`
 - Test: `src/server/services/card.test.ts`
 
@@ -223,69 +231,69 @@ git commit -m "Add sandbox persistence fields"
 Add these tests inside `describe('CardService', () => { ... })` in `src/server/services/card.test.ts`:
 
 ```ts
-  it('inherits sandbox when project defaults to worktree sandboxing', async () => {
-    const { cardService } = await import('./card')
-    const { projectService } = await import('./project')
+it('inherits sandbox when project defaults to worktree sandboxing', async () => {
+  const { cardService } = await import('./card');
+  const { projectService } = await import('./project');
 
-    const project = await projectService.createProject({
-      name: 'Sandbox Cards',
-      path: '/tmp/sandbox-cards',
-      isGitRepo: true,
-      defaultWorktree: true,
-      defaultSandbox: true,
-    })
+  const project = await projectService.createProject({
+    name: 'Sandbox Cards',
+    path: '/tmp/sandbox-cards',
+    isGitRepo: true,
+    defaultWorktree: true,
+    defaultSandbox: true,
+  });
 
-    const card = await cardService.createCard({
-      title: 'Use Sandbox',
-      description: 'd',
-      projectId: project.id,
-    })
+  const card = await cardService.createCard({
+    title: 'Use Sandbox',
+    description: 'd',
+    projectId: project.id,
+  });
 
-    expect(card.worktreeBranch).toBe('use-sandbox')
-    expect(card.sandbox).toBe(true)
-  })
+  expect(card.worktreeBranch).toBe('use-sandbox');
+  expect(card.sandbox).toBe(true);
+});
 
-  it('does not enable sandbox when card has no worktree', async () => {
-    const { cardService } = await import('./card')
-    const { projectService } = await import('./project')
+it('does not enable sandbox when card has no worktree', async () => {
+  const { cardService } = await import('./card');
+  const { projectService } = await import('./project');
 
-    const project = await projectService.createProject({
-      name: 'Sandbox No Worktree',
-      path: '/tmp/sandbox-no-worktree',
-      isGitRepo: true,
-      defaultWorktree: false,
-      defaultSandbox: false,
-    })
+  const project = await projectService.createProject({
+    name: 'Sandbox No Worktree',
+    path: '/tmp/sandbox-no-worktree',
+    isGitRepo: true,
+    defaultWorktree: false,
+    defaultSandbox: false,
+  });
 
-    const card = await cardService.createCard({
-      title: 'No Worktree',
-      description: 'd',
-      projectId: project.id,
-      sandbox: true,
-    })
+  const card = await cardService.createCard({
+    title: 'No Worktree',
+    description: 'd',
+    projectId: project.id,
+    sandbox: true,
+  });
 
-    expect(card.worktreeBranch).toBeNull()
-    expect(card.sandbox).toBe(false)
-  })
+  expect(card.worktreeBranch).toBeNull();
+  expect(card.sandbox).toBe(false);
+});
 
-  it('clears sandbox when worktree is removed from a card', async () => {
-    const { cardService } = await import('./card')
+it('clears sandbox when worktree is removed from a card', async () => {
+  const { cardService } = await import('./card');
 
-    const card = await cardService.createCard({
-      title: 'Clear Sandbox',
-      description: 'd',
-      worktreeBranch: 'clear-sandbox',
-      sandbox: true,
-    })
+  const card = await cardService.createCard({
+    title: 'Clear Sandbox',
+    description: 'd',
+    worktreeBranch: 'clear-sandbox',
+    sandbox: true,
+  });
 
-    const updated = await cardService.updateCard(card.id, {
-      worktreeBranch: null,
-      sandbox: true,
-    })
+  const updated = await cardService.updateCard(card.id, {
+    worktreeBranch: null,
+    sandbox: true,
+  });
 
-    expect(updated.worktreeBranch).toBeNull()
-    expect(updated.sandbox).toBe(false)
-  })
+  expect(updated.worktreeBranch).toBeNull();
+  expect(updated.sandbox).toBe(false);
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -303,23 +311,23 @@ Expected: FAIL because card sandbox inheritance/clearing is not implemented.
 In `src/server/services/card.ts`, inside `createCard()`, replace the project default block with this structure:
 
 ```ts
-    if (data.projectId) {
-      const proj = await Project.findOneBy({ id: data.projectId });
-      if (proj) {
-        providerID = proj.providerID ?? getDefaultProviderID();
-        data.model = data.model ?? proj.defaultModel;
-        data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
-        if (proj.defaultWorktree && !data.worktreeBranch && data.title) {
-          const { slugify } = await import('../../shared/worktree');
-          data.worktreeBranch = slugify(data.title);
-        }
-        if (data.worktreeBranch) {
-          data.sandbox = data.sandbox ?? proj.defaultSandbox;
-        }
-        data.sourceBranch = data.sourceBranch ?? proj.defaultBranch;
-      }
+if (data.projectId) {
+  const proj = await Project.findOneBy({ id: data.projectId });
+  if (proj) {
+    providerID = proj.providerID ?? getDefaultProviderID();
+    data.model = data.model ?? proj.defaultModel;
+    data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
+    if (proj.defaultWorktree && !data.worktreeBranch && data.title) {
+      const { slugify } = await import('../../shared/worktree');
+      data.worktreeBranch = slugify(data.title);
     }
-    if (!data.worktreeBranch) data.sandbox = false;
+    if (data.worktreeBranch) {
+      data.sandbox = data.sandbox ?? proj.defaultSandbox;
+    }
+    data.sourceBranch = data.sourceBranch ?? proj.defaultBranch;
+  }
+}
+if (!data.worktreeBranch) data.sandbox = false;
 ```
 
 - [ ] **Step 4: Implement update clearing**
@@ -327,8 +335,8 @@ In `src/server/services/card.ts`, inside `createCard()`, replace the project def
 In `src/server/services/card.ts`, inside `updateCard()` before `Object.assign(card, data);`, add:
 
 ```ts
-    const nextWorktreeBranch = data.worktreeBranch === undefined ? card.worktreeBranch : data.worktreeBranch;
-    if (!nextWorktreeBranch) data.sandbox = false;
+const nextWorktreeBranch = data.worktreeBranch === undefined ? card.worktreeBranch : data.worktreeBranch;
+if (!nextWorktreeBranch) data.sandbox = false;
 ```
 
 - [ ] **Step 5: Run card service tests**
@@ -353,6 +361,7 @@ git commit -m "Inherit sandbox setting for worktree cards"
 ## Task 3: Add project/card UI controls and client store fields
 
 **Files:**
+
 - Modify: `app/stores/project-store.ts`
 - Modify: `app/stores/card-store.ts`
 - Modify: `app/components/ProjectForm.tsx`
@@ -413,22 +422,22 @@ In `app/components/ProjectForm.tsx`:
 Add `defaultSandbox` to the local `Project` interface after `defaultWorktree`:
 
 ```ts
-  defaultSandbox: boolean;
+defaultSandbox: boolean;
 ```
 
 Add state after `defaultWorktree`:
 
 ```ts
-  const [defaultSandbox, setDefaultSandbox] = useState(project?.defaultSandbox ?? false);
+const [defaultSandbox, setDefaultSandbox] = useState(project?.defaultSandbox ?? false);
 ```
 
 Add a helper before `handleSubmit`:
 
 ```ts
-  function setWorktreeDefault(checked: boolean) {
-    setDefaultWorktree(checked);
-    if (!checked) setDefaultSandbox(false);
-  }
+function setWorktreeDefault(checked: boolean) {
+  setDefaultWorktree(checked);
+  if (!checked) setDefaultSandbox(false);
+}
 ```
 
 In the submit `data`, add after `defaultWorktree`:
@@ -446,18 +455,20 @@ Change the existing default worktree checkbox handler to:
 After the default worktree checkbox block, add:
 
 ```tsx
-              {isGitRepo && defaultWorktree && (
-                <div className="flex items-center gap-2 pl-6">
-                  <Checkbox
-                    id="defaultSandbox"
-                    checked={defaultSandbox}
-                    onCheckedChange={(checked) => setDefaultSandbox(checked === true)}
-                  />
-                  <label htmlFor="defaultSandbox" className="text-sm font-medium text-muted-foreground">
-                    Default to sandbox for worktree cards
-                  </label>
-                </div>
-              )}
+{
+  isGitRepo && defaultWorktree && (
+    <div className="flex items-center gap-2 pl-6">
+      <Checkbox
+        id="defaultSandbox"
+        checked={defaultSandbox}
+        onCheckedChange={(checked) => setDefaultSandbox(checked === true)}
+      />
+      <label htmlFor="defaultSandbox" className="text-sm font-medium text-muted-foreground">
+        Default to sandbox for worktree cards
+      </label>
+    </div>
+  );
+}
 ```
 
 - [ ] **Step 6: Update CardDetail draft and patch behavior**
@@ -467,7 +478,7 @@ In `app/components/CardDetail.tsx`:
 Add `sandbox` to `Draft` after `worktreeBranch`:
 
 ```ts
-  sandbox: boolean;
+sandbox: boolean;
 ```
 
 When project selection changes in `CardFields`, compute sandbox from the selected project:
@@ -485,21 +496,26 @@ When the Use worktree checkbox changes, include sandbox clearing/defaulting:
 After the Use worktree checkbox block, add:
 
 ```tsx
-      {!!selectedProject?.isGitRepo && draft.useWorktree && (
-        <div className="flex items-center gap-2 pl-6">
-          <Checkbox
-            id={hasSession ? 'savedUseSandbox' : 'newUseSandbox'}
-            checked={draft.sandbox}
-            disabled={!!draft.worktreeBranch && projectLocked}
-            onCheckedChange={(checked) => {
-              void patch({ sandbox: checked === true });
-            }}
-          />
-          <label htmlFor={hasSession ? 'savedUseSandbox' : 'newUseSandbox'} className="text-sm font-medium text-muted-foreground">
-            Use sandbox
-          </label>
-        </div>
-      )}
+{
+  !!selectedProject?.isGitRepo && draft.useWorktree && (
+    <div className="flex items-center gap-2 pl-6">
+      <Checkbox
+        id={hasSession ? 'savedUseSandbox' : 'newUseSandbox'}
+        checked={draft.sandbox}
+        disabled={!!draft.worktreeBranch && projectLocked}
+        onCheckedChange={(checked) => {
+          void patch({ sandbox: checked === true });
+        }}
+      />
+      <label
+        htmlFor={hasSession ? 'savedUseSandbox' : 'newUseSandbox'}
+        className="text-sm font-medium text-muted-foreground"
+      >
+        Use sandbox
+      </label>
+    </div>
+  );
+}
 ```
 
 Add `sandbox: false` to every `useState<Draft>` initializer.
@@ -566,6 +582,7 @@ git commit -m "Add sandbox controls to worktree cards"
 ## Task 4: Pass sandbox metadata from server to orcd
 
 **Files:**
+
 - Modify: `src/shared/orcd-protocol.ts`
 - Modify: `src/server/orcd-client.ts`
 - Modify: `src/server/controllers/card-sessions.ts`
@@ -577,22 +594,26 @@ git commit -m "Add sandbox controls to worktree cards"
 In `src/server/controllers/card-sessions.test.ts`, add or update a start-session test so the mocked orcd client receives sandbox metadata for a sandboxed worktree card:
 
 ```ts
-expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
-  cwd: '/tmp/project/.worktrees/card-42',
-  sandbox: {
-    enabled: true,
-    projectPath: '/tmp/project',
-    worktreePath: '/tmp/project/.worktrees/card-42',
-  },
-}));
+expect(client.create).toHaveBeenCalledWith(
+  expect.objectContaining({
+    cwd: '/tmp/project/.worktrees/card-42',
+    sandbox: {
+      enabled: true,
+      projectPath: '/tmp/project',
+      worktreePath: '/tmp/project/.worktrees/card-42',
+    },
+  }),
+);
 ```
 
 Also add an assertion for a non-sandbox card:
 
 ```ts
-expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
-  sandbox: undefined,
-}));
+expect(client.create).toHaveBeenCalledWith(
+  expect.objectContaining({
+    sandbox: undefined,
+  }),
+);
 ```
 
 - [ ] **Step 2: Run controller test to verify it fails**
@@ -648,8 +669,9 @@ Add to the `this.send({ action: 'create', ... })` payload:
 In `src/server/controllers/card-sessions.ts`, find `startCardSession()`. After `const cwd = await ensureWorktree(card);`, load the project if needed and build:
 
 ```ts
-  const project = card.projectId ? await Project.findOneByOrFail({ id: card.projectId }) : null;
-  const sandbox = card.sandbox && card.worktreeBranch && project
+const project = card.projectId ? await Project.findOneByOrFail({ id: card.projectId }) : null;
+const sandbox =
+  card.sandbox && card.worktreeBranch && project
     ? { enabled: true as const, projectPath: project.path, worktreePath: cwd }
     : undefined;
 ```
@@ -701,6 +723,7 @@ git commit -m "Pass sandbox launch metadata to orcd"
 ## Task 5: Build the bwrap sandbox launcher
 
 **Files:**
+
 - Create: `src/orcd/sandbox.ts`
 - Test: `src/orcd/__tests__/sandbox.test.ts`
 
@@ -763,26 +786,30 @@ describe('prepareSandboxLaunch', () => {
     dirs.push(outside);
     await writeFile(join(outside, '.git'), `gitdir: ${join(projectPath, '.git', 'worktrees', 'outside')}\n`);
 
-    await expect(prepareSandboxLaunch({
-      sessionId: 'session-12345678',
-      projectPath,
-      worktreePath: outside,
-      claudeExecutable: '/home/ryan/.local/bin/claude',
-      home: '/home/ryan',
-    })).rejects.toThrow('worktree path must be inside project .worktrees');
+    await expect(
+      prepareSandboxLaunch({
+        sessionId: 'session-12345678',
+        projectPath,
+        worktreePath: outside,
+        claudeExecutable: '/home/ryan/.local/bin/claude',
+        home: '/home/ryan',
+      }),
+    ).rejects.toThrow('worktree path must be inside project .worktrees');
   });
 
   it('rejects a worktree gitdir that does not point under project .git/worktrees', async () => {
     const { projectPath, worktreePath } = await makeRepoFixture();
     await writeFile(join(worktreePath, '.git'), 'gitdir: /tmp/not-this-repo/worktrees/card-123\n');
 
-    await expect(prepareSandboxLaunch({
-      sessionId: 'session-12345678',
-      projectPath,
-      worktreePath,
-      claudeExecutable: '/home/ryan/.local/bin/claude',
-      home: '/home/ryan',
-    })).rejects.toThrow('worktree gitdir must point under project .git/worktrees');
+    await expect(
+      prepareSandboxLaunch({
+        sessionId: 'session-12345678',
+        projectPath,
+        worktreePath,
+        claudeExecutable: '/home/ryan/.local/bin/claude',
+        home: '/home/ryan',
+      }),
+    ).rejects.toThrow('worktree gitdir must point under project .git/worktrees');
   });
 });
 ```
@@ -869,23 +896,52 @@ export async function prepareSandboxLaunch(opts: SandboxLaunchOptions): Promise<
   const codeDir = join(home, 'Code');
   const args = [
     '--unshare-pid',
-    '--dev-bind', '/dev', '/dev',
-    '--proc', '/proc',
-    '--ro-bind', '/usr', '/usr',
-    '--ro-bind', '/bin', '/bin',
-    '--ro-bind', '/lib', '/lib',
-    '--ro-bind-try', '/lib64', '/lib64',
-    '--ro-bind', '/etc', '/etc',
-    '--tmpfs', '/tmp',
-    '--tmpfs', home,
-    '--dir', codeDir,
-    '--bind', worktreePath, projectPath,
-    '--bind', realProjectGitPath, join(projectPath, '.git-parent'),
-    '--ro-bind', syntheticGitFile, join(projectPath, '.git'),
-    '--bind', join(home, '.claude'), join(home, '.claude'),
-    '--bind', join(home, '.claude.json'), join(home, '.claude.json'),
-    '--setenv', 'HOME', home,
-    '--chdir', projectPath,
+    '--dev-bind',
+    '/dev',
+    '/dev',
+    '--proc',
+    '/proc',
+    '--ro-bind',
+    '/usr',
+    '/usr',
+    '--ro-bind',
+    '/bin',
+    '/bin',
+    '--ro-bind',
+    '/lib',
+    '/lib',
+    '--ro-bind-try',
+    '/lib64',
+    '/lib64',
+    '--ro-bind',
+    '/etc',
+    '/etc',
+    '--tmpfs',
+    '/tmp',
+    '--tmpfs',
+    home,
+    '--dir',
+    codeDir,
+    '--bind',
+    worktreePath,
+    projectPath,
+    '--bind',
+    realProjectGitPath,
+    join(projectPath, '.git-parent'),
+    '--ro-bind',
+    syntheticGitFile,
+    join(projectPath, '.git'),
+    '--bind',
+    join(home, '.claude'),
+    join(home, '.claude'),
+    '--bind',
+    join(home, '.claude.json'),
+    join(home, '.claude.json'),
+    '--setenv',
+    'HOME',
+    home,
+    '--chdir',
+    projectPath,
     opts.claudeExecutable,
   ];
 
@@ -924,6 +980,7 @@ git commit -m "Build bwrap worktree sandbox launcher"
 ## Task 6: Wire sandbox launcher into orcd sessions
 
 **Files:**
+
 - Modify: `src/orcd/session.ts`
 - Modify: `src/orcd/socket-server.ts`
 - Test: `src/orcd/__tests__/session-async-tasks.test.ts`
@@ -933,27 +990,28 @@ git commit -m "Build bwrap worktree sandbox launcher"
 In `src/orcd/__tests__/session-async-tasks.test.ts`, add a test inside the existing describe block:
 
 ```ts
-  it('uses bwrap executable and canonical cwd for sandboxed sessions', async () => {
-    events.push({ type: 'result', subtype: 'success', stop_reason: 'end_turn' });
+it('uses bwrap executable and canonical cwd for sandboxed sessions', async () => {
+  events.push({ type: 'result', subtype: 'success', stop_reason: 'end_turn' });
 
-    const session = new OrcdSession({
-      cwd: '/host/project/.worktrees/card-123',
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: 'session-sandbox',
-      sandboxLaunch: {
-        executable: 'bwrap',
-        args: ['--bind', '/host/project/.worktrees/card-123', '/host/project', '/home/ryan/.local/bin/claude'],
-        cwd: '/host/project',
-        env: { HOME: '/home/ryan' },
-        stagingDir: '/tmp/orchestrel-bwrap-session-sandbox',
-        syntheticGitFile: '/tmp/orchestrel-bwrap-session-sandbox/.git',
-      },
-    });
+  const session = new OrcdSession({
+    cwd: '/host/project/.worktrees/card-123',
+    model: 'test-model',
+    provider: 'test-provider',
+    sessionId: 'session-sandbox',
+    sandboxLaunch: {
+      executable: 'bwrap',
+      args: ['--bind', '/host/project/.worktrees/card-123', '/host/project', '/home/ryan/.local/bin/claude'],
+      cwd: '/host/project',
+      env: { HOME: '/home/ryan' },
+      stagingDir: '/tmp/orchestrel-bwrap-session-sandbox',
+      syntheticGitFile: '/tmp/orchestrel-bwrap-session-sandbox/.git',
+    },
+  });
 
-    await session.run({ prompt: 'go', env: { ANTHROPIC_BASE_URL: 'http://mlx.example' } });
+  await session.run({ prompt: 'go', env: { ANTHROPIC_BASE_URL: 'http://mlx.example' } });
 
-    expect(sdkQuery).toHaveBeenCalledWith(expect.objectContaining({
+  expect(sdkQuery).toHaveBeenCalledWith(
+    expect.objectContaining({
       options: expect.objectContaining({
         cwd: '/host/project',
         pathToClaudeCodeExecutable: 'bwrap',
@@ -962,8 +1020,9 @@ In `src/orcd/__tests__/session-async-tasks.test.ts`, add a test inside the exist
           ANTHROPIC_BASE_URL: 'http://mlx.example',
         }),
       }),
-    }));
-  });
+    }),
+  );
+});
 ```
 
 - [ ] **Step 2: Run session test to verify it fails**
@@ -999,19 +1058,19 @@ Add constructor option:
 Set it in constructor:
 
 ```ts
-    this.sandboxLaunch = opts.sandboxLaunch;
+this.sandboxLaunch = opts.sandboxLaunch;
 ```
 
 Before `const q = sdkQuery({ ... })`, compute:
 
 ```ts
-    const sdkCwd = this.sandboxLaunch?.cwd ?? this.cwd;
-    const pathToClaudeCodeExecutable = this.sandboxLaunch?.executable ?? '/home/ryan/.local/bin/claude';
-    const env = {
-      ...opts.env,
-      ...(this.sandboxLaunch?.env ?? {}),
-      ...(this.contextWindow ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(this.contextWindow) } : {}),
-    };
+const sdkCwd = this.sandboxLaunch?.cwd ?? this.cwd;
+const pathToClaudeCodeExecutable = this.sandboxLaunch?.executable ?? '/home/ryan/.local/bin/claude';
+const env = {
+  ...opts.env,
+  ...(this.sandboxLaunch?.env ?? {}),
+  ...(this.contextWindow ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(this.contextWindow) } : {}),
+};
 ```
 
 Then change SDK options:
@@ -1074,14 +1133,14 @@ import { prepareSandboxLaunch } from './sandbox';
 Change `handleCreate` to prepare sandbox before constructing `OrcdSession`:
 
 ```ts
-    const sandboxLaunch = action.sandbox
-      ? await prepareSandboxLaunch({
-          sessionId: action.sessionId ?? crypto.randomUUID(),
-          projectPath: action.sandbox.projectPath,
-          worktreePath: action.sandbox.worktreePath,
-          claudeExecutable: '/home/ryan/.local/bin/claude',
-        })
-      : undefined;
+const sandboxLaunch = action.sandbox
+  ? await prepareSandboxLaunch({
+      sessionId: action.sessionId ?? crypto.randomUUID(),
+      projectPath: action.sandbox.projectPath,
+      worktreePath: action.sandbox.worktreePath,
+      claudeExecutable: '/home/ryan/.local/bin/claude',
+    })
+  : undefined;
 ```
 
 Because `handleCreate` is currently synchronous, refactor it into an async helper:
@@ -1103,7 +1162,7 @@ Because `handleCreate` is currently synchronous, refactor it into an async helpe
 Use a local session id before sandbox prep so the staging dir and session agree:
 
 ```ts
-    const sessionId = action.sessionId ?? randomUUID();
+const sessionId = action.sessionId ?? randomUUID();
 ```
 
 Then pass `sessionId` to both `prepareSandboxLaunch()` and `new OrcdSession({ sessionId, ... })`.
@@ -1130,6 +1189,7 @@ git commit -m "Launch sandboxed worktree sessions with bwrap"
 ## Task 7: End-to-end verification and docs cleanup
 
 **Files:**
+
 - Modify only if verification reveals gaps.
 
 - [ ] **Step 1: Run full targeted test suite**

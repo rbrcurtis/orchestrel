@@ -38,7 +38,7 @@ export async function uploadFiles(
 
   const res = await fetch('/api/upload', { method: 'POST', body: form });
   if (!res.ok) {
-    const body = await res.json().catch(() => null) as { error?: unknown } | null;
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
     throw new Error(typeof body?.error === 'string' ? body.error : 'Upload failed');
   }
 

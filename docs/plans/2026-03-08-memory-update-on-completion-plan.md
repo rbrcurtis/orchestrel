@@ -13,6 +13,7 @@
 ### Task 1: Guard session exit handlers against moving completed cards
 
 **Files:**
+
 - Modify: `src/server/routers/claude.ts:76-90` (start mutation exit handler)
 - Modify: `src/server/routers/claude.ts:152-166` (sendMessage mutation exit handler)
 
@@ -25,11 +26,11 @@ session.on('exit', async () => {
   if (session.status !== 'completed' && session.status !== 'errored') return;
   try {
     // Re-read card to check current column — skip if already done/archive
-    const [current] = await db.select({ column: cards.column })
-      .from(cards).where(eq(cards.id, input.cardId));
+    const [current] = await db.select({ column: cards.column }).from(cards).where(eq(cards.id, input.cardId));
     if (current?.column === 'done' || current?.column === 'archive') return;
 
-    await db.update(cards)
+    await db
+      .update(cards)
       .set({
         column: 'review',
         promptsSent: session.promptsSent,
@@ -51,11 +52,11 @@ Same change at lines 152-166:
 session.on('exit', async () => {
   if (session!.status !== 'completed' && session!.status !== 'errored') return;
   try {
-    const [current] = await db.select({ column: cards.column })
-      .from(cards).where(eq(cards.id, input.cardId));
+    const [current] = await db.select({ column: cards.column }).from(cards).where(eq(cards.id, input.cardId));
     if (current?.column === 'done' || current?.column === 'archive') return;
 
-    await db.update(cards)
+    await db
+      .update(cards)
       .set({
         column: 'review',
         promptsSent: session!.promptsSent,
@@ -86,6 +87,7 @@ git commit -m "fix: guard session exit handler against moving done/archive cards
 ### Task 2: Add `sendMemoryUpdate` to SessionManager
 
 **Files:**
+
 - Modify: `src/server/claude/manager.ts`
 
 **Step 1: Add the method**
@@ -132,6 +134,7 @@ git commit -m "feat: add sendMemoryUpdate to SessionManager for fire-and-forget 
 ### Task 3: Hook memory update into `cards.move` mutation
 
 **Files:**
+
 - Modify: `src/server/routers/cards.ts`
 
 **Step 1: Add imports**

@@ -45,10 +45,10 @@ Shared content never automatically creates a card, starts a session, or uploads 
 
 Each app receives an independent iOS Share Extension target in its existing Xcode project:
 
-| App | Bundle ID | Share Extension bundle ID | App Group | URL scheme |
-| --- | --- | --- | --- | --- |
-| Orchestrel | `com.orchestrel.ios` | `com.orchestrel.ios.share` | `group.com.orchestrel.ios.share` | `orchestrel` |
-| Orc Chat | `com.orchestrel.orcchat.ios` | `com.orchestrel.orcchat.ios.share` | `group.com.orchestrel.orcchat.ios.share` | `orcchat` |
+| App        | Bundle ID                    | Share Extension bundle ID          | App Group                                | URL scheme   |
+| ---------- | ---------------------------- | ---------------------------------- | ---------------------------------------- | ------------ |
+| Orchestrel | `com.orchestrel.ios`         | `com.orchestrel.ios.share`         | `group.com.orchestrel.ios.share`         | `orchestrel` |
+| Orc Chat   | `com.orchestrel.orcchat.ios` | `com.orchestrel.orcchat.ios.share` | `group.com.orchestrel.orcchat.ios.share` | `orcchat`    |
 
 The extensions accept public URL, plain text, image, and file representations. An extension normalizes all accepted items into one inbox entry, copies file data into its App Group container, writes the manifest atomically, and opens the containing app through the app-specific URL scheme.
 

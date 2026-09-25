@@ -17,8 +17,14 @@ const timers: ReturnType<typeof setTimeout>[] = [];
 export function startMemoryMaintainer(): () => void {
   if (started) return () => stopTimers();
   started = true;
-  schedule(() => void fire('daily'), () => msUntil(DAILY_HOUR, 0));
-  schedule(() => void fire('weekly'), () => msUntil(WEEKLY_HOUR, 0, WEEKLY_DAY));
+  schedule(
+    () => void fire('daily'),
+    () => msUntil(DAILY_HOUR, 0),
+  );
+  schedule(
+    () => void fire('weekly'),
+    () => msUntil(WEEKLY_HOUR, 0, WEEKLY_DAY),
+  );
   return () => stopTimers();
 }
 
@@ -31,10 +37,16 @@ async function fire(kind: 'daily' | 'weekly'): Promise<void> {
     const start = Date.now();
     if (kind === 'daily') {
       const summary = await runMaintain(cfg);
-      console.log(`[memory-maintainer] daily run done in ${Date.now() - start}ms`, summary ? `${summary.projects.length} projects` : 'disabled');
+      console.log(
+        `[memory-maintainer] daily run done in ${Date.now() - start}ms`,
+        summary ? `${summary.projects.length} projects` : 'disabled',
+      );
     } else {
       const summary = await runMerge(cfg);
-      console.log(`[memory-maintainer] weekly merge done in ${Date.now() - start}ms`, summary ? `${summary.groups} groups` : 'disabled');
+      console.log(
+        `[memory-maintainer] weekly merge done in ${Date.now() - start}ms`,
+        summary ? `${summary.groups} groups` : 'disabled',
+      );
     }
   } catch (err) {
     console.error('[memory-maintainer] run failed:', err);
@@ -45,13 +57,16 @@ async function fire(kind: 'daily' | 'weekly'): Promise<void> {
 
 function schedule(fn: () => void, nextMs: () => number): void {
   const max = 2_147_483_647;
-  const t = setTimeout(() => {
-    fn();
-    // Re-arm with the kind's own cadence: the closure captures the daily
-    // 02:00 or weekly Sunday 03:00 computation, so each timer stays on its
-    // own schedule after the first fire.
-    schedule(fn, nextMs);
-  }, Math.min(nextMs(), max));
+  const t = setTimeout(
+    () => {
+      fn();
+      // Re-arm with the kind's own cadence: the closure captures the daily
+      // 02:00 or weekly Sunday 03:00 computation, so each timer stays on its
+      // own schedule after the first fire.
+      schedule(fn, nextMs);
+    },
+    Math.min(nextMs(), max),
+  );
   timers.push(t);
 }
 

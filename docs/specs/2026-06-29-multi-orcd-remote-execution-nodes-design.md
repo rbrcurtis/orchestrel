@@ -37,19 +37,19 @@ central.
 
 ## Decisions (locked)
 
-| # | Decision |
-|---|----------|
-| 1 | Agent runs on the node (filesystem locality — native edit tools). |
-| 2 | Latency is a non-concern (nodes are same-LAN or VPN-reachable). |
-| 3 | One orcd per box, managing multiple projects (cwd is per-session). |
-| 4 | A **project is bound to one node** — the box holding its repo folder. |
-| 5 | A **card inherits its project's node and can never change it** (session history + files live there). |
-| 6 | orcd owns **all node-local filesystem work** (worktree create/remove, git, `setup_commands`, path validation, opencode-config copy). PR/push already happens agent-side and needs no BE involvement. |
-| 7 | Transport is **TCP only** (hard cutover; drop the unix socket entirely; local node is `127.0.0.1`). |
-| 8 | Auth is a **shared token per node**. |
-| 9 | Config splits by owner: `orcd.yaml` per box, `orc.yaml` on the BE. The BE stops reading provider config from any local file. |
-| 10 | Request/reply protocol actions correlate via a generic `requestId` field. |
-| 11 | Capabilities are cached in-memory per node. An offline node can't accept new projects/cards; existing cards on it render read-only from FE cache and are not runnable. |
+| #   | Decision                                                                                                                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Agent runs on the node (filesystem locality — native edit tools).                                                                                                                                    |
+| 2   | Latency is a non-concern (nodes are same-LAN or VPN-reachable).                                                                                                                                      |
+| 3   | One orcd per box, managing multiple projects (cwd is per-session).                                                                                                                                   |
+| 4   | A **project is bound to one node** — the box holding its repo folder.                                                                                                                                |
+| 5   | A **card inherits its project's node and can never change it** (session history + files live there).                                                                                                 |
+| 6   | orcd owns **all node-local filesystem work** (worktree create/remove, git, `setup_commands`, path validation, opencode-config copy). PR/push already happens agent-side and needs no BE involvement. |
+| 7   | Transport is **TCP only** (hard cutover; drop the unix socket entirely; local node is `127.0.0.1`).                                                                                                  |
+| 8   | Auth is a **shared token per node**.                                                                                                                                                                 |
+| 9   | Config splits by owner: `orcd.yaml` per box, `orc.yaml` on the BE. The BE stops reading provider config from any local file.                                                                         |
+| 10  | Request/reply protocol actions correlate via a generic `requestId` field.                                                                                                                            |
+| 11  | Capabilities are cached in-memory per node. An offline node can't accept new projects/cards; existing cards on it render read-only from FE cache and are not runnable.                               |
 
 ## Architecture
 
@@ -79,7 +79,7 @@ node.
 
 ### `orcd.yaml` (per box — supersedes today's `config.yaml`)
 
-> **Not a pure rename.** Today `config.yaml` is loaded by *both* orcd and the BE
+> **Not a pure rename.** Today `config.yaml` is loaded by _both_ orcd and the BE
 > via `src/shared/config.ts`, and the BE serves the provider catalog to the FE
 > from it. After this change, provider config is owned by orcd alone. The BE no
 > longer reads provider data from any local file (see BE changes §1).
@@ -90,9 +90,9 @@ token; the `socket` field is removed.
 ```yaml
 # orcd.yaml — lives on the box, owned by this orcd
 listen:
-  host: 0.0.0.0        # bind address (prefer the VPN interface)
+  host: 0.0.0.0 # bind address (prefer the VPN interface)
   port: 7420
-authToken: ${ORCD_TOKEN}   # shared token the BE must present
+authToken: ${ORCD_TOKEN} # shared token the BE must present
 
 defaultProvider: anthropic
 defaultModel: sonnet
@@ -102,7 +102,7 @@ providers:
   anthropic:
     label: Anthropic
     models:
-      sonnet: { label: "Sonnet 4.6", modelID: claude-sonnet-4-6, contextWindow: 1000000 }
+      sonnet: { label: 'Sonnet 4.6', modelID: claude-sonnet-4-6, contextWindow: 1000000 }
       # ...
 ```
 
@@ -122,7 +122,7 @@ servers:
     port: 7420
     authToken: ${LOCAL_ORCD_TOKEN}
   - name: gpubox
-    host: 10.8.0.3        # VPN address
+    host: 10.8.0.3 # VPN address
     port: 7420
     authToken: ${GPUBOX_ORCD_TOKEN}
 ```
@@ -293,7 +293,7 @@ setup + copies opencode config on the box) → `worktree_ready { path }` → BE
 `create { cwd: path }` → orcd spawns the agent on the box → events stream back
 over the node's connection and forward to the UI as today.
 
-**Inference:** the agent uses the env orcd built from *its* `orcd.yaml`
+**Inference:** the agent uses the env orcd built from _its_ `orcd.yaml`
 (`ANTHROPIC_BASE_URL` etc.) — central relay or direct, the BE is uninvolved.
 
 **PR/push:** the agent runs `gh pr create` / `git push` inside its own session

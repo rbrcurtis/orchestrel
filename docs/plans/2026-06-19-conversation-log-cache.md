@@ -28,6 +28,7 @@
 ## Task 1: Accumulator serialize / hydrate
 
 **Files:**
+
 - Modify: `app/lib/message-accumulator.ts` (add two methods to `MessageAccumulator`, after `clear()` near line 498)
 - Test: `app/lib/message-accumulator.test.ts`
 
@@ -165,6 +166,7 @@ git commit -m "feat: serialize/hydrate for MessageAccumulator"
 ## Task 2: Conversation cache module (IndexedDB + LRU)
 
 **Files:**
+
 - Create: `app/lib/conversation-cache.ts`
 - Test: `app/lib/conversation-cache.test.ts`
 
@@ -180,8 +182,14 @@ import { readConversation, writeConversation, __setBudgetForTest } from './conve
 
 const store = new Map<string, unknown>();
 const get = vi.fn((k: string) => Promise.resolve(store.get(k)));
-const set = vi.fn((k: string, v: unknown) => { store.set(k, v); return Promise.resolve(); });
-const del = vi.fn((k: string) => { store.delete(k); return Promise.resolve(); });
+const set = vi.fn((k: string, v: unknown) => {
+  store.set(k, v);
+  return Promise.resolve();
+});
+const del = vi.fn((k: string) => {
+  store.delete(k);
+  return Promise.resolve();
+});
 
 vi.mock('idb-keyval', () => ({
   get: (...a: unknown[]) => get(a[0] as string),
@@ -301,6 +309,7 @@ git commit -m "feat: per-card conversation cache with LRU eviction"
 ## Task 3: Session store integration
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts`
 - Test: `app/stores/session-store.test.ts`
 
@@ -328,9 +337,7 @@ describe('SessionStore hydrateFromCache', () => {
 
     const s = store.getSession(1);
     expect(s?.cacheHydrated).toBe(true);
-    expect(s?.accumulator.conversation).toEqual([
-      expect.objectContaining({ kind: 'user', content: 'cached' }),
-    ]);
+    expect(s?.accumulator.conversation).toEqual([expect.objectContaining({ kind: 'user', content: 'cached' })]);
   });
 
   it('does not clobber already-loaded history', async () => {
@@ -372,7 +379,7 @@ import { readConversation, writeConversation } from '../lib/conversation-cache';
 b) Add `cacheHydrated` to the `SessionState` interface (after `historyLoaded: boolean;`):
 
 ```typescript
-  cacheHydrated: boolean;
+cacheHydrated: boolean;
 ```
 
 c) Add it to `defaultSession()` (after `historyLoaded: false,`):
@@ -393,12 +400,12 @@ d) Add a disposer map field and register it as non-observable. Change the field 
 and update the `makeAutoObservable` annotation (lines 44-48) to:
 
 ```typescript
-    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | 'persistDisposers' | '_ws'>(this, {
-      stopIntervals: false,
-      loadingCards: false,
-      persistDisposers: false,
-      _ws: false,
-    });
+makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | 'persistDisposers' | '_ws'>(this, {
+  stopIntervals: false,
+  loadingCards: false,
+  persistDisposers: false,
+  _ws: false,
+});
 ```
 
 e) Add the two methods after `getSession()` (after line 66):
@@ -454,6 +461,7 @@ git commit -m "feat: hydrate session from cache and persist on change"
 ## Task 4: Wire SessionView to hydrate + persist
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx` (the history-load `useEffect`, lines 74-78)
 
 Trigger an instant cache paint and start persistence the moment the view mounts for a card, alongside the existing socket load.
@@ -463,13 +471,13 @@ Trigger an instant cache paint and start persistence the moment the view mounts 
 Replace the `useEffect` at lines 74-78 with:
 
 ```typescript
-  useEffect(() => {
-    sessionStore.hydrateFromCache(cardId).catch(() => {});
-    sessionStore.startPersisting(cardId);
-    const sid = sessionStoreId ?? sessionId;
-    if (sid && session?.historyLoaded) return; // history already loaded — nothing to do
-    sessionStore.loadHistory(cardId, sid ?? undefined);
-  }, [cardId, sessionStoreId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+useEffect(() => {
+  sessionStore.hydrateFromCache(cardId).catch(() => {});
+  sessionStore.startPersisting(cardId);
+  const sid = sessionStoreId ?? sessionId;
+  if (sid && session?.historyLoaded) return; // history already loaded — nothing to do
+  sessionStore.loadHistory(cardId, sid ?? undefined);
+}, [cardId, sessionStoreId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 ```
 
 - [ ] **Step 2: Typecheck + lint**
@@ -497,6 +505,7 @@ git commit -m "feat: paint transcripts from cache on card open"
 ## Task 5: Service worker → stale-while-revalidate
 
 **Files:**
+
 - Modify: `public/sw.js`
 
 Serve cached assets immediately, refresh in the background. Keep all existing skip rules; bump the cache name so the old network-first cache is purged by the existing activate handler.
@@ -566,4 +575,7 @@ git commit -m "feat: stale-while-revalidate service worker"
 - [ ] Run the full test suite: `pnpm test` — all pass.
 - [ ] Run `pnpm typecheck && pnpm lint` — clean.
 - [ ] Manual smoke per Task 4 Step 3 and Task 5 Step 2.
+
+```
+
 ```

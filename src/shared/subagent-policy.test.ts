@@ -13,15 +13,17 @@ const model = (modelID: string) => ({ label: modelID, modelID, contextWindow: 20
 
 describe('buildSubagentPolicy', () => {
   it('maps aliases and granular overrides to fully qualified models', () => {
-    expect(buildSubagentPolicy('chatgpt', 'gpt-5.5', {
-      models: {
-        main: model('gpt-5.5'),
-        mini: model('gpt-5.4-mini'),
-        nano: model('gpt-5.4-nano'),
-      },
-      aliases: { subagent: 'mini', lightweight: 'nano' },
-      agents: { Plan: 'main' },
-    })).toMatchObject({
+    expect(
+      buildSubagentPolicy('chatgpt', 'gpt-5.5', {
+        models: {
+          main: model('gpt-5.5'),
+          mini: model('gpt-5.4-mini'),
+          nano: model('gpt-5.4-nano'),
+        },
+        aliases: { subagent: 'mini', lightweight: 'nano' },
+        agents: { Plan: 'main' },
+      }),
+    ).toMatchObject({
       parentProvider: 'chatgpt',
       parentModel: 'chatgpt/gpt-5.5',
       parentModels: ['main', 'gpt-5.5', 'mini', 'gpt-5.4-mini', 'nano', 'gpt-5.4-nano'],
@@ -35,13 +37,15 @@ describe('buildSubagentPolicy', () => {
   });
 
   it('uses positional fallback and parent model for Plan', () => {
-    expect(buildSubagentPolicy('kimi', 'main-id', {
-      models: {
-        main: model('main-id'),
-        worker: model('worker-id'),
-        small: model('small-id'),
-      },
-    }).agents).toEqual({
+    expect(
+      buildSubagentPolicy('kimi', 'main-id', {
+        models: {
+          main: model('main-id'),
+          worker: model('worker-id'),
+          small: model('small-id'),
+        },
+      }).agents,
+    ).toEqual({
       'general-purpose': { model: 'kimi/worker-id', source: 'subagent tier' },
       Explore: { model: 'kimi/small-id', source: 'lightweight tier' },
       Plan: { model: 'kimi/main-id', source: 'parent model' },
@@ -49,24 +53,28 @@ describe('buildSubagentPolicy', () => {
   });
 
   it('uses positional fallback for a tier with no configured alias', () => {
-    expect(buildSubagentPolicy('kimi', 'main-id', {
-      models: {
-        main: model('main-id'),
-        worker: model('worker-id'),
-        small: model('small-id'),
-      },
-      aliases: { subagent: 'main' },
-    }).agents).toMatchObject({
+    expect(
+      buildSubagentPolicy('kimi', 'main-id', {
+        models: {
+          main: model('main-id'),
+          worker: model('worker-id'),
+          small: model('small-id'),
+        },
+        aliases: { subagent: 'main' },
+      }).agents,
+    ).toMatchObject({
       'general-purpose': { model: 'kimi/main-id', source: 'subagent tier' },
       Explore: { model: 'kimi/small-id', source: 'lightweight tier' },
     });
   });
 
   it('throws for a configured unknown agent model key', () => {
-    expect(() => buildSubagentPolicy('trackable', 'auto', {
-      models: { main: model('auto') },
-      agents: { Explore: 'missing' },
-    })).toThrow('unknown model key "missing" for agent "Explore"');
+    expect(() =>
+      buildSubagentPolicy('trackable', 'auto', {
+        models: { main: model('auto') },
+        agents: { Explore: 'missing' },
+      }),
+    ).toThrow('unknown model key "missing" for agent "Explore"');
   });
 });
 
@@ -102,14 +110,22 @@ describe('subagent policy serialization', () => {
     expect(() => parseSubagentPolicy(JSON.stringify({ ...policy, parentModel: 'other/main-id' }))).toThrow(
       'subagent policy parentModel provider must equal parentProvider "kimi"',
     );
-    expect(() => parseSubagentPolicy(JSON.stringify({
-      ...policy,
-      agents: { Explore: { model: 'small-id', source: 'test' } },
-    }))).toThrow('subagent policy agent "Explore" model must be a fully qualified provider/modelID');
-    expect(() => parseSubagentPolicy(JSON.stringify({
-      ...policy,
-      agents: { Explore: { model: 'other/small-id', source: 'test' } },
-    }))).toThrow('subagent policy agent "Explore" model provider must equal parentProvider "kimi"');
+    expect(() =>
+      parseSubagentPolicy(
+        JSON.stringify({
+          ...policy,
+          agents: { Explore: { model: 'small-id', source: 'test' } },
+        }),
+      ),
+    ).toThrow('subagent policy agent "Explore" model must be a fully qualified provider/modelID');
+    expect(() =>
+      parseSubagentPolicy(
+        JSON.stringify({
+          ...policy,
+          agents: { Explore: { model: 'other/small-id', source: 'test' } },
+        }),
+      ),
+    ).toThrow('subagent policy agent "Explore" model provider must equal parentProvider "kimi"');
   });
 });
 

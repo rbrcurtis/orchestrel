@@ -74,7 +74,7 @@ export function applySelectCard(
         ? slot.cardId
         : slot.type === 'pinned'
           ? (resolvedCards.get(i) ?? slot.cardId ?? null)
-          : resolvedCards.get(i) ?? null;
+          : (resolvedCards.get(i) ?? null);
     if (displayed === cardId) return { slots, flashIndex: i };
   }
 
@@ -256,10 +256,7 @@ export function findSlotsToRecalc(
     cardById.set(c.id, c);
     const prev = prevColumns.get(c.id);
     if (!prev) continue;
-    if (
-      (prev === 'review' && c.column === 'running') ||
-      (prev === 'running' && c.column === 'review')
-    ) {
+    if ((prev === 'review' && c.column === 'running') || (prev === 'running' && c.column === 'review')) {
       changed.push(c);
     }
   }
@@ -288,9 +285,7 @@ export function findSlotsToRecalc(
 
       // Get the currently displayed card in this slot
       const displayedCardId =
-        slot.type === 'pinned'
-          ? (currentResolved.get(i) ?? slot.cardId ?? null)
-          : currentResolved.get(i) ?? null;
+        slot.type === 'pinned' ? (currentResolved.get(i) ?? slot.cardId ?? null) : (currentResolved.get(i) ?? null);
       if (displayedCardId == null) continue;
 
       // Condition 4: input not focused in this slot
@@ -306,12 +301,13 @@ export function findSlotsToRecalc(
 
       // Condition 5: a review card is available for this pin — skip if the
       // recalc would just swap one running card for another
-      const hasReview = cards.some((c) =>
-        c.column === 'review' &&
-        c.projectId != null &&
-        c.id !== displayedCardId &&
-        !usedCardIds.has(c.id) &&
-        (pinProjectId === 'all' || c.projectId === pinProjectId),
+      const hasReview = cards.some(
+        (c) =>
+          c.column === 'review' &&
+          c.projectId != null &&
+          c.id !== displayedCardId &&
+          !usedCardIds.has(c.id) &&
+          (pinProjectId === 'all' || c.projectId === pinProjectId),
       );
       if (!hasReview) continue;
 
@@ -393,7 +389,7 @@ export function useSlots(
       const displayed =
         slot.type === 'manual'
           ? slot.cardId
-          : prevResolvedRef.current.get(i) ?? (slot.type === 'pinned' ? slot.cardId ?? null : null);
+          : (prevResolvedRef.current.get(i) ?? (slot.type === 'pinned' ? (slot.cardId ?? null) : null));
       if (displayed === focusedCardId) {
         lockedSlots.add(i);
         break;
@@ -425,7 +421,11 @@ export function useSlots(
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, runs every render
   useEffect(() => {
     const slotsToRecalc = findSlotsToRecalc(
-      prevCardColumnsRef.current, cards, slots, resolvedCards, focusedCardId ?? null,
+      prevCardColumnsRef.current,
+      cards,
+      slots,
+      resolvedCards,
+      focusedCardId ?? null,
     );
 
     // Always update the column ref so next render can detect changes

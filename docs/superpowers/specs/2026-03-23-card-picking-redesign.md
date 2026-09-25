@@ -16,9 +16,7 @@ Replace the two parallel arrays with a single `SlotState[]`:
 
 ```ts
 type SlotState =
-  | { type: 'pinned'; projectId: number; cardId?: number }
-  | { type: 'manual'; cardId: number }
-  | { type: 'empty' };
+  { type: 'pinned'; projectId: number; cardId?: number } | { type: 'manual'; cardId: number } | { type: 'empty' };
 ```
 
 - **`pinned`** — auto-managed by the resolver. The optional `cardId` is an override: a card the user explicitly placed that the resolver wouldn't pick up on its own (e.g. a done card clicked into an empty pinned slot per R7). When the slot is closed, the override clears and the resolver takes back over. When the resolver has a qualifying card, the resolver result takes priority over the override.

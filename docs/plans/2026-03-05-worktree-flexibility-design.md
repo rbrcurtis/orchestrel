@@ -3,6 +3,7 @@
 ## Problem
 
 Conductor currently assumes all repos are git repos and always creates worktrees. Need to support:
+
 1. Arbitrary folders (non-git) as "repos"
 2. Working directly in a git repo without worktrees
 3. Resuming closed cards (recreate worktree, resume Claude session)
@@ -53,6 +54,7 @@ Fetches single repo by ID, re-scans `isGitRepo` from filesystem, updates DB if c
 ### `createWorktree` changes
 
 Handle both cases:
+
 - New branch: `git worktree add <path> -b <branch> <sourceBranch>`
 - Existing branch: `git worktree add <path> <branch>`
 

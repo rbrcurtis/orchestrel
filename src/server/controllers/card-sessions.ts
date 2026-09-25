@@ -47,7 +47,9 @@ async function clientForCard(card: { nodeName: string }): Promise<OrcdClient | n
   return initState.getClientByNode(card.nodeName);
 }
 
-function isBgcSystemEvent(event: Record<string, unknown>): event is { type: 'system'; subtype?: string; session_id?: string } {
+function isBgcSystemEvent(
+  event: Record<string, unknown>,
+): event is { type: 'system'; subtype?: string; session_id?: string } {
   return (
     event.type === 'system' &&
     (event.subtype === 'bgc_started' ||
@@ -69,10 +71,7 @@ function routeBgcEvent(sessionId: string, event: Record<string, unknown>): numbe
 
 const routedClients = new WeakSet<OrcdClient>();
 
-export function initOrcdRouter(
-  client: OrcdClient,
-  bus: MessageBus = messageBus,
-): void {
+export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus): void {
   if (routedClients.has(client)) {
     console.log(`[orcd-router] initOrcdRouter: client already routed, skipping`);
     return;
@@ -223,7 +222,7 @@ export function initOrcdRouter(
         pendingAsyncAfterTurnComplete.set(msg.newSessionId, pendingAsyncAfterTurnComplete.get(msg.sessionId) === true);
         pendingAsyncAfterTurnComplete.delete(msg.sessionId);
       }
-      console.log(`[oc:${cardId}] session forked: ${msg.sessionId.slice(0,8)} → ${msg.newSessionId.slice(0,8)}`);
+      console.log(`[oc:${cardId}] session forked: ${msg.sessionId.slice(0, 8)} → ${msg.newSessionId.slice(0, 8)}`);
     }
   });
 
@@ -289,7 +288,12 @@ async function handleSessionExit(
       card.column = 'review';
       card.updatedAt = new Date().toISOString();
       await repo.save(card);
-    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive' && card.column !== 'done' && card.column !== 'review') {
+    } else if (
+      hadPendingAsyncAfterTurn &&
+      card.column !== 'archive' &&
+      card.column !== 'done' &&
+      card.column !== 'review'
+    ) {
       // Background/async work that kept the session alive after the turn
       // finished — surface the card in review so Ryan sees the new output.
       card.column = 'review';
@@ -328,10 +332,7 @@ async function handleSessionExit(
 
 // ── Reconciliation ──────────────────────────────────────────────────────────
 
-export async function reconcileRunningCards(
-  client: OrcdClient,
-  bus: MessageBus = messageBus,
-): Promise<void> {
+export async function reconcileRunningCards(client: OrcdClient, bus: MessageBus = messageBus): Promise<void> {
   const r = AppDataSource.getRepository(Card);
 
   // Query orcd's live session list first. This is the source of truth —
@@ -541,7 +542,9 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
       return;
     }
     if (newColumn !== 'archive' || oldColumn === 'archive') {
-      console.log(`[oc:worktree] card ${card.id} column ${oldColumn} → ${newColumn}: not a fresh archive transition, skipping cleanup`);
+      console.log(
+        `[oc:worktree] card ${card.id} column ${oldColumn} → ${newColumn}: not a fresh archive transition, skipping cleanup`,
+      );
       return;
     }
 
@@ -550,7 +553,9 @@ export function registerWorktreeCleanup(bus: MessageBus = messageBus): void {
     // break that session, so defer cleanup until session_exit fires.
     const client = await clientForCard(card);
     if (card.sessionId && client?.isActive(card.sessionId)) {
-      console.log(`[oc:worktree] card ${card.id} archived with live session ${card.sessionId.slice(0, 8)}, deferring worktree cleanup to session_exit`);
+      console.log(
+        `[oc:worktree] card ${card.id} archived with live session ${card.sessionId.slice(0, 8)}, deferring worktree cleanup to session_exit`,
+      );
       return;
     }
 
@@ -657,7 +662,9 @@ export function registerProcessReaper(bus: MessageBus = messageBus): void {
     // handleSessionExit reaps based on the column once the session ends.
     const client = await clientForCard(card);
     if (card.sessionId && client?.isActive(card.sessionId)) {
-      console.log(`[reaper] card ${card.id} → ${newColumn}: live session ${card.sessionId.slice(0, 8)}, deferring to session_exit`);
+      console.log(
+        `[reaper] card ${card.id} → ${newColumn}: live session ${card.sessionId.slice(0, 8)}, deferring to session_exit`,
+      );
       return;
     }
 
@@ -684,11 +691,7 @@ function repo() {
   return AppDataSource.getRepository(Card);
 }
 
-async function markSessionStartFailed(
-  bus: MessageBus,
-  card: Card,
-  err: unknown,
-): Promise<void> {
+async function markSessionStartFailed(bus: MessageBus, card: Card, err: unknown): Promise<void> {
   const msg = err instanceof Error ? err.message : String(err);
   console.error(`[session:${card.id}] failed to start session:`, msg);
 
@@ -701,27 +704,25 @@ async function markSessionStartFailed(
   });
 }
 
-async function startCardSession(
-  client: OrcdClient,
-  card: Card,
-  bus: MessageBus = messageBus,
-): Promise<string | null> {
+async function startCardSession(client: OrcdClient, card: Card, bus: MessageBus = messageBus): Promise<string | null> {
   try {
     const { ensureWorktree } = await import('../sessions/worktree');
     const cwd = await ensureWorktree(card, client);
     const startedFromDescription = !card.sessionId;
-    let prompt = card.sessionId ? '' : (card.description || card.title);
+    let prompt = card.sessionId ? '' : card.description || card.title;
     const pending = card.sessionId ? [] : (card.pendingInitialFiles ?? []);
     if (pending.length > 0) {
       const { readAttachment } = await import('../attachments');
       const { buildPromptWithFiles } = await import('../sessions/manager');
       const staged = [];
       for (const file of pending) {
-        staged.push(await client.stageFile({
-          cardId: card.id,
-          file,
-          bytes: readAttachment(file),
-        }));
+        staged.push(
+          await client.stageFile({
+            cardId: card.id,
+            file,
+            bytes: readAttachment(file),
+          }),
+        );
       }
       prompt = buildPromptWithFiles(prompt, staged);
     }

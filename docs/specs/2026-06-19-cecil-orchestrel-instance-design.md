@@ -21,19 +21,19 @@ A git worktree sharing Ryan's object store was considered, but worktrees require
 
 ## Isolation Matrix
 
-| Concern | Ryan | Cecil |
-|---|---|---|
-| Linux user | `ryan` | `cecil` |
-| Checkout | `/home/ryan/Code/orchestrel` | `/home/cecil/Code/orchestrel` |
-| HTTP port | `6194` | `6196` |
-| orcd socket | `~/.orc/orcd.sock` (ryan home) | `~/.orc/orcd.sock` (cecil home) |
-| DB / data | `data/` in ryan checkout | `data/` in cecil checkout |
-| config.yaml | full provider set | Ray only |
-| Run mode | `pnpm dev` (HMR) | `pnpm build` + `pnpm start` (production) |
-| Services | `orcd`, `orchestrel` | `orcd-cecil`, `orchestrel-cecil` |
-| Public host | `orchestrel.com` | `cecil.orchestrel.com` |
-| HMR host | `hmr.orchestrel.com` | none (production build) |
-| Access OTP | `wednesday@gmail.com` | `cecilgcurtis@gmail.com` + `wednesday@gmail.com` |
+| Concern     | Ryan                           | Cecil                                            |
+| ----------- | ------------------------------ | ------------------------------------------------ |
+| Linux user  | `ryan`                         | `cecil`                                          |
+| Checkout    | `/home/ryan/Code/orchestrel`   | `/home/cecil/Code/orchestrel`                    |
+| HTTP port   | `6194`                         | `6196`                                           |
+| orcd socket | `~/.orc/orcd.sock` (ryan home) | `~/.orc/orcd.sock` (cecil home)                  |
+| DB / data   | `data/` in ryan checkout       | `data/` in cecil checkout                        |
+| config.yaml | full provider set              | Ray only                                         |
+| Run mode    | `pnpm dev` (HMR)               | `pnpm build` + `pnpm start` (production)         |
+| Services    | `orcd`, `orchestrel`           | `orcd-cecil`, `orchestrel-cecil`                 |
+| Public host | `orchestrel.com`               | `cecil.orchestrel.com`                           |
+| HMR host    | `hmr.orchestrel.com`           | none (production build)                          |
+| Access OTP  | `wednesday@gmail.com`          | `cecilgcurtis@gmail.com` + `wednesday@gmail.com` |
 
 ## Components
 
@@ -65,7 +65,7 @@ providers:
     baseUrl: http://127.0.0.1:11434/v1
     authToken: ray
     models:
-      "qwen3.6-27b-coder": { label: "Qwen3.6 27B Coder", modelID: qwen3.6-27b-coder, contextWindow: 240000 }
+      'qwen3.6-27b-coder': { label: 'Qwen3.6 27B Coder', modelID: qwen3.6-27b-coder, contextWindow: 240000 }
 ```
 
 - Ray gateway runs at `127.0.0.1:11434` on the same host, so Cecil's agents reach it directly.
@@ -80,6 +80,7 @@ providers:
 Mirror Ryan's two units, adjusted for user/paths/port. `.service` files are gitignored, so they live only in `/etc/systemd/system/`.
 
 `orcd-cecil.service`:
+
 - `User=cecil`
 - `WorkingDirectory=/home/cecil/Code/orchestrel`
 - `ExecStart=<cecil node bin>/pnpm orcd`
@@ -89,6 +90,7 @@ Mirror Ryan's two units, adjusted for user/paths/port. `.service` files are giti
 - `Before=orchestrel-cecil.service`
 
 `orchestrel-cecil.service`:
+
 - `User=cecil`
 - `WorkingDirectory=/home/cecil/Code/orchestrel`
 - `ExecStart=<cecil node bin>/pnpm start`
@@ -120,10 +122,10 @@ Reuse the existing shared tunnel (`/etc/cloudflared/config.yml`, tunnel `c9e6bfd
 
 Physically **move** these three into `/home/cecil/Code/`, then chown to `cecil`:
 
-| Current path | New path |
-|---|---|
-| `/home/ryan/Code/cecil/` | `/home/cecil/Code/cecil/` |
-| `/opt/cecil-minecraft/Code/mods` (`/home/ryan/Code/minecraft/mods`) | `/home/cecil/Code/mods` |
+| Current path                                                              | New path                   |
+| ------------------------------------------------------------------------- | -------------------------- |
+| `/home/ryan/Code/cecil/`                                                  | `/home/cecil/Code/cecil/`  |
+| `/opt/cecil-minecraft/Code/mods` (`/home/ryan/Code/minecraft/mods`)       | `/home/cecil/Code/mods`    |
 | `/opt/cecil-minecraft/Code/pvp-bot` (`/home/ryan/Code/minecraft/pvp-bot`) | `/home/cecil/Code/pvp-bot` |
 
 - After moving, register them as projects in Cecil's DB.
@@ -174,5 +176,5 @@ Systemd timer `orchestrel-cecil-sync.timer` (daily) + `orchestrel-cecil-sync.ser
 2. `curl -sS localhost:6196` returns the app.
 3. `https://cecil.orchestrel.com` prompts CF Access OTP; OTP to `cecilgcurtis@gmail.com` logs in.
 4. Cecil's board shows his three projects; creating a card uses the Ray provider/model.
-6. Trigger sync manually (`sudo -u cecil sync-orchestrel-cecil`) and confirm reset + restart.
-7. Confirm Ryan's instance (`orchestrel.com`, port 6194) is unaffected.
+5. Trigger sync manually (`sudo -u cecil sync-orchestrel-cecil`) and confirm reset + restart.
+6. Confirm Ryan's instance (`orchestrel.com`, port 6194) is unaffected.

@@ -14,19 +14,20 @@
 
 ## File Structure
 
-| File | Change |
-|------|--------|
-| `package.json` | Add `@tanstack/react-virtual` dependency |
-| `pnpm-lock.yaml` | Updated by `pnpm add` |
-| `app/components/VirtualTranscript.tsx` | New virtualized transcript component |
-| `app/components/SessionView.tsx` | Replace full `conversation.map(...)` render with `VirtualTranscript`; keep status/prompt behavior |
-| `app/components/MessageBlock.tsx` | Memoize stable message rows after virtualization is in place |
+| File                                   | Change                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `package.json`                         | Add `@tanstack/react-virtual` dependency                                                          |
+| `pnpm-lock.yaml`                       | Updated by `pnpm add`                                                                             |
+| `app/components/VirtualTranscript.tsx` | New virtualized transcript component                                                              |
+| `app/components/SessionView.tsx`       | Replace full `conversation.map(...)` render with `VirtualTranscript`; keep status/prompt behavior |
+| `app/components/MessageBlock.tsx`      | Memoize stable message rows after virtualization is in place                                      |
 
 ---
 
 ## Task 1: Add Virtualization Dependency
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `pnpm-lock.yaml`
 
@@ -58,6 +59,7 @@ git commit -m "chore: add transcript virtualization dependency"
 ## Task 2: Create `VirtualTranscript`
 
 **Files:**
+
 - Create: `app/components/VirtualTranscript.tsx`
 
 This component owns the virtualizer and DOM structure for the scrollable message list. It must not own session lifecycle, websocket calls, prompt state, or card updates.
@@ -102,10 +104,7 @@ Inside the component, derive a single `items` array:
 ```tsx
 const items = useMemo(() => {
   if (currentBlocks.length === 0) return conversation;
-  return [
-    ...conversation,
-    { kind: 'blocks' as const, blocks: currentBlocks, __current: true },
-  ];
+  return [...conversation, { kind: 'blocks' as const, blocks: currentBlocks, __current: true }];
 }, [conversation, currentBlocks]);
 ```
 
@@ -141,17 +140,21 @@ Use estimated sizes only as first-pass guesses; actual row heights are measured 
 Expose imperative methods to `SessionView`:
 
 ```tsx
-useImperativeHandle(ref, () => ({
-  scrollToBottom(behavior: ScrollBehavior = 'auto') {
-    if (items.length === 0) return;
-    rowVirtualizer.scrollToIndex(items.length - 1, { align: 'end', behavior });
-  },
-  isNearBottom() {
-    const el = scrollRef.current;
-    if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_GAP_PX;
-  },
-}), [items.length, rowVirtualizer]);
+useImperativeHandle(
+  ref,
+  () => ({
+    scrollToBottom(behavior: ScrollBehavior = 'auto') {
+      if (items.length === 0) return;
+      rowVirtualizer.scrollToIndex(items.length - 1, { align: 'end', behavior });
+    },
+    isNearBottom() {
+      const el = scrollRef.current;
+      if (!el) return true;
+      return el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_GAP_PX;
+    },
+  }),
+  [items.length, rowVirtualizer],
+);
 ```
 
 - [ ] **Step 5: Track near-bottom state from scroll events**
@@ -227,7 +230,10 @@ Render rows with absolute positioning inside a height-preserving container:
 return (
   <div className="relative flex-1 min-h-0 min-w-0">
     <ScrollArea viewportRef={scrollRef} className="h-full">
-      <div className="relative px-3 py-2 min-w-0 max-w-full overflow-x-hidden" style={{ height: rowVirtualizer.getTotalSize() }}>
+      <div
+        className="relative px-3 py-2 min-w-0 max-w-full overflow-x-hidden"
+        style={{ height: rowVirtualizer.getTotalSize() }}
+      >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const item = items[virtualRow.index];
           if (!item) return null;
@@ -239,11 +245,7 @@ return (
               className="absolute left-3 right-3"
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
-              <MessageBlock
-                entry={item}
-                index={virtualRow.index}
-                accentColor={accentColor}
-              />
+              <MessageBlock entry={item} index={virtualRow.index} accentColor={accentColor} />
             </div>
           );
         })}
@@ -262,7 +264,9 @@ return (
     {showScrollButton && (
       <button
         type="button"
-        onClick={() => rowVirtualizer.scrollToIndex(Math.max(items.length - 1, 0), { align: 'end', behavior: 'smooth' })}
+        onClick={() =>
+          rowVirtualizer.scrollToIndex(Math.max(items.length - 1, 0), { align: 'end', behavior: 'smooth' })
+        }
         className="absolute bottom-3 right-3 size-8 flex items-center justify-center rounded-full bg-muted/80 border border-border text-muted-foreground shadow-md backdrop-blur-sm hover:bg-muted hover:text-foreground transition-colors"
       >
         <ChevronDown className="size-4" />
@@ -295,6 +299,7 @@ git commit -m "feat: add virtual transcript component"
 ## Task 3: Integrate `VirtualTranscript` into `SessionView`
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx`
 
 - [ ] **Step 1: Replace transcript-specific imports and refs**
@@ -409,6 +414,7 @@ git commit -m "feat: virtualize session transcript rendering"
 ## Task 4: Memoize Stable Message Rows
 
 **Files:**
+
 - Modify: `app/components/MessageBlock.tsx`
 
 Virtualization reduces mounted rows, but scrolling will remount/re-render rows. Add memoization after virtualization works so stable rows are cheap when they stay within overscan.
@@ -496,6 +502,7 @@ git commit -m "perf: memoize stable message block rendering"
 ## Task 5: Browser Verification
 
 **Files:**
+
 - No source changes unless issues are found.
 
 - [ ] **Step 1: Start the dev server**

@@ -15,6 +15,7 @@
 ### Task 1: Add `ContextUsageMessage` to the orcd protocol
 
 **Files:**
+
 - Modify: `src/shared/orcd-protocol.ts:82-104`
 
 - [ ] **Step 1: Add the `ContextUsageMessage` interface**
@@ -74,6 +75,7 @@ git commit -m "feat: add ContextUsageMessage to orcd protocol"
 ### Task 2: Emit `context_usage` from OrcdSession after result events
 
 **Files:**
+
 - Modify: `src/orcd/session.ts:7-9,124-131`
 
 - [ ] **Step 1: Update imports and `SessionEventCallback` type**
@@ -81,25 +83,40 @@ git commit -m "feat: add ContextUsageMessage to orcd protocol"
 In `src/orcd/session.ts`, change line 7 from:
 
 ```ts
-import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage, SessionExitMessage } from '../shared/orcd-protocol';
+import type {
+  StreamEventMessage,
+  SessionErrorMessage,
+  SessionResultMessage,
+  SessionExitMessage,
+} from '../shared/orcd-protocol';
 ```
 
 To:
 
 ```ts
-import type { StreamEventMessage, SessionErrorMessage, SessionResultMessage, SessionExitMessage, ContextUsageMessage } from '../shared/orcd-protocol';
+import type {
+  StreamEventMessage,
+  SessionErrorMessage,
+  SessionResultMessage,
+  SessionExitMessage,
+  ContextUsageMessage,
+} from '../shared/orcd-protocol';
 ```
 
 And change line 9 from:
 
 ```ts
-export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage) => void;
+export type SessionEventCallback = (
+  msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage,
+) => void;
 ```
 
 To:
 
 ```ts
-export type SessionEventCallback = (msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage) => void;
+export type SessionEventCallback = (
+  msg: StreamEventMessage | SessionResultMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage,
+) => void;
 ```
 
 - [ ] **Step 2: Add `getContextUsage()` call after result broadcast**
@@ -165,6 +182,7 @@ git commit -m "feat: emit context_usage from orcd after each result"
 ### Task 3: Handle `context_usage` in card-sessions — save to DB and publish to bus
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.ts:59-70`
 
 - [ ] **Step 1: Add `context_usage` handler in `registerCardSession()`**
@@ -238,6 +256,7 @@ git commit -m "feat: persist context usage to DB and publish to bus"
 ### Task 4: Remove client-side `result.usage` extraction
 
 **Files:**
+
 - Modify: `app/stores/session-store.ts:81-97`
 
 - [ ] **Step 1: Remove the broken extraction block from `ingestSdkMessage()`**
@@ -245,31 +264,33 @@ git commit -m "feat: persist context usage to DB and publish to bus"
 In `app/stores/session-store.ts`, remove the context extraction block from `ingestSdkMessage()`. Change:
 
 ```ts
-      s.accumulator.handleMessage(sdkMsg);
+s.accumulator.handleMessage(sdkMsg);
 
-      // Extract context info from result messages
-      if (sdkMsg.type === 'result') {
-        const r = sdkMsg as { usage?: {
-          input_tokens: number;
-          output_tokens: number;
-          cache_read_input_tokens?: number;
-          cache_creation_input_tokens?: number;
-          iterations?: { input_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }[];
-        } };
-        if (r.usage) {
-          // Top-level usage is cumulative across all iterations in the turn.
-          // Use the last iteration to get the actual current context window state.
-          const last = r.usage.iterations?.at(-1);
-          const u = last ?? r.usage;
-          s.contextTokens = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
-        }
-      }
+// Extract context info from result messages
+if (sdkMsg.type === 'result') {
+  const r = sdkMsg as {
+    usage?: {
+      input_tokens: number;
+      output_tokens: number;
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+      iterations?: { input_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }[];
+    };
+  };
+  if (r.usage) {
+    // Top-level usage is cumulative across all iterations in the turn.
+    // Use the last iteration to get the actual current context window state.
+    const last = r.usage.iterations?.at(-1);
+    const u = last ?? r.usage;
+    s.contextTokens = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+  }
+}
 ```
 
 To:
 
 ```ts
-      s.accumulator.handleMessage(sdkMsg);
+s.accumulator.handleMessage(sdkMsg);
 ```
 
 Context values now arrive exclusively via `handleAgentStatus` from the server's `card:${cardId}:context` bus topic → `subscriptions.ts` contextHandler → socket `agent:status` event.

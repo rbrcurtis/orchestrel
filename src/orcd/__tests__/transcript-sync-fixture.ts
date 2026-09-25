@@ -38,7 +38,11 @@ export async function createTranscriptSyncFixture(extension: InlineExtension): P
   });
   modelRuntime.registerNativeProvider(faux.provider);
 
-  const createRuntime = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }: {
+  const createRuntime = async ({
+    cwd: runtimeCwd,
+    sessionManager,
+    sessionStartEvent,
+  }: {
     cwd: string;
     sessionManager: SessionManager;
     sessionStartEvent?: Parameters<typeof createAgentSessionFromServices>[0]['sessionStartEvent'];

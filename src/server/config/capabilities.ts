@@ -19,7 +19,12 @@ export function contextWindowFor(nodeName: string, provider: string, modelAlias:
 // regardless of model. Always prefer the node's live advertised window; fall back
 // to the (possibly stale) persisted value, then a hard 200k floor. This makes the
 // window self-heal the moment the node's capabilities are available.
-export function windowForCard(card: { nodeName: string; provider: string; model: string; contextWindow?: number }): number {
+export function windowForCard(card: {
+  nodeName: string;
+  provider: string;
+  model: string;
+  contextWindow?: number;
+}): number {
   const live = contextWindowFor(card.nodeName, card.provider, card.model);
   const persisted = card.contextWindow && card.contextWindow > 0 ? card.contextWindow : 0;
   return (live && live > 0 ? live : 0) || persisted || 200_000;
@@ -50,7 +55,9 @@ function providersFromNode(nodeName: string): Record<string, ProviderConfig> {
   for (const p of caps.providers) {
     providers[p.id] = {
       label: p.label,
-      models: Object.fromEntries(p.models.map((m) => [m.alias, { label: m.label, modelID: m.alias, contextWindow: m.contextWindow }])),
+      models: Object.fromEntries(
+        p.models.map((m) => [m.alias, { label: m.label, modelID: m.alias, contextWindow: m.contextWindow }]),
+      ),
     };
   }
   return providers;

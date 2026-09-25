@@ -53,7 +53,7 @@ function subagentProgressText(partial: unknown): string {
 function resultText(result: Record<string, unknown> | null): string | undefined {
   if (!result || !Array.isArray(result.content)) return undefined;
   const text = result.content
-    .map((block) => isRecord(block) && typeof block.text === 'string' ? block.text : '')
+    .map((block) => (isRecord(block) && typeof block.text === 'string' ? block.text : ''))
     .filter(Boolean)
     .join('\n')
     .trim();
@@ -94,11 +94,12 @@ export function mapSubagentExecEvent(
   const taskId = event.toolCallId;
   if (typeof taskId !== 'string') return null;
   const args = isRecord(event.args) ? event.args : {};
-  const details = event.type === 'tool_execution_update'
-    ? subagentDetails(event.partialResult)
-    : event.type === 'tool_execution_end' && isRecord(event.result)
-      ? subagentDetails(event.result)
-      : null;
+  const details =
+    event.type === 'tool_execution_update'
+      ? subagentDetails(event.partialResult)
+      : event.type === 'tool_execution_end' && isRecord(event.result)
+        ? subagentDetails(event.result)
+        : null;
   if (args.run_in_background === true || details?.status === 'background' || details?.status === 'queued') return null;
 
   if (event.type === 'tool_execution_start') {
@@ -148,13 +149,15 @@ export function mapPiEventToOrcdPayload(event: unknown): unknown {
     if (!isRecord(update)) return event;
 
     const index = typeof update.contentIndex === 'number' ? update.contentIndex : 0;
-    if (update.type === 'text_start') return { type: 'content_block_start', index, content_block: { type: 'text', text: '' } };
+    if (update.type === 'text_start')
+      return { type: 'content_block_start', index, content_block: { type: 'text', text: '' } };
     if (update.type === 'text_delta' && typeof update.delta === 'string') {
       return { type: 'content_block_delta', index, delta: { type: 'text_delta', text: update.delta } };
     }
     if (update.type === 'text_end') return { type: 'content_block_stop', index };
 
-    if (update.type === 'thinking_start') return { type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '' } };
+    if (update.type === 'thinking_start')
+      return { type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '' } };
     if (update.type === 'thinking_delta' && typeof update.delta === 'string') {
       return { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: update.delta } };
     }

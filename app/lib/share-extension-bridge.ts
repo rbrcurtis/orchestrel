@@ -14,7 +14,11 @@ export type SharedNativeManifest = {
 };
 
 export type ShareBridgeTransport = {
-  readChunk(fileId: string, offset: number, length: number): Promise<{
+  readChunk(
+    fileId: string,
+    offset: number,
+    length: number,
+  ): Promise<{
     offset: number;
     bytes: Uint8Array;
     done: boolean;
@@ -61,7 +65,9 @@ function decodeBase64(value: string): Uint8Array {
   return bytes;
 }
 
-export function connectShareExtension(onManifest: (manifest: SharedNativeManifest) => void): ShareBridgeTransport | null {
+export function connectShareExtension(
+  onManifest: (manifest: SharedNativeManifest) => void,
+): ShareBridgeTransport | null {
   const handler = window.webkit?.messageHandlers?.orchestrelShare;
   if (!handler) return null;
 

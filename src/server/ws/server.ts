@@ -76,7 +76,12 @@ export function wsServerPlugin(): Plugin {
                 next: import('express').NextFunction,
               ) => {
                 if (err && typeof err === 'object' && 'status' in err) {
-                  const e = err as { status: number; code?: string; message?: string; fields?: Record<string, unknown> };
+                  const e = err as {
+                    status: number;
+                    code?: string;
+                    message?: string;
+                    fields?: Record<string, unknown>;
+                  };
                   console.warn(`[rest:error] status=${e.status} msg=${e.message ?? 'Validation error'}`);
                   res.status(e.status).json({
                     error: {
@@ -125,8 +130,14 @@ export function wsServerPlugin(): Plugin {
 
             const { OrcdClient } = await import('../orcd-client');
             const { loadNodeRegistry } = await import('../config/nodes');
-            const { initOrcdRouter, reconcileRunningCards, rearmScheduledSessions, registerAutoStart, registerWorktreeCleanup, registerProcessReaper } =
-              await import('../controllers/card-sessions');
+            const {
+              initOrcdRouter,
+              reconcileRunningCards,
+              rearmScheduledSessions,
+              registerAutoStart,
+              registerWorktreeCleanup,
+              registerProcessReaper,
+            } = await import('../controllers/card-sessions');
 
             const nodes = loadNodeRegistry();
 
@@ -150,7 +161,10 @@ export function wsServerPlugin(): Plugin {
                 try {
                   await client.connect();
                 } catch (err) {
-                  console.error(`[orcd] node ${node.name} initial connect failed (will retry):`, (err as Error).message);
+                  console.error(
+                    `[orcd] node ${node.name} initial connect failed (will retry):`,
+                    (err as Error).message,
+                  );
                 }
               }
               initOrcdRouter(client);
@@ -163,8 +177,12 @@ export function wsServerPlugin(): Plugin {
               const nodeClient = client;
               nodeClient.onReconnect(() => {
                 console.log(`[orcd] node ${node.name} reconnected, reconciling...`);
-                reconcileRunningCards(nodeClient).catch((e) => console.error(`[orcd] reconnect reconcile ${node.name}:`, e));
-                rearmScheduledSessions(nodeClient).catch((e) => console.error(`[orcd] reconnect re-arm ${node.name}:`, e));
+                reconcileRunningCards(nodeClient).catch((e) =>
+                  console.error(`[orcd] reconnect reconcile ${node.name}:`, e),
+                );
+                rearmScheduledSessions(nodeClient).catch((e) =>
+                  console.error(`[orcd] reconnect re-arm ${node.name}:`, e),
+                );
               });
             }
 

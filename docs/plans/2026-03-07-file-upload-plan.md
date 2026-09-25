@@ -13,6 +13,7 @@
 ### Task 1: Install multer dependency
 
 **Files:**
+
 - Modify: `package.json`
 
 **Step 1: Install multer and types**
@@ -41,6 +42,7 @@ git commit -m "chore: add multer for file upload support"
 ### Task 2: Create upload Express route
 
 **Files:**
+
 - Create: `src/server/upload.ts`
 - Modify: `server/app.ts:11-22` (add upload route before React Router catch-all)
 
@@ -102,12 +104,12 @@ uploadRouter.post('/api/upload', upload.array('files', MAX_FILES), (req, res) =>
 Modify `server/app.ts` to add the upload route before the React Router catch-all:
 
 ```typescript
-import "react-router";
-import { createRequestHandler } from "@react-router/express";
-import express from "express";
-import { uploadRouter } from "../src/server/upload";
+import 'react-router';
+import { createRequestHandler } from '@react-router/express';
+import express from 'express';
+import { uploadRouter } from '../src/server/upload';
 
-declare module "react-router" {
+declare module 'react-router' {
   interface AppLoadContext {
     VALUE_FROM_EXPRESS: string;
   }
@@ -120,10 +122,10 @@ app.use(uploadRouter);
 
 app.use(
   createRequestHandler({
-    build: () => import("virtual:react-router/server-build"),
+    build: () => import('virtual:react-router/server-build'),
     getLoadContext() {
       return {
-        VALUE_FROM_EXPRESS: "Hello from Express",
+        VALUE_FROM_EXPRESS: 'Hello from Express',
       };
     },
   }),
@@ -160,6 +162,7 @@ git commit -m "feat: add file upload Express endpoint"
 ### Task 3: Extend tRPC sendMessage to accept file refs
 
 **Files:**
+
 - Modify: `src/server/routers/claude.ts:103-162`
 - Modify: `src/server/claude/protocol.ts:156-172`
 
@@ -178,12 +181,13 @@ const fileRefSchema = z.object({
 });
 
 // In sendMessage procedure, change input to:
-sendMessage: publicProcedure
-  .input(z.object({
+sendMessage: publicProcedure.input(
+  z.object({
     cardId: z.number(),
     message: z.string().min(1),
     files: z.array(fileRefSchema).optional(),
-  }))
+  }),
+);
 ```
 
 **Step 2: Build prompt with file paths**
@@ -193,9 +197,7 @@ In the `sendMessage` mutation handler, before calling `session.sendUserMessage()
 ```typescript
 let prompt = input.message;
 if (input.files?.length) {
-  const fileList = input.files
-    .map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`)
-    .join('\n');
+  const fileList = input.files.map((f) => `- ${f.path} (${f.name}, ${f.mimeType})`).join('\n');
   prompt = `I've attached the following files for you to review. Use the Read tool to read them:\n${fileList}\n\n${prompt}`;
 }
 await session.sendUserMessage(prompt);
@@ -217,6 +219,7 @@ git commit -m "feat: extend sendMessage to accept file references"
 ### Task 4: Add file state and upload logic to PromptInput
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx:398-480`
 
 **Step 1: Update PromptInput props and state**
@@ -364,6 +367,7 @@ git commit -m "feat: add file upload state and logic to PromptInput"
 ### Task 5: Build the file upload UI
 
 **Files:**
+
 - Modify: `app/components/SessionView.tsx:449-480` (the JSX return of PromptInput)
 
 **Step 1: Add drag state**
@@ -381,7 +385,10 @@ return (
   <form
     onSubmit={handleSubmit}
     className="px-3 py-2 border-t border-border bg-muted shrink-0"
-    onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+    onDragOver={(e) => {
+      e.preventDefault();
+      setDragging(true);
+    }}
     onDragLeave={() => setDragging(false)}
     onDrop={handleDrop}
   >
@@ -394,11 +401,7 @@ return (
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated text-xs text-muted-foreground border border-border"
           >
             <span className="max-w-[120px] truncate">{f.name}</span>
-            <button
-              type="button"
-              onClick={() => removeFile(i)}
-              className="text-muted-foreground hover:text-foreground"
-            >
+            <button type="button" onClick={() => removeFile(i)} className="text-muted-foreground hover:text-foreground">
               ×
             </button>
           </span>
@@ -444,11 +447,7 @@ return (
           compacted={compacted}
           onCompact={hasSession ? () => onSend('/compact') : undefined}
         />
-        <Button
-          type="submit"
-          disabled={disabled}
-          className="size-[50px] sm:size-[34px] p-0"
-        >
+        <Button type="submit" disabled={disabled} className="size-[50px] sm:size-[34px] p-0">
           <Send className="size-5 sm:size-4" />
         </Button>
       </div>
@@ -474,6 +473,7 @@ const disabled = isPending || sendPending || (!text.trim() && files.length === 0
 **Step 5: Visually verify**
 
 Open the UI, confirm:
+
 - Paperclip icon visible bottom-right of textarea
 - Clicking opens file picker
 - Drag-and-drop shows ring highlight
@@ -493,6 +493,7 @@ git commit -m "feat: file upload UI with paperclip, drag-drop, and paste"
 ### Task 6: Show file attachments in chat history (UserBlock)
 
 **Files:**
+
 - Modify: `app/components/MessageBlock.tsx:317-353`
 
 **Step 1: Detect file attachment messages**
@@ -561,6 +562,7 @@ function UserBlock({ message, accentColor }: { message: Record<string, unknown>;
 **Step 2: Verify in UI**
 
 Send a message with files attached. The UserBlock should show:
+
 - File chips at the top of the message bubble
 - The actual message text below (without the file prefix boilerplate)
 

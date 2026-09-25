@@ -2,7 +2,12 @@ import { reduceTranscriptState } from '../shared/transcript-reducer';
 import { TranscriptSpool } from './transcript-spool';
 import { collectDisplayPrompts, originalPromptText } from '../lib/display-prompt';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
-import { buildContextEntries, sessionEntryToContextMessages, type AgentSessionEvent, type SessionEntry } from '@earendil-works/pi-coding-agent';
+import {
+  buildContextEntries,
+  sessionEntryToContextMessages,
+  type AgentSessionEvent,
+  type SessionEntry,
+} from '@earendil-works/pi-coding-agent';
 import type {
   ReplayDecision,
   TranscriptAssistantUpdate,
@@ -65,7 +70,8 @@ export class TranscriptSync {
     private readonly replayCapacity: number,
     private readonly replayByteCapacity = 1_000_000,
   ) {
-    if (!Number.isSafeInteger(replayCapacity) || replayCapacity < 1) throw new Error('Transcript replay capacity must be a positive integer');
+    if (!Number.isSafeInteger(replayCapacity) || replayCapacity < 1)
+      throw new Error('Transcript replay capacity must be a positive integer');
     if (!Number.isSafeInteger(replayByteCapacity) || replayByteCapacity < 1) {
       throw new Error('Transcript replay byte capacity must be a positive integer');
     }
@@ -80,7 +86,11 @@ export class TranscriptSync {
   settle(entries: SessionEntry[]): TranscriptEnvelope<TranscriptEvent> {
     // Projection and sequencing share this synchronous call stack, so no newer SDK
     // event can claim a sequence between the authoritative source view and boundary.
-    const event = this.sequenceEvent({ type: 'baseline_replaced', entries: projectEntries(entries), coveredThrough: this.sequence });
+    const event = this.sequenceEvent({
+      type: 'baseline_replaced',
+      entries: projectEntries(entries),
+      coveredThrough: this.sequence,
+    });
     this.spool?.dispose();
     this.spool = undefined;
     return event;
@@ -208,16 +218,17 @@ export function projectEntries(entries: SessionEntry[]): TranscriptEntryProjecti
 function userMessageText(content: unknown): string | undefined {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return undefined;
-  const text = content
-    .map((block) => isTextBlock(block) ? block.text : '')
-    .join('');
+  const text = content.map((block) => (isTextBlock(block) ? block.text : '')).join('');
   return text || undefined;
 }
 
 function isTextBlock(block: unknown): block is { type: 'text'; text: string } {
-  return typeof block === 'object' && block !== null
-    && (block as { type?: unknown }).type === 'text'
-    && typeof (block as { text?: unknown }).text === 'string';
+  return (
+    typeof block === 'object' &&
+    block !== null &&
+    (block as { type?: unknown }).type === 'text' &&
+    typeof (block as { text?: unknown }).text === 'string'
+  );
 }
 
 export function displayedMessages(state: TranscriptState): AgentMessage[] {

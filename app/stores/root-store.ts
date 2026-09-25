@@ -35,10 +35,7 @@ export class RootStore {
   readonly ws: WsClient;
   private boardSyncVersion = 0;
   private syncingBoard = false;
-  private pendingCardEvents: Array<
-    | { type: 'updated'; card: Card }
-    | { type: 'deleted'; id: number }
-  > = [];
+  private pendingCardEvents: Array<{ type: 'updated'; card: Card } | { type: 'deleted'; id: number }> = [];
 
   constructor() {
     this.cards = new CardStore();
@@ -122,7 +119,8 @@ export class RootStore {
   private handleCardUpdated(data: Card): void {
     if (!cardHasVisibleProject(this, data.projectId)) return;
 
-    const prev = this.cards.getCard(data.id);    if (
+    const prev = this.cards.getCard(data.id);
+    if (
       data.column === 'review' &&
       prev &&
       prev.column !== 'review' &&

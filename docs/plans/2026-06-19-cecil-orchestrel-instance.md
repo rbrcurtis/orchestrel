@@ -11,6 +11,7 @@
 **Reference spec:** `docs/specs/2026-06-19-cecil-orchestrel-instance-design.md`
 
 **Conventions for this plan:**
+
 - Commands prefixed `sudo` run as root. Commands run as cecil use `sudo -u cecil bash -lc '...'` so cecil's login shell (nvm/PATH) is loaded.
 - `CECIL_NODE_BIN` = the directory of cecil's pnpm after Node install, i.e. `/home/cecil/.nvm/versions/node/v24.14.1/bin`. Use that literal path in service files.
 
@@ -19,6 +20,7 @@
 ## File / Resource Map
 
 **Created on disk:**
+
 - `/home/cecil/` — new user home
 - `/home/cecil/Code/orchestrel/` — Cecil's clone
 - `/home/cecil/Code/orchestrel/config.yaml` — Ray-only provider config
@@ -32,6 +34,7 @@
 - `/etc/sudoers.d/orchestrel-cecil`
 
 **Modified:**
+
 - `/etc/cloudflared/config.yml` — add `cecil.orchestrel.com` ingress
 - Cloudflare DNS (orchestrel.com zone) — add proxied CNAME
 - Cloudflare Zero Trust — Access app for `cecil.orchestrel.com`
@@ -257,9 +260,9 @@ Expected: `active` and an HTTP status (200/302/401 — any response proves it's 
 Edit `/etc/cloudflared/config.yml`. Immediately before the final `- service: http_status:404` line, insert:
 
 ```yaml
-  # Cecil's Orchestrel
-  - hostname: cecil.orchestrel.com
-    service: http://localhost:6196
+# Cecil's Orchestrel
+- hostname: cecil.orchestrel.com
+  service: http://localhost:6196
 ```
 
 - [ ] **Step 2: Validate config and restart cloudflared**
@@ -329,6 +332,7 @@ In the Cloudflare Zero Trust dashboard → Access → Applications, check for an
 - [ ] **Step 2: Create a self-hosted Access application**
 
 Create a self-hosted application:
+
 - Application domain: `cecil.orchestrel.com`
 - Session duration: match the `orchestrel.com` app (e.g. 24h)
 - Policy: Allow, with an **Emails** rule listing `cecilgcurtis@gmail.com` and `wednesday@gmail.com`
@@ -352,9 +356,11 @@ Expected: Cloudflare Access prompts for email + one-time PIN. Entering `cecilgcu
 - [ ] **Step 1: Check for references to the old minecraft Code paths**
 
 Run:
+
 ```bash
 grep -rIl --exclude-dir=.git -e 'Code/mods' -e 'Code/pvp-bot' /opt/cecil-minecraft 2>/dev/null || echo "no references found"
 ```
+
 If references are found, note them — Step 3 will leave compatibility symlinks.
 
 - [ ] **Step 2: Move the directories**
@@ -372,6 +378,7 @@ sudo chown -R cecil:cecil /home/cecil/Code/cecil /home/cecil/Code/mods /home/cec
 sudo -u cecil ln -s /home/cecil/Code/mods /opt/cecil-minecraft/Code/mods    # adjust owner/perms as needed
 sudo ln -s /home/cecil/Code/pvp-bot /opt/cecil-minecraft/Code/pvp-bot
 ```
+
 (Skip if Step 1 printed "no references found".)
 
 - [ ] **Step 4: Verify moves**

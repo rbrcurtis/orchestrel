@@ -1,8 +1,24 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
 import { randomUUID } from 'node:crypto';
 import { TranscriptSync } from './transcript-sync';
-import { DEFAULT_COMPACTION_SETTINGS, DefaultResourceLoader, ModelRegistry, ModelRuntime, SessionManager, createAgentSession, createEventBus, findCutPoint, generateSummary, getAgentDir } from '@earendil-works/pi-coding-agent';
-import type { AgentSession, AgentSessionEvent, CompactionResult, ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
+import {
+  DEFAULT_COMPACTION_SETTINGS,
+  DefaultResourceLoader,
+  ModelRegistry,
+  ModelRuntime,
+  SessionManager,
+  createAgentSession,
+  createEventBus,
+  findCutPoint,
+  generateSummary,
+  getAgentDir,
+} from '@earendil-works/pi-coding-agent';
+import type {
+  AgentSession,
+  AgentSessionEvent,
+  CompactionResult,
+  ProviderConfig as ProviderConfigInput,
+} from '@earendil-works/pi-coding-agent';
 import type { AnthropicMessagesCompat, Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
 import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
@@ -50,7 +66,12 @@ export interface PiRuntimeSession {
   dispose(): Promise<void>;
   compact(instructions?: string): Promise<unknown>;
   /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
-  prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal, onStart?: () => void): Promise<CompactionResult | null>;
+  prepareBgCompaction(
+    keepFraction: number,
+    currentTokens: number,
+    signal: AbortSignal,
+    onStart?: () => void,
+  ): Promise<CompactionResult | null>;
   /** Splice a prepared compaction into the session tree and rebuild context. Call only when idle. */
   applyBgCompaction(result: CompactionResult): void;
   /** True when the newest entry on the branch is already a compaction. */
@@ -129,9 +150,7 @@ function modelForThinkingMode(model: Model<Api>, adaptive: boolean): Model<Api> 
   return {
     ...model,
     compat,
-    ...(adaptive
-      ? { thinkingLevelMap: { ...model.thinkingLevelMap, xhigh: 'xhigh' as const } }
-      : {}),
+    ...(adaptive ? { thinkingLevelMap: { ...model.thinkingLevelMap, xhigh: 'xhigh' as const } } : {}),
   };
 }
 
@@ -146,7 +165,11 @@ function usesBuiltInProvider(provider: NonNullable<CreatePiRuntimeSessionOpts['p
   return provider.type === 'anthropic' && !provider.baseUrl && !provider.apiKey && !provider.authToken;
 }
 
-async function setRuntimeApiKey(modelRuntime: ModelRuntime, providerId: string, apiKey: string | undefined): Promise<void> {
+async function setRuntimeApiKey(
+  modelRuntime: ModelRuntime,
+  providerId: string,
+  apiKey: string | undefined,
+): Promise<void> {
   if (!apiKey) return;
   await modelRuntime.setRuntimeApiKey(providerId, apiKey);
 }
@@ -230,19 +253,26 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
   // Legacy managed files were process-global configuration. Remove them before
   // discovery; the policy extension below is isolated to this session's loader.
   cleanupManagedSubagentFiles(opts.cwd);
-  const policy = buildSubagentPolicy(providerId, modelId, opts.provider ?? {
-    models: { [opts.modelId]: { label: opts.modelId, modelID: modelId, contextWindow: 200_000 } },
-  });
+  const policy = buildSubagentPolicy(
+    providerId,
+    modelId,
+    opts.provider ?? {
+      models: { [opts.modelId]: { label: opts.modelId, modelID: modelId, contextWindow: 200_000 } },
+    },
+  );
   const eventBus = createEventBus();
   const resourceLoader = new DefaultResourceLoader({
     cwd: opts.cwd,
     agentDir,
     eventBus,
-    extensionFactories: [createOrchestrelSubagentPolicyExtension(policy, {
-      onDecision: ({ agentType, decision }) => {
-        if ('model' in decision) console.log(`[orcd] subagent ${agentType} -> ${decision.model} (${decision.source})`);
-      },
-    })],
+    extensionFactories: [
+      createOrchestrelSubagentPolicyExtension(policy, {
+        onDecision: ({ agentType, decision }) => {
+          if ('model' in decision)
+            console.log(`[orcd] subagent ${agentType} -> ${decision.model} (${decision.source})`);
+        },
+      }),
+    ],
   });
   await resourceLoader.reload();
 
@@ -294,7 +324,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
 
   return {
     id: session.sessionId,
-    getTranscriptSnapshot() { return transcript.snapshot(); },
+    getTranscriptSnapshot() {
+      return transcript.snapshot();
+    },
 
     async prompt(text, promptOpts) {
       // expandInlineCommands keeps `text` verbatim and appends the expansion
@@ -304,14 +336,21 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       await session.prompt(expanded, { ...promptOpts, expandPromptTemplates: false });
     },
 
-    isStreaming() { return session.isStreaming; },
+    isStreaming() {
+      return session.isStreaming;
+    },
 
-    async waitForIdle() { await session.waitForIdle(); },
+    async waitForIdle() {
+      await session.waitForIdle();
+    },
 
     subscribe(cb) {
       transcriptListeners.add(cb);
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => cb(event));
-      return () => { transcriptListeners.delete(cb); unsubscribe(); };
+      return () => {
+        transcriptListeners.delete(cb);
+        unsubscribe();
+      };
     },
 
     async abort() {
@@ -336,7 +375,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
 
     async prepareBgCompaction(keepFraction, currentTokens, signal, onStart) {
       const sm = session.sessionManager as unknown as {
-        getBranch(): Array<{ type: string; id: string; message?: unknown; summary?: string; firstKeptEntryId?: string }>;
+        getBranch(): Array<{
+          type: string;
+          id: string;
+          message?: unknown;
+          summary?: string;
+          firstKeptEntryId?: string;
+        }>;
       };
       const entries = sm.getBranch();
       // The live context starts at the previous compaction's kept boundary. Everything before
@@ -352,9 +397,8 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         boundaryStart = keptIdx >= 0 ? keptIdx : i + 1;
         break;
       }
-      const keepRecentTokens = currentTokens > 0
-        ? Math.floor(currentTokens * keepFraction)
-        : DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
+      const keepRecentTokens =
+        currentTokens > 0 ? Math.floor(currentTokens * keepFraction) : DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
       const cut = findCutPoint(entries as never, boundaryStart, entries.length, keepRecentTokens);
       const firstKeptIdx = cut.firstKeptEntryIndex;
       if (firstKeptIdx <= boundaryStart) return null;
@@ -388,7 +432,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
 
     applyBgCompaction(result) {
       const sm = session.sessionManager as unknown as {
-        appendCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number, details: unknown, fromHook: boolean): string;
+        appendCompaction(
+          summary: string,
+          firstKeptEntryId: string,
+          tokensBefore: number,
+          details: unknown,
+          fromHook: boolean,
+        ): string;
       };
       sm.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true);
       // Pi 0.87 made SessionManager canonical for provider context: assigning
@@ -426,7 +476,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       // here — such a switch must start a fresh session instead.
       const live = cfg.type === 'anthropic' && !cfg.oauth && !!(cfg.baseUrl || cfg.apiKey || cfg.authToken);
       if (!live) {
-        throw new Error(`setModel: provider ${provider} does not support live switching (needs an anthropic-compatible baseUrl/apiKey and no oauth)`);
+        throw new Error(
+          `setModel: provider ${provider} does not support live switching (needs an anthropic-compatible baseUrl/apiKey and no oauth)`,
+        );
       }
       await ensureProvider(provider, cfg);
       const targetModelId = cfg.models[model]?.modelID ?? model;
@@ -464,7 +516,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         let cur = leafId ? sm.getEntry(leafId) : undefined;
         // Bounded walk up the parent chain from the current leaf to the root.
         for (let i = 0; cur && i <= entries.length; i++) {
-          if (cur.id === prevLeafId) { prevIsAncestor = true; break; }
+          if (cur.id === prevLeafId) {
+            prevIsAncestor = true;
+            break;
+          }
           cur = cur.parentId ? sm.getEntry(cur.parentId) : undefined;
         }
       }

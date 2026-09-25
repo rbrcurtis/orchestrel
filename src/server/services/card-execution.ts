@@ -56,7 +56,8 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
   // for wake time ("... then check the deploy"), and the waker sends it then.
   // The card waits in ready until the waker releases it.
   if (action === 'sleep') {
-    const { resolveSleepUntil, splitSleepArgument, sleepFallbackPrompt, SleepResolutionError } = await import('./sleep');
+    const { resolveSleepUntil, splitSleepArgument, sleepFallbackPrompt, SleepResolutionError } =
+      await import('./sleep');
     const { phrase, prompt } = splitSleepArgument(sleepPhrase ?? '', text);
     try {
       const until = await resolveSleepUntil(phrase);

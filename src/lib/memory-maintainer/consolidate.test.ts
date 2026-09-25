@@ -8,14 +8,24 @@ const SERVER: MemoryServer = { apiUrl: 'http://mem.test', apiKey: 'k', project: 
 
 const MODEL = { provider: 'max', id: 'qwen3.8-27b-oq8' } as unknown as Model<Api>;
 
-function assistant(content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown }>, stop: string): AssistantMessage {
+function assistant(
+  content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown }>,
+  stop: string,
+): AssistantMessage {
   return {
     role: 'assistant',
-    content: content.map((c) => ({ ...c, type: c.type } as AssistantMessage['content'][number])),
+    content: content.map((c) => ({ ...c, type: c.type }) as AssistantMessage['content'][number]),
     api: 'anthropic-messages',
     provider: 'max',
     model: 'qwen3.8-27b-oq8',
-    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
     stopReason: stop === 'stop' ? 'stop' : 'toolUse',
     timestamp: 1,
   };
@@ -37,19 +47,27 @@ describe('consolidate', () => {
       vi.fn().mockImplementation((url: string) => ({
         ok: true,
         status: 200,
-        json: () => Promise.resolve(String(url).includes('/load') ? { data: [{ id: '9', title: 'Old', text: 'old text', score: 0 }] } : { data: [] }),
+        json: () =>
+          Promise.resolve(
+            String(url).includes('/load')
+              ? { data: [{ id: '9', title: 'Old', text: 'old text', score: 0 }] }
+              : { data: [] },
+          ),
         text: () => Promise.resolve(''),
       })),
     );
     const complete = vi
       .fn()
       .mockResolvedValueOnce(
-        assistant([
-          toolCall('search_memory', { query: 'retry' }),
-          toolCall('read_memory', { id: '9' }),
-          toolCall('store_memory', { title: 'Retry policy', text: 'Use backoff.', tags: ['infra'] }),
-          toolCall('update_memory', { id: '9', text: 'new' }),
-        ], 'toolUse'),
+        assistant(
+          [
+            toolCall('search_memory', { query: 'retry' }),
+            toolCall('read_memory', { id: '9' }),
+            toolCall('store_memory', { title: 'Retry policy', text: 'Use backoff.', tags: ['infra'] }),
+            toolCall('update_memory', { id: '9', text: 'new' }),
+          ],
+          'toolUse',
+        ),
       )
       .mockResolvedValueOnce(assistant([{ type: 'text', text: 'done' }], 'stop'));
     const runtime = { completeSimple: complete } as unknown as ModelRuntime;
@@ -74,7 +92,17 @@ describe('consolidate', () => {
 
   it('executes search and stops when the model makes no tool calls', async () => {
     const complete = vi.fn().mockResolvedValueOnce(assistant([{ type: 'text', text: 'no ops needed' }], 'stop'));
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ data: [] }), text: () => Promise.resolve('') }));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ data: [] }),
+          text: () => Promise.resolve(''),
+        }),
+    );
     const ops = await consolidate({
       excerpt: { sessionId: 's1', cwd: '/x', startedAt: '', text: 't', tokenEstimate: 1 },
       server: SERVER,

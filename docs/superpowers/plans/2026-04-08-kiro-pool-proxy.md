@@ -19,12 +19,14 @@ Kiro accounts use the AWS Q Developer API (formerly CodeWhisperer) at `https://c
 ### Where is the prior art?
 
 The format conversion logic is well-documented in two open-source projects:
+
 - **kiro-gateway** (Python, AGPL-3.0, github.com/jwadow/kiro-gateway) — comprehensive Anthropic→CodeWhisperer converter with streaming, tool use, images. Reference files: `converters_core.py`, `converters_anthropic.py`, `parsers.py`, `streaming_anthropic.py`, `streaming_core.py`. A clone is at `/tmp/kiro-gateway/` for reference.
 - **Zhang CCR fork** (`@jasonzhangf/claude-code-router-enhanced`, npm) — simpler JS implementation with `K2ccTransformer.buildCodeWhispererRequest()` and `parseSSEEvents()`. Extracted at `/tmp/ccr-inspect/package/dist/cli.js` lines 57020-57593.
 
 ### What already exists in kiro-ccr-auth?
 
 The project at `~/Code/kiro-ccr-auth/` already has:
+
 - **CLI:** `src/cli.ts` — login, status, logout, refresh commands via `arg` library
 - **Account selection:** `src/lib/accounts.ts` — `selectAccount(pool)` returns best account, handles token refresh, health tracking
 - **DB:** `src/lib/db.ts` — SQLite at `~/.config/kiro-auth/accounts.db`, `Account` interface, CRUD operations, health/usage tracking
@@ -46,39 +48,40 @@ All paths relative to `~/Code/kiro-ccr-auth/` (will be renamed to `~/Code/kiro-p
 
 ### New files
 
-| File | Responsibility |
-|---|---|
-| `src/server.ts` | HTTP server on configurable port. Single `POST /v1/messages` route. Parses pool from model prefix, delegates to handler. |
-| `src/proxy/handler.ts` | Request handler: selects account, calls converter, sends to CodeWhisperer, streams response back. Orchestrates the full request lifecycle. |
-| `src/proxy/convert-request.ts` | Anthropic Messages request → CodeWhisperer `generateAssistantResponse` payload. Pure function, no I/O. |
-| `src/proxy/convert-response.ts` | AWS binary event stream → Anthropic SSE events. Parses binary frames, extracts JSON events, emits formatted SSE strings. |
-| `src/proxy/types.ts` | TypeScript interfaces for Anthropic request/response types and CodeWhisperer types. |
-| `src/proxy/model-map.ts` | Maps Anthropic model names (e.g., `claude-sonnet-4-6`) to CodeWhisperer model IDs (e.g., `claude-sonnet-4.6`). |
-| `tests/convert-request.test.ts` | Unit tests for request conversion. |
-| `tests/convert-response.test.ts` | Unit tests for response stream parsing. |
-| `tests/model-map.test.ts` | Unit tests for model name normalization. |
+| File                             | Responsibility                                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/server.ts`                  | HTTP server on configurable port. Single `POST /v1/messages` route. Parses pool from model prefix, delegates to handler.                   |
+| `src/proxy/handler.ts`           | Request handler: selects account, calls converter, sends to CodeWhisperer, streams response back. Orchestrates the full request lifecycle. |
+| `src/proxy/convert-request.ts`   | Anthropic Messages request → CodeWhisperer `generateAssistantResponse` payload. Pure function, no I/O.                                     |
+| `src/proxy/convert-response.ts`  | AWS binary event stream → Anthropic SSE events. Parses binary frames, extracts JSON events, emits formatted SSE strings.                   |
+| `src/proxy/types.ts`             | TypeScript interfaces for Anthropic request/response types and CodeWhisperer types.                                                        |
+| `src/proxy/model-map.ts`         | Maps Anthropic model names (e.g., `claude-sonnet-4-6`) to CodeWhisperer model IDs (e.g., `claude-sonnet-4.6`).                             |
+| `tests/convert-request.test.ts`  | Unit tests for request conversion.                                                                                                         |
+| `tests/convert-response.test.ts` | Unit tests for response stream parsing.                                                                                                    |
+| `tests/model-map.test.ts`        | Unit tests for model name normalization.                                                                                                   |
 
 ### Modified files
 
-| File | Change |
-|---|---|
-| `package.json` | Rename to `kiro-pool-proxy`, add `"serve"` script, add `vitest` dev dependency |
-| `src/cli.ts` | Add `serve` command that starts the HTTP server |
-| `src/lib/config.ts` | Add `port` field to Config (default 3457) |
-| `config.json` | Add `"port": 3457` |
+| File                | Change                                                                         |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `package.json`      | Rename to `kiro-pool-proxy`, add `"serve"` script, add `vitest` dev dependency |
+| `src/cli.ts`        | Add `serve` command that starts the HTTP server                                |
+| `src/lib/config.ts` | Add `port` field to Config (default 3457)                                      |
+| `config.json`       | Add `"port": 3457`                                                             |
 
 ### Deleted files
 
-| File | Reason |
-|---|---|
-| `src/transformer.ts` | Dead code — CCR transformer approach doesn't work |
-| `src/custom-router.ts` | Dead code — CCR custom router not needed |
+| File                   | Reason                                            |
+| ---------------------- | ------------------------------------------------- |
+| `src/transformer.ts`   | Dead code — CCR transformer approach doesn't work |
+| `src/custom-router.ts` | Dead code — CCR custom router not needed          |
 
 ---
 
 ## Task 1: Rename project and clean up dead code
 
 **Files:**
+
 - Modify: `~/Code/kiro-ccr-auth/package.json`
 - Delete: `~/Code/kiro-ccr-auth/src/transformer.ts`
 - Delete: `~/Code/kiro-ccr-auth/src/custom-router.ts`
@@ -160,6 +163,7 @@ cd ~/Code/kiro-pool-proxy && git add -A && git commit -m "refactor: rename to ki
 ## Task 2: TypeScript types for Anthropic and CodeWhisperer formats
 
 **Files:**
+
 - Create: `~/Code/kiro-pool-proxy/src/proxy/types.ts`
 
 - [ ] **Step 1: Create the types file**
@@ -271,6 +275,7 @@ cd ~/Code/kiro-pool-proxy && git add src/proxy/types.ts && git commit -m "feat: 
 ## Task 3: Model name mapping
 
 **Files:**
+
 - Create: `~/Code/kiro-pool-proxy/src/proxy/model-map.ts`
 - Create: `~/Code/kiro-pool-proxy/tests/model-map.test.ts`
 
@@ -369,6 +374,7 @@ cd ~/Code/kiro-pool-proxy && git add src/proxy/model-map.ts tests/model-map.test
 This is the core format converter. It transforms an Anthropic Messages API request body into a CodeWhisperer `generateAssistantResponse` request body. Pure function, no I/O.
 
 **Files:**
+
 - Create: `~/Code/kiro-pool-proxy/src/proxy/convert-request.ts`
 - Create: `~/Code/kiro-pool-proxy/tests/convert-request.test.ts`
 
@@ -401,9 +407,7 @@ describe('convertRequest', () => {
       model: 'claude-sonnet-4.6',
       max_tokens: 8192,
       system: 'You are helpful.',
-      messages: [
-        { role: 'user', content: 'Hello' },
-      ],
+      messages: [{ role: 'user', content: 'Hello' }],
     };
     const cw = convertRequest(req, profileArn);
     expect(cw.conversationState.currentMessage.userInputMessage.content).toContain('You are helpful.');
@@ -443,11 +447,13 @@ describe('convertRequest', () => {
       model: 'claude-sonnet-4.6',
       max_tokens: 8192,
       messages: [{ role: 'user', content: 'Read file' }],
-      tools: [{
-        name: 'Read',
-        description: 'Read a file',
-        input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
-      }],
+      tools: [
+        {
+          name: 'Read',
+          description: 'Read a file',
+          input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+        },
+      ],
     };
     const cw = convertRequest(req, profileArn);
     const ctx = cw.conversationState.currentMessage.userInputMessage.userInputMessageContext;
@@ -482,7 +488,15 @@ describe('convertRequest', () => {
     const req: AnthropicRequest = {
       model: 'claude-sonnet-4.6',
       max_tokens: 8192,
-      messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }, { type: 'text', text: ' world' }] }],
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Hello' },
+            { type: 'text', text: ' world' },
+          ],
+        },
+      ],
     };
     const cw = convertRequest(req, profileArn);
     expect(cw.conversationState.currentMessage.userInputMessage.content).toBe('Hello world');
@@ -494,10 +508,13 @@ describe('convertRequest', () => {
       max_tokens: 8192,
       messages: [
         { role: 'user', content: 'List files' },
-        { role: 'assistant', content: [
-          { type: 'text', text: 'Listing...' },
-          { type: 'tool_use', id: 'tu_1', name: 'Bash', input: { command: 'ls' } },
-        ]},
+        {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'Listing...' },
+            { type: 'tool_use', id: 'tu_1', name: 'Bash', input: { command: 'ls' } },
+          ],
+        },
         { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'file1.txt' }] },
       ],
       tools: [{ name: 'Bash', description: 'Run command', input_schema: { type: 'object' } }],
@@ -513,14 +530,23 @@ describe('convertRequest', () => {
       model: 'claude-sonnet-4.6',
       max_tokens: 8192,
       messages: [{ role: 'user', content: 'test' }],
-      tools: [{
-        name: 'T',
-        description: 'test',
-        input_schema: { type: 'object', additionalProperties: false, required: [], properties: { x: { type: 'string' } } },
-      }],
+      tools: [
+        {
+          name: 'T',
+          description: 'test',
+          input_schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: [],
+            properties: { x: { type: 'string' } },
+          },
+        },
+      ],
     };
     const cw = convertRequest(req, profileArn);
-    const schema = cw.conversationState.currentMessage.userInputMessage.userInputMessageContext!.tools![0].toolSpecification.inputSchema.json;
+    const schema =
+      cw.conversationState.currentMessage.userInputMessage.userInputMessageContext!.tools![0].toolSpecification
+        .inputSchema.json;
     expect(schema).not.toHaveProperty('additionalProperties');
     expect(schema).not.toHaveProperty('required');
   });
@@ -614,7 +640,10 @@ function extractToolResults(content: string | AnthropicContentBlock[]): CWToolRe
       if (typeof b.content === 'string') {
         text = b.content;
       } else if (Array.isArray(b.content)) {
-        text = b.content.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+        text = b.content
+          .filter((c) => c.type === 'text')
+          .map((c) => c.text ?? '')
+          .join('');
       }
       return {
         content: [{ text: text || '(empty result)' }],
@@ -626,7 +655,9 @@ function extractToolResults(content: string | AnthropicContentBlock[]): CWToolRe
 }
 
 /** Extract tool_use blocks from an assistant message's content into CW toolUses. */
-function extractToolUses(content: string | AnthropicContentBlock[]): { toolUseId: string; name: string; input: unknown }[] | undefined {
+function extractToolUses(
+  content: string | AnthropicContentBlock[],
+): { toolUseId: string; name: string; input: unknown }[] | undefined {
   if (typeof content === 'string') return undefined;
   const uses = content
     .filter((b) => b.type === 'tool_use')
@@ -749,6 +780,7 @@ cd ~/Code/kiro-pool-proxy && git add src/proxy/convert-request.ts tests/convert-
 CodeWhisperer returns `application/vnd.amazon.eventstream` — a binary format where each frame has a 4-byte total length, 4-byte header length, headers, and a JSON payload. The JSON payloads contain `{"content": "..."}` for text, `{"name": "...", "toolUseId": "...", "input": "..."}` for tool starts, `{"input": "..."}` for tool input continuation, `{"stop": true}` for tool end, and `{"contextUsagePercentage": N}` for usage.
 
 **Files:**
+
 - Create: `~/Code/kiro-pool-proxy/src/proxy/convert-response.ts`
 - Create: `~/Code/kiro-pool-proxy/tests/convert-response.test.ts`
 
@@ -756,7 +788,13 @@ CodeWhisperer returns `application/vnd.amazon.eventstream` — a binary format w
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { AwsEventStreamParser, formatSSE, buildMessageStart, buildMessageDelta, buildMessageStop } from '../src/proxy/convert-response.js';
+import {
+  AwsEventStreamParser,
+  formatSSE,
+  buildMessageStart,
+  buildMessageDelta,
+  buildMessageStop,
+} from '../src/proxy/convert-response.js';
 
 describe('AwsEventStreamParser', () => {
   it('parses a content event from JSON string', () => {
@@ -815,8 +853,14 @@ describe('AwsEventStreamParser', () => {
 
 describe('formatSSE', () => {
   it('formats event type and JSON data', () => {
-    const result = formatSSE('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } });
-    expect(result).toBe('event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}\n\n');
+    const result = formatSSE('content_block_delta', {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'text_delta', text: 'hi' },
+    });
+    expect(result).toBe(
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}\n\n',
+    );
   });
 });
 
@@ -918,12 +962,24 @@ function findMatchingBrace(text: string, start: number): number {
   let escape = false;
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
     if (!inString) {
       if (ch === '{') depth++;
-      else if (ch === '}') { depth--; if (depth === 0) return i; }
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) return i;
+      }
     }
   }
   return -1;
@@ -1022,7 +1078,11 @@ export class AwsEventStreamParser {
     if (!this.currentToolCall) return;
     let args = this.currentToolCall.arguments;
     if (args) {
-      try { args = JSON.stringify(JSON.parse(args)); } catch { args = '{}'; }
+      try {
+        args = JSON.stringify(JSON.parse(args));
+      } catch {
+        args = '{}';
+      }
     } else {
       args = '{}';
     }
@@ -1065,6 +1125,7 @@ cd ~/Code/kiro-pool-proxy && git add src/proxy/convert-response.ts tests/convert
 Glue that ties account selection, request conversion, HTTP dispatch to CodeWhisperer, response stream parsing, and SSE output together.
 
 **Files:**
+
 - Create: `~/Code/kiro-pool-proxy/src/proxy/handler.ts`
 
 - [ ] **Step 1: Implement handler.ts**
@@ -1075,7 +1136,13 @@ import { selectAccount, recordSuccess, recordAuthFailure, recordRateLimit } from
 import { getPool, loadConfig } from '../lib/config.js';
 import { convertRequest } from './convert-request.js';
 import { normalizeModelName } from './model-map.js';
-import { AwsEventStreamParser, formatSSE, buildMessageStart, buildMessageDelta, buildMessageStop } from './convert-response.js';
+import {
+  AwsEventStreamParser,
+  formatSSE,
+  buildMessageStart,
+  buildMessageDelta,
+  buildMessageStop,
+} from './convert-response.js';
 import type { AnthropicRequest } from './types.js';
 import { randomUUID } from 'node:crypto';
 
@@ -1123,7 +1190,9 @@ export async function handleMessages(req: IncomingMessage, res: ServerResponse):
     pool = getPool(poolName);
   } catch (err) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: (err as Error).message } }));
+    res.end(
+      JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: (err as Error).message } }),
+    );
     return;
   }
 
@@ -1138,10 +1207,7 @@ export async function handleMessages(req: IncomingMessage, res: ServerResponse):
   }
 
   // Convert request
-  const cwBody = convertRequest(
-    { ...body, model: normalizedModel },
-    account.profile_arn,
-  );
+  const cwBody = convertRequest({ ...body, model: normalizedModel }, account.profile_arn);
 
   const cwUrl = `https://codewhisperer.${account.region}.amazonaws.com/generateAssistantResponse`;
   console.log(`[proxy] ${poolName}/${account.email} → ${normalizedModel} (${cwUrl})`);
@@ -1167,7 +1233,12 @@ export async function handleMessages(req: IncomingMessage, res: ServerResponse):
     if (cwRes.status === 429) recordRateLimit(account.id);
     else if (cwRes.status === 401 || cwRes.status === 403) recordAuthFailure(account.id);
     res.writeHead(cwRes.status, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: `CodeWhisperer ${cwRes.status}: ${errText.slice(0, 500)}` } }));
+    res.end(
+      JSON.stringify({
+        type: 'error',
+        error: { type: 'api_error', message: `CodeWhisperer ${cwRes.status}: ${errText.slice(0, 500)}` },
+      }),
+    );
     return;
   }
 
@@ -1210,11 +1281,23 @@ async function handleStreaming(cwRes: Response, res: ServerResponse, messageId: 
           fullContent += content;
 
           if (!textBlockStarted) {
-            res.write(formatSSE('content_block_start', { type: 'content_block_start', index: blockIndex, content_block: { type: 'text', text: '' } }));
+            res.write(
+              formatSSE('content_block_start', {
+                type: 'content_block_start',
+                index: blockIndex,
+                content_block: { type: 'text', text: '' },
+              }),
+            );
             textBlockStarted = true;
           }
 
-          res.write(formatSSE('content_block_delta', { type: 'content_block_delta', index: blockIndex, delta: { type: 'text_delta', text: content } }));
+          res.write(
+            formatSSE('content_block_delta', {
+              type: 'content_block_delta',
+              index: blockIndex,
+              delta: { type: 'text_delta', text: content },
+            }),
+          );
         }
       }
     }
@@ -1226,8 +1309,20 @@ async function handleStreaming(cwRes: Response, res: ServerResponse, messageId: 
 
     const toolCalls = parser.getToolCalls();
     for (const tc of toolCalls) {
-      res.write(formatSSE('content_block_start', { type: 'content_block_start', index: blockIndex, content_block: { type: 'tool_use', id: tc.id, name: tc.name, input: {} } }));
-      res.write(formatSSE('content_block_delta', { type: 'content_block_delta', index: blockIndex, delta: { type: 'input_json_delta', partial_json: tc.arguments } }));
+      res.write(
+        formatSSE('content_block_start', {
+          type: 'content_block_start',
+          index: blockIndex,
+          content_block: { type: 'tool_use', id: tc.id, name: tc.name, input: {} },
+        }),
+      );
+      res.write(
+        formatSSE('content_block_delta', {
+          type: 'content_block_delta',
+          index: blockIndex,
+          delta: { type: 'input_json_delta', partial_json: tc.arguments },
+        }),
+      );
       res.write(formatSSE('content_block_stop', { type: 'content_block_stop', index: blockIndex }));
       blockIndex++;
     }
@@ -1244,7 +1339,12 @@ async function handleStreaming(cwRes: Response, res: ServerResponse, messageId: 
   }
 }
 
-async function handleNonStreaming(cwRes: Response, res: ServerResponse, messageId: string, model: string): Promise<void> {
+async function handleNonStreaming(
+  cwRes: Response,
+  res: ServerResponse,
+  messageId: string,
+  model: string,
+): Promise<void> {
   const parser = new AwsEventStreamParser();
   let fullContent = '';
 
@@ -1265,7 +1365,11 @@ async function handleNonStreaming(cwRes: Response, res: ServerResponse, messageI
   if (fullContent) contentBlocks.push({ type: 'text', text: fullContent });
   for (const tc of toolCalls) {
     let input: unknown = {};
-    try { input = JSON.parse(tc.arguments); } catch { /* keep empty */ }
+    try {
+      input = JSON.parse(tc.arguments);
+    } catch {
+      /* keep empty */
+    }
     contentBlocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input });
   }
 
@@ -1273,10 +1377,18 @@ async function handleNonStreaming(cwRes: Response, res: ServerResponse, messageI
   const outputTokens = Math.max(1, Math.floor(fullContent.length / 4));
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
-    id: messageId, type: 'message', role: 'assistant', content: contentBlocks, model,
-    stop_reason: stopReason, stop_sequence: null, usage: { input_tokens: 0, output_tokens: outputTokens },
-  }));
+  res.end(
+    JSON.stringify({
+      id: messageId,
+      type: 'message',
+      role: 'assistant',
+      content: contentBlocks,
+      model,
+      stop_reason: stopReason,
+      stop_sequence: null,
+      usage: { input_tokens: 0, output_tokens: outputTokens },
+    }),
+  );
 }
 ```
 
@@ -1299,6 +1411,7 @@ cd ~/Code/kiro-pool-proxy && git add src/proxy/handler.ts && git commit -m "feat
 ## Task 7: HTTP server and CLI integration
 
 **Files:**
+
 - Create: `~/Code/kiro-pool-proxy/src/server.ts`
 - Modify: `~/Code/kiro-pool-proxy/src/cli.ts`
 - Modify: `~/Code/kiro-pool-proxy/src/lib/config.ts`
@@ -1321,13 +1434,13 @@ export interface Config {
 And in `loadConfig()`, add `port` to the cached object:
 
 ```typescript
-  cached = {
-    pools: raw.pools,
-    dbPath: expandHome(raw.dbPath ?? '~/.config/kiro-auth/accounts.db'),
-    selectionStrategy: raw.selectionStrategy ?? 'lowest-usage',
-    tokenExpiryBufferMs: raw.tokenExpiryBufferMs ?? 300_000,
-    port: raw.port ?? 3457,
-  };
+cached = {
+  pools: raw.pools,
+  dbPath: expandHome(raw.dbPath ?? '~/.config/kiro-auth/accounts.db'),
+  selectionStrategy: raw.selectionStrategy ?? 'lowest-usage',
+  tokenExpiryBufferMs: raw.tokenExpiryBufferMs ?? 300_000,
+  port: raw.port ?? 3457,
+};
 ```
 
 - [ ] **Step 2: Add port to config.json**
@@ -1529,6 +1642,7 @@ If any fixes were needed, commit them now.
 Update Orchestrel's SessionManager to point at the proxy instead of CCR.
 
 **Files:**
+
 - Modify: `~/Code/orchestrel/.worktrees/claude-agent-sdk/src/server/sessions/manager.ts`
 
 - [ ] **Step 1: Verify current SessionManager code**
@@ -1566,6 +1680,7 @@ cd ~/Code/orchestrel/.worktrees/claude-agent-sdk && git add src/server/sessions/
 ## Task 10: Systemd service for the proxy
 
 **Files:**
+
 - Create: `~/Code/kiro-pool-proxy/kiro-pool-proxy.service`
 
 - [ ] **Step 1: Create systemd unit file**

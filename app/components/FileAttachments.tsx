@@ -15,14 +15,7 @@ type Props = {
   }) => React.ReactNode;
 };
 
-export function FileAttachments({
-  files,
-  errors,
-  disabled = false,
-  onFilesChange,
-  onErrorsChange,
-  children,
-}: Props) {
+export function FileAttachments({ files, errors, disabled = false, onFilesChange, onErrorsChange, children }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -78,9 +71,7 @@ export function FileAttachments({
         </div>
       )}
       {errors.length > 0 && (
-        <div className="mb-1 text-right text-xs text-destructive sm:pr-[38px]">
-          {errors.join(' • ')}
-        </div>
+        <div className="mb-1 text-right text-xs text-destructive sm:pr-[38px]">{errors.join(' • ')}</div>
       )}
       {children({ onPaste: handlePaste, openPicker: () => inputRef.current?.click(), dragging })}
       <input

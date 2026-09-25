@@ -28,12 +28,15 @@ servers:
 
 describe('parseTitleGenerationConfig', () => {
   it('reads the title endpoint and optional API key', () => {
-    const config = parseTitleGenerationConfig(`
+    const config = parseTitleGenerationConfig(
+      `
 titleGeneration:
   url: http://localhost:11434/api/generate
   model: llama3.2:1b-instruct-q4_k_m
   apiKey: \${TITLE_API_KEY}
-`, { TITLE_API_KEY: 'secret' });
+`,
+      { TITLE_API_KEY: 'secret' },
+    );
 
     expect(config).toEqual({
       url: 'http://localhost:11434/api/generate',

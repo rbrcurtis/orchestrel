@@ -5,9 +5,27 @@ import type { StagingEntry } from './staging';
 describe('merge grouping', () => {
   it('groups staging entries strictly within one memory server set', () => {
     const entries: StagingEntry[] = [
-      { project: 'trackable', apiUrl: 'https://memory.trackable.io', sessionId: 'a', source: 'a', ops: [{ op: 'store', title: 't1', text: 'x' }] },
-      { project: 'trackable', apiUrl: 'https://memory.trackable.io', sessionId: 'b', source: 'b', ops: [{ op: 'store', title: 't2', text: 'y' }] },
-      { project: 'okkanti', apiUrl: 'http://localhost:3100', sessionId: 'c', source: 'c', ops: [{ op: 'store', title: 't3', text: 'z' }] },
+      {
+        project: 'trackable',
+        apiUrl: 'https://memory.trackable.io',
+        sessionId: 'a',
+        source: 'a',
+        ops: [{ op: 'store', title: 't1', text: 'x' }],
+      },
+      {
+        project: 'trackable',
+        apiUrl: 'https://memory.trackable.io',
+        sessionId: 'b',
+        source: 'b',
+        ops: [{ op: 'store', title: 't2', text: 'y' }],
+      },
+      {
+        project: 'okkanti',
+        apiUrl: 'http://localhost:3100',
+        sessionId: 'c',
+        source: 'c',
+        ops: [{ op: 'store', title: 't3', text: 'z' }],
+      },
     ];
     const groups = groupByServer(entries);
     expect(groups).toHaveLength(2);

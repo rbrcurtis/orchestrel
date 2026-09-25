@@ -1,5 +1,13 @@
 import { parseStreamingJson, type AssistantMessage } from '@earendil-works/pi-ai';
-import type { TranscriptAssistantUpdate, TranscriptCursor, TranscriptEnvelope, TranscriptEvent, TranscriptReplicaResult, TranscriptState, TranscriptStreamSwitch } from './transcript-sync';
+import type {
+  TranscriptAssistantUpdate,
+  TranscriptCursor,
+  TranscriptEnvelope,
+  TranscriptEvent,
+  TranscriptReplicaResult,
+  TranscriptState,
+  TranscriptStreamSwitch,
+} from './transcript-sync';
 /** Applies one normalized event to a copied display state for replay recipients. */
 export function reduceTranscriptState(state: TranscriptState, event: TranscriptEvent): TranscriptState {
   if (event.type === 'baseline_replaced') {
@@ -17,12 +25,15 @@ export function reduceTranscriptState(state: TranscriptState, event: TranscriptE
     if (event.message.role === 'system') return state;
     return {
       ...state,
-      overlay: [...state.overlay, {
-        lifecycleId: event.lifecycleId,
-        startSequence: event.startSequence,
-        message: event.message,
-        toolInput: {},
-      }],
+      overlay: [
+        ...state.overlay,
+        {
+          lifecycleId: event.lifecycleId,
+          startSequence: event.startSequence,
+          message: event.message,
+          toolInput: {},
+        },
+      ],
     };
   }
 
@@ -56,7 +67,11 @@ export class TranscriptReplica {
   private cursor: TranscriptCursor | undefined;
   private state: TranscriptState = { baseline: [], baselineThrough: 0, overlay: [], events: [] };
 
-  applySnapshot(cursor: TranscriptCursor, state: TranscriptState, streamSwitch?: TranscriptStreamSwitch): TranscriptReplicaResult {
+  applySnapshot(
+    cursor: TranscriptCursor,
+    state: TranscriptState,
+    streamSwitch?: TranscriptStreamSwitch,
+  ): TranscriptReplicaResult {
     if (state.baselineThrough > cursor.sequence) return { type: 'snapshot_required' };
     if (!this.cursor || this.cursor.streamId === cursor.streamId) {
       if (this.cursor && this.cursor.sequence > cursor.sequence) return { type: 'duplicate' };
@@ -64,7 +79,11 @@ export class TranscriptReplica {
       this.state = structuredClone(state);
       return { type: 'accepted' };
     }
-    if (!streamSwitch || streamSwitch.fromStreamId !== this.cursor.streamId || streamSwitch.toStreamId !== cursor.streamId) {
+    if (
+      !streamSwitch ||
+      streamSwitch.fromStreamId !== this.cursor.streamId ||
+      streamSwitch.toStreamId !== cursor.streamId
+    ) {
       return { type: 'snapshot_required' };
     }
     this.cursor = structuredClone(cursor);
@@ -130,4 +149,3 @@ function applyAssistantUpdate(
     delete toolInput[index];
   }
 }
-

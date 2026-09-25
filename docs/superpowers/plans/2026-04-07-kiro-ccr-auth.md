@@ -15,30 +15,32 @@
 ## File Structure
 
 ### New Files
-| File | Responsibility |
-|------|---------------|
-| `~/Code/kiro-ccr-auth/package.json` | Project config, dependencies, build script |
-| `~/Code/kiro-ccr-auth/tsconfig.json` | TypeScript config |
-| `~/Code/kiro-ccr-auth/.gitignore` | Ignore config.json, node_modules, dist |
-| `~/Code/kiro-ccr-auth/config.example.json` | Pool config template |
-| `~/Code/kiro-ccr-auth/src/cli.ts` | CLI entry point (arg parsing, command dispatch) |
-| `~/Code/kiro-ccr-auth/src/commands/login.ts` | OIDC device code login flow |
-| `~/Code/kiro-ccr-auth/src/commands/status.ts` | Show pools, accounts, health |
-| `~/Code/kiro-ccr-auth/src/commands/logout.ts` | Remove account from pool |
-| `~/Code/kiro-ccr-auth/src/commands/refresh.ts` | Manual token refresh |
-| `~/Code/kiro-ccr-auth/src/lib/config.ts` | Load and validate config.json |
-| `~/Code/kiro-ccr-auth/src/lib/db.ts` | SQLite account store |
-| `~/Code/kiro-ccr-auth/src/lib/oidc.ts` | OIDC client registration + device code flow |
-| `~/Code/kiro-ccr-auth/src/lib/refresh.ts` | Token refresh (IDC method) |
-| `~/Code/kiro-ccr-auth/src/lib/accounts.ts` | Account selection + health tracking |
-| `~/Code/kiro-ccr-auth/src/lib/usage.ts` | getUsageLimits API call |
-| `~/Code/kiro-ccr-auth/src/transformer.ts` | CCR custom transformer class |
-| `~/Code/kiro-ccr-auth/src/custom-router.ts` | CCR custom router (prefix parsing) |
+
+| File                                           | Responsibility                                  |
+| ---------------------------------------------- | ----------------------------------------------- |
+| `~/Code/kiro-ccr-auth/package.json`            | Project config, dependencies, build script      |
+| `~/Code/kiro-ccr-auth/tsconfig.json`           | TypeScript config                               |
+| `~/Code/kiro-ccr-auth/.gitignore`              | Ignore config.json, node_modules, dist          |
+| `~/Code/kiro-ccr-auth/config.example.json`     | Pool config template                            |
+| `~/Code/kiro-ccr-auth/src/cli.ts`              | CLI entry point (arg parsing, command dispatch) |
+| `~/Code/kiro-ccr-auth/src/commands/login.ts`   | OIDC device code login flow                     |
+| `~/Code/kiro-ccr-auth/src/commands/status.ts`  | Show pools, accounts, health                    |
+| `~/Code/kiro-ccr-auth/src/commands/logout.ts`  | Remove account from pool                        |
+| `~/Code/kiro-ccr-auth/src/commands/refresh.ts` | Manual token refresh                            |
+| `~/Code/kiro-ccr-auth/src/lib/config.ts`       | Load and validate config.json                   |
+| `~/Code/kiro-ccr-auth/src/lib/db.ts`           | SQLite account store                            |
+| `~/Code/kiro-ccr-auth/src/lib/oidc.ts`         | OIDC client registration + device code flow     |
+| `~/Code/kiro-ccr-auth/src/lib/refresh.ts`      | Token refresh (IDC method)                      |
+| `~/Code/kiro-ccr-auth/src/lib/accounts.ts`     | Account selection + health tracking             |
+| `~/Code/kiro-ccr-auth/src/lib/usage.ts`        | getUsageLimits API call                         |
+| `~/Code/kiro-ccr-auth/src/transformer.ts`      | CCR custom transformer class                    |
+| `~/Code/kiro-ccr-auth/src/custom-router.ts`    | CCR custom router (prefix parsing)              |
 
 ### Modified Files
-| File | Changes |
-|------|---------|
-| `~/.claude-code-router/config.json` | Rewrite for official musistudio CCR format |
+
+| File                                        | Changes                                       |
+| ------------------------------------------- | --------------------------------------------- |
+| `~/.claude-code-router/config.json`         | Rewrite for official musistudio CCR format    |
 | Orchestrel `src/server/sessions/manager.ts` | Conditional ANTHROPIC_BASE_URL + model prefix |
 
 ---
@@ -46,6 +48,7 @@
 ## Task 1: Project Scaffold
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/package.json`
 - Create: `~/Code/kiro-ccr-auth/tsconfig.json`
 - Create: `~/Code/kiro-ccr-auth/.gitignore`
@@ -160,6 +163,7 @@ git commit -m "chore: project scaffold"
 ## Task 2: Config Loader
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/lib/config.ts`
 
 - [ ] **Step 1: Write config loader**
@@ -245,6 +249,7 @@ git add src/lib/config.ts && git commit -m "feat: config loader"
 ## Task 3: SQLite Account Store
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/lib/db.ts`
 
 - [ ] **Step 1: Write the DB module**
@@ -319,10 +324,14 @@ export function getDb(): Database.Database {
   return _db;
 }
 
-export function upsertAccount(acct: Omit<Account, 'id' | 'is_healthy' | 'fail_count' | 'rate_limit_reset' | 'last_used'> & Partial<Pick<Account, 'used_count' | 'limit_count'>>): string {
+export function upsertAccount(
+  acct: Omit<Account, 'id' | 'is_healthy' | 'fail_count' | 'rate_limit_reset' | 'last_used'> &
+    Partial<Pick<Account, 'used_count' | 'limit_count'>>,
+): string {
   const db = getDb();
   const id = accountId(acct.pool, acct.email, acct.client_id);
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO accounts (id, pool, email, auth_method, region, oidc_region, client_id, client_secret, profile_arn, start_url, access_token, refresh_token, expires_at, used_count, limit_count)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
@@ -334,12 +343,31 @@ export function upsertAccount(acct: Omit<Account, 'id' | 'is_healthy' | 'fail_co
       fail_count = 0,
       used_count = COALESCE(excluded.used_count, used_count),
       limit_count = COALESCE(excluded.limit_count, limit_count)
-  `).run(id, acct.pool, acct.email, acct.auth_method, acct.region, acct.oidc_region, acct.client_id, acct.client_secret, acct.profile_arn, acct.start_url, acct.access_token, acct.refresh_token, acct.expires_at, acct.used_count ?? 0, acct.limit_count ?? 0);
+  `,
+  ).run(
+    id,
+    acct.pool,
+    acct.email,
+    acct.auth_method,
+    acct.region,
+    acct.oidc_region,
+    acct.client_id,
+    acct.client_secret,
+    acct.profile_arn,
+    acct.start_url,
+    acct.access_token,
+    acct.refresh_token,
+    acct.expires_at,
+    acct.used_count ?? 0,
+    acct.limit_count ?? 0,
+  );
   return id;
 }
 
 export function getAccountsByPool(pool: string): Account[] {
-  return getDb().prepare('SELECT * FROM accounts WHERE pool = ? ORDER BY used_count ASC, last_used ASC').all(pool) as Account[];
+  return getDb()
+    .prepare('SELECT * FROM accounts WHERE pool = ? ORDER BY used_count ASC, last_used ASC')
+    .all(pool) as Account[];
 }
 
 export function getAccount(id: string): Account | undefined {
@@ -355,7 +383,11 @@ export function deleteAccount(id: string): void {
 }
 
 export function updateTokens(id: string, accessToken: string, refreshToken: string, expiresAt: number): void {
-  getDb().prepare('UPDATE accounts SET access_token = ?, refresh_token = ?, expires_at = ?, is_healthy = 1, fail_count = 0 WHERE id = ?').run(accessToken, refreshToken, expiresAt, id);
+  getDb()
+    .prepare(
+      'UPDATE accounts SET access_token = ?, refresh_token = ?, expires_at = ?, is_healthy = 1, fail_count = 0 WHERE id = ?',
+    )
+    .run(accessToken, refreshToken, expiresAt, id);
 }
 
 export function markUsed(id: string): void {
@@ -363,7 +395,11 @@ export function markUsed(id: string): void {
 }
 
 export function markUnhealthy(id: string): void {
-  getDb().prepare('UPDATE accounts SET fail_count = fail_count + 1, is_healthy = CASE WHEN fail_count + 1 >= 3 THEN 0 ELSE is_healthy END WHERE id = ?').run(id);
+  getDb()
+    .prepare(
+      'UPDATE accounts SET fail_count = fail_count + 1, is_healthy = CASE WHEN fail_count + 1 >= 3 THEN 0 ELSE is_healthy END WHERE id = ?',
+    )
+    .run(id);
 }
 
 export function markHealthy(id: string): void {
@@ -396,6 +432,7 @@ git add src/lib/db.ts && git commit -m "feat: SQLite account store"
 ## Task 4: OIDC Device Code Flow
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/lib/oidc.ts`
 
 - [ ] **Step 1: Write OIDC module**
@@ -413,10 +450,10 @@ const SCOPES = [
 
 const HEADERS = {
   'Content-Type': 'application/json',
-  'Accept': 'application/json',
+  Accept: 'application/json',
   'x-amzn-kiro-agent-mode': 'vibe',
   'user-agent': 'aws-sdk-js/3.738.0 ua/2.1 os/other lang/js api/sso-oidc#3.738.0 m/E KiroIDE',
-  'Connection': 'close',
+  Connection: 'close',
 };
 
 interface ClientRegistration {
@@ -520,7 +557,10 @@ export async function pollForToken(
 
     const err = await res.json().catch(() => ({ error: 'unknown' }));
     if (err.error === 'authorization_pending') continue;
-    if (err.error === 'slow_down') { pollInterval += 5; continue; }
+    if (err.error === 'slow_down') {
+      pollInterval += 5;
+      continue;
+    }
     if (err.error === 'expired_token') throw new Error('Device code expired. Please try again.');
     if (err.error === 'access_denied') throw new Error('Access denied. The authorization was rejected.');
     throw new Error(`Token poll failed: ${err.error ?? res.status}`);
@@ -547,6 +587,7 @@ git add src/lib/oidc.ts && git commit -m "feat: OIDC device code flow"
 ## Task 5: Token Refresh + Usage API
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/lib/refresh.ts`
 - Create: `~/Code/kiro-ccr-auth/src/lib/usage.ts`
 
@@ -559,11 +600,11 @@ import type { Account } from './db.js';
 
 const HEADERS = {
   'Content-Type': 'application/json',
-  'Accept': 'application/json',
+  Accept: 'application/json',
   'amz-sdk-request': 'attempt=1; max=1',
   'x-amzn-kiro-agent-mode': 'vibe',
   'user-agent': 'aws-sdk-js/3.738.0 ua/2.1 os/other lang/js api/sso-oidc#3.738.0 m/E KiroIDE',
-  'Connection': 'close',
+  Connection: 'close',
 };
 
 export interface RefreshResult {
@@ -658,7 +699,7 @@ export async function fetchUsageLimits(
   const res = await fetch(url, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'x-amzn-kiro-agent-mode': 'vibe',
       'amz-sdk-request': 'attempt=1; max=1',
@@ -695,6 +736,7 @@ git add src/lib/refresh.ts src/lib/usage.ts && git commit -m "feat: token refres
 ## Task 6: Account Selection
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/lib/accounts.ts`
 
 - [ ] **Step 1: Write account selection module**
@@ -702,7 +744,15 @@ git add src/lib/refresh.ts src/lib/usage.ts && git commit -m "feat: token refres
 Write `~/Code/kiro-ccr-auth/src/lib/accounts.ts`:
 
 ```typescript
-import { getAccountsByPool, markUsed, markUnhealthy, markHealthy, setRateLimit, updateTokens, type Account } from './db.js';
+import {
+  getAccountsByPool,
+  markUsed,
+  markUnhealthy,
+  markHealthy,
+  setRateLimit,
+  updateTokens,
+  type Account,
+} from './db.js';
 import { refreshToken } from './refresh.js';
 import { loadConfig } from './config.js';
 
@@ -780,6 +830,7 @@ git add src/lib/accounts.ts && git commit -m "feat: account selection with lowes
 ## Task 7: CCR Custom Transformer
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/transformer.ts`
 
 - [ ] **Step 1: Write the transformer**
@@ -830,10 +881,7 @@ class KiroAuthTransformer {
     }
   }
 
-  async transformResponseIn(
-    response: Record<string, unknown>,
-    _ctx: unknown,
-  ): Promise<Record<string, unknown>> {
+  async transformResponseIn(response: Record<string, unknown>, _ctx: unknown): Promise<Record<string, unknown>> {
     const status = response.status as number | undefined;
     const id = this.lastAccountId;
     if (!id) return response;
@@ -869,6 +917,7 @@ git add src/transformer.ts && git commit -m "feat: CCR custom transformer for Ki
 ## Task 8: CCR Custom Router
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/custom-router.ts`
 
 - [ ] **Step 1: Write the custom router**
@@ -917,6 +966,7 @@ git add src/custom-router.ts && git commit -m "feat: CCR custom router for provi
 ## Task 9: CLI Commands
 
 **Files:**
+
 - Create: `~/Code/kiro-ccr-auth/src/commands/login.ts`
 - Create: `~/Code/kiro-ccr-auth/src/commands/status.ts`
 - Create: `~/Code/kiro-ccr-auth/src/commands/logout.ts`
@@ -986,7 +1036,9 @@ export async function login(poolName: string): Promise<void> {
   });
 
   const accounts = getAccountsByPool(poolName);
-  console.log(`\nAdded ${usage.email} to ${poolName} pool (${accounts.length} account${accounts.length > 1 ? 's' : ''})`);
+  console.log(
+    `\nAdded ${usage.email} to ${poolName} pool (${accounts.length} account${accounts.length > 1 ? 's' : ''})`,
+  );
 }
 ```
 
@@ -1319,6 +1371,7 @@ Verify `used_count` incremented for the account used.
 ## Task 12: Orchestrel SessionManager Update
 
 **Files:**
+
 - Modify: `~/Code/orchestrel/.worktrees/claude-agent-sdk/src/server/sessions/manager.ts`
 
 - [ ] **Step 1: Update SessionManager for conditional CCR routing**
@@ -1326,26 +1379,26 @@ Verify `used_count` incremented for the account used.
 In `src/server/sessions/manager.ts`, replace the model string and env construction in the `start()` method:
 
 ```typescript
-    const isKiroProvider = opts.provider !== 'anthropic';
-    const modelStr = isKiroProvider ? `${opts.provider}:${opts.model}` : opts.model;
-    const q = query({
-      prompt,
-      options: {
-        model: modelStr,
-        cwd,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
-        settingSources: ['user', 'project'],
-        includePartialMessages: true,
-        ...(opts.resume ? { resume: opts.resume } : {}),
-        env: {
-          ...process.env,
-          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
-          ...(isKiroProvider ? { ANTHROPIC_BASE_URL: process.env.CCR_URL ?? 'http://127.0.0.1:3457' } : {}),
-        },
-      },
-    });
+const isKiroProvider = opts.provider !== 'anthropic';
+const modelStr = isKiroProvider ? `${opts.provider}:${opts.model}` : opts.model;
+const q = query({
+  prompt,
+  options: {
+    model: modelStr,
+    cwd,
+    permissionMode: 'bypassPermissions',
+    allowDangerouslySkipPermissions: true,
+    systemPrompt: { type: 'preset', preset: 'claude_code' },
+    settingSources: ['user', 'project'],
+    includePartialMessages: true,
+    ...(opts.resume ? { resume: opts.resume } : {}),
+    env: {
+      ...process.env,
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
+      ...(isKiroProvider ? { ANTHROPIC_BASE_URL: process.env.CCR_URL ?? 'http://127.0.0.1:3457' } : {}),
+    },
+  },
+});
 ```
 
 - [ ] **Step 2: Verify compilation**
@@ -1367,6 +1420,7 @@ git commit -m "feat: conditional CCR routing — anthropic direct, kiro via CCR"
 ## Post-Implementation Notes
 
 **Manual testing checklist:**
+
 - Login multiple accounts to trackable pool (`kiro-auth login trackable` repeated)
 - Login okkanti account (`kiro-auth login okkanti`)
 - `kiro-auth status` shows both pools correctly
@@ -1379,6 +1433,7 @@ git commit -m "feat: conditional CCR routing — anthropic direct, kiro via CCR"
 - `kiro-auth logout trackable <email>` — account removed
 
 **Known unknowns to verify during implementation:**
+
 1. CCR transformer loading — exact config shape for `transformers[]` may need adjustment based on official CCR source
 2. `transformResponseIn` — verify CCR actually calls this on the transformer for response handling
 3. `profileArn` injection — verify CodeWhisperer transformer in CCR doesn't overwrite it

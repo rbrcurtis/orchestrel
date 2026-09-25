@@ -37,10 +37,16 @@ function database(): Promise<IDBDatabase> {
     request.onblocked = () => reject(new Error('Transcript cache upgrade blocked'));
     request.onsuccess = () => {
       const db = request.result;
-      db.onversionchange = () => { db.close(); opening = undefined; };
+      db.onversionchange = () => {
+        db.close();
+        opening = undefined;
+      };
       resolve(db);
     };
-  }).catch((err: unknown) => { opening = undefined; throw err; });
+  }).catch((err: unknown) => {
+    opening = undefined;
+    throw err;
+  });
   return opening;
 }
 
@@ -48,7 +54,10 @@ function scopeKey(scope: TranscriptCacheScope): string {
   return JSON.stringify([scope.userId, scope.nodeName, scope.sessionId]);
 }
 
-export async function readTranscriptPage(scope: TranscriptCacheScope, anchor: string): Promise<TranscriptCachePage | undefined> {
+export async function readTranscriptPage(
+  scope: TranscriptCacheScope,
+  anchor: string,
+): Promise<TranscriptCachePage | undefined> {
   try {
     const db = await database();
     return await new Promise<TranscriptCachePage | undefined>((resolve, reject) => {
@@ -128,7 +137,7 @@ export async function writeTranscriptPage(
           sizes.sort((a, b) => {
             if (a.scope === key && b.scope !== key) return 1;
             if (b.scope === key && a.scope !== key) return -1;
-            return (access.get(a.scope)! - access.get(b.scope)!) || a.accessed - b.accessed;
+            return access.get(a.scope)! - access.get(b.scope)! || a.accessed - b.accessed;
           });
           for (const item of sizes) {
             if (total <= BUDGET) break;
@@ -137,7 +146,12 @@ export async function writeTranscriptPage(
             total -= item.bytes;
           }
           store.put(record);
-          tx.objectStore('metadata').put({ id: record.id, scope: record.scope, bytes: record.bytes, accessed: record.accessed });
+          tx.objectStore('metadata').put({
+            id: record.id,
+            scope: record.scope,
+            bytes: record.bytes,
+            accessed: record.accessed,
+          });
           accepted = true;
         };
       };
@@ -156,7 +170,10 @@ export async function deleteTranscriptCache(scope: TranscriptCacheScope): Promis
     const db = await database();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(['pages', 'metadata'], 'readwrite');
-      const cursor = tx.objectStore('pages').index('scope').openKeyCursor(IDBKeyRange.only(scopeKey(scope)));
+      const cursor = tx
+        .objectStore('pages')
+        .index('scope')
+        .openKeyCursor(IDBKeyRange.only(scopeKey(scope)));
       cursor.onsuccess = () => {
         const item = cursor.result;
         if (!item) return;

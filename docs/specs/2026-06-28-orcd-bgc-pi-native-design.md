@@ -13,7 +13,7 @@ works as designed. Two compaction systems now run on every orcd session:
    orcd (`createPiRuntimeSession` passes no `settingsManager`). It fires at
    `contextWindow - reserveTokens` (~92% of window) on `agent_end`.
 2. **orcd's own BGC**, which triggers at `summarizeThreshold` (default 0.6 / 60%)
-   on `context_usage` events, but *defers* the actual compaction to `beforeExit`
+   on `context_usage` events, but _defers_ the actual compaction to `beforeExit`
    via `pendingSummaries`/`applyPendingCompaction`.
 
 These race. Pi almost always compacts first (mid-loop, at ~92%); by the time
@@ -27,7 +27,7 @@ orcd reads). The offline summarizer that BGC used pre-migration was stubbed out
 
 The two compactors are **not** redundant by intent:
 
-- **BGC** fires early (60%) and summarizes the *oldest 50%* of the conversation
+- **BGC** fires early (60%) and summarizes the _oldest 50%_ of the conversation
   while the session keeps running. Because it runs in the background and keeps
   the newest half intact, it compacts without disrupting session flow. This is
   the primary, preferred mechanism.
@@ -40,18 +40,18 @@ keeping Pi's native auto-compaction as the safety net.
 
 ## Policy (unchanged from the original BGC design)
 
-| Parameter | Value | Source |
-|-----------|-------|--------|
-| Trigger threshold | `summarizeThreshold`, default **0.6** (60% of context window) | per-card `cards.summarize_threshold` |
-| Keep target | **~50%** of current context — keep newest half, summarize the oldest half | `keepRecentTokens` |
-| Cut selection | Pi's `prepareCompaction`/`findCutPoint` with `keepRecentTokens = floor(currentContextTokens * 0.5)`; snaps to a turn boundary, never splits a tool_use/tool_result pair | Pi `prepareCompaction` |
-| Summary model | the session's own model (`card.model`), via Pi's `compact()` summarizer | — |
-| Safety net | Pi native auto-compaction at ~92%, left enabled | Pi default |
+| Parameter         | Value                                                                                                                                                                   | Source                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Trigger threshold | `summarizeThreshold`, default **0.6** (60% of context window)                                                                                                           | per-card `cards.summarize_threshold` |
+| Keep target       | **~50%** of current context — keep newest half, summarize the oldest half                                                                                               | `keepRecentTokens`                   |
+| Cut selection     | Pi's `prepareCompaction`/`findCutPoint` with `keepRecentTokens = floor(currentContextTokens * 0.5)`; snaps to a turn boundary, never splits a tool_use/tool_result pair | Pi `prepareCompaction`               |
+| Summary model     | the session's own model (`card.model`), via Pi's `compact()` summarizer                                                                                                 | —                                    |
+| Safety net        | Pi native auto-compaction at ~92%, left enabled                                                                                                                         | Pi default                           |
 
 > **Cut is token-based, not count-based.** The pre-migration BGC used a
 > count-based `selectCutoff` (`floor(messageCount * 0.5)`). The Pi-native rewrite
 > uses Pi's token-based `prepareCompaction` (`keepRecentTokens ≈ 50% of current
-> context tokens`) so it can reuse Pi's tested cut + summarizer + provider auth
+context tokens`) so it can reuse Pi's tested cut + summarizer + provider auth
 > (incl. claude-max OAuth) rather than hand-rolling an OAuth-aware model call.
 > Same policy intent ("compact the oldest ~half"), more robust mechanism.
 
@@ -83,19 +83,19 @@ on the path, and reconstructs LLM context as
 `[summary message] + [entries from firstKeptEntryId onward]`. Everything before
 `firstKeptEntryId` is dropped from context but stays in the append-only file.
 This directly expresses BGC's "summarize oldest, keep newest" — `firstKeptEntryId`
-*is* the cut point.
+_is_ the cut point.
 
 Pi's own compaction applies a compaction in three lines
 (`agent-session.js`):
 
 ```js
-sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook)
-const ctx = sessionManager.buildSessionContext()
-agent.state.messages = ctx.messages
+sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook);
+const ctx = sessionManager.buildSessionContext();
+agent.state.messages = ctx.messages;
 ```
 
 `session.sessionManager` and `session.agent` are public on the `AgentSession`,
-so orcd (the host) can perform the same write+reload. (A Pi *extension* could
+so orcd (the host) can perform the same write+reload. (A Pi _extension_ could
 not: extensions receive a `ReadonlySessionManager` and can only compact via Pi's
 inline `ctx.compact()`, which generates the summary synchronously while holding
 the session — not a true background operation. The host has the access required
@@ -117,24 +117,28 @@ live on the pi-runtime wrapper, which closes over `session`, `modelRegistry`, an
 - **`prepareBgCompaction(keepFraction, currentTokens, signal)`** — runs the
   out-of-band summary, parallel-safe (reads entries; does NOT mutate the session
   or abort a turn):
+
   ```ts
-  const entries = session.sessionManager.getBranch()
-  const settings = { enabled: true, reserveTokens: 0,
-                     keepRecentTokens: Math.floor(currentTokens * keepFraction) }
-  const prep = prepareCompaction(entries, settings)   // Pi export; undefined ⇒ nothing to compact
-  if (!prep) return null
-  const { apiKey, headers } = await modelRegistry.getApiKeyAndHeaders(model)
-  const result = await compact(prep, model, apiKey, headers, undefined, signal,
-                               thinkingLevel, session.agent.streamFn)   // Pi export
-  return result  // { summary, firstKeptEntryId, tokensBefore, details }
+  const entries = session.sessionManager.getBranch();
+  const settings = { enabled: true, reserveTokens: 0, keepRecentTokens: Math.floor(currentTokens * keepFraction) };
+  const prep = prepareCompaction(entries, settings); // Pi export; undefined ⇒ nothing to compact
+  if (!prep) return null;
+  const { apiKey, headers } = await modelRegistry.getApiKeyAndHeaders(model);
+  const result = await compact(prep, model, apiKey, headers, undefined, signal, thinkingLevel, session.agent.streamFn); // Pi export
+  return result; // { summary, firstKeptEntryId, tokensBefore, details }
   ```
 
 - **`applyBgCompaction(result)`** — the fast splice, done only when the session
   is idle:
   ```ts
-  session.sessionManager.appendCompaction(result.summary, result.firstKeptEntryId,
-                                          result.tokensBefore, result.details, /*fromHook*/ true)
-  session.agent.state.messages = session.sessionManager.buildSessionContext().messages
+  session.sessionManager.appendCompaction(
+    result.summary,
+    result.firstKeptEntryId,
+    result.tokensBefore,
+    result.details,
+    /*fromHook*/ true,
+  );
+  session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
   ```
 
 `prepareCompaction`/`compact` are imported from `@earendil-works/pi-coding-agent`
@@ -161,7 +165,7 @@ the `onBeforeExit` apply hook. On a `context_usage` event:
   replaced the original busy-poll-for-idle design, which could apply mid-run on a
   turn longer than the poll timeout and desync live vs. persisted context.
 
-The existing `context_usage` *emission* (UI context wheel) is unchanged.
+The existing `context_usage` _emission_ (UI context wheel) is unchanged.
 
 ### 4. Safety-net visibility — `src/orcd/pi-events.ts` / `src/orcd/session.ts`
 
@@ -235,6 +239,7 @@ context_usage (>=60%) ──> BGC controller ──> emit bgc_started
 
 - Changing the per-card `summarize_threshold` knob or its UI (kept as-is).
 - Changing Pi's native auto-compaction trigger point (left at default).
+
 ## Manual `/compact` interaction
 
 `/compact` was wired this session to route to orcd compaction

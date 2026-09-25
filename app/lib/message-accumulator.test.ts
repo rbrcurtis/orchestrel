@@ -241,7 +241,8 @@ describe('MessageAccumulator history display', () => {
       parent_tool_use_id: null,
       message: {
         role: 'user',
-        content: 'Check /foo(bar), then <skill name="push" location="/skills/push/SKILL.md">\nFull instructions\n</skill>',
+        content:
+          'Check /foo(bar), then <skill name="push" location="/skills/push/SKILL.md">\nFull instructions\n</skill>',
       },
     });
 
@@ -264,9 +265,7 @@ describe('MessageAccumulator history display', () => {
       },
     });
 
-    expect(acc.conversation).toEqual([
-      expect.objectContaining({ kind: 'user', content: 'then /pr(dev) please' }),
-    ]);
+    expect(acc.conversation).toEqual([expect.objectContaining({ kind: 'user', content: 'then /pr(dev) please' })]);
   });
 });
 describe('user prompt echo broadcast', () => {

@@ -27,12 +27,12 @@ Sandboxing is a first-class setting parallel to worktrees:
 
 Effective behavior:
 
-| Worktree | Sandbox | Behavior |
-|---|---|---|
-| off | off | Current root-checkout behavior |
-| off | on | Invalid/ignored; UI should prevent this |
-| on | off | Current worktree behavior |
-| on | on | bwrap filesystem isolation |
+| Worktree | Sandbox | Behavior                                |
+| -------- | ------- | --------------------------------------- |
+| off      | off     | Current root-checkout behavior          |
+| off      | on      | Invalid/ignored; UI should prevent this |
+| on       | off     | Current worktree behavior               |
+| on       | on      | bwrap filesystem isolation              |
 
 ## Launch architecture
 

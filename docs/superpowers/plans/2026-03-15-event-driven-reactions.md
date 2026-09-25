@@ -33,6 +33,7 @@ No new event emitters. The OC session emits, the controller listens, services up
 The OC controller has one public function: `wireSession(cardId, session)`. It registers independent `session.on(...)` handlers — one per concern. Each handler checks if the event is relevant and returns if not. No `else` chains, no handler blocks another.
 
 **Files:**
+
 - Create: `src/server/controllers/oc.ts`
 - Test: `src/server/controllers/oc.test.ts`
 
@@ -41,15 +42,15 @@ The OC controller has one public function: `wireSession(cardId, session)`. It re
   Create `src/server/controllers/oc.test.ts`:
 
   ```typescript
-  import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-  import { EventEmitter } from 'events'
-  import { DataSource } from 'typeorm'
-  import { Card, CardSubscriber } from '../models/Card'
-  import { Project, ProjectSubscriber } from '../models/Project'
-  import { MessageBus } from '../bus'
-  import type { AgentMessage } from '../agents/types'
+  import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+  import { EventEmitter } from 'events';
+  import { DataSource } from 'typeorm';
+  import { Card, CardSubscriber } from '../models/Card';
+  import { Project, ProjectSubscriber } from '../models/Project';
+  import { MessageBus } from '../bus';
+  import type { AgentMessage } from '../agents/types';
 
-  let ds: DataSource
+  let ds: DataSource;
 
   beforeAll(async () => {
     ds = new DataSource({
@@ -58,184 +59,224 @@ The OC controller has one public function: `wireSession(cardId, session)`. It re
       entities: [Card, Project],
       subscribers: [CardSubscriber, ProjectSubscriber],
       synchronize: true,
-    })
-    await ds.initialize()
-  })
+    });
+    await ds.initialize();
+  });
 
   afterAll(async () => {
-    await ds.destroy()
-  })
+    await ds.destroy();
+  });
 
   // Minimal fake session that mimics AgentSession's EventEmitter interface
   function fakeSession() {
     const session = new EventEmitter() as EventEmitter & {
-      promptsSent: number
-      turnsCompleted: number
-      sessionId: string | null
-      status: string
-    }
-    session.promptsSent = 1
-    session.turnsCompleted = 1
-    session.sessionId = 'test-session-123'
-    session.status = 'running'
-    return session
+      promptsSent: number;
+      turnsCompleted: number;
+      sessionId: string | null;
+      status: string;
+    };
+    session.promptsSent = 1;
+    session.turnsCompleted = 1;
+    session.sessionId = 'test-session-123';
+    session.status = 'running';
+    return session;
   }
 
   describe('OC controller: wireSession', () => {
     it('publishes displayable messages to the domain bus', async () => {
-      const bus = new MessageBus()
-      const handler = vi.fn()
-      const session = fakeSession()
+      const bus = new MessageBus();
+      const handler = vi.fn();
+      const session = fakeSession();
 
-      const { wireSession } = await import('./oc')
+      const { wireSession } = await import('./oc');
       const card = Card.create({
-        title: 'Test', description: 'Test', column: 'running',
-        position: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Test',
+        description: 'Test',
+        column: 'running',
+        position: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      wireSession(card.id, session as never, bus)
-      bus.subscribe(`card:${card.id}:message`, handler)
+      wireSession(card.id, session as never, bus);
+      bus.subscribe(`card:${card.id}:message`, handler);
 
       session.emit('message', {
-        type: 'text', role: 'assistant', content: 'hello', timestamp: Date.now(),
-      } satisfies AgentMessage)
+        type: 'text',
+        role: 'assistant',
+        content: 'hello',
+        timestamp: Date.now(),
+      } satisfies AgentMessage);
 
-      expect(handler).toHaveBeenCalledOnce()
-      expect(handler.mock.calls[0][0]).toMatchObject({ type: 'text', content: 'hello' })
-    })
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler.mock.calls[0][0]).toMatchObject({ type: 'text', content: 'hello' });
+    });
 
     it('does NOT publish non-display message types to bus', async () => {
-      const bus = new MessageBus()
-      const handler = vi.fn()
-      const session = fakeSession()
+      const bus = new MessageBus();
+      const handler = vi.fn();
+      const session = fakeSession();
 
-      const { wireSession } = await import('./oc')
+      const { wireSession } = await import('./oc');
       const card = Card.create({
-        title: 'Test2', description: 'Test', column: 'running',
-        position: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Test2',
+        description: 'Test',
+        column: 'running',
+        position: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      wireSession(card.id, session as never, bus)
-      bus.subscribe(`card:${card.id}:message`, handler)
+      wireSession(card.id, session as never, bus);
+      bus.subscribe(`card:${card.id}:message`, handler);
 
       session.emit('message', {
-        type: 'internal' as never, role: 'system', content: '', timestamp: Date.now(),
-      })
+        type: 'internal' as never,
+        role: 'system',
+        content: '',
+        timestamp: Date.now(),
+      });
 
-      expect(handler).not.toHaveBeenCalled()
-    })
+      expect(handler).not.toHaveBeenCalled();
+    });
 
     it('moves card to review on turn_end', async () => {
-      const bus = new MessageBus()
-      const session = fakeSession()
+      const bus = new MessageBus();
+      const session = fakeSession();
 
-      const { wireSession } = await import('./oc')
+      const { wireSession } = await import('./oc');
       const card = Card.create({
-        title: 'Turn test', description: 'Test', column: 'running',
-        position: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Turn test',
+        description: 'Test',
+        column: 'running',
+        position: 2,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      wireSession(card.id, session as never, bus)
+      wireSession(card.id, session as never, bus);
 
       session.emit('message', {
-        type: 'turn_end', role: 'system', content: '', timestamp: Date.now(),
-      } satisfies AgentMessage)
+        type: 'turn_end',
+        role: 'system',
+        content: '',
+        timestamp: Date.now(),
+      } satisfies AgentMessage);
 
-      await new Promise(r => setTimeout(r, 50))
-      await card.reload()
-      expect(card.column).toBe('review')
-    })
+      await new Promise((r) => setTimeout(r, 50));
+      await card.reload();
+      expect(card.column).toBe('review');
+    });
 
     it('persists counters on turn_end', async () => {
-      const bus = new MessageBus()
-      const session = fakeSession()
-      session.promptsSent = 3
-      session.turnsCompleted = 2
+      const bus = new MessageBus();
+      const session = fakeSession();
+      session.promptsSent = 3;
+      session.turnsCompleted = 2;
 
-      const { wireSession } = await import('./oc')
+      const { wireSession } = await import('./oc');
       const card = Card.create({
-        title: 'Counter test', description: 'Test', column: 'running',
-        position: 3, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Counter test',
+        description: 'Test',
+        column: 'running',
+        position: 3,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      wireSession(card.id, session as never, bus)
+      wireSession(card.id, session as never, bus);
 
       session.emit('message', {
-        type: 'turn_end', role: 'system', content: '', timestamp: Date.now(),
-      } satisfies AgentMessage)
+        type: 'turn_end',
+        role: 'system',
+        content: '',
+        timestamp: Date.now(),
+      } satisfies AgentMessage);
 
-      await new Promise(r => setTimeout(r, 50))
-      await card.reload()
-      expect(card.promptsSent).toBe(3)
-      expect(card.turnsCompleted).toBe(2)
-    })
+      await new Promise((r) => setTimeout(r, 50));
+      await card.reload();
+      expect(card.promptsSent).toBe(3);
+      expect(card.turnsCompleted).toBe(2);
+    });
 
     it('moves card to review on exit with errored status', async () => {
-      const bus = new MessageBus()
-      const session = fakeSession()
-      session.status = 'errored'
+      const bus = new MessageBus();
+      const session = fakeSession();
+      session.status = 'errored';
 
-      const { wireSession } = await import('./oc')
+      const { wireSession } = await import('./oc');
       const card = Card.create({
-        title: 'Exit test', description: 'Test', column: 'running',
-        position: 4, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Exit test',
+        description: 'Test',
+        column: 'running',
+        position: 4,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      wireSession(card.id, session as never, bus)
-      session.emit('exit')
+      wireSession(card.id, session as never, bus);
+      session.emit('exit');
 
-      await new Promise(r => setTimeout(r, 50))
-      await card.reload()
-      expect(card.column).toBe('review')
-    })
+      await new Promise((r) => setTimeout(r, 50));
+      await card.reload();
+      expect(card.column).toBe('review');
+    });
 
     it('does NOT move card on exit with completed status', async () => {
-      const bus = new MessageBus()
-      const session = fakeSession()
-      session.status = 'completed'
+      const bus = new MessageBus();
+      const session = fakeSession();
+      session.status = 'completed';
 
-      const { wireSession } = await import('./oc')
+      const { wireSession } = await import('./oc');
       const card = Card.create({
-        title: 'Completed exit', description: 'Test', column: 'running',
-        position: 5, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Completed exit',
+        description: 'Test',
+        column: 'running',
+        position: 5,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      wireSession(card.id, session as never, bus)
-      session.emit('exit')
+      wireSession(card.id, session as never, bus);
+      session.emit('exit');
 
-      await new Promise(r => setTimeout(r, 50))
-      await card.reload()
-      expect(card.column).toBe('running')
-    })
+      await new Promise((r) => setTimeout(r, 50));
+      await card.reload();
+      expect(card.column).toBe('running');
+    });
 
     it('publishes exit status to bus', async () => {
-      const bus = new MessageBus()
-      const handler = vi.fn()
-      const session = fakeSession()
-      session.status = 'stopped'
+      const bus = new MessageBus();
+      const handler = vi.fn();
+      const session = fakeSession();
+      session.status = 'stopped';
 
-      const { wireSession } = await import('./oc')
+      const { wireSession } = await import('./oc');
       const card = Card.create({
-        title: 'Exit bus test', description: 'Test', column: 'running',
-        position: 6, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Exit bus test',
+        description: 'Test',
+        column: 'running',
+        position: 6,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      wireSession(card.id, session as never, bus)
-      bus.subscribe(`card:${card.id}:exit`, handler)
-      session.emit('exit')
+      wireSession(card.id, session as never, bus);
+      bus.subscribe(`card:${card.id}:exit`, handler);
+      session.emit('exit');
 
-      await new Promise(r => setTimeout(r, 50))
-      expect(handler).toHaveBeenCalledOnce()
-      expect(handler.mock.calls[0][0]).toMatchObject({ cardId: card.id, status: 'stopped' })
-    })
-  })
+      await new Promise((r) => setTimeout(r, 50));
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler.mock.calls[0][0]).toMatchObject({ cardId: card.id, status: 'stopped' });
+    });
+  });
   ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -248,14 +289,21 @@ The OC controller has one public function: `wireSession(cardId, session)`. It re
   Create `src/server/controllers/oc.ts`:
 
   ```typescript
-  import { Card } from '../models/Card'
-  import { messageBus, type MessageBus } from '../bus'
-  import type { AgentSession, AgentMessage } from '../agents/types'
+  import { Card } from '../models/Card';
+  import { messageBus, type MessageBus } from '../bus';
+  import type { AgentSession, AgentMessage } from '../agents/types';
 
   const DISPLAY_TYPES = new Set([
-    'user', 'text', 'tool_call', 'tool_result', 'tool_progress',
-    'thinking', 'system', 'turn_end', 'error',
-  ])
+    'user',
+    'text',
+    'tool_call',
+    'tool_result',
+    'tool_progress',
+    'thinking',
+    'system',
+    'turn_end',
+    'error',
+  ]);
 
   /**
    * Wire independent event handlers on an OC session.
@@ -265,45 +313,45 @@ The OC controller has one public function: `wireSession(cardId, session)`. It re
   export function wireSession(cardId: number, session: AgentSession, bus: MessageBus = messageBus): void {
     // Handler: forward displayable content to domain bus
     session.on('message', (msg: AgentMessage) => {
-      if (!DISPLAY_TYPES.has(msg.type)) return
-      bus.publish(`card:${cardId}:message`, msg)
-    })
+      if (!DISPLAY_TYPES.has(msg.type)) return;
+      bus.publish(`card:${cardId}:message`, msg);
+    });
 
     // Handler: persist counters + move card to review on turn_end
     // These MUST be in one handler to avoid a lost-update race (both would
     // load the same row, mutate different fields, and the last save wins).
     session.on('message', async (msg: AgentMessage) => {
-      if (msg.type !== 'turn_end') return
+      if (msg.type !== 'turn_end') return;
       try {
-        const card = await Card.findOneBy({ id: cardId })
-        if (!card) return
-        card.promptsSent = session.promptsSent
-        card.turnsCompleted = session.turnsCompleted
-        if (card.column === 'running') card.column = 'review'
-        card.updatedAt = new Date().toISOString()
-        await card.save()
+        const card = await Card.findOneBy({ id: cardId });
+        if (!card) return;
+        card.promptsSent = session.promptsSent;
+        card.turnsCompleted = session.turnsCompleted;
+        if (card.column === 'running') card.column = 'review';
+        card.updatedAt = new Date().toISOString();
+        await card.save();
       } catch (err) {
-        console.error(`[oc:${cardId}] failed to handle turn_end:`, err)
+        console.error(`[oc:${cardId}] failed to handle turn_end:`, err);
       }
-    })
+    });
 
     // Handler: move card to review on exit (errored/stopped only)
     session.on('exit', async () => {
       if (session.status === 'errored' || session.status === 'stopped') {
         try {
-          const card = await Card.findOneBy({ id: cardId })
+          const card = await Card.findOneBy({ id: cardId });
           if (card && card.column === 'running') {
-            card.column = 'review'
-            card.promptsSent = session.promptsSent
-            card.turnsCompleted = session.turnsCompleted
-            card.updatedAt = new Date().toISOString()
-            await card.save()
+            card.column = 'review';
+            card.promptsSent = session.promptsSent;
+            card.turnsCompleted = session.turnsCompleted;
+            card.updatedAt = new Date().toISOString();
+            await card.save();
           }
         } catch (err) {
-          console.error(`[oc:${cardId}] failed to move card to review on exit:`, err)
+          console.error(`[oc:${cardId}] failed to move card to review on exit:`, err);
         }
       }
-    })
+    });
 
     // Handler: publish exit status to domain bus
     session.on('exit', () => {
@@ -314,12 +362,12 @@ The OC controller has one public function: `wireSession(cardId, session)`. It re
         sessionId: session.sessionId,
         promptsSent: session.promptsSent,
         turnsCompleted: session.turnsCompleted,
-      })
-    })
+      });
+    });
   }
   ```
 
-  Note: the counter-persist and column-move logic for `turn_end` are combined into one handler because they mutate the same DB row. Splitting them into separate handlers would cause a lost-update race — both would load the card, mutate different fields, and the last `save()` would overwrite the other's changes. The "one handler per concern" pattern works well for handlers on *different* events, but two handlers writing to the same entity on the same event must be combined.
+  Note: the counter-persist and column-move logic for `turn_end` are combined into one handler because they mutate the same DB row. Splitting them into separate handlers would cause a lost-update race — both would load the card, mutate different fields, and the last `save()` would overwrite the other's changes. The "one handler per concern" pattern works well for handlers on _different_ events, but two handlers writing to the same entity on the same event must be combined.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -345,6 +393,7 @@ The OC controller has one public function: `wireSession(cardId, session)`. It re
 Replace the monolithic closures in `sessionService.startSession` with a call to `wireSession`.
 
 **Files:**
+
 - Modify: `src/server/services/session.ts`
 
 - [ ] **Step 1: Import wireSession**
@@ -352,7 +401,7 @@ Replace the monolithic closures in `sessionService.startSession` with a call to 
   Add to the top of `session.ts`:
 
   ```typescript
-  import { wireSession } from '../controllers/oc'
+  import { wireSession } from '../controllers/oc';
   ```
 
 - [ ] **Step 2: Replace the closures with wireSession**
@@ -360,7 +409,7 @@ Replace the monolithic closures in `sessionService.startSession` with a call to 
   In `startSession`, replace lines 154-198 (the two `session.on(...)` blocks) with:
 
   ```typescript
-  wireSession(cardId, session)
+  wireSession(cardId, session);
   ```
 
   Also remove the `DISPLAY_TYPES` constant from `session.ts` (it's now in the controller).
@@ -406,6 +455,7 @@ Replace the monolithic closures in `sessionService.startSession` with a call to 
 Register a domain bus listener at startup that starts sessions when cards enter running. This replaces the inline auto-start in `cardService.createCard` and `cardService.updateCard`.
 
 **Files:**
+
 - Modify: `src/server/controllers/oc.ts` (add `registerAutoStart`)
 - Modify: `src/server/ws/server.ts` (call `registerAutoStart` at startup)
 - Test: `src/server/controllers/oc.test.ts` (add auto-start tests)
@@ -417,60 +467,72 @@ Register a domain bus listener at startup that starts sessions when cards enter 
   ```typescript
   describe('OC controller: registerAutoStart', () => {
     it('calls startSession when card enters running', async () => {
-      const bus = new MessageBus()
-      const startMock = vi.fn().mockResolvedValue(undefined)
-      const { registerAutoStart } = await import('./oc')
-      registerAutoStart(bus, { startSession: startMock })
+      const bus = new MessageBus();
+      const startMock = vi.fn().mockResolvedValue(undefined);
+      const { registerAutoStart } = await import('./oc');
+      registerAutoStart(bus, { startSession: startMock });
 
       const card = Card.create({
-        title: 'Auto test', description: 'Test', column: 'running',
-        position: 20, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Auto test',
+        description: 'Test',
+        column: 'running',
+        position: 20,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      bus.publish('board:changed', { card, oldColumn: 'ready', newColumn: 'running' })
+      bus.publish('board:changed', { card, oldColumn: 'ready', newColumn: 'running' });
 
-      await new Promise(r => setTimeout(r, 50))
-      expect(startMock).toHaveBeenCalledWith(card.id, undefined)
-    })
+      await new Promise((r) => setTimeout(r, 50));
+      expect(startMock).toHaveBeenCalledWith(card.id, undefined);
+    });
 
     it('does NOT call startSession for other column transitions', async () => {
-      const bus = new MessageBus()
-      const startMock = vi.fn().mockResolvedValue(undefined)
-      const { registerAutoStart } = await import('./oc')
-      registerAutoStart(bus, { startSession: startMock })
+      const bus = new MessageBus();
+      const startMock = vi.fn().mockResolvedValue(undefined);
+      const { registerAutoStart } = await import('./oc');
+      registerAutoStart(bus, { startSession: startMock });
 
       const card = Card.create({
-        title: 'No start', description: 'Test', column: 'review',
-        position: 21, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'No start',
+        description: 'Test',
+        column: 'review',
+        position: 21,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      bus.publish('board:changed', { card, oldColumn: 'running', newColumn: 'review' })
+      bus.publish('board:changed', { card, oldColumn: 'running', newColumn: 'review' });
 
-      await new Promise(r => setTimeout(r, 50))
-      expect(startMock).not.toHaveBeenCalled()
-    })
+      await new Promise((r) => setTimeout(r, 50));
+      expect(startMock).not.toHaveBeenCalled();
+    });
 
     it('does NOT call startSession when staying in running', async () => {
-      const bus = new MessageBus()
-      const startMock = vi.fn().mockResolvedValue(undefined)
-      const { registerAutoStart } = await import('./oc')
-      registerAutoStart(bus, { startSession: startMock })
+      const bus = new MessageBus();
+      const startMock = vi.fn().mockResolvedValue(undefined);
+      const { registerAutoStart } = await import('./oc');
+      registerAutoStart(bus, { startSession: startMock });
 
       const card = Card.create({
-        title: 'Same col', description: 'Test', column: 'running',
-        position: 22, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'Same col',
+        description: 'Test',
+        column: 'running',
+        position: 22,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
       // This fires when a non-column field changes while in running
-      bus.publish('board:changed', { card, oldColumn: 'running', newColumn: 'running' })
+      bus.publish('board:changed', { card, oldColumn: 'running', newColumn: 'running' });
 
-      await new Promise(r => setTimeout(r, 50))
-      expect(startMock).not.toHaveBeenCalled()
-    })
-  })
+      await new Promise((r) => setTimeout(r, 50));
+      expect(startMock).not.toHaveBeenCalled();
+    });
+  });
   ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -484,22 +546,24 @@ Register a domain bus listener at startup that starts sessions when cards enter 
 
   ```typescript
   interface SessionStarter {
-    startSession(cardId: number, message?: string): Promise<void>
+    startSession(cardId: number, message?: string): Promise<void>;
   }
 
   export function registerAutoStart(bus: MessageBus = messageBus, starter: SessionStarter): void {
     bus.subscribe('board:changed', (payload) => {
       const { card, oldColumn, newColumn } = payload as {
-        card: Card | null; oldColumn: string | null; newColumn: string | null
-      }
-      if (!card) return
-      if (newColumn !== 'running') return
-      if (oldColumn === 'running') return
+        card: Card | null;
+        oldColumn: string | null;
+        newColumn: string | null;
+      };
+      if (!card) return;
+      if (newColumn !== 'running') return;
+      if (oldColumn === 'running') return;
 
-      starter.startSession(card.id, undefined).catch(err => {
-        console.error(`[oc:auto-start] failed for card ${card.id}:`, err)
-      })
-    })
+      starter.startSession(card.id, undefined).catch((err) => {
+        console.error(`[oc:auto-start] failed for card ${card.id}:`, err);
+      });
+    });
   }
   ```
 
@@ -513,9 +577,9 @@ Register a domain bus listener at startup that starts sessions when cards enter 
   In `src/server/ws/server.ts`, inside the `wsServerPlugin` `.then()` callback, after `await initDatabase()`:
 
   ```typescript
-  const { registerAutoStart } = await import('../controllers/oc')
-  const { sessionService } = await import('../services/session')
-  registerAutoStart(undefined, sessionService)
+  const { registerAutoStart } = await import('../controllers/oc');
+  const { sessionService } = await import('../services/session');
+  registerAutoStart(undefined, sessionService);
   ```
 
 - [ ] **Step 6: Run all tests**
@@ -535,6 +599,7 @@ Register a domain bus listener at startup that starts sessions when cards enter 
 ### Task 4: Move worktree cleanup to board:changed listener
 
 **Files:**
+
 - Modify: `src/server/controllers/oc.ts` (add `registerWorktreeCleanup`)
 - Test: `src/server/controllers/oc.test.ts`
 
@@ -545,52 +610,63 @@ Register a domain bus listener at startup that starts sessions when cards enter 
   ```typescript
   describe('OC controller: registerWorktreeCleanup', () => {
     it('removes worktree when card with worktree moves to archive', async () => {
-      const bus = new MessageBus()
-      const removeMock = vi.fn()
-      const existsMock = vi.fn().mockReturnValue(true)
-      const { registerWorktreeCleanup } = await import('./oc')
-      registerWorktreeCleanup(bus, { removeWorktree: removeMock, worktreeExists: existsMock })
+      const bus = new MessageBus();
+      const removeMock = vi.fn();
+      const existsMock = vi.fn().mockReturnValue(true);
+      const { registerWorktreeCleanup } = await import('./oc');
+      registerWorktreeCleanup(bus, { removeWorktree: removeMock, worktreeExists: existsMock });
 
       const proj = Project.create({
-        name: 'WT Project', path: '/tmp/wt-proj',
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await proj.save()
+        name: 'WT Project',
+        path: '/tmp/wt-proj',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await proj.save();
 
       const card = Card.create({
-        title: 'WT card', description: 'Test', column: 'archive',
-        position: 30, projectId: proj.id, useWorktree: true,
+        title: 'WT card',
+        description: 'Test',
+        column: 'archive',
+        position: 30,
+        projectId: proj.id,
+        useWorktree: true,
         worktreePath: '/tmp/wt-proj/.worktrees/slug',
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      bus.publish('board:changed', { card, oldColumn: 'done', newColumn: 'archive' })
+      bus.publish('board:changed', { card, oldColumn: 'done', newColumn: 'archive' });
 
-      await new Promise(r => setTimeout(r, 50))
-      expect(removeMock).toHaveBeenCalledWith('/tmp/wt-proj', '/tmp/wt-proj/.worktrees/slug')
-    })
+      await new Promise((r) => setTimeout(r, 50));
+      expect(removeMock).toHaveBeenCalledWith('/tmp/wt-proj', '/tmp/wt-proj/.worktrees/slug');
+    });
 
     it('does NOT remove worktree when useWorktree is false', async () => {
-      const bus = new MessageBus()
-      const removeMock = vi.fn()
-      const existsMock = vi.fn().mockReturnValue(true)
-      const { registerWorktreeCleanup } = await import('./oc')
-      registerWorktreeCleanup(bus, { removeWorktree: removeMock, worktreeExists: existsMock })
+      const bus = new MessageBus();
+      const removeMock = vi.fn();
+      const existsMock = vi.fn().mockReturnValue(true);
+      const { registerWorktreeCleanup } = await import('./oc');
+      registerWorktreeCleanup(bus, { removeWorktree: removeMock, worktreeExists: existsMock });
 
       const card = Card.create({
-        title: 'No WT', description: 'Test', column: 'archive',
-        position: 31, useWorktree: false,
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      })
-      await card.save()
+        title: 'No WT',
+        description: 'Test',
+        column: 'archive',
+        position: 31,
+        useWorktree: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await card.save();
 
-      bus.publish('board:changed', { card, oldColumn: 'done', newColumn: 'archive' })
+      bus.publish('board:changed', { card, oldColumn: 'done', newColumn: 'archive' });
 
-      await new Promise(r => setTimeout(r, 50))
-      expect(removeMock).not.toHaveBeenCalled()
-    })
-  })
+      await new Promise((r) => setTimeout(r, 50));
+      expect(removeMock).not.toHaveBeenCalled();
+    });
+  });
   ```
 
 - [ ] **Step 2: Implement registerWorktreeCleanup**
@@ -598,33 +674,35 @@ Register a domain bus listener at startup that starts sessions when cards enter 
   Add to `src/server/controllers/oc.ts`:
 
   ```typescript
-  import { Project } from '../models/Project'
+  import { Project } from '../models/Project';
 
   interface WorktreeOps {
-    removeWorktree(repoPath: string, worktreePath: string): void
-    worktreeExists(worktreePath: string): boolean
+    removeWorktree(repoPath: string, worktreePath: string): void;
+    worktreeExists(worktreePath: string): boolean;
   }
 
   export function registerWorktreeCleanup(bus: MessageBus = messageBus, ops: WorktreeOps): void {
     bus.subscribe('board:changed', async (payload) => {
       const { card, oldColumn, newColumn } = payload as {
-        card: Card | null; oldColumn: string | null; newColumn: string | null
-      }
-      if (!card) return
-      if (newColumn !== 'archive' || oldColumn === 'archive') return
+        card: Card | null;
+        oldColumn: string | null;
+        newColumn: string | null;
+      };
+      if (!card) return;
+      if (newColumn !== 'archive' || oldColumn === 'archive') return;
 
-      const c = card as Card
-      if (!c.useWorktree || !c.worktreePath || !c.projectId) return
+      const c = card as Card;
+      if (!c.useWorktree || !c.worktreePath || !c.projectId) return;
 
       try {
-        const proj = await Project.findOneBy({ id: c.projectId })
-        if (!proj || !ops.worktreeExists(c.worktreePath)) return
-        ops.removeWorktree(proj.path, c.worktreePath)
-        console.log(`[oc:worktree] removed ${c.worktreePath}`)
+        const proj = await Project.findOneBy({ id: c.projectId });
+        if (!proj || !ops.worktreeExists(c.worktreePath)) return;
+        ops.removeWorktree(proj.path, c.worktreePath);
+        console.log(`[oc:worktree] removed ${c.worktreePath}`);
       } catch (err) {
-        console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err)
+        console.error(`[oc:worktree] cleanup failed for card ${c.id}:`, err);
       }
-    })
+    });
   }
   ```
 
@@ -633,9 +711,9 @@ Register a domain bus listener at startup that starts sessions when cards enter 
   In `src/server/ws/server.ts`, alongside `registerAutoStart`:
 
   ```typescript
-  const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc')
-  const { removeWorktree, worktreeExists } = await import('../worktree')
-  registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists })
+  const { registerAutoStart, registerWorktreeCleanup } = await import('../controllers/oc');
+  const { removeWorktree, worktreeExists } = await import('../worktree');
+  registerWorktreeCleanup(undefined, { removeWorktree, worktreeExists });
   ```
 
 - [ ] **Step 4: Run all tests**
@@ -657,6 +735,7 @@ Register a domain bus listener at startup that starts sessions when cards enter 
 Remove all cross-domain side effects from `cardService`. After this, `card.ts` is pure card CRUD.
 
 **Files:**
+
 - Modify: `src/server/services/card.ts`
 
 - [ ] **Step 1: Remove auto-start from createCard**
@@ -706,6 +785,7 @@ Remove all cross-domain side effects from `cardService`. After this, `card.ts` i
 ### Task 6: Split follow-up from startSession
 
 **Files:**
+
 - Modify: `src/server/services/session.ts`
 - Modify: `src/server/ws/handlers/agents.ts`
 
@@ -763,31 +843,38 @@ Remove all cross-domain side effects from `cardService`. After this, `card.ts` i
     msg: Extract<ClientMessage, { type: 'agent:send' }>,
     connections: ConnectionManager,
   ): Promise<void> {
-    const { requestId, data: { cardId, message, files } } = msg
-    console.log(`[session:${cardId}] agent:send, len=${message.length}, files=${files?.length ?? 0}`)
+    const {
+      requestId,
+      data: { cardId, message, files },
+    } = msg;
+    console.log(`[session:${cardId}] agent:send, len=${message.length}, files=${files?.length ?? 0}`);
 
     try {
-      connections.send(ws, { type: 'mutation:ok', requestId })
+      connections.send(ws, { type: 'mutation:ok', requestId });
 
-      const { sessionManager } = await import('../../agents/manager')
-      const existing = sessionManager.get(cardId)
+      const { sessionManager } = await import('../../agents/manager');
+      const existing = sessionManager.get(cardId);
 
       if (existing && (existing.status === 'running' || existing.status === 'completed')) {
-        sessionService.sendFollowUp(cardId, message).catch(err => {
-          console.error(`[session:${cardId}] sendFollowUp error:`, err)
-        })
+        sessionService.sendFollowUp(cardId, message).catch((err) => {
+          console.error(`[session:${cardId}] sendFollowUp error:`, err);
+        });
       } else {
-        sessionService.startSession(cardId, message, files).catch(err => {
-          const error = err instanceof Error ? err.message : String(err)
-          console.error(`[session:${cardId}] startSession error:`, error)
+        sessionService.startSession(cardId, message, files).catch((err) => {
+          const error = err instanceof Error ? err.message : String(err);
+          console.error(`[session:${cardId}] startSession error:`, error);
           connections.send(ws, {
             type: 'agent:status',
             data: { cardId, active: false, status: 'errored', sessionId: null, promptsSent: 0, turnsCompleted: 0 },
-          })
-        })
+          });
+        });
       }
     } catch (err) {
-      connections.send(ws, { type: 'mutation:error', requestId, error: String(err instanceof Error ? err.message : err) })
+      connections.send(ws, {
+        type: 'mutation:error',
+        requestId,
+        error: String(err instanceof Error ? err.message : err),
+      });
     }
   }
   ```
@@ -815,6 +902,7 @@ Remove all cross-domain side effects from `cardService`. After this, `card.ts` i
 ### Task 7: Final cleanup
 
 **Files:**
+
 - Modify: `src/server/services/session.ts` — add clarifying comment to column safety net
 - Verify: all cross-domain mutations removed except safety nets
 
@@ -827,9 +915,9 @@ Remove all cross-domain side effects from `cardService`. After this, `card.ts` i
   // (card is already running). Required when called from handleAgentSend for
   // cards in review — triggers board:changed so controller handlers subscribe.
   if (card.column !== 'running') {
-    card.column = 'running'
-    card.updatedAt = new Date().toISOString()
-    await card.save()
+    card.column = 'running';
+    card.updatedAt = new Date().toISOString();
+    await card.save();
   }
   ```
 
@@ -861,14 +949,14 @@ Remove all cross-domain side effects from `cardService`. After this, `card.ts` i
 
 ## Summary
 
-| Before | After |
-|--------|-------|
+| Before                                                      | After                                                                            |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | One big `session.on('message')` closure with mixed concerns | Independent handlers: content forwarding, counter persistence, column transition |
-| One big `session.on('exit')` closure | Independent handlers: column transition, bus publish |
-| `cardService.createCard/updateCard` auto-starts sessions | `registerAutoStart` on `board:changed` in OC controller |
-| `cardService.updateCard` removes worktrees on archive | `registerWorktreeCleanup` on `board:changed` in OC controller |
-| `startSession` handles new + follow-up | Split into `startSession` + `sendFollowUp` |
-| Session closures capture stale `card` reference | Controller handlers do fresh `Card.findOneBy()` each time |
+| One big `session.on('exit')` closure                        | Independent handlers: column transition, bus publish                             |
+| `cardService.createCard/updateCard` auto-starts sessions    | `registerAutoStart` on `board:changed` in OC controller                          |
+| `cardService.updateCard` removes worktrees on archive       | `registerWorktreeCleanup` on `board:changed` in OC controller                    |
+| `startSession` handles new + follow-up                      | Split into `startSession` + `sendFollowUp`                                       |
+| Session closures capture stale `card` reference             | Controller handlers do fresh `Card.findOneBy()` each time                        |
 
 ## Out of Scope (Future Work)
 

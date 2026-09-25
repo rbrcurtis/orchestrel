@@ -56,9 +56,9 @@ If authentication expires, the normal login flow appears again and returns to th
 
 ## Native Extension Architecture
 
-| Extension | App Group | Composer URL |
-| --- | --- | --- |
-| `com.orchestrel.ios.share` | `group.com.orchestrel.ios.share` | `https://orchestrel.com/share/card` |
+| Extension                          | App Group                                | Composer URL                           |
+| ---------------------------------- | ---------------------------------------- | -------------------------------------- |
+| `com.orchestrel.ios.share`         | `group.com.orchestrel.ios.share`         | `https://orchestrel.com/share/card`    |
 | `com.orchestrel.orcchat.ios.share` | `group.com.orchestrel.orcchat.ios.share` | `https://orchestrel.com/share/chat/19` |
 
 Each `ShareViewController`:

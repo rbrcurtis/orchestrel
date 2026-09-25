@@ -39,16 +39,16 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
       const visible = await userService.visibleProjectIds(identity as import('../services/user').UserIdentity);
 
       const [allCards, allProjects] = await Promise.all([
-        cardService.listCards(columns.length > 0 ? columns as Column[] : undefined),
+        cardService.listCards(columns.length > 0 ? (columns as Column[]) : undefined),
         projectService.listProjects(),
       ]);
 
-      const cards = visible === 'all'
-        ? allCards
-        : allCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
-      const projects = visible === 'all'
-        ? allProjects
-        : allProjects.filter((p) => (visible as number[]).includes(p.id));
+      const cards =
+        visible === 'all'
+          ? allCards
+          : allCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+      const projects =
+        visible === 'all' ? allProjects : allProjects.filter((p) => (visible as number[]).includes(p.id));
 
       let users: Array<{ id: number; email: string; role: string }> | undefined;
       if (identity.role === 'admin') {

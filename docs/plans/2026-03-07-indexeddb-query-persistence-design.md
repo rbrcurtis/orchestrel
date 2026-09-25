@@ -3,6 +3,7 @@
 ## Problem
 
 When reopening the Orchestrel PWA on mobile, the React Query cache is empty. This causes:
+
 - "Card not found" flash when a card URL is persisted (`?card=123`) but `allCards` hasn't loaded yet
 - Blank chat history while session JSONL re-fetches from the server
 - Frequent re-render flashes on mobile due to `refetchOnWindowFocus` firing on every app switch
@@ -20,6 +21,7 @@ Persist the entire React Query cache to IndexedDB using `idb-keyval`. On app ope
 ### New: `app/lib/query-persist.ts`
 
 IndexedDB-backed persister for `@tanstack/react-query-persist-client`:
+
 - `persister` — async persister using `idb-keyval` `get`/`set`/`del`
 - `getCacheSize()` — returns byte size of the stored cache blob
 - `clearCache()` — wipes the IndexedDB store

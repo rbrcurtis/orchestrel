@@ -29,9 +29,12 @@ const ChatIndex = observer(function ChatIndex() {
         <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col px-5 py-10 md:px-8">
           <div className="mb-10 max-w-3xl">
             <p className="mb-4 text-sm font-medium uppercase tracking-[0.4em] text-muted-foreground">Chat launchpad</p>
-            <h2 className="text-4xl font-semibold tracking-tight text-foreground md:text-6xl">Where do you want to work today?</h2>
+            <h2 className="text-4xl font-semibold tracking-tight text-foreground md:text-6xl">
+              Where do you want to work today?
+            </h2>
             <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-              Conversations now live inside their project. Choose a workspace, start a clean agent run, or reopen a project thread from the side rail.
+              Conversations now live inside their project. Choose a workspace, start a clean agent run, or reopen a
+              project thread from the side rail.
             </p>
           </div>
           <div className="mb-6 w-full">
@@ -50,7 +53,9 @@ const ChatIndex = observer(function ChatIndex() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {projects.map((project) => {
                 const cards = cardStore.cardsByCreatedDesc.filter((card) => card.projectId === project.id);
-                const activeCount = cards.filter((card) => card.column === 'running' || card.column === 'review').length;
+                const activeCount = cards.filter(
+                  (card) => card.column === 'running' || card.column === 'review',
+                ).length;
                 const latest = cards[0];
                 return (
                   <Link
@@ -73,7 +78,9 @@ const ChatIndex = observer(function ChatIndex() {
                     </div>
                     <div className="mt-8 flex items-end gap-3">
                       <div className="space-y-1 text-sm text-muted-foreground">
-                        <div>{cards.length} conversation{cards.length === 1 ? '' : 's'}</div>
+                        <div>
+                          {cards.length} conversation{cards.length === 1 ? '' : 's'}
+                        </div>
                         <div>{activeCount} active</div>
                       </div>
                       <span className="flex-1" />
@@ -82,7 +89,11 @@ const ChatIndex = observer(function ChatIndex() {
                         New chat
                       </div>
                     </div>
-                    {latest && <p className="mt-5 truncate border-t border-border/70 pt-4 text-xs text-muted-foreground">Latest: {latest.title}</p>}
+                    {latest && (
+                      <p className="mt-5 truncate border-t border-border/70 pt-4 text-xs text-muted-foreground">
+                        Latest: {latest.title}
+                      </p>
+                    )}
                   </Link>
                 );
               })}

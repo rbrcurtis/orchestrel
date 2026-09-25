@@ -15,7 +15,9 @@ async function main(): Promise<void> {
   if (args['--status']) {
     const db = getDb();
     const rows = db
-      .prepare('SELECT id, run_type, status, started_at, finished_at FROM memory_maintainer_runs ORDER BY id DESC LIMIT 10')
+      .prepare(
+        'SELECT id, run_type, status, started_at, finished_at FROM memory_maintainer_runs ORDER BY id DESC LIMIT 10',
+      )
       .all() as Array<Record<string, unknown>>;
     console.table(rows);
     return;
@@ -25,7 +27,10 @@ async function main(): Promise<void> {
 
   if (args['--weekly']) {
     const summary = await runMerge(cfg);
-    console.log('merge:', summary ? `${summary.groups} groups, ${summary.ops} ops → ${summary.stagingFile}` : 'disabled (no memory config)');
+    console.log(
+      'merge:',
+      summary ? `${summary.groups} groups, ${summary.ops} ops → ${summary.stagingFile}` : 'disabled (no memory config)',
+    );
     return;
   }
 

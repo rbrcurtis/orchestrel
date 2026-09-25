@@ -50,12 +50,14 @@ export class OrcdServer {
 
   async stop(): Promise<void> {
     for (const client of this.clients) client.socket.destroy();
-    await Promise.all(this.store.values().map(async (session) => {
-      await session.dispose().catch((err: unknown) => {
-        console.error(`[orcd] failed to dispose session ${session.id.slice(0, 8)}:`, err);
-      });
-      this.store.remove(session.id);
-    }));
+    await Promise.all(
+      this.store.values().map(async (session) => {
+        await session.dispose().catch((err: unknown) => {
+          console.error(`[orcd] failed to dispose session ${session.id.slice(0, 8)}:`, err);
+        });
+        this.store.remove(session.id);
+      }),
+    );
     await new Promise<void>((resolve) => {
       if (!this.server) {
         console.log('[orcd] listener already stopped');
@@ -171,8 +173,11 @@ export class OrcdServer {
         break;
       case 'get_transcript': {
         const session = this.store.get(action.sessionId);
-        this.send(client, { type: 'transcript_snapshot', requestId: action.requestId,
-          snapshot: session?.getTranscriptSnapshot() ?? null });
+        this.send(client, {
+          type: 'transcript_snapshot',
+          requestId: action.requestId,
+          snapshot: session?.getTranscriptSnapshot() ?? null,
+        });
         break;
       }
       case 'get_history_page':
@@ -207,7 +212,9 @@ export class OrcdServer {
       id,
       label: cfg.label ?? id,
       models: Object.entries(cfg.modelLabels ?? {}).map(([, m]) => ({
-        alias: m.alias, label: m.label, contextWindow: m.contextWindow,
+        alias: m.alias,
+        label: m.label,
+        contextWindow: m.contextWindow,
       })),
     }));
     return { type: 'capabilities', requestId, name: this.opts.name, providers, defaults: this.defaults };
@@ -248,7 +255,10 @@ export class OrcdServer {
             .setModel(action.provider, action.model, cfg)
             .then(runPrompt)
             .catch((err: unknown) => {
-              console.error(`[orcd:${existing.id.slice(0, 8)}] set_model on resume failed:`, err instanceof Error ? err.message : String(err));
+              console.error(
+                `[orcd:${existing.id.slice(0, 8)}] set_model on resume failed:`,
+                err instanceof Error ? err.message : String(err),
+              );
               runPrompt();
             });
           console.log(`[orcd:${existing.id.slice(0, 8)}] reusing resident session with model switch`);
@@ -420,7 +430,10 @@ export class OrcdServer {
       return;
     }
     session.setModel(action.provider, action.model, cfg).catch((err: unknown) => {
-      console.error(`[orcd:${session.id.slice(0, 8)}] setModel error:`, err instanceof Error ? err.message : String(err));
+      console.error(
+        `[orcd:${session.id.slice(0, 8)}] setModel error:`,
+        err instanceof Error ? err.message : String(err),
+      );
     });
   }
 
@@ -509,21 +522,34 @@ export class OrcdServer {
 
   // ── Worktree / path actions ────────────────────────────────────────────────
 
-  private async handleWorktreePrepare(client: ClientState, action: OrcdAction & { action: 'worktree_prepare' }): Promise<void> {
+  private async handleWorktreePrepare(
+    client: ClientState,
+    action: OrcdAction & { action: 'worktree_prepare' },
+  ): Promise<void> {
     try {
       const { prepareWorktree } = await import('./worktree-ops');
       const res = await prepareWorktree({
-        projectPath: action.projectPath, branch: action.branch,
-        sourceBranch: action.sourceBranch, setupCommands: action.setupCommands,
+        projectPath: action.projectPath,
+        branch: action.branch,
+        sourceBranch: action.sourceBranch,
+        setupCommands: action.setupCommands,
       });
       this.send(client, { type: 'worktree_ready', requestId: action.requestId, path: res.path, branch: res.branch });
     } catch (err) {
       console.error(`[orcd] worktree_prepare failed (${action.branch}):`, err instanceof Error ? err.message : err);
-      this.send(client, { type: 'error', sessionId: '', requestId: action.requestId, error: err instanceof Error ? err.message : String(err) });
+      this.send(client, {
+        type: 'error',
+        sessionId: '',
+        requestId: action.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  private async handleWorktreeRemove(client: ClientState, action: OrcdAction & { action: 'worktree_remove' }): Promise<void> {
+  private async handleWorktreeRemove(
+    client: ClientState,
+    action: OrcdAction & { action: 'worktree_remove' },
+  ): Promise<void> {
     try {
       const { existsSync } = await import('fs');
       const { removeWorktree } = await import('./worktree-ops');
@@ -531,24 +557,40 @@ export class OrcdServer {
       this.send(client, { type: 'ok', requestId: action.requestId });
     } catch (err) {
       console.error(`[orcd] worktree_remove failed (${action.path}):`, err instanceof Error ? err.message : err);
-      this.send(client, { type: 'error', sessionId: '', requestId: action.requestId, error: err instanceof Error ? err.message : String(err) });
+      this.send(client, {
+        type: 'error',
+        sessionId: '',
+        requestId: action.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  private async handlePathValidate(client: ClientState, action: OrcdAction & { action: 'path_validate' }): Promise<void> {
+  private async handlePathValidate(
+    client: ClientState,
+    action: OrcdAction & { action: 'path_validate' },
+  ): Promise<void> {
     const { validatePath } = await import('./worktree-ops');
     const res = await validatePath(action.path);
     this.send(client, { type: 'path_validated', requestId: action.requestId, ...res });
   }
 
-  private async handleGetHistoryPage(client: ClientState, action: OrcdAction & { action: 'get_history_page' }): Promise<void> {
+  private async handleGetHistoryPage(
+    client: ClientState,
+    action: OrcdAction & { action: 'get_history_page' },
+  ): Promise<void> {
     try {
       const { getPiSessionHistoryPage } = await import('../lib/pi-session-history');
       const page = await getPiSessionHistoryPage(action.sessionId, action.cwd, action.page);
       this.send(client, { type: 'history_page', requestId: action.requestId, page });
     } catch (err) {
       console.error(`[orcd:${action.sessionId}] history page failed`, err);
-      this.send(client, { type: 'error', sessionId: action.sessionId, requestId: action.requestId, error: String(err) });
+      this.send(client, {
+        type: 'error',
+        sessionId: action.sessionId,
+        requestId: action.requestId,
+        error: String(err),
+      });
     }
   }
 
@@ -638,7 +680,9 @@ export class OrcdServer {
       const result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => session.emitBgcStarted());
       if (!result) {
         this.bgcNoopTokens.set(sid, tokens);
-        console.log(`[orcd:${sid.slice(0, 8)}:bgc] nothing to compact (tokens=${tokens}); suppressing retries at this size`);
+        console.log(
+          `[orcd:${sid.slice(0, 8)}:bgc] nothing to compact (tokens=${tokens}); suppressing retries at this size`,
+        );
         return;
       }
       this.bgcNoopTokens.delete(sid);
@@ -659,7 +703,10 @@ export class OrcdServer {
   }
 
   /** Splice a prepared compaction unless Pi's safety net already compacted. */
-  private applyBgcResult(session: OrcdSession, result: import('@earendil-works/pi-coding-agent').CompactionResult): void {
+  private applyBgcResult(
+    session: OrcdSession,
+    result: import('@earendil-works/pi-coding-agent').CompactionResult,
+  ): void {
     if (session.latestEntryIsCompaction()) {
       console.log(`[orcd:${session.id.slice(0, 8)}:bgc] stale — a compaction already landed, skipping apply`);
       return;

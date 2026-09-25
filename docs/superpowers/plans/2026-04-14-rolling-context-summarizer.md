@@ -14,25 +14,26 @@
 
 ## File Structure
 
-| File | Responsibility |
-|------|---------------|
-| `src/orcd/extensions/summarizer.ts` | Pi extension: triggers background summarization, splices summary into messages on next `context` event |
-| `src/orcd/extensions/summarizer-client.ts` | OpenRouter API client: sends excerpt to model, returns summary text |
-| `src/orcd/__tests__/summarizer.test.ts` | Unit tests for the extension (trigger logic, message splicing, state machine) |
-| `src/orcd/__tests__/summarizer-client.test.ts` | Unit tests for the API client (request format, response parsing, error handling) |
-| `src/shared/constants.ts` | Add `DEFAULT_SUMMARIZE_THRESHOLD` constant |
-| `src/shared/orcd-protocol.ts` | Add `summarizeThreshold` to `CreateAction` |
-| `src/orcd/pi-session.ts` | Wire the new extension into the session, pass threshold from protocol |
-| `src/orcd/types.ts` | Add `summarizeThreshold` to `PiSessionOptions` |
-| `src/server/models/Card.ts` | Add `summarizeThreshold` column |
-| `src/server/controllers/card-sessions.ts` | Pass `summarizeThreshold` from card to orcd `create` action |
-| `src/shared/ws-protocol.ts` | Add `summarizeThreshold` to card/cardCreate/cardUpdate zod schemas |
+| File                                           | Responsibility                                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `src/orcd/extensions/summarizer.ts`            | Pi extension: triggers background summarization, splices summary into messages on next `context` event |
+| `src/orcd/extensions/summarizer-client.ts`     | OpenRouter API client: sends excerpt to model, returns summary text                                    |
+| `src/orcd/__tests__/summarizer.test.ts`        | Unit tests for the extension (trigger logic, message splicing, state machine)                          |
+| `src/orcd/__tests__/summarizer-client.test.ts` | Unit tests for the API client (request format, response parsing, error handling)                       |
+| `src/shared/constants.ts`                      | Add `DEFAULT_SUMMARIZE_THRESHOLD` constant                                                             |
+| `src/shared/orcd-protocol.ts`                  | Add `summarizeThreshold` to `CreateAction`                                                             |
+| `src/orcd/pi-session.ts`                       | Wire the new extension into the session, pass threshold from protocol                                  |
+| `src/orcd/types.ts`                            | Add `summarizeThreshold` to `PiSessionOptions`                                                         |
+| `src/server/models/Card.ts`                    | Add `summarizeThreshold` column                                                                        |
+| `src/server/controllers/card-sessions.ts`      | Pass `summarizeThreshold` from card to orcd `create` action                                            |
+| `src/shared/ws-protocol.ts`                    | Add `summarizeThreshold` to card/cardCreate/cardUpdate zod schemas                                     |
 
 ---
 
 ### Task 1: Summarizer API Client
 
 **Files:**
+
 - Create: `src/orcd/extensions/summarizer-client.ts`
 - Test: `src/orcd/__tests__/summarizer-client.test.ts`
 
@@ -96,8 +97,7 @@ describe('summarizeExcerpt', () => {
       text: async () => 'rate limited',
     });
 
-    await expect(summarizeExcerpt('text', MOCK_CONFIG))
-      .rejects.toThrow('Summarizer API 429: rate limited');
+    await expect(summarizeExcerpt('text', MOCK_CONFIG)).rejects.toThrow('Summarizer API 429: rate limited');
   });
 
   it('throws on empty choices', async () => {
@@ -106,8 +106,7 @@ describe('summarizeExcerpt', () => {
       json: async () => ({ choices: [] }),
     });
 
-    await expect(summarizeExcerpt('text', MOCK_CONFIG))
-      .rejects.toThrow('Summarizer returned no content');
+    await expect(summarizeExcerpt('text', MOCK_CONFIG)).rejects.toThrow('Summarizer returned no content');
   });
 });
 ```
@@ -153,10 +152,7 @@ interface ChatResponse {
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
-export async function summarizeExcerpt(
-  excerpt: string,
-  config: SummarizerConfig,
-): Promise<SummarizeResult> {
+export async function summarizeExcerpt(excerpt: string, config: SummarizerConfig): Promise<SummarizeResult> {
   const t0 = Date.now();
 
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -188,7 +184,7 @@ export async function summarizeExcerpt(
   const durationMs = Date.now() - t0;
   console.error(
     `${LOG} summary received in ${(durationMs / 1000).toFixed(1)}s ` +
-    `(${data.usage?.prompt_tokens ?? '?'} prompt, ${data.usage?.completion_tokens ?? '?'} completion)`,
+      `(${data.usage?.prompt_tokens ?? '?'} prompt, ${data.usage?.completion_tokens ?? '?'} completion)`,
   );
 
   return {
@@ -219,10 +215,12 @@ git commit -m "feat: add summarizer API client for rolling context window"
 ### Task 2: Summarizer Extension — Core State Machine
 
 **Files:**
+
 - Create: `src/orcd/extensions/summarizer.ts`
 - Test: `src/orcd/__tests__/summarizer.test.ts`
 
 The extension hooks into `context` events. It has three states:
+
 - **idle**: checking if context exceeds threshold
 - **summarizing**: background call in progress, pass messages through unchanged
 - **ready**: summary available, splice it into messages on next `context` event
@@ -248,7 +246,14 @@ function assistantMsg(text: string, outputTokens = 0): AgentMessage {
   return {
     role: 'assistant',
     content: [{ type: 'text', text }],
-    usage: { input: 0, output: outputTokens, cacheRead: 0, cacheWrite: 0, totalTokens: outputTokens, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: {
+      input: 0,
+      output: outputTokens,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: outputTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
     stopReason: 'stop',
     api: 'anthropic-messages',
     provider: 'anthropic',
@@ -263,9 +268,11 @@ function assistantMsg(text: string, outputTokens = 0): AgentMessage {
 function makeMockRuntime() {
   let contextHandler: ((event: { type: string; messages: AgentMessage[] }) => { messages: AgentMessage[] }) | undefined;
   const mockRuntime = {
-    on: vi.fn((event: string, handler: (event: { type: string; messages: AgentMessage[] }) => { messages: AgentMessage[] }) => {
-      if (event === 'context') contextHandler = handler;
-    }),
+    on: vi.fn(
+      (event: string, handler: (event: { type: string; messages: AgentMessage[] }) => { messages: AgentMessage[] }) => {
+        if (event === 'context') contextHandler = handler;
+      },
+    ),
     getMessages: vi.fn().mockReturnValue([]),
     getSystemPrompt: vi.fn().mockReturnValue(''),
     onContextWindowUpdate: vi.fn(),
@@ -317,9 +324,12 @@ describe('createSummarizerExtension', () => {
     // Each msg ~200 tokens, 6 msgs = ~1200 tokens, over 500 threshold (50% of 1000)
     const bigText = 'a'.repeat(700);
     const msgs = [
-      userMsg(bigText), assistantMsg(bigText),
-      userMsg(bigText), assistantMsg(bigText),
-      userMsg(bigText), assistantMsg(bigText),
+      userMsg(bigText),
+      assistantMsg(bigText),
+      userMsg(bigText),
+      assistantMsg(bigText),
+      userMsg(bigText),
+      assistantMsg(bigText),
     ];
 
     // First call: triggers background summarization, returns messages unchanged
@@ -329,7 +339,10 @@ describe('createSummarizerExtension', () => {
     // Wait for background call to complete
     // Poll until mock is called (vi.waitFor may not exist in all vitest versions)
     await new Promise<void>((resolve) => {
-      const check = () => { if (summarizeMock.mock.calls.length > 0) resolve(); else setTimeout(check, 10); };
+      const check = () => {
+        if (summarizeMock.mock.calls.length > 0) resolve();
+        else setTimeout(check, 10);
+      };
       check();
     });
     expect(summarizeMock).toHaveBeenCalledOnce();
@@ -342,16 +355,22 @@ describe('createSummarizerExtension', () => {
 
     const bigText = 'a'.repeat(700);
     const msgs = [
-      userMsg(bigText), assistantMsg(bigText),
-      userMsg(bigText), assistantMsg(bigText),
-      userMsg('recent question'), assistantMsg('recent answer'),
+      userMsg(bigText),
+      assistantMsg(bigText),
+      userMsg(bigText),
+      assistantMsg(bigText),
+      userMsg('recent question'),
+      assistantMsg('recent answer'),
     ];
 
     // First call: triggers summarization
     getContextHandler()({ type: 'context', messages: msgs });
     // Poll until mock is called (vi.waitFor may not exist in all vitest versions)
     await new Promise<void>((resolve) => {
-      const check = () => { if (summarizeMock.mock.calls.length > 0) resolve(); else setTimeout(check, 10); };
+      const check = () => {
+        if (summarizeMock.mock.calls.length > 0) resolve();
+        else setTimeout(check, 10);
+      };
       check();
     });
     expect(summarizeMock).toHaveBeenCalledOnce();
@@ -377,10 +396,7 @@ describe('createSummarizerExtension', () => {
     factory(mockRuntime);
 
     const bigText = 'a'.repeat(700);
-    const msgs = [
-      userMsg(bigText), assistantMsg(bigText),
-      userMsg(bigText), assistantMsg(bigText),
-    ];
+    const msgs = [userMsg(bigText), assistantMsg(bigText), userMsg(bigText), assistantMsg(bigText)];
 
     const result = getContextHandler()({ type: 'context', messages: msgs });
     expect(result.messages).toEqual(msgs);
@@ -395,10 +411,7 @@ describe('createSummarizerExtension', () => {
     factory(mockRuntime);
 
     const bigText = 'a'.repeat(700);
-    const msgs = [
-      userMsg(bigText), assistantMsg(bigText),
-      userMsg(bigText), assistantMsg(bigText),
-    ];
+    const msgs = [userMsg(bigText), assistantMsg(bigText), userMsg(bigText), assistantMsg(bigText)];
 
     getContextHandler()({ type: 'context', messages: msgs });
     getContextHandler()({ type: 'context', messages: msgs });
@@ -447,19 +460,20 @@ type State = 'idle' | 'summarizing' | 'ready';
 function extractText(msg: AgentMessage): string | null {
   const m = msg as Message;
   if (m.role === 'user' || m.role === 'developer') {
-    const raw = typeof m.content === 'string'
-      ? m.content
-      : (m.content as Array<{ type: string; text?: string }>)
-          .filter(b => b.type === 'text')
-          .map(b => b.text ?? '')
-          .join('\n');
+    const raw =
+      typeof m.content === 'string'
+        ? m.content
+        : (m.content as Array<{ type: string; text?: string }>)
+            .filter((b) => b.type === 'text')
+            .map((b) => b.text ?? '')
+            .join('\n');
     return raw.slice(0, MAX_MSG_CHARS);
   }
   if (m.role === 'assistant') {
     const blocks = m.content as Array<{ type: string; text?: string }>;
     const raw = blocks
-      .filter(b => b.type === 'text')
-      .map(b => b.text ?? '')
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text ?? '')
       .join('\n');
     return raw.slice(0, MAX_MSG_CHARS);
   }
@@ -536,7 +550,9 @@ export function createSummarizerExtension(
 
         const result = [summaryMsg, ...kept];
         const summaryTokens = Math.ceil(summary.length / 3.5);
-        console.error(`${LOG} spliced summary (${summaryTokens} tokens) replacing ${covered} messages, ${kept.length} kept`);
+        console.error(
+          `${LOG} spliced summary (${summaryTokens} tokens) replacing ${covered} messages, ${kept.length} kept`,
+        );
         opts.onSummarized?.(covered, summaryTokens);
 
         return { messages: result };
@@ -550,7 +566,9 @@ export function createSummarizerExtension(
           state = 'summarizing';
           const coverCount = Math.floor(msgs.length / 2);
 
-          console.error(`${LOG} threshold exceeded (${total} > ${triggerTokens}), summarizing oldest ${coverCount} messages`);
+          console.error(
+            `${LOG} threshold exceeded (${total} > ${triggerTokens}), summarizing oldest ${coverCount} messages`,
+          );
 
           const excerpt = buildExcerpt(msgs, coverCount);
 
@@ -593,6 +611,7 @@ git commit -m "feat: add summarizer extension with background summarization stat
 ### Task 3: Add `summarizeThreshold` to Card and Protocol
 
 **Files:**
+
 - Modify: `src/shared/constants.ts`
 - Modify: `src/shared/orcd-protocol.ts`
 - Modify: `src/orcd/types.ts`
@@ -624,7 +643,7 @@ export interface CreateAction {
   sessionId?: string;
   env?: Record<string, string>;
   contextWindow?: number;
-  summarizeThreshold?: number;  // ← add this line
+  summarizeThreshold?: number; // ← add this line
 }
 ```
 
@@ -644,7 +663,7 @@ export interface PiSessionOptions {
   contextWindow?: number;
   effort?: string;
   project?: string;
-  summarizeThreshold?: number;  // ← add this line
+  summarizeThreshold?: number; // ← add this line
 }
 ```
 
@@ -668,12 +687,14 @@ In `src/server/models/Card.ts`, add after the `contextWindow` column:
 In `src/shared/ws-protocol.ts`:
 
 1. Add `summarizeThreshold` to `cardSchema`:
+
 ```typescript
   contextWindow: z.number(),
   summarizeThreshold: z.number(),
 ```
 
 2. Add `summarizeThreshold` to `cardCreateSchema`:
+
 ```typescript
   thinkingLevel: z.enum(['off', 'low', 'medium', 'high']).optional(),
   summarizeThreshold: z.number().min(0).max(1).optional(),
@@ -693,6 +714,7 @@ git commit -m "feat: add summarizeThreshold field to card, protocol, constants, 
 ### Task 4: Wire Summarizer Extension into Pi Session
 
 **Files:**
+
 - Modify: `src/orcd/pi-session.ts`
 - Modify: `src/server/controllers/card-sessions.ts`
 
@@ -709,23 +731,23 @@ import { createSummarizerExtension } from './extensions/summarizer';
 In the `run()` method, inside the extensions array construction (after `createCacheBreakpointExtension()`), add:
 
 ```typescript
-      // Add summarizer extension if threshold is set and openrouter is available
-      if (this.opts.summarizeThreshold && this.opts.summarizeThreshold > 0 && this.opts.openrouterConfig) {
-        extensions.push(
-          createSummarizerExtension({
-            summarizeThreshold: this.opts.summarizeThreshold,
-            messageBudgetTokens: messageBudget,
-            summarizerConfig: {
-              baseUrl: this.opts.openrouterConfig.baseUrl,
-              apiKey: this.opts.openrouterConfig.apiKey,
-              model: 'deepseek/deepseek-chat-v3-0324',
-            },
-            onSummarized: (coveredCount, summaryTokens) => {
-              log(`summarized ${coveredCount} messages → ${summaryTokens} tokens`);
-            },
-          }),
-        );
-      }
+// Add summarizer extension if threshold is set and openrouter is available
+if (this.opts.summarizeThreshold && this.opts.summarizeThreshold > 0 && this.opts.openrouterConfig) {
+  extensions.push(
+    createSummarizerExtension({
+      summarizeThreshold: this.opts.summarizeThreshold,
+      messageBudgetTokens: messageBudget,
+      summarizerConfig: {
+        baseUrl: this.opts.openrouterConfig.baseUrl,
+        apiKey: this.opts.openrouterConfig.apiKey,
+        model: 'deepseek/deepseek-chat-v3-0324',
+      },
+      onSummarized: (coveredCount, summaryTokens) => {
+        log(`summarized ${coveredCount} messages → ${summaryTokens} tokens`);
+      },
+    }),
+  );
+}
 ```
 
 - [ ] **Step 2: Pass summarizeThreshold from card to orcd create action**
@@ -733,15 +755,15 @@ In the `run()` method, inside the extensions array construction (after `createCa
 In `src/server/controllers/card-sessions.ts`, in the `registerAutoStart` function, find where `client.create()` is called and add `summarizeThreshold`:
 
 ```typescript
-      const sessionId = await client.create({
-        prompt,
-        cwd,
-        provider: fullCard.provider,
-        model: fullCard.model,
-        sessionId: fullCard.sessionId ?? undefined,
-        contextWindow: fullCard.contextWindow,
-        summarizeThreshold: fullCard.summarizeThreshold,  // ← add this line
-      });
+const sessionId = await client.create({
+  prompt,
+  cwd,
+  provider: fullCard.provider,
+  model: fullCard.model,
+  sessionId: fullCard.sessionId ?? undefined,
+  contextWindow: fullCard.contextWindow,
+  summarizeThreshold: fullCard.summarizeThreshold, // ← add this line
+});
 ```
 
 - [ ] **Step 3: Pass summarizeThreshold through orcd socket server to PiSession**
@@ -771,6 +793,7 @@ git commit -m "feat: wire summarizer extension into pi session and card creation
 ### Task 5: Interaction with Rolling Window Extension
 
 **Files:**
+
 - Modify: `src/orcd/pi-session.ts`
 
 The summarizer and rolling-window extensions both modify messages on `context` events. They must be ordered correctly:
@@ -785,34 +808,36 @@ The Pi extension system processes `context` handlers in registration order.
 Ensure the `extensions` array in `pi-session.ts` `run()` has this order:
 
 ```typescript
-      const extensions = [
-        // Summarizer FIRST — may splice summary, reducing tokens
-        ...(this.opts.summarizeThreshold && this.opts.summarizeThreshold > 0 && this.opts.openrouterConfig
-          ? [createSummarizerExtension({
-              summarizeThreshold: this.opts.summarizeThreshold,
-              messageBudgetTokens: messageBudget,
-              summarizerConfig: {
-                baseUrl: this.opts.openrouterConfig.baseUrl,
-                apiKey: this.opts.openrouterConfig.apiKey,
-                model: 'deepseek/deepseek-chat-v3-0324',
-              },
-              onSummarized: (coveredCount, summaryTokens) => {
-                log(`summarized ${coveredCount} messages → ${summaryTokens} tokens`);
-              },
-            })]
-          : []),
-        // Rolling window SECOND — fallback eviction if still over budget
-        createRollingWindowExtension({
+const extensions = [
+  // Summarizer FIRST — may splice summary, reducing tokens
+  ...(this.opts.summarizeThreshold && this.opts.summarizeThreshold > 0 && this.opts.openrouterConfig
+    ? [
+        createSummarizerExtension({
+          summarizeThreshold: this.opts.summarizeThreshold,
           messageBudgetTokens: messageBudget,
-          onEviction: (evicted, remaining) => {
-            log(`evicted ${evicted} messages, ${remaining} remaining`);
+          summarizerConfig: {
+            baseUrl: this.opts.openrouterConfig.baseUrl,
+            apiKey: this.opts.openrouterConfig.apiKey,
+            model: 'deepseek/deepseek-chat-v3-0324',
+          },
+          onSummarized: (coveredCount, summaryTokens) => {
+            log(`summarized ${coveredCount} messages → ${summaryTokens} tokens`);
           },
         }),
-        createCacheBreakpointExtension(),
-        // NOTE: Also preserve the existing memory-upsert extension wiring:
-        // ...(memoryEnabled ? [createMemoryUpsertExtension({ ... })] : []),
-        // Do NOT remove it — this snippet only shows the ordering for summarizer + rolling-window.
-      ];
+      ]
+    : []),
+  // Rolling window SECOND — fallback eviction if still over budget
+  createRollingWindowExtension({
+    messageBudgetTokens: messageBudget,
+    onEviction: (evicted, remaining) => {
+      log(`evicted ${evicted} messages, ${remaining} remaining`);
+    },
+  }),
+  createCacheBreakpointExtension(),
+  // NOTE: Also preserve the existing memory-upsert extension wiring:
+  // ...(memoryEnabled ? [createMemoryUpsertExtension({ ... })] : []),
+  // Do NOT remove it — this snippet only shows the ordering for summarizer + rolling-window.
+];
 ```
 
 - [ ] **Step 2: Write a test for the interaction**
@@ -820,27 +845,24 @@ Ensure the `extensions` array in `pi-session.ts` `run()` has this order:
 Add to `src/orcd/__tests__/summarizer.test.ts`:
 
 ```typescript
-  it('works as fallback when summarizer is in-flight — rolling window still evicts', () => {
-    // This test verifies the summarizer passes messages through unchanged while
-    // summarizing, allowing the rolling window (which runs after) to evict if needed.
-    const { mockRuntime, getContextHandler } = makeMockRuntime();
-    // Slow summarizer that never resolves
-    const slowMock = vi.fn().mockReturnValue(new Promise(() => {}));
-    const factory = createSummarizerExtension(BASE_OPTS, slowMock);
-    factory(mockRuntime);
+it('works as fallback when summarizer is in-flight — rolling window still evicts', () => {
+  // This test verifies the summarizer passes messages through unchanged while
+  // summarizing, allowing the rolling window (which runs after) to evict if needed.
+  const { mockRuntime, getContextHandler } = makeMockRuntime();
+  // Slow summarizer that never resolves
+  const slowMock = vi.fn().mockReturnValue(new Promise(() => {}));
+  const factory = createSummarizerExtension(BASE_OPTS, slowMock);
+  factory(mockRuntime);
 
-    const bigText = 'a'.repeat(700);
-    const msgs = [
-      userMsg(bigText), assistantMsg(bigText),
-      userMsg(bigText), assistantMsg(bigText),
-    ];
+  const bigText = 'a'.repeat(700);
+  const msgs = [userMsg(bigText), assistantMsg(bigText), userMsg(bigText), assistantMsg(bigText)];
 
-    // Triggers summarization but returns messages unchanged
-    const result = getContextHandler()({ type: 'context', messages: msgs });
-    // Messages should be passed through — rolling window (not tested here) would handle eviction
-    expect(result.messages).toEqual(msgs);
-    expect(result.messages.length).toBe(msgs.length);
-  });
+  // Triggers summarization but returns messages unchanged
+  const result = getContextHandler()({ type: 'context', messages: msgs });
+  // Messages should be passed through — rolling window (not tested here) would handle eviction
+  expect(result.messages).toEqual(msgs);
+  expect(result.messages.length).toBe(msgs.length);
+});
 ```
 
 - [ ] **Step 3: Run tests**
@@ -860,6 +882,7 @@ git commit -m "feat: order summarizer before rolling-window for graceful fallbac
 ### Task 6: Update OrcdClient to Pass summarizeThreshold
 
 **Files:**
+
 - Modify: `src/server/orcd-client.ts`
 
 The OrcdClient is the web server's connection to orcd. Its `create()` method builds the `CreateAction`. We need to ensure `summarizeThreshold` is included.

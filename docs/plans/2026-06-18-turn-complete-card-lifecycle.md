@@ -47,6 +47,7 @@
 ## Task 1: Add the `turn_complete` protocol event
 
 **Files:**
+
 - Modify: `src/shared/orcd-protocol.ts`
 - Modify: `src/orcd/session.ts`
 - Test: `src/orcd/__tests__/session-async-tasks.test.ts`
@@ -56,36 +57,40 @@
 Add this test near the start of `describe('OrcdSession async Agent lifecycle', ...)` in `src/orcd/__tests__/session-async-tasks.test.ts`, after the existing SDK options tests:
 
 ```ts
-  it('emits turn_complete with no pending async tasks for an ordinary foreground turn', async () => {
-    events.push({
+it('emits turn_complete with no pending async tasks for an ordinary foreground turn', async () => {
+  events.push({
+    type: 'result',
+    subtype: 'success',
+    stop_reason: 'end_turn',
+    modelUsage: { test: { contextWindow: 200000 } },
+  });
+
+  const session = new OrcdSession({
+    cwd: '/tmp',
+    model: 'test-model',
+    provider: 'test-provider',
+    sessionId: 'session-foreground-turn',
+  });
+
+  const payloads: unknown[] = [];
+  session.subscribe((msg) => payloads.push(msg));
+
+  await session.run({ prompt: 'go' });
+
+  expect(payloads).toContainEqual(
+    expect.objectContaining({
       type: 'result',
-      subtype: 'success',
-      stop_reason: 'end_turn',
-      modelUsage: { test: { contextWindow: 200000 } },
-    });
-
-    const session = new OrcdSession({
-      cwd: '/tmp',
-      model: 'test-model',
-      provider: 'test-provider',
       sessionId: 'session-foreground-turn',
-    });
-
-    const payloads: unknown[] = [];
-    session.subscribe((msg) => payloads.push(msg));
-
-    await session.run({ prompt: 'go' });
-
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'result',
-      sessionId: 'session-foreground-turn',
-    }));
-    expect(payloads).toContainEqual(expect.objectContaining({
+    }),
+  );
+  expect(payloads).toContainEqual(
+    expect.objectContaining({
       type: 'turn_complete',
       sessionId: 'session-foreground-turn',
       hasPendingAsyncTasks: false,
-    }));
-  });
+    }),
+  );
+});
 ```
 
 - [ ] **Step 2: Run the focused test and verify it fails**
@@ -146,20 +151,27 @@ Update `SessionEventCallback`:
 
 ```ts
 export type SessionEventCallback = (
-  msg: StreamEventMessage | SessionResultMessage | TurnCompleteMessage | SessionErrorMessage | SessionExitMessage | ContextUsageMessage | SessionIdUpdateMessage,
+  msg:
+    | StreamEventMessage
+    | SessionResultMessage
+    | TurnCompleteMessage
+    | SessionErrorMessage
+    | SessionExitMessage
+    | ContextUsageMessage
+    | SessionIdUpdateMessage,
 ) => void;
 ```
 
 Inside the `if (sdkRecord?.type === 'result')` block, immediately after broadcasting the existing `result` message, add:
 
 ```ts
-          const turnMsg: TurnCompleteMessage = {
-            type: 'turn_complete',
-            sessionId: this.id,
-            eventIndex,
-            hasPendingAsyncTasks: this.asyncTasks.hasPending(),
-          };
-          for (const cb of this.subscribers) cb(turnMsg);
+const turnMsg: TurnCompleteMessage = {
+  type: 'turn_complete',
+  sessionId: this.id,
+  eventIndex,
+  hasPendingAsyncTasks: this.asyncTasks.hasPending(),
+};
+for (const cb of this.subscribers) cb(turnMsg);
 ```
 
 The result block should still publish the original `result` message first, then `turn_complete`, then continue updating context usage as before.
@@ -179,18 +191,20 @@ Expected: PASS.
 In `src/orcd/__tests__/session-async-tasks.test.ts`, update the existing test named `delays session_exit until async task notification appears in JSONL` by adding this assertion after the existing `await vi.waitFor(() => expect(received).toContain('result'));` line:
 
 ```ts
-      expect(payloads).toContainEqual(expect.objectContaining({
-        type: 'turn_complete',
-        sessionId: 'session',
-        hasPendingAsyncTasks: true,
-      }));
+expect(payloads).toContainEqual(
+  expect.objectContaining({
+    type: 'turn_complete',
+    sessionId: 'session',
+    hasPendingAsyncTasks: true,
+  }),
+);
 ```
 
 Also add this ordering assertion before the final `expect(received.at(-1)).toBe('session_exit');`:
 
 ```ts
-      expect(received.indexOf('turn_complete')).toBeGreaterThan(received.indexOf('result'));
-      expect(received.indexOf('turn_complete')).toBeLessThan(received.indexOf('session_exit'));
+expect(received.indexOf('turn_complete')).toBeGreaterThan(received.indexOf('result'));
+expect(received.indexOf('turn_complete')).toBeLessThan(received.indexOf('session_exit'));
 ```
 
 - [ ] **Step 7: Run async lifecycle tests**
@@ -217,6 +231,7 @@ git commit -m "feat: emit turn complete lifecycle event"
 ## Task 2: Move running cards to review on `turn_complete`
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.ts`
 - Test: `src/server/controllers/card-sessions.test.ts`
 
@@ -225,41 +240,41 @@ git commit -m "feat: emit turn complete lifecycle event"
 Add this test to `describe('orcd message router', ...)` in `src/server/controllers/card-sessions.test.ts`, after the `routes session_exit...` test:
 
 ```ts
-  it('moves running cards to review on turn_complete without untracking the live session', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
+it('moves running cards to review on turn_complete without untracking the live session', async () => {
+  const { initOrcdRouter, trackSession } = await import('./card-sessions');
+  initOrcdRouter(mockClient as never, bus);
+  trackSession(42, 'sess-abc');
 
-    const sdkSpy = vi.fn();
-    bus.on('card:42:sdk', sdkSpy);
-    mockCards[0].column = 'running';
-    mockRepo.save.mockClear();
+  const sdkSpy = vi.fn();
+  bus.on('card:42:sdk', sdkSpy);
+  mockCards[0].column = 'running';
+  mockRepo.save.mockClear();
 
-    await handler!({
-      type: 'turn_complete',
-      sessionId: 'sess-abc',
-      eventIndex: 9,
-      hasPendingAsyncTasks: true,
-    });
-
-    expect(mockCards[0].column).toBe('review');
-    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
-    expect(sdkSpy).toHaveBeenCalledWith({
-      type: 'turn_complete',
-      session_id: 'sess-abc',
-      has_pending_async_tasks: true,
-    });
-
-    sdkSpy.mockClear();
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 10,
-      event: { type: 'assistant', message: 'still routed after turn complete' },
-    });
-
-    expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
+  await handler!({
+    type: 'turn_complete',
+    sessionId: 'sess-abc',
+    eventIndex: 9,
+    hasPendingAsyncTasks: true,
   });
+
+  expect(mockCards[0].column).toBe('review');
+  expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+  expect(sdkSpy).toHaveBeenCalledWith({
+    type: 'turn_complete',
+    session_id: 'sess-abc',
+    has_pending_async_tasks: true,
+  });
+
+  sdkSpy.mockClear();
+  await handler!({
+    type: 'stream_event',
+    sessionId: 'sess-abc',
+    eventIndex: 10,
+    event: { type: 'assistant', message: 'still routed after turn complete' },
+  });
+
+  expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'still routed after turn complete' });
+});
 ```
 
 - [ ] **Step 2: Run the focused test and verify it fails**
@@ -324,9 +339,9 @@ to:
 Then add this block before the existing `if (msg.type === 'context_usage')` block:
 
 ```ts
-    if (msg.type === 'turn_complete') {
-      await handleTurnComplete(cardId, msg.sessionId, msg.hasPendingAsyncTasks, bus);
-    }
+if (msg.type === 'turn_complete') {
+  await handleTurnComplete(cardId, msg.sessionId, msg.hasPendingAsyncTasks, bus);
+}
 ```
 
 - [ ] **Step 5: Run the focused test and verify it passes**
@@ -363,6 +378,7 @@ git commit -m "feat: move cards to review on turn complete"
 ## Task 3: Move non-archive cards to ready when pending background work exits
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.ts`
 - Test: `src/server/controllers/card-sessions.test.ts`
 
@@ -371,34 +387,34 @@ git commit -m "feat: move cards to review on turn complete"
 Add this test to `describe('orcd message router', ...)` in `src/server/controllers/card-sessions.test.ts`:
 
 ```ts
-  it('moves non-archive cards to ready on session_exit after a pending-background turn completed', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
+it('moves non-archive cards to ready on session_exit after a pending-background turn completed', async () => {
+  const { initOrcdRouter, trackSession } = await import('./card-sessions');
+  initOrcdRouter(mockClient as never, bus);
+  trackSession(42, 'sess-abc');
 
-    mockCards[0].column = 'running';
-    mockRepo.save.mockClear();
+  mockCards[0].column = 'running';
+  mockRepo.save.mockClear();
 
-    await handler!({
-      type: 'turn_complete',
-      sessionId: 'sess-abc',
-      eventIndex: 3,
-      hasPendingAsyncTasks: true,
-    });
-    expect(mockCards[0].column).toBe('review');
-
-    mockCards[0].column = 'done';
-    mockRepo.save.mockClear();
-
-    await handler!({
-      type: 'session_exit',
-      sessionId: 'sess-abc',
-      state: 'completed',
-    });
-
-    expect(mockCards[0].column).toBe('ready');
-    expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+  await handler!({
+    type: 'turn_complete',
+    sessionId: 'sess-abc',
+    eventIndex: 3,
+    hasPendingAsyncTasks: true,
   });
+  expect(mockCards[0].column).toBe('review');
+
+  mockCards[0].column = 'done';
+  mockRepo.save.mockClear();
+
+  await handler!({
+    type: 'session_exit',
+    sessionId: 'sess-abc',
+    state: 'completed',
+  });
+
+  expect(mockCards[0].column).toBe('ready');
+  expect(mockRepo.save).toHaveBeenCalledWith(mockCards[0]);
+});
 ```
 
 - [ ] **Step 2: Write failing archive protection test**
@@ -406,33 +422,33 @@ Add this test to `describe('orcd message router', ...)` in `src/server/controlle
 Add this test to the same describe block:
 
 ```ts
-  it('leaves archived cards archived when pending-background sessions exit', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
+it('leaves archived cards archived when pending-background sessions exit', async () => {
+  const { initOrcdRouter, trackSession } = await import('./card-sessions');
+  initOrcdRouter(mockClient as never, bus);
+  trackSession(42, 'sess-abc');
 
-    mockCards[0].column = 'running';
-    mockRepo.save.mockClear();
+  mockCards[0].column = 'running';
+  mockRepo.save.mockClear();
 
-    await handler!({
-      type: 'turn_complete',
-      sessionId: 'sess-abc',
-      eventIndex: 3,
-      hasPendingAsyncTasks: true,
-    });
-
-    mockCards[0].column = 'archive';
-    mockRepo.save.mockClear();
-
-    await handler!({
-      type: 'session_exit',
-      sessionId: 'sess-abc',
-      state: 'completed',
-    });
-
-    expect(mockCards[0].column).toBe('archive');
-    expect(mockRepo.save).not.toHaveBeenCalled();
+  await handler!({
+    type: 'turn_complete',
+    sessionId: 'sess-abc',
+    eventIndex: 3,
+    hasPendingAsyncTasks: true,
   });
+
+  mockCards[0].column = 'archive';
+  mockRepo.save.mockClear();
+
+  await handler!({
+    type: 'session_exit',
+    sessionId: 'sess-abc',
+    state: 'completed',
+  });
+
+  expect(mockCards[0].column).toBe('archive');
+  expect(mockRepo.save).not.toHaveBeenCalled();
+});
 ```
 
 - [ ] **Step 3: Write foreground-exit non-bounce test**
@@ -440,33 +456,33 @@ Add this test to the same describe block:
 Add this test to the same describe block:
 
 ```ts
-  it('does not move non-running cards to ready on ordinary foreground session_exit', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
+it('does not move non-running cards to ready on ordinary foreground session_exit', async () => {
+  const { initOrcdRouter, trackSession } = await import('./card-sessions');
+  initOrcdRouter(mockClient as never, bus);
+  trackSession(42, 'sess-abc');
 
-    mockCards[0].column = 'running';
-    mockRepo.save.mockClear();
+  mockCards[0].column = 'running';
+  mockRepo.save.mockClear();
 
-    await handler!({
-      type: 'turn_complete',
-      sessionId: 'sess-abc',
-      eventIndex: 3,
-      hasPendingAsyncTasks: false,
-    });
-
-    expect(mockCards[0].column).toBe('review');
-    mockRepo.save.mockClear();
-
-    await handler!({
-      type: 'session_exit',
-      sessionId: 'sess-abc',
-      state: 'completed',
-    });
-
-    expect(mockCards[0].column).toBe('review');
-    expect(mockRepo.save).not.toHaveBeenCalled();
+  await handler!({
+    type: 'turn_complete',
+    sessionId: 'sess-abc',
+    eventIndex: 3,
+    hasPendingAsyncTasks: false,
   });
+
+  expect(mockCards[0].column).toBe('review');
+  mockRepo.save.mockClear();
+
+  await handler!({
+    type: 'session_exit',
+    sessionId: 'sess-abc',
+    state: 'completed',
+  });
+
+  expect(mockCards[0].column).toBe('review');
+  expect(mockRepo.save).not.toHaveBeenCalled();
+});
 ```
 
 - [ ] **Step 4: Run focused tests and verify at least one fails**
@@ -505,32 +521,32 @@ async function handleSessionExit(
 Replace the column update block with:
 
 ```ts
-  const hadPendingAsyncAfterTurn = pendingAsyncAfterTurnComplete.get(sessionId) === true;
-  pendingAsyncAfterTurnComplete.delete(sessionId);
+const hadPendingAsyncAfterTurn = pendingAsyncAfterTurnComplete.get(sessionId) === true;
+pendingAsyncAfterTurnComplete.delete(sessionId);
 
-  if (card && status !== 'errored') {
-    if (card.column === 'running') {
-      card.column = 'review';
-      card.updatedAt = new Date().toISOString();
-      await repo.save(card);
-    } else if (hadPendingAsyncAfterTurn && card.column !== 'archive') {
-      card.column = 'ready';
-      card.updatedAt = new Date().toISOString();
-      await repo.save(card);
-    }
+if (card && status !== 'errored') {
+  if (card.column === 'running') {
+    card.column = 'review';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
+  } else if (hadPendingAsyncAfterTurn && card.column !== 'archive') {
+    card.column = 'ready';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
   }
+}
 ```
 
 Update the call site from:
 
 ```ts
-      await handleSessionExit(cardId, msg.state, bus);
+await handleSessionExit(cardId, msg.state, bus);
 ```
 
 to:
 
 ```ts
-      await handleSessionExit(cardId, msg.sessionId, msg.state, bus);
+await handleSessionExit(cardId, msg.sessionId, msg.state, bus);
 ```
 
 - [ ] **Step 6: Transfer pending-background state on session fork**
@@ -538,10 +554,10 @@ to:
 In the `session_id_update` block in `src/server/controllers/card-sessions.ts`, after the existing `bgcMap` transfer, add:
 
 ```ts
-      if (pendingAsyncAfterTurnComplete.has(msg.sessionId)) {
-        pendingAsyncAfterTurnComplete.set(msg.newSessionId, pendingAsyncAfterTurnComplete.get(msg.sessionId) === true);
-        pendingAsyncAfterTurnComplete.delete(msg.sessionId);
-      }
+if (pendingAsyncAfterTurnComplete.has(msg.sessionId)) {
+  pendingAsyncAfterTurnComplete.set(msg.newSessionId, pendingAsyncAfterTurnComplete.get(msg.sessionId) === true);
+  pendingAsyncAfterTurnComplete.delete(msg.sessionId);
+}
 ```
 
 - [ ] **Step 7: Run focused tests and verify they pass**
@@ -578,6 +594,7 @@ git commit -m "feat: surface completed background sessions as ready cards"
 ## Task 4: Decouple manual card movement from session cancellation
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.ts`
 - Test: `src/server/controllers/card-sessions.test.ts`
 
@@ -603,15 +620,15 @@ vi.mock('../init-state', () => ({
 In the top-level `beforeEach` inside `describe('orcd message router', ...)`, reset them:
 
 ```ts
-    mockCancel.mockReset();
-    mockIsActive.mockReset();
-    mockCreate.mockReset();
-    mockGetOrcdClient.mockReset();
-    mockGetOrcdClient.mockReturnValue({
-      cancel: mockCancel,
-      isActive: mockIsActive,
-      create: mockCreate,
-    });
+mockCancel.mockReset();
+mockIsActive.mockReset();
+mockCreate.mockReset();
+mockGetOrcdClient.mockReset();
+mockGetOrcdClient.mockReturnValue({
+  cancel: mockCancel,
+  isActive: mockIsActive,
+  create: mockCreate,
+});
 ```
 
 - [ ] **Step 2: Write failing test that moving out of running does not cancel**
@@ -665,14 +682,14 @@ Expected: FAIL because `registerAutoStart` currently calls `client.cancel(card.s
 In `src/server/controllers/card-sessions.ts`, delete this block from `registerAutoStart`:
 
 ```ts
-    // Card left running: cancel session
-    if (oldColumn === 'running' && newColumn !== 'running') {
-      const initState = await import('../init-state');
-      const client = initState.getOrcdClient();
-      if (card.sessionId) {
-        client?.cancel(card.sessionId);
-      }
-    }
+// Card left running: cancel session
+if (oldColumn === 'running' && newColumn !== 'running') {
+  const initState = await import('../init-state');
+  const client = initState.getOrcdClient();
+  if (card.sessionId) {
+    client?.cancel(card.sessionId);
+  }
+}
 ```
 
 Do not replace it with anything. Explicit cancellation remains in `handleAgentStop`.
@@ -692,26 +709,26 @@ Expected: PASS.
 Add this test inside `describe('registerAutoStart', ...)`:
 
 ```ts
-  it('does not start a duplicate session when a card enters running with a live session', async () => {
-    const { registerAutoStart } = await import('./card-sessions');
-    const localBus = new MessageBus();
-    registerAutoStart(localBus);
+it('does not start a duplicate session when a card enters running with a live session', async () => {
+  const { registerAutoStart } = await import('./card-sessions');
+  const localBus = new MessageBus();
+  registerAutoStart(localBus);
 
-    mockCards[0].column = 'running';
-    mockCards[0].sessionId = 'sess-abc';
-    mockIsActive.mockReturnValue(true);
+  mockCards[0].column = 'running';
+  mockCards[0].sessionId = 'sess-abc';
+  mockIsActive.mockReturnValue(true);
 
-    localBus.publish('board:changed', {
-      card: { ...mockCards[0], id: 42, sessionId: 'sess-abc' },
-      oldColumn: 'review',
-      newColumn: 'running',
-    });
-
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(mockIsActive).toHaveBeenCalledWith('sess-abc');
-    expect(mockCreate).not.toHaveBeenCalled();
+  localBus.publish('board:changed', {
+    card: { ...mockCards[0], id: 42, sessionId: 'sess-abc' },
+    oldColumn: 'review',
+    newColumn: 'running',
   });
+
+  await new Promise((r) => setTimeout(r, 10));
+
+  expect(mockIsActive).toHaveBeenCalledWith('sess-abc');
+  expect(mockCreate).not.toHaveBeenCalled();
+});
 ```
 
 - [ ] **Step 7: Write start test for moving into running without a live session**
@@ -719,34 +736,34 @@ Add this test inside `describe('registerAutoStart', ...)`:
 Add this test inside `describe('registerAutoStart', ...)`:
 
 ```ts
-  it('starts a session when a card enters running without a live session', async () => {
-    const { registerAutoStart } = await import('./card-sessions');
-    const localBus = new MessageBus();
-    registerAutoStart(localBus);
+it('starts a session when a card enters running without a live session', async () => {
+  const { registerAutoStart } = await import('./card-sessions');
+  const localBus = new MessageBus();
+  registerAutoStart(localBus);
 
-    mockCards[0].column = 'running';
-    mockCards[0].sessionId = null;
-    mockCreate.mockResolvedValue('sess-new');
+  mockCards[0].column = 'running';
+  mockCards[0].sessionId = null;
+  mockCreate.mockResolvedValue('sess-new');
 
-    localBus.publish('board:changed', {
-      card: { ...mockCards[0], id: 42, sessionId: null, worktreeBranch: 'branch-42', projectId: 1 },
-      oldColumn: 'review',
-      newColumn: 'running',
-    });
-
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(mockCreate).toHaveBeenCalledWith({
-      prompt: '',
-      cwd: '/tmp/project/.worktrees/card-42',
-      provider: 'anthropic',
-      model: 'sonnet',
-      sessionId: undefined,
-      contextWindow: 200000,
-      summarizeThreshold: 0.6,
-    });
-    expect(mockCards[0].sessionId).toBe('sess-new');
+  localBus.publish('board:changed', {
+    card: { ...mockCards[0], id: 42, sessionId: null, worktreeBranch: 'branch-42', projectId: 1 },
+    oldColumn: 'review',
+    newColumn: 'running',
   });
+
+  await new Promise((r) => setTimeout(r, 10));
+
+  expect(mockCreate).toHaveBeenCalledWith({
+    prompt: '',
+    cwd: '/tmp/project/.worktrees/card-42',
+    provider: 'anthropic',
+    model: 'sonnet',
+    sessionId: undefined,
+    contextWindow: 200000,
+    summarizeThreshold: 0.6,
+  });
+  expect(mockCards[0].sessionId).toBe('sess-new');
+});
 ```
 
 - [ ] **Step 8: Run registerAutoStart tests**
@@ -783,6 +800,7 @@ git commit -m "fix: stop canceling sessions on card movement"
 ## Task 5: Verify explicit stop and status semantics
 
 **Files:**
+
 - Modify if needed: `src/server/ws/handlers/agents.test.ts`
 - Verify: `src/server/ws/handlers/agents.ts`
 
@@ -809,7 +827,7 @@ vi.mock('../../init-state', () => ({
 Reset it in both `beforeEach` blocks:
 
 ```ts
-    mockCancel.mockReset();
+mockCancel.mockReset();
 ```
 
 Add this test after `describe('handleAgentCompact', ...)`:
@@ -863,6 +881,7 @@ If the explicit stop behavior is already covered after inspection, do not commit
 ## Task 6: Final verification
 
 **Files:**
+
 - Verify all touched files.
 
 - [ ] **Step 1: Run focused lifecycle tests**

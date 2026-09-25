@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
-import type { AckResponse, ClientToServerEvents, Column, ServerToClientEvents, SyncPayload } from '../../src/shared/ws-protocol';
+import type {
+  AckResponse,
+  ClientToServerEvents,
+  Column,
+  ServerToClientEvents,
+  SyncPayload,
+} from '../../src/shared/ws-protocol';
 
 class FakeSocket {
   handlers = new Map<string, Array<(...args: unknown[]) => void>>();
@@ -10,7 +16,10 @@ class FakeSocket {
   nextSubscribeData: SyncPayload | undefined;
   nextSubscribeResponse: Promise<AckResponse> | undefined;
 
-  on(event: keyof ServerToClientEvents | 'connect' | 'disconnect' | 'connect_error', handler: (...args: unknown[]) => void) {
+  on(
+    event: keyof ServerToClientEvents | 'connect' | 'disconnect' | 'connect_error',
+    handler: (...args: unknown[]) => void,
+  ) {
     const key = String(event);
     const list = this.handlers.get(key) ?? [];
     list.push(handler);

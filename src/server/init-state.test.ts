@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getOrcdClient, getClientByNode, setClientForNode, listNodeClients, clearNodeClients } from './init-state';
 
-class FakeClient { constructor(public nodeName: string) {} }
+class FakeClient {
+  constructor(public nodeName: string) {}
+}
 
 describe('init-state node registry', () => {
   beforeEach(() => clearNodeClients());

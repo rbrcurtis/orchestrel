@@ -33,6 +33,7 @@ Returns all cards in `ready` column only.
 Creates a card in `ready` column.
 
 **Request body:**
+
 ```json
 { "title": "string", "description": "string", "projectId": 1 }
 ```
@@ -46,6 +47,7 @@ All fields required. `title` and `description` must be non-empty strings (400 if
 Full replacement of the editable fields (title and description) of a ready card. `projectId` in the body is a 400 error — cards cannot change projects.
 
 **Request body:**
+
 ```json
 { "title": "string", "description": "string" }
 ```
@@ -66,12 +68,12 @@ Returns 404 if card doesn't exist or isn't in `ready`.
 
 Standard JSON error body: `{ error: string }`
 
-| Status | Meaning |
-|--------|---------|
-| 400 | Validation error (missing/invalid fields) |
-| 404 | Card/project not found, or card not in `ready` column |
-| 422 | `projectId` doesn't reference an existing project |
-| 500 | Unexpected server error |
+| Status | Meaning                                               |
+| ------ | ----------------------------------------------------- |
+| 400    | Validation error (missing/invalid fields)             |
+| 404    | Card/project not found, or card not in `ready` column |
+| 422    | `projectId` doesn't reference an existing project     |
+| 500    | Unexpected server error                               |
 
 Handlers must catch ORM errors (e.g., `findOneByOrFail` throws) and map them to appropriate status codes (typically 404).
 
@@ -91,15 +93,15 @@ TypeScript enforces these stay in sync: the controller return type must match th
 ```typescript
 /** Drives OpenAPI schema generation via tsoa */
 interface CardResponse {
-  id: number
-  title: string
-  description: string
-  projectId: number | null
+  id: number;
+  title: string;
+  description: string;
+  projectId: number | null;
 }
 
 interface ProjectResponse {
-  id: number
-  name: string
+  id: number;
+  name: string;
 }
 ```
 
@@ -107,14 +109,14 @@ interface ProjectResponse {
 
 ```typescript
 interface CardCreateBody {
-  title: string
-  description: string
-  projectId: number
+  title: string;
+  description: string;
+  projectId: number;
 }
 
 interface CardUpdateBody {
-  title: string
-  description: string
+  title: string;
+  description: string;
 }
 ```
 
@@ -174,6 +176,7 @@ tsoa generates Express-compatible routes at build time. The generated router is 
 ### Card service interaction
 
 The REST handlers call the existing `cardService` methods but enforce additional constraints:
+
 - POST: calls `cardService.createCard()` with `column: 'ready'` hardcoded. Column is hardcoded to `ready` (not just defaulted) to prevent accidental session spawning — `createCard()` auto-starts a Claude session when `column === 'running'`.
 - PUT: loads card, verifies `column === 'ready'`, then calls `cardService.updateCard()`
 - DELETE: loads card, verifies `column === 'ready'`, then calls `cardService.deleteCard()`. The column guard is in the handler, not the service.
@@ -201,6 +204,7 @@ tsoa.json            — tsoa configuration (routes output, spec output, control
 **In scope:** Card CRUD (ready only), project list. This is the minimal surface for agents to create and manage work items.
 
 **Out of scope (future):**
+
 - Project mutations (create/update/delete) — managed via WebSocket UI
 - Pagination — `ready` column is expected to stay small; `cardService.pageCards()` exists if needed later
 - Authentication — handled at infrastructure layer (nginx/CF bearer token)

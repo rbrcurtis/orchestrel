@@ -13,6 +13,7 @@
 ### Task 1: Install dependencies
 
 **Files:**
+
 - Modify: `package.json`
 
 **Step 1: Install packages**
@@ -36,6 +37,7 @@ git commit -m "chore: add idb-keyval and react-query-persist-client"
 ### Task 2: Create IndexedDB persister module
 
 **Files:**
+
 - Create: `app/lib/query-persist.ts`
 
 **Step 1: Create the persister**
@@ -91,28 +93,35 @@ git commit -m "feat: add IndexedDB persister for React Query cache"
 ### Task 3: Wire up PersistQueryClientProvider in root.tsx
 
 **Files:**
+
 - Modify: `app/root.tsx`
 
 **Step 1: Update root.tsx**
 
 Add import at top:
+
 ```typescript
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { persister } from '~/lib/query-persist';
 ```
 
 Update the QueryClient to set `gcTime: Infinity`:
+
 ```typescript
-const [queryClient] = useState(() => new QueryClient({
-  defaultOptions: {
-    queries: {
-      gcTime: Infinity,
-    },
-  },
-}));
+const [queryClient] = useState(
+  () =>
+    new QueryClient({
+      defaultOptions: {
+        queries: {
+          gcTime: Infinity,
+        },
+      },
+    }),
+);
 ```
 
 Replace `QueryClientProvider` with `PersistQueryClientProvider`:
+
 ```typescript
 <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
   <PersistQueryClientProvider client={queryClient} persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 }}>
@@ -131,6 +140,7 @@ Expected: Build succeeds
 **Step 3: Manual test**
 
 Run: `pnpm dev` (or restart service)
+
 1. Open app, navigate to a card
 2. Close tab, reopen — card data should appear instantly without flash
 3. Check browser DevTools → Application → IndexedDB → `orchestrel-cache` → `query-cache` — should see a `tanstack-query` entry
@@ -147,16 +157,19 @@ git commit -m "feat: persist React Query cache to IndexedDB"
 ### Task 4: Add loading state to CardDetail
 
 **Files:**
+
 - Modify: `app/components/CardDetail.tsx`
 
 **Step 1: Update CardDetail to distinguish loading from not-found**
 
 Change the query call on line 41 to also get `isLoading`:
+
 ```typescript
 const { data: allCards, isLoading } = useQuery(trpc.cards.list.queryOptions());
 ```
 
 Replace the `if (!card)` block (lines 142-148) with:
+
 ```typescript
 if (!card) {
   return (
@@ -184,11 +197,13 @@ git commit -m "fix: show loading state instead of 'not found' while cards query 
 ### Task 5: Add cache management UI to settings
 
 **Files:**
+
 - Modify: `app/routes/settings.projects.tsx`
 
 **Step 1: Add storage section**
 
 Add imports at top:
+
 ```typescript
 import { useState, useEffect } from 'react';
 import { getCacheSize, clearCache } from '~/lib/query-persist';
@@ -246,11 +261,13 @@ function CacheSection() {
 Add `<CacheSection />` inside the modal, after the projects table closing `)}` (after line 153), before the closing `</div>` tags:
 
 ```tsx
-        {/* Cache management */}
-        <div className="mt-6">
-          <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
-          <CacheSection />
-        </div>
+{
+  /* Cache management */
+}
+<div className="mt-6">
+  <h2 className="text-sm font-medium text-muted-foreground mb-3">Storage</h2>
+  <CacheSection />
+</div>;
 ```
 
 **Step 2: Verify it builds**

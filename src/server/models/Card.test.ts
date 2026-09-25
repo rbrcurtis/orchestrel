@@ -1,11 +1,11 @@
-import 'reflect-metadata'
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
-import { DataSource } from 'typeorm'
-import { instanceToPlain } from 'class-transformer'
-import { Card, CardSubscriber } from './Card'
-import { messageBus } from '../bus'
+import 'reflect-metadata';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { DataSource } from 'typeorm';
+import { instanceToPlain } from 'class-transformer';
+import { Card, CardSubscriber } from './Card';
+import { messageBus } from '../bus';
 
-let ds: DataSource
+let ds: DataSource;
 
 beforeAll(async () => {
   ds = new DataSource({
@@ -14,18 +14,18 @@ beforeAll(async () => {
     entities: [Card],
     subscribers: [CardSubscriber],
     synchronize: true,
-  })
-  await ds.initialize()
-})
+  });
+  await ds.initialize();
+});
 
 afterAll(async () => {
-  await ds.destroy()
-})
+  await ds.destroy();
+});
 
 describe('Card entity', () => {
   it('creates a card and publishes card:updated + board:changed', async () => {
-    const boardHandler = vi.fn()
-    messageBus.subscribe('board:changed', boardHandler)
+    const boardHandler = vi.fn();
+    messageBus.subscribe('board:changed', boardHandler);
 
     const card = ds.getRepository(Card).create({
       title: 'Test card',
@@ -34,17 +34,15 @@ describe('Card entity', () => {
       position: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    })
-    await card.save()
+    });
+    await card.save();
 
-    expect(boardHandler).toHaveBeenCalledWith(
-      expect.objectContaining({ newColumn: 'backlog', oldColumn: null })
-    )
-    messageBus.unsubscribe('board:changed', boardHandler)
-  })
+    expect(boardHandler).toHaveBeenCalledWith(expect.objectContaining({ newColumn: 'backlog', oldColumn: null }));
+    messageBus.unsubscribe('board:changed', boardHandler);
+  });
 
   it('publishes board:changed with oldColumn and newColumn when column changes', async () => {
-    const boardHandler = vi.fn()
+    const boardHandler = vi.fn();
 
     const card = ds.getRepository(Card).create({
       title: 'Column card',
@@ -53,18 +51,16 @@ describe('Card entity', () => {
       position: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    })
-    await card.save()
+    });
+    await card.save();
 
-    messageBus.subscribe('board:changed', boardHandler)
-    card.column = 'ready'
-    await card.save()
+    messageBus.subscribe('board:changed', boardHandler);
+    card.column = 'ready';
+    await card.save();
 
-    expect(boardHandler).toHaveBeenCalledWith(
-      expect.objectContaining({ oldColumn: 'backlog', newColumn: 'ready' })
-    )
-    messageBus.unsubscribe('board:changed', boardHandler)
-  })
+    expect(boardHandler).toHaveBeenCalledWith(expect.objectContaining({ oldColumn: 'backlog', newColumn: 'ready' }));
+    messageBus.unsubscribe('board:changed', boardHandler);
+  });
 
   it('publishes card:deleted and board:changed on remove', async () => {
     const card = ds.getRepository(Card).create({
@@ -74,23 +70,23 @@ describe('Card entity', () => {
       position: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    })
-    await card.save()
-    const id = card.id
+    });
+    await card.save();
+    const id = card.id;
 
-    const deletedHandler = vi.fn()
-    const boardHandler = vi.fn()
-    messageBus.subscribe(`card:${id}:deleted`, deletedHandler)
-    messageBus.subscribe('board:changed', boardHandler)
+    const deletedHandler = vi.fn();
+    const boardHandler = vi.fn();
+    messageBus.subscribe(`card:${id}:deleted`, deletedHandler);
+    messageBus.subscribe('board:changed', boardHandler);
 
-    await card.remove()
+    await card.remove();
 
-    expect(deletedHandler).toHaveBeenCalledWith(expect.objectContaining({ id }))
-    expect(boardHandler).toHaveBeenCalled()
-    messageBus.unsubscribe(`card:${id}:deleted`, deletedHandler)
-    messageBus.unsubscribe('board:changed', boardHandler)
-  })
-})
+    expect(deletedHandler).toHaveBeenCalledWith(expect.objectContaining({ id }));
+    expect(boardHandler).toHaveBeenCalled();
+    messageBus.unsubscribe(`card:${id}:deleted`, deletedHandler);
+    messageBus.unsubscribe('board:changed', boardHandler);
+  });
+});
 
 describe('Card REST serialization', () => {
   it('only exposes rest-group fields via instanceToPlain', () => {
@@ -111,20 +107,20 @@ describe('Card REST serialization', () => {
       prUrl: 'https://github.com/pr/1',
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
-    })
+    });
 
-    const plain = instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true })
+    const plain = instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true });
 
     expect(plain).toEqual({
       id: 1,
       title: 'Test',
       description: 'Desc',
       projectId: 5,
-    })
-    expect(plain).not.toHaveProperty('column')
-    expect(plain).not.toHaveProperty('sessionId')
-    expect(plain).not.toHaveProperty('model')
-  })
+    });
+    expect(plain).not.toHaveProperty('column');
+    expect(plain).not.toHaveProperty('sessionId');
+    expect(plain).not.toHaveProperty('model');
+  });
 
   it('handles null projectId', () => {
     const card = Object.assign(new Card(), {
@@ -132,9 +128,9 @@ describe('Card REST serialization', () => {
       title: 'No project',
       description: 'Orphan',
       projectId: null,
-    })
+    });
 
-    const plain = instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true })
-    expect(plain.projectId).toBeNull()
-  })
-})
+    const plain = instanceToPlain(card, { groups: ['rest'], excludeExtraneousValues: true });
+    expect(plain.projectId).toBeNull();
+  });
+});

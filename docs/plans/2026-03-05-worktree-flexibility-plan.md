@@ -13,6 +13,7 @@
 ### Task 1: Add shadcn checkbox component
 
 **Files:**
+
 - Create: `app/components/ui/checkbox.tsx`
 
 **Step 1: Install checkbox**
@@ -38,6 +39,7 @@ git commit -m "feat: add shadcn checkbox component"
 ### Task 2: Schema changes — repos table
 
 **Files:**
+
 - Modify: `src/server/db/schema.ts`
 
 **Step 1: Add columns to repos table**
@@ -52,7 +54,9 @@ export const repos = sqliteTable('repos', {
   setupCommands: text('setup_commands').default(''),
   isGitRepo: integer('is_git_repo', { mode: 'boolean' }).notNull().default(false),
   defaultBranch: text('default_branch', { enum: ['main', 'dev'] }),
-  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`(datetime('now'))`),
 });
 ```
 
@@ -73,6 +77,7 @@ git commit -m "feat: add isGitRepo and defaultBranch to repos schema"
 ### Task 3: Schema changes — cards table
 
 **Files:**
+
 - Modify: `src/server/db/schema.ts`
 
 **Step 1: Add columns to cards table**
@@ -107,6 +112,7 @@ git commit -m "feat: add useWorktree and sourceBranch to cards schema"
 ### Task 4: Repo router — auto-detect isGitRepo, add `get` endpoint
 
 **Files:**
+
 - Modify: `src/server/routers/repos.ts`
 
 **Step 1: Add isGitRepo detection helper**
@@ -202,6 +208,7 @@ git commit -m "feat: auto-detect isGitRepo, add defaultBranch, add repos.get end
 ### Task 5: Update worktree.ts — support existing branches and source branches
 
 **Files:**
+
 - Modify: `src/server/worktree.ts`
 
 **Step 1: Update createWorktree signature**
@@ -209,12 +216,7 @@ git commit -m "feat: auto-detect isGitRepo, add defaultBranch, add repos.get end
 Replace the current `createWorktree` with a version that handles both new and existing branches:
 
 ```typescript
-export function createWorktree(
-  repoPath: string,
-  worktreePath: string,
-  branch: string,
-  sourceBranch?: string,
-): void {
+export function createWorktree(repoPath: string, worktreePath: string, branch: string, sourceBranch?: string): void {
   try {
     // Try attaching existing branch first
     execFileSync('git', ['worktree', 'add', worktreePath, branch], {
@@ -249,6 +251,7 @@ git commit -m "feat: worktree creation supports existing branches and source bra
 ### Task 6: Rework card move logic
 
 **Files:**
+
 - Modify: `src/server/routers/cards.ts`
 
 **Step 1: Add `useWorktree` and `sourceBranch` to card update input**
@@ -321,6 +324,7 @@ if (columnChanged && input.column === 'done' && existing.useWorktree && existing
 ```
 
 Key changes from current code:
+
 - No `updates.worktreePath = null` / `updates.worktreeBranch = null`
 - No `git branch -d` — branch is preserved for resumption
 - Only removes worktree if `useWorktree` is true
@@ -341,6 +345,7 @@ git commit -m "feat: rework card move logic for optional worktrees and resumptio
 ### Task 7: Claude session resumption
 
 **Files:**
+
 - Modify: `src/server/claude/protocol.ts`
 - Modify: `src/server/claude/manager.ts`
 - Modify: `src/server/routers/claude.ts`
@@ -458,6 +463,7 @@ start: publicProcedure
 ```
 
 Key changes:
+
 - Description check moved to after init (only required for new sessions)
 - `card.sessionId` passed to `sessionManager.create` for resume
 - Initial prompt only sent for non-resume sessions
@@ -478,6 +484,7 @@ git commit -m "feat: Claude session resumption via --resume flag"
 ### Task 8: Repo settings UI — defaultBranch and isGitRepo display
 
 **Files:**
+
 - Modify: `app/components/RepoForm.tsx`
 - Modify: `app/routes/settings.repos.tsx`
 
@@ -507,24 +514,25 @@ const [defaultBranch, setDefaultBranch] = useState(repo?.defaultBranch ?? '');
 After the Setup Commands field, add a conditional `defaultBranch` select. Use the `isGitRepo` from the directory browser's detection (for new repos) or from the repo data (for editing). For editing, call `repos.get` to get fresh detection:
 
 ```tsx
-{/* Default Branch — only for git repos */}
-{isGitRepo && (
-  <div>
-    <label className="block text-sm font-medium text-muted-foreground mb-1">Default Branch</label>
-    <Select
-      value={defaultBranch}
-      onValueChange={setDefaultBranch}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue placeholder="Select branch..." />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="main">main</SelectItem>
-        <SelectItem value="dev">dev</SelectItem>
-      </SelectContent>
-    </Select>
-  </div>
-)}
+{
+  /* Default Branch — only for git repos */
+}
+{
+  isGitRepo && (
+    <div>
+      <label className="block text-sm font-medium text-muted-foreground mb-1">Default Branch</label>
+      <Select value={defaultBranch} onValueChange={setDefaultBranch}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Select branch..." />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="main">main</SelectItem>
+          <SelectItem value="dev">dev</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 ```
 
 To track `isGitRepo` for new repos, capture it from the DirectoryBrowser's `onSelect` callback. The `repos.browse` endpoint already returns `isGitRepo`. Update the `onSelect` handler:
@@ -538,12 +546,7 @@ The DirectoryBrowser needs to pass `isGitRepo` back. Update its `onSelect` type 
 For editing existing repos, use `repos.get` query to refresh detection:
 
 ```typescript
-const { data: freshRepo } = useQuery(
-  trpc.repos.get.queryOptions(
-    { id: repo!.id },
-    { enabled: !!repo }
-  )
-);
+const { data: freshRepo } = useQuery(trpc.repos.get.queryOptions({ id: repo!.id }, { enabled: !!repo }));
 useEffect(() => {
   if (freshRepo) setIsGitRepo(freshRepo.isGitRepo);
 }, [freshRepo]);
@@ -595,11 +598,7 @@ In `app/components/DirectoryBrowser.tsx`:
 - Pass `isGitRepo` in the onSelect call:
 
 ```tsx
-<Button
-  onClick={() => onSelect(currentPath, data?.isGitRepo ?? false)}
->
-  Select
-</Button>
+<Button onClick={() => onSelect(currentPath, data?.isGitRepo ?? false)}>Select</Button>
 ```
 
 **Step 7: Update RepoForm DirectoryBrowser usage**
@@ -632,6 +631,7 @@ git commit -m "feat: repo settings UI with defaultBranch and non-git folder supp
 ### Task 9: Card detail UI — useWorktree checkbox and sourceBranch dropdown
 
 **Files:**
+
 - Modify: `app/components/CardDetailPanel.tsx`
 
 **Step 1: Update CardData and RepoData types**
@@ -671,47 +671,55 @@ import { Checkbox } from '~/components/ui/checkbox';
 After the Repository select in `EditableFields`, add:
 
 ```tsx
-{/* Use Worktree */}
-{selectedRepo?.isGitRepo && (
-  <div className="flex items-center gap-2">
-    <Checkbox
-      id="useWorktree"
-      checked={card.useWorktree}
-      onCheckedChange={(checked) => onUpdate({ useWorktree: checked === true })}
-    />
-    <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
-      Use worktree
-    </label>
-  </div>
-)}
+{
+  /* Use Worktree */
+}
+{
+  selectedRepo?.isGitRepo && (
+    <div className="flex items-center gap-2">
+      <Checkbox
+        id="useWorktree"
+        checked={card.useWorktree}
+        onCheckedChange={(checked) => onUpdate({ useWorktree: checked === true })}
+      />
+      <label htmlFor="useWorktree" className="text-sm font-medium text-muted-foreground">
+        Use worktree
+      </label>
+    </div>
+  );
+}
 
-{/* Non-git repo indicator */}
-{card.repoId && selectedRepo && !selectedRepo.isGitRepo && (
-  <p className="text-xs text-muted-foreground">
-    Working directory (not a git repo)
-  </p>
-)}
+{
+  /* Non-git repo indicator */
+}
+{
+  card.repoId && selectedRepo && !selectedRepo.isGitRepo && (
+    <p className="text-xs text-muted-foreground">Working directory (not a git repo)</p>
+  );
+}
 
-{/* Source Branch */}
-{selectedRepo?.isGitRepo && card.useWorktree && (
-  <div>
-    <label className="block text-xs font-medium text-muted-foreground mb-1">
-      Source Branch
-    </label>
-    <Select
-      value={card.sourceBranch ?? selectedRepo.defaultBranch ?? ''}
-      onValueChange={(val) => onUpdate({ sourceBranch: val })}
-    >
-      <SelectTrigger className="w-full">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="main">main</SelectItem>
-        <SelectItem value="dev">dev</SelectItem>
-      </SelectContent>
-    </Select>
-  </div>
-)}
+{
+  /* Source Branch */
+}
+{
+  selectedRepo?.isGitRepo && card.useWorktree && (
+    <div>
+      <label className="block text-xs font-medium text-muted-foreground mb-1">Source Branch</label>
+      <Select
+        value={card.sourceBranch ?? selectedRepo.defaultBranch ?? ''}
+        onValueChange={(val) => onUpdate({ sourceBranch: val })}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="main">main</SelectItem>
+          <SelectItem value="dev">dev</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 ```
 
 The `EditableFields` function needs access to the selected repo. Update its props to pass `repos` as the full repo data (with `isGitRepo` and `defaultBranch`):
@@ -819,6 +827,7 @@ git commit -m "feat: card UI with useWorktree checkbox, sourceBranch, and resume
 ### Task 10: Backfill existing repos with isGitRepo detection
 
 **Files:**
+
 - No new files — one-time DB operation
 
 **Step 1: Run backfill**

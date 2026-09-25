@@ -316,9 +316,7 @@ git commit -m "test: rewrite resolve-pin tests for new resolvePinnedCards signat
 import type { Card } from '../../src/shared/ws-protocol';
 
 export type SlotState =
-  | { type: 'pinned'; projectId: number; cardId?: number }
-  | { type: 'manual'; cardId: number }
-  | { type: 'empty' };
+  { type: 'pinned'; projectId: number; cardId?: number } | { type: 'manual'; cardId: number } | { type: 'empty' };
 
 /**
  * Resolve which card each pinned slot should display.

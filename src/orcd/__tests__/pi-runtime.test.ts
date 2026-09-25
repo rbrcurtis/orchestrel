@@ -160,9 +160,11 @@ describe('createPiRuntimeSession', () => {
       const loaderOptions = mockDefaultResourceLoader.mock.calls.map(([opts]) => opts);
       expect(loaderOptions[0].eventBus).not.toBe(loaderOptions[1].eventBus);
       expect(loaderOptions[0].extensionFactories).toHaveLength(1);
-      expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-        resourceLoader: expect.any(Object),
-      }));
+      expect(mockCreateAgentSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceLoader: expect.any(Object),
+        }),
+      );
       expect(existsSync(join(legacyCwd, '.pi', 'agents', 'Explore.md'))).toBe(false);
       expect(existsSync(join(cleanCwd, '.pi'))).toBe(false);
     } finally {
@@ -183,9 +185,11 @@ describe('createPiRuntimeSession', () => {
 
     expect(mockSessionManagerList).toHaveBeenCalledWith('/repo');
     expect(mockSessionManagerCreate).toHaveBeenLastCalledWith('/repo', undefined, { id: 'orcd-session-1' });
-    expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionManager: { kind: 'session-manager-create' },
-    }));
+    expect(mockCreateAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionManager: { kind: 'session-manager-create' },
+      }),
+    );
     expect(session.id).toBe('pi-session-1');
   });
 
@@ -202,10 +206,16 @@ describe('createPiRuntimeSession', () => {
       sessionId: 'orcd-session-1',
     });
 
-    expect(mockSessionManagerOpen).toHaveBeenCalledWith('/home/ryan/.pi/agent/sessions/repo/session.jsonl', undefined, '/repo');
-    expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionManager: { kind: 'session-manager-open' },
-    }));
+    expect(mockSessionManagerOpen).toHaveBeenCalledWith(
+      '/home/ryan/.pi/agent/sessions/repo/session.jsonl',
+      undefined,
+      '/repo',
+    );
+    expect(mockCreateAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionManager: { kind: 'session-manager-open' },
+      }),
+    );
   });
 
   it('resolves app aliases for built-in Anthropic passthrough providers without re-registering them', async () => {
@@ -276,10 +286,13 @@ describe('createPiRuntimeSession', () => {
 
     // Pi requires an apiKey when models are defined; orcd sends a placeholder
     // for auth-free endpoints (registration would throw otherwise).
-    expect(registry.registerProvider).toHaveBeenCalledWith('ray', expect.objectContaining({
-      baseUrl: 'http://127.0.0.1:11434',
-      apiKey: expect.any(String),
-    }));
+    expect(registry.registerProvider).toHaveBeenCalledWith(
+      'ray',
+      expect.objectContaining({
+        baseUrl: 'http://127.0.0.1:11434',
+        apiKey: expect.any(String),
+      }),
+    );
   });
 
   it('registers configured proxy providers and resolves app model aliases to Pi model IDs', async () => {
@@ -344,14 +357,19 @@ describe('createPiRuntimeSession', () => {
       },
     });
 
-    expect(registry.registerProvider).toHaveBeenCalledWith('gemini', expect.objectContaining({
-      api: 'google-generative-ai',
-      baseUrl: 'http://127.0.0.1:9877/v1beta',
-      models: [expect.objectContaining({
-        id: 'gemini-3.1-pro-preview',
+    expect(registry.registerProvider).toHaveBeenCalledWith(
+      'gemini',
+      expect.objectContaining({
         api: 'google-generative-ai',
-      })],
-    }));
+        baseUrl: 'http://127.0.0.1:9877/v1beta',
+        models: [
+          expect.objectContaining({
+            id: 'gemini-3.1-pro-preview',
+            api: 'google-generative-ai',
+          }),
+        ],
+      }),
+    );
     expect(mockFind).toHaveBeenCalledWith('gemini', 'gemini-3.1-pro-preview');
   });
 
@@ -376,19 +394,24 @@ describe('createPiRuntimeSession', () => {
       },
     });
 
-    expect(registry.registerProvider).toHaveBeenCalledWith('kimi', expect.objectContaining({
-      models: [
-        expect.objectContaining({
-          id: 'k3',
-          reasoning: true,
-          compat: { sendSessionAffinityHeaders: true, forceAdaptiveThinking: true },
-          thinkingLevelMap: { xhigh: 'xhigh' },
-        }),
-      ],
-    }));
-    expect(mockCreateAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      thinkingLevel: 'high',
-    }));
+    expect(registry.registerProvider).toHaveBeenCalledWith(
+      'kimi',
+      expect.objectContaining({
+        models: [
+          expect.objectContaining({
+            id: 'k3',
+            reasoning: true,
+            compat: { sendSessionAffinityHeaders: true, forceAdaptiveThinking: true },
+            thinkingLevelMap: { xhigh: 'xhigh' },
+          }),
+        ],
+      }),
+    );
+    expect(mockCreateAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thinkingLevel: 'high',
+      }),
+    );
   });
 
   it('maps unsupported or disabled efforts to stable Pi thinking levels', async () => {
@@ -411,9 +434,9 @@ describe('createPiRuntimeSession', () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     mockFind.mockReturnValue(undefined);
 
-    await expect(
-      createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'missing' }),
-    ).rejects.toThrow('Pi model not found: anthropic/missing');
+    await expect(createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'missing' })).rejects.toThrow(
+      'Pi model not found: anthropic/missing',
+    );
 
     expect(mockCreateAgentSession).not.toHaveBeenCalled();
   });
@@ -508,10 +531,13 @@ describe('createPiRuntimeSession', () => {
     await session.setEffort('adaptive');
     await session.setEffort('low');
 
-    expect(mockSessionSetModel).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      compat: { supportsDeveloperRole: false, forceAdaptiveThinking: true },
-      thinkingLevelMap: { xhigh: 'xhigh' },
-    }));
+    expect(mockSessionSetModel).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        compat: { supportsDeveloperRole: false, forceAdaptiveThinking: true },
+        thinkingLevelMap: { xhigh: 'xhigh' },
+      }),
+    );
     expect(mockSessionSetModel).toHaveBeenNthCalledWith(2, baseModel);
     expect(mockSetThinkingLevel.mock.calls.map(([level]) => level)).toEqual(['high', 'low']);
   });
@@ -561,7 +587,11 @@ describe('createPiRuntimeSession', () => {
     expect(session.getMessages()).toEqual([{ role: 'user', content: 'hello' }]);
 
     mockCreateAgentSession.mockResolvedValue({ session: makeSession({ messages: undefined }) });
-    const sessionWithoutMessages = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
+    const sessionWithoutMessages = await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'anthropic',
+      modelId: 'm',
+    });
 
     expect(sessionWithoutMessages.getMessages()).toEqual([]);
   });

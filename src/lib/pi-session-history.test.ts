@@ -86,12 +86,14 @@ describe('getPiSessionMessages', () => {
         timestamp: 3,
         message: {
           role: 'user',
-          content: [{
-            type: 'tool_result',
-            tool_use_id: 'tool-1',
-            content: [{ type: 'text', text: 'file contents' }],
-            is_error: false,
-          }],
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-1',
+              content: [{ type: 'text', text: 'file contents' }],
+              is_error: false,
+            },
+          ],
         },
       },
     ]);
@@ -130,10 +132,12 @@ describe('getPiSessionMessages', () => {
 
     const messages = await getPiSessionMessages('pi-session-1', '/repo');
 
-    expect(messages[0]).toEqual(expect.objectContaining({
-      type: 'user',
-      message: { role: 'user', content: '/merge' },
-    }));
+    expect(messages[0]).toEqual(
+      expect.objectContaining({
+        type: 'user',
+        message: { role: 'user', content: '/merge' },
+      }),
+    );
     expect(JSON.stringify(messages)).not.toContain('Merge instructions');
   });
 
@@ -141,34 +145,39 @@ describe('getPiSessionMessages', () => {
     const { getPiSessionMessages } = await import('./pi-session-history');
     const raw = 'then /pr(dev) please';
     mockBuildSessionContext.mockReturnValue({
-      messages: [
-        { role: 'user', content: `${raw}${INJECTED_COMMANDS_MARKER}Target dev.`, timestamp: 1 },
-      ],
+      messages: [{ role: 'user', content: `${raw}${INJECTED_COMMANDS_MARKER}Target dev.`, timestamp: 1 }],
     });
     mockGetBranch.mockReturnValue([]);
 
     const messages = await getPiSessionMessages('pi-session-1', '/repo');
 
-    expect(messages[0]).toEqual(expect.objectContaining({
-      message: { role: 'user', content: raw },
-    }));
+    expect(messages[0]).toEqual(
+      expect.objectContaining({
+        message: { role: 'user', content: raw },
+      }),
+    );
   });
 
   it('collapses legacy expanded skill blocks embedded among prose and other commands', async () => {
     const { getPiSessionMessages } = await import('./pi-session-history');
     mockBuildSessionContext.mockReturnValue({
-      messages: [{
-        role: 'user',
-        content: 'Check /foo(bar), then <skill name="push" location="/skills/push/SKILL.md">\nInstructions...\n</skill>',
-        timestamp: 1,
-      }],
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Check /foo(bar), then <skill name="push" location="/skills/push/SKILL.md">\nInstructions...\n</skill>',
+          timestamp: 1,
+        },
+      ],
     });
 
     const messages = await getPiSessionMessages('pi-session-1', '/repo');
 
-    expect(messages[0]).toEqual(expect.objectContaining({
-      message: { role: 'user', content: 'Check /foo(bar), then /push' },
-    }));
+    expect(messages[0]).toEqual(
+      expect.objectContaining({
+        message: { role: 'user', content: 'Check /foo(bar), then /push' },
+      }),
+    );
   });
 
   it('does not replace an unrelated user message when display metadata is stale', async () => {
@@ -189,9 +198,11 @@ describe('getPiSessionMessages', () => {
 
     const messages = await getPiSessionMessages('pi-session-1', '/repo');
 
-    expect(messages[0]).toEqual(expect.objectContaining({
-      message: { role: 'user', content: 'Continue' },
-    }));
+    expect(messages[0]).toEqual(
+      expect.objectContaining({
+        message: { role: 'user', content: 'Continue' },
+      }),
+    );
   });
 
   it('skips unsupported Pi message roles instead of creating fake user turns', async () => {
@@ -215,16 +226,18 @@ describe('getPiSessionMessages', () => {
         { role: 'user', content: 'after compact', timestamp: 5 },
       ],
     });
-    mockGetBranch.mockReturnValue([{
-      type: 'compaction',
-      id: 'compact-1',
-      parentId: 'message-1',
-      timestamp: new Date(4).toISOString(),
-      summary: 'condensed history',
-      firstKeptEntryId: 'message-2',
-      tokensBefore: 150000,
-      fromHook: true,
-    }]);
+    mockGetBranch.mockReturnValue([
+      {
+        type: 'compaction',
+        id: 'compact-1',
+        parentId: 'message-1',
+        timestamp: new Date(4).toISOString(),
+        summary: 'condensed history',
+        firstKeptEntryId: 'message-2',
+        tokensBefore: 150000,
+        fromHook: true,
+      },
+    ]);
 
     await expect(getPiSessionMessages('pi-session-1', '/repo')).resolves.toEqual([
       {
@@ -302,7 +315,10 @@ describe('getPiSessionMessages', () => {
     expect(mockOpen).toHaveBeenNthCalledWith(2, '/home/ryan/.pi/agent/sessions/repo/newer.jsonl', undefined, '/repo');
     expect(messages).toEqual([
       expect.objectContaining({ type: 'user', message: { role: 'user', content: 'older turn' } }),
-      expect.objectContaining({ type: 'assistant', message: expect.objectContaining({ content: [{ type: 'text', text: 'newer turn' }] }) }),
+      expect.objectContaining({
+        type: 'assistant',
+        message: expect.objectContaining({ content: [{ type: 'text', text: 'newer turn' }] }),
+      }),
     ]);
   });
 

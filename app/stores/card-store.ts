@@ -15,7 +15,9 @@ export class CardStore {
     makeAutoObservable<this, '_ws'>(this, { _ws: false });
   }
 
-  setWs(ws: WsClient) { this._ws = ws; }
+  setWs(ws: WsClient) {
+    this._ws = ws;
+  }
   private ws(): WsClient {
     if (!this._ws) throw new Error('WsClient not set');
     return this._ws;

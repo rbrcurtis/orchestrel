@@ -52,6 +52,7 @@
 ### Task 1: Add async task parser tests
 
 **Files:**
+
 - Create: `src/orcd/__tests__/async-task-tracker.test.ts`
 - Create: `src/orcd/async-task-tracker.ts`
 
@@ -61,17 +62,13 @@ Create `src/orcd/__tests__/async-task-tracker.test.ts` with this content:
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import {
-  AsyncTaskTracker,
-  parseAsyncAgentLaunch,
-  parseTaskNotification,
-} from '../async-task-tracker';
+import { AsyncTaskTracker, parseAsyncAgentLaunch, parseTaskNotification } from '../async-task-tracker';
 
 describe('parseAsyncAgentLaunch', () => {
   it('extracts async Agent launch details from tool result text', () => {
     const text = [
       'Async agent launched successfully.',
-      'agentId: agent-123 (internal ID - do not mention to user. Use SendMessage with to: \'agent-123\' to continue this agent.)',
+      "agentId: agent-123 (internal ID - do not mention to user. Use SendMessage with to: 'agent-123' to continue this agent.)",
       'The agent is working in the background. You will be notified automatically when it completes.',
       'output_file: /tmp/claude/tasks/agent-123.output',
     ].join('\n');
@@ -164,12 +161,14 @@ describe('AsyncTaskTracker', () => {
       result: 'DONE',
     });
     expect(tracker.hasPending()).toBe(false);
-    expect(tracker.recordNotification({
-      taskId: 'agent-123',
-      toolUseId: 'call_abc',
-      status: 'completed',
-      summary: 'Agent completed',
-    })).toBeNull();
+    expect(
+      tracker.recordNotification({
+        taskId: 'agent-123',
+        toolUseId: 'call_abc',
+        status: 'completed',
+        summary: 'Agent completed',
+      }),
+    ).toBeNull();
   });
 });
 ```
@@ -208,7 +207,11 @@ export interface TaskNotificationEvent {
   result?: string;
 }
 
-export function parseAsyncAgentLaunch(_text: string, _toolUseId: string, _description: string): AsyncAgentLaunch | null {
+export function parseAsyncAgentLaunch(
+  _text: string,
+  _toolUseId: string,
+  _description: string,
+): AsyncAgentLaunch | null {
   return null;
 }
 
@@ -246,6 +249,7 @@ Expected: FAIL in `parseAsyncAgentLaunch`, `parseTaskNotification`, and `AsyncTa
 ### Task 2: Implement async task parser and tracker
 
 **Files:**
+
 - Modify: `src/orcd/async-task-tracker.ts`
 - Test: `src/orcd/__tests__/async-task-tracker.test.ts`
 
@@ -394,6 +398,7 @@ git commit -m "Add async subagent task tracker"
 ### Task 3: Add SDK event extraction tests
 
 **Files:**
+
 - Modify: `src/orcd/__tests__/async-task-tracker.test.ts`
 - Modify: `src/orcd/async-task-tracker.ts`
 
@@ -450,10 +455,7 @@ describe('extractAsyncAgentLaunches', () => {
 Add this function to `src/orcd/async-task-tracker.ts`:
 
 ```ts
-export function extractAsyncAgentLaunches(
-  _event: unknown,
-  _toolDescriptions: Map<string, string>,
-): AsyncAgentLaunch[] {
+export function extractAsyncAgentLaunches(_event: unknown, _toolDescriptions: Map<string, string>): AsyncAgentLaunch[] {
   return [];
 }
 ```
@@ -473,6 +475,7 @@ Expected: FAIL because `extractAsyncAgentLaunches` returns `[]`.
 ### Task 4: Implement SDK event extraction
 
 **Files:**
+
 - Modify: `src/orcd/async-task-tracker.ts`
 - Test: `src/orcd/__tests__/async-task-tracker.test.ts`
 
@@ -499,10 +502,7 @@ function textFromToolResultContent(content: unknown): string {
     .join('\n');
 }
 
-export function extractAsyncAgentLaunches(
-  event: unknown,
-  toolDescriptions: Map<string, string>,
-): AsyncAgentLaunch[] {
+export function extractAsyncAgentLaunches(event: unknown, toolDescriptions: Map<string, string>): AsyncAgentLaunch[] {
   if (!isRecord(event) || event.type !== 'user') return [];
 
   const message = event.message;
@@ -548,6 +548,7 @@ git commit -m "Parse async Agent launch events"
 ### Task 5: Add session lifecycle tests for delayed exit
 
 **Files:**
+
 - Create: `src/orcd/__tests__/session-async-tasks.test.ts`
 - Modify: `src/orcd/session.ts`
 
@@ -622,16 +623,12 @@ describe('OrcdSession async Agent lifecycle', () => {
     await writeFile(jsonlPath, '');
 
     events.length = 0;
-    events.push(
-      toolUseEvent('call_abc', 'Implement remaining tasks'),
-      asyncLaunchResult('call_abc', 'agent-123'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+    events.push(toolUseEvent('call_abc', 'Implement remaining tasks'), asyncLaunchResult('call_abc', 'agent-123'), {
+      type: 'result',
+      subtype: 'success',
+      stop_reason: 'end_turn',
+      modelUsage: { test: { contextWindow: 200000 } },
+    });
 
     const session = new OrcdSession({
       cwd: dir,
@@ -653,30 +650,37 @@ describe('OrcdSession async Agent lifecycle', () => {
     const run = session.run({ prompt: 'go' });
     await vi.waitFor(() => expect(received).toContain('result'));
     expect(received).not.toContain('session_exit');
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      event: { type: 'task_started', task_id: 'agent-123', description: 'Implement remaining tasks' },
-    }));
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        type: 'stream_event',
+        event: { type: 'task_started', task_id: 'agent-123', description: 'Implement remaining tasks' },
+      }),
+    );
 
-    await writeFile(jsonlPath, JSON.stringify({
-      type: 'queue-operation',
-      operation: 'enqueue',
-      content: [
-        '<task-notification>',
-        '<task-id>agent-123</task-id>',
-        '<tool-use-id>call_abc</tool-use-id>',
-        '<status>completed</status>',
-        '<result>DONE</result>',
-        '</task-notification>',
-      ].join('\n'),
-    }) + '\n');
+    await writeFile(
+      jsonlPath,
+      JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: [
+          '<task-notification>',
+          '<task-id>agent-123</task-id>',
+          '<tool-use-id>call_abc</tool-use-id>',
+          '<status>completed</status>',
+          '<result>DONE</result>',
+          '</task-notification>',
+        ].join('\n'),
+      }) + '\n',
+    );
 
     await run;
 
-    expect(payloads).toContainEqual(expect.objectContaining({
-      type: 'stream_event',
-      event: { type: 'task_notification', task_id: 'agent-123', status: 'completed', result: 'DONE' },
-    }));
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        type: 'stream_event',
+        event: { type: 'task_notification', task_id: 'agent-123', status: 'completed', result: 'DONE' },
+      }),
+    );
     expect(received.at(-1)).toBe('session_exit');
 
     const finalContent = await readFile(jsonlPath, 'utf8');
@@ -705,8 +709,8 @@ Add private fields in class:
 Set them in constructor:
 
 ```ts
-    this.jsonlPathForTesting = opts.jsonlPathForTesting;
-    this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
+this.jsonlPathForTesting = opts.jsonlPathForTesting;
+this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
 ```
 
 - [ ] **Step 3: Run failing session test**
@@ -724,6 +728,7 @@ Expected: FAIL because session currently emits `session_exit` immediately and ne
 ### Task 6: Track Agent tool descriptions in session stream
 
 **Files:**
+
 - Modify: `src/orcd/session.ts`
 - Test: `src/orcd/__tests__/session-async-tasks.test.ts`
 
@@ -814,8 +819,8 @@ Add method inside `OrcdSession`:
 In `run`, inside the `for await` loop after `log(JSON.stringify(sdkEvent));`, add:
 
 ```ts
-        this.rememberAgentToolDescriptions(sdkEvent);
-        this.recordAsyncAgentLaunches(sdkEvent);
+this.rememberAgentToolDescriptions(sdkEvent);
+this.recordAsyncAgentLaunches(sdkEvent);
 ```
 
 - [ ] **Step 6: Run session test and observe partial failure**
@@ -833,6 +838,7 @@ Expected: test still FAILS because `session_exit` is immediate, but assertion fo
 ### Task 7: Delay session_exit until JSONL task notifications resolve
 
 **Files:**
+
 - Modify: `src/orcd/session.ts`
 - Test: `src/orcd/__tests__/session-async-tasks.test.ts`
 
@@ -898,24 +904,24 @@ Add methods inside `OrcdSession`:
 In `src/orcd/session.ts`, replace this block:
 
 ```ts
-      if (this.state !== 'stopped') {
-        this.state = 'completed';
-      }
-      log(`exited (state=${this.state})`);
+if (this.state !== 'stopped') {
+  this.state = 'completed';
+}
+log(`exited (state=${this.state})`);
 ```
 
 with:
 
 ```ts
-      if (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
-        log('waiting for async task notifications before session_exit');
-        await this.waitForAsyncTasks();
-      }
+if (this.state !== 'stopped' && this.asyncTasks.hasPending()) {
+  log('waiting for async task notifications before session_exit');
+  await this.waitForAsyncTasks();
+}
 
-      if (this.state !== 'stopped') {
-        this.state = 'completed';
-      }
-      log(`exited (state=${this.state})`);
+if (this.state !== 'stopped') {
+  this.state = 'completed';
+}
+log(`exited (state=${this.state})`);
 ```
 
 - [ ] **Step 4: Run delayed exit test**
@@ -952,6 +958,7 @@ git commit -m "Delay session exit for async subagents"
 ### Task 8: Add failed-notification session test
 
 **Files:**
+
 - Modify: `src/orcd/__tests__/session-async-tasks.test.ts`
 
 - [ ] **Step 1: Add failed notification test**
@@ -959,39 +966,37 @@ git commit -m "Delay session exit for async subagents"
 Append this test inside `describe('OrcdSession async Agent lifecycle', () => { ... })`:
 
 ```ts
-  it('emits failed task notification and still exits session', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
-    const jsonlPath = join(dir, 'session.jsonl');
-    await writeFile(jsonlPath, '');
+it('emits failed task notification and still exits session', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'orchestrel-session-'));
+  const jsonlPath = join(dir, 'session.jsonl');
+  await writeFile(jsonlPath, '');
 
-    events.length = 0;
-    events.push(
-      toolUseEvent('call_fail', 'Review implementation'),
-      asyncLaunchResult('call_fail', 'agent-fail'),
-      {
-        type: 'result',
-        subtype: 'success',
-        stop_reason: 'end_turn',
-        modelUsage: { test: { contextWindow: 200000 } },
-      },
-    );
+  events.length = 0;
+  events.push(toolUseEvent('call_fail', 'Review implementation'), asyncLaunchResult('call_fail', 'agent-fail'), {
+    type: 'result',
+    subtype: 'success',
+    stop_reason: 'end_turn',
+    modelUsage: { test: { contextWindow: 200000 } },
+  });
 
-    const session = new OrcdSession({
-      cwd: dir,
-      model: 'test-model',
-      provider: 'test-provider',
-      sessionId: 'session-fail',
-      jsonlPathForTesting: jsonlPath,
-      asyncTaskPollMsForTesting: 10,
-    });
+  const session = new OrcdSession({
+    cwd: dir,
+    model: 'test-model',
+    provider: 'test-provider',
+    sessionId: 'session-fail',
+    jsonlPathForTesting: jsonlPath,
+    asyncTaskPollMsForTesting: 10,
+  });
 
-    const payloads: unknown[] = [];
-    session.subscribe((msg) => payloads.push(msg));
+  const payloads: unknown[] = [];
+  session.subscribe((msg) => payloads.push(msg));
 
-    const run = session.run({ prompt: 'go' });
-    await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({ type: 'result' })));
+  const run = session.run({ prompt: 'go' });
+  await vi.waitFor(() => expect(payloads).toContainEqual(expect.objectContaining({ type: 'result' })));
 
-    await writeFile(jsonlPath, JSON.stringify({
+  await writeFile(
+    jsonlPath,
+    JSON.stringify({
       type: 'queue-operation',
       operation: 'enqueue',
       content: [
@@ -1002,17 +1007,20 @@ Append this test inside `describe('OrcdSession async Agent lifecycle', () => { .
         '<result>BLOCKED</result>',
         '</task-notification>',
       ].join('\n'),
-    }) + '\n');
+    }) + '\n',
+  );
 
-    await run;
+  await run;
 
-    expect(payloads).toContainEqual(expect.objectContaining({
+  expect(payloads).toContainEqual(
+    expect.objectContaining({
       type: 'stream_event',
       event: { type: 'task_notification', task_id: 'agent-fail', status: 'failed', result: 'BLOCKED' },
-    }));
-    expect(payloads.at(-1)).toEqual(expect.objectContaining({ type: 'session_exit', state: 'completed' }));
-    await rm(dir, { recursive: true, force: true });
-  });
+    }),
+  );
+  expect(payloads.at(-1)).toEqual(expect.objectContaining({ type: 'session_exit', state: 'completed' }));
+  await rm(dir, { recursive: true, force: true });
+});
 ```
 
 - [ ] **Step 2: Run failed-notification test**
@@ -1039,6 +1047,7 @@ git commit -m "Test failed async subagent notifications"
 ### Task 9: Verify backend router remains event-driven
 
 **Files:**
+
 - Modify: `src/server/controllers/card-sessions.test.ts`
 - Do not modify: `src/server/controllers/card-sessions.ts` unless test proves necessary.
 
@@ -1047,27 +1056,32 @@ git commit -m "Test failed async subagent notifications"
 Append to `src/server/controllers/card-sessions.test.ts`:
 
 ```ts
-  it('does not treat task notifications as card completion', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
+it('does not treat task notifications as card completion', async () => {
+  const { initOrcdRouter, trackSession } = await import('./card-sessions');
+  initOrcdRouter(mockClient as never, bus);
+  trackSession(42, 'sess-abc');
 
-    const exitSpy = vi.fn();
-    const sdkSpy = vi.fn();
-    bus.on('card:42:exit', exitSpy);
-    bus.on('card:42:sdk', sdkSpy);
+  const exitSpy = vi.fn();
+  const sdkSpy = vi.fn();
+  bus.on('card:42:exit', exitSpy);
+  bus.on('card:42:sdk', sdkSpy);
 
-    handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 1,
-      event: { type: 'task_notification', task_id: 'agent-123', status: 'completed', result: 'DONE' },
-    });
-
-    await new Promise((r) => setTimeout(r, 10));
-    expect(sdkSpy).toHaveBeenCalledWith({ type: 'task_notification', task_id: 'agent-123', status: 'completed', result: 'DONE' });
-    expect(exitSpy).not.toHaveBeenCalled();
+  handler!({
+    type: 'stream_event',
+    sessionId: 'sess-abc',
+    eventIndex: 1,
+    event: { type: 'task_notification', task_id: 'agent-123', status: 'completed', result: 'DONE' },
   });
+
+  await new Promise((r) => setTimeout(r, 10));
+  expect(sdkSpy).toHaveBeenCalledWith({
+    type: 'task_notification',
+    task_id: 'agent-123',
+    status: 'completed',
+    result: 'DONE',
+  });
+  expect(exitSpy).not.toHaveBeenCalled();
+});
 ```
 
 - [ ] **Step 2: Run backend router test**
@@ -1094,6 +1108,7 @@ git commit -m "Guard card lifecycle against task notifications"
 ### Task 10: Run full verification and manual reproduction
 
 **Files:**
+
 - No code changes expected.
 
 - [ ] **Step 1: Run focused tests**
@@ -1183,6 +1198,7 @@ If no code changed, do not commit.
 ## Self-Review
 
 **Spec coverage:**
+
 - Async Agent launch detection: Task 1, Task 3, Task 4.
 - Delaying card move to review: Task 5, Task 6, Task 7; backend still reacts only to `session_exit` in Task 9.
 - Completion after subagent finishes: Task 7 scans JSONL queue-operation notifications and emits `task_notification` before `session_exit`.
@@ -1191,11 +1207,13 @@ If no code changed, do not commit.
 - Correct ownership: orcd owns lifecycle; backend remains event-driven.
 
 **Placeholder scan:**
+
 - No `TBD` / placeholder implementation directives.
 - All code steps include exact code snippets or exact replacement instructions.
 - All tests include exact commands and expected outcomes.
 
 **Type consistency:**
+
 - Parser types use `taskId` internally and emit SDK-shaped `task_id` externally.
 - Notification status uses existing frontend union: `completed | failed`.
 - `SessionState` remains existing union; waiting state is represented by keeping `state === 'running'` until pending tasks resolve.

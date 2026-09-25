@@ -15,7 +15,9 @@ describe('buildPromptWithFiles', () => {
   });
 
   it('rejects paths outside exact upload and staging roots', () => {
-    expect(() => buildPromptWithFiles('x', [{ ...file, path: '/tmp/orchestrel-attachments-evil/a' }])).toThrow('Invalid file path');
+    expect(() => buildPromptWithFiles('x', [{ ...file, path: '/tmp/orchestrel-attachments-evil/a' }])).toThrow(
+      'Invalid file path',
+    );
     expect(() => buildPromptWithFiles('x', [{ ...file, path: '/etc/passwd' }])).toThrow('Invalid file path');
   });
 

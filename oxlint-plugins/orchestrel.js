@@ -87,8 +87,7 @@ const logInCatch = {
         'Require a log call as the first statement of every catch block in server code so errors are never silently swallowed.',
     },
     messages: {
-      missing:
-        'catch block must log as its first statement (console.error / logger.* with session id when available).',
+      missing: 'catch block must log as its first statement (console.error / logger.* with session id when available).',
     },
     schema: [],
   },
@@ -127,9 +126,7 @@ function isFinalReturnOfFunction(returnNode) {
   const fn = parent.parent;
   if (
     !fn ||
-    (fn.type !== 'FunctionDeclaration' &&
-      fn.type !== 'FunctionExpression' &&
-      fn.type !== 'ArrowFunctionExpression')
+    (fn.type !== 'FunctionDeclaration' && fn.type !== 'FunctionExpression' && fn.type !== 'ArrowFunctionExpression')
   ) {
     return false;
   }

@@ -27,6 +27,7 @@ Orchestrel SessionManager
 ```
 
 Key points:
+
 - Anthropic provider bypasses CCR entirely — Agent SDK goes direct with API key.
 - Only Kiro providers (trackable, okkanti, future pools) route through CCR.
 - CCR is `@musistudio/claude-code-router@2.0.0` (the official package, not the Jason Zhang fork currently installed).
@@ -134,27 +135,27 @@ Manually refresh tokens for all accounts (or a specific pool). For debugging —
 
 SQLite at `~/.config/kiro-auth/accounts.db`:
 
-| Column | Type | Description |
-|---|---|---|
-| `id` | TEXT PK | SHA-256 of `pool:email:clientId` |
-| `pool` | TEXT NOT NULL | Pool name (trackable, okkanti) |
-| `email` | TEXT NOT NULL | User email from usage API |
-| `auth_method` | TEXT NOT NULL | `'idc'` (extensible to `'desktop'`) |
-| `region` | TEXT NOT NULL | Service region (from profileArn) |
-| `oidc_region` | TEXT NOT NULL | OIDC endpoint region |
-| `client_id` | TEXT NOT NULL | OIDC dynamic client ID |
-| `client_secret` | TEXT NOT NULL | OIDC dynamic client secret |
-| `profile_arn` | TEXT NOT NULL | CodeWhisperer profile ARN |
-| `start_url` | TEXT NOT NULL | IDC portal URL |
-| `access_token` | TEXT NOT NULL | Current Bearer token |
-| `refresh_token` | TEXT NOT NULL | For token refresh |
-| `expires_at` | INTEGER NOT NULL | Unix ms timestamp |
-| `is_healthy` | INTEGER DEFAULT 1 | 0/1 |
-| `fail_count` | INTEGER DEFAULT 0 | Consecutive failures |
-| `used_count` | INTEGER DEFAULT 0 | Requests used this period |
-| `limit_count` | INTEGER DEFAULT 0 | Quota limit |
-| `rate_limit_reset` | INTEGER DEFAULT 0 | Unix ms — cooldown until |
-| `last_used` | INTEGER DEFAULT 0 | Unix ms — tie-breaking |
+| Column             | Type              | Description                         |
+| ------------------ | ----------------- | ----------------------------------- |
+| `id`               | TEXT PK           | SHA-256 of `pool:email:clientId`    |
+| `pool`             | TEXT NOT NULL     | Pool name (trackable, okkanti)      |
+| `email`            | TEXT NOT NULL     | User email from usage API           |
+| `auth_method`      | TEXT NOT NULL     | `'idc'` (extensible to `'desktop'`) |
+| `region`           | TEXT NOT NULL     | Service region (from profileArn)    |
+| `oidc_region`      | TEXT NOT NULL     | OIDC endpoint region                |
+| `client_id`        | TEXT NOT NULL     | OIDC dynamic client ID              |
+| `client_secret`    | TEXT NOT NULL     | OIDC dynamic client secret          |
+| `profile_arn`      | TEXT NOT NULL     | CodeWhisperer profile ARN           |
+| `start_url`        | TEXT NOT NULL     | IDC portal URL                      |
+| `access_token`     | TEXT NOT NULL     | Current Bearer token                |
+| `refresh_token`    | TEXT NOT NULL     | For token refresh                   |
+| `expires_at`       | INTEGER NOT NULL  | Unix ms timestamp                   |
+| `is_healthy`       | INTEGER DEFAULT 1 | 0/1                                 |
+| `fail_count`       | INTEGER DEFAULT 0 | Consecutive failures                |
+| `used_count`       | INTEGER DEFAULT 0 | Requests used this period           |
+| `limit_count`      | INTEGER DEFAULT 0 | Quota limit                         |
+| `rate_limit_reset` | INTEGER DEFAULT 0 | Unix ms — cooldown until            |
+| `last_used`        | INTEGER DEFAULT 0 | Unix ms — tie-breaking              |
 
 Index on `(pool, is_healthy)` for fast selection.
 
@@ -283,13 +284,13 @@ Run as systemd service or manually via `ccr start`.
 
 ## OIDC Endpoints Reference
 
-| Endpoint | Purpose |
-|---|---|
-| `https://oidc.{oidcRegion}.amazonaws.com/client/register` | Register OIDC client |
-| `https://oidc.{oidcRegion}.amazonaws.com/device_authorization` | Get device code |
-| `https://oidc.{oidcRegion}.amazonaws.com/token` | Poll for token / refresh |
-| `https://q.{serviceRegion}.amazonaws.com/getUsageLimits` | Usage + email lookup |
-| `https://codewhisperer.{serviceRegion}.amazonaws.com/generateAssistantResponse` | Chat API (CCR target) |
+| Endpoint                                                                        | Purpose                  |
+| ------------------------------------------------------------------------------- | ------------------------ |
+| `https://oidc.{oidcRegion}.amazonaws.com/client/register`                       | Register OIDC client     |
+| `https://oidc.{oidcRegion}.amazonaws.com/device_authorization`                  | Get device code          |
+| `https://oidc.{oidcRegion}.amazonaws.com/token`                                 | Poll for token / refresh |
+| `https://q.{serviceRegion}.amazonaws.com/getUsageLimits`                        | Usage + email lookup     |
+| `https://codewhisperer.{serviceRegion}.amazonaws.com/generateAssistantResponse` | Chat API (CCR target)    |
 
 ## Dependencies
 

@@ -16,11 +16,18 @@ async function tempRepo(): Promise<string> {
 
 describe('worktree-ops', () => {
   let repo: string;
-  afterEach(async () => { if (repo) await rm(repo, { recursive: true, force: true }); });
+  afterEach(async () => {
+    if (repo) await rm(repo, { recursive: true, force: true });
+  });
 
   it('prepares a worktree and returns its resolved path', async () => {
     repo = await tempRepo();
-    const res = await prepareWorktree({ projectPath: repo, branch: 'feat-x', sourceBranch: undefined, setupCommands: '' });
+    const res = await prepareWorktree({
+      projectPath: repo,
+      branch: 'feat-x',
+      sourceBranch: undefined,
+      setupCommands: '',
+    });
     expect(res.path).toBe(join(repo, '.worktrees', 'feat-x'));
     expect((await stat(res.path)).isDirectory()).toBe(true);
   });
@@ -29,18 +36,25 @@ describe('worktree-ops', () => {
     repo = await tempRepo();
     const path = join(repo, '.worktrees', 'feat-failed-setup');
 
-    await expect(prepareWorktree({
-      projectPath: repo,
-      branch: 'feat-failed-setup',
-      setupCommands: 'exit 23',
-    })).rejects.toThrow();
+    await expect(
+      prepareWorktree({
+        projectPath: repo,
+        branch: 'feat-failed-setup',
+        setupCommands: 'exit 23',
+      }),
+    ).rejects.toThrow();
 
     await expect(stat(path)).rejects.toThrow();
   });
 
   it('removes a worktree', async () => {
     repo = await tempRepo();
-    const res = await prepareWorktree({ projectPath: repo, branch: 'feat-y', sourceBranch: undefined, setupCommands: '' });
+    const res = await prepareWorktree({
+      projectPath: repo,
+      branch: 'feat-y',
+      sourceBranch: undefined,
+      setupCommands: '',
+    });
     await removeWorktree(repo, res.path);
     await expect(stat(res.path)).rejects.toThrow();
   });

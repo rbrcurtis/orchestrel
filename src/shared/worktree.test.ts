@@ -7,9 +7,7 @@ describe('resolveWorkDir', () => {
   });
 
   it('returns worktree path when branch is set', () => {
-    expect(resolveWorkDir('my-feature', '/home/user/project')).toBe(
-      '/home/user/project/.worktrees/my-feature',
-    );
+    expect(resolveWorkDir('my-feature', '/home/user/project')).toBe('/home/user/project/.worktrees/my-feature');
   });
 });
 

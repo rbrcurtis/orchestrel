@@ -7,7 +7,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-
 function getString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -46,7 +45,12 @@ function makeUuid(sessionId: string, idx: number): string {
   return `${sessionId}-pi-history-${idx}`;
 }
 
-function toHistoryMessage(message: unknown, sessionId: string, idx: number, backgroundCompaction: boolean): unknown | undefined {
+function toHistoryMessage(
+  message: unknown,
+  sessionId: string,
+  idx: number,
+  backgroundCompaction: boolean,
+): unknown | undefined {
   if (!isRecord(message)) return undefined;
 
   const timestamp = getNumber(message.timestamp);
@@ -100,12 +104,14 @@ function toHistoryMessage(message: unknown, sessionId: string, idx: number, back
       type: 'user',
       message: {
         role: 'user',
-        content: [{
-          type: 'tool_result',
-          tool_use_id: getString(message.toolCallId) ?? '',
-          content: message.content,
-          is_error: message.isError === true,
-        }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: getString(message.toolCallId) ?? '',
+            content: message.content,
+            is_error: message.isError === true,
+          },
+        ],
       },
     };
   }
@@ -125,15 +131,18 @@ function messageText(message: unknown): string | undefined {
   if (typeof message.content === 'string') return message.content;
   if (!Array.isArray(message.content)) return undefined;
   const text = message.content
-    .map((block) => isRecord(block) && block.type === 'text' ? getString(block.text) ?? '' : '')
+    .map((block) => (isRecord(block) && block.type === 'text' ? (getString(block.text) ?? '') : ''))
     .join('');
   return text || undefined;
 }
 
-function getMessagesFromManager(manager: {
-  buildSessionContext(): unknown;
-  getBranch(): SessionEntry[];
-}, sessionId: string): unknown[] {
+function getMessagesFromManager(
+  manager: {
+    buildSessionContext(): unknown;
+    getBranch(): SessionEntry[];
+  },
+  sessionId: string,
+): unknown[] {
   const ctx = manager.buildSessionContext();
   if (!isRecord(ctx) || !Array.isArray(ctx.messages)) return [];
 
@@ -194,9 +203,16 @@ export async function getPiSessionHistoryPage(
   const records: TranscriptHistoryPage['records'] = [];
   const ctx = manager.buildSessionContext();
   const model = getContextModel(ctx as unknown as Record<string, unknown>);
-  if (model) records.push({ id: `${sessionId}:init`, message: {
-    type: 'system', subtype: 'init', model, session_id: sessionId,
-  } });
+  if (model)
+    records.push({
+      id: `${sessionId}:init`,
+      message: {
+        type: 'system',
+        subtype: 'init',
+        model,
+        session_id: sessionId,
+      },
+    });
   const replacements = collectDisplayPrompts(manager.getBranch());
   for (const entry of entries) {
     const messages = sessionEntryToContextMessages(entry);
@@ -204,8 +220,14 @@ export async function getPiSessionHistoryPage(
       const id = `${entry.id}:${part}`;
       const text = messageText(message);
       const displayText = text ? originalPromptText(text, replacements) : undefined;
-      const displayed = displayText !== undefined && displayText !== text ? { ...message, content: displayText } : message;
-      const mapped = toHistoryMessage(displayed, sessionId, part, entry.type === 'compaction' && entry.fromHook === true);
+      const displayed =
+        displayText !== undefined && displayText !== text ? { ...message, content: displayText } : message;
+      const mapped = toHistoryMessage(
+        displayed,
+        sessionId,
+        part,
+        entry.type === 'compaction' && entry.fromHook === true,
+      );
       if (isRecord(mapped)) records.push({ id, message: { ...mapped, uuid: id } });
     }
   }
@@ -220,11 +242,16 @@ export async function getPiSessionHistoryPage(
   }
   if (request.after) {
     const i = records.findIndex((record) => record.id === request.after);
-    const prefix = createHash('sha256').update(JSON.stringify(records.slice(0, i + 1))).digest('hex');
+    const prefix = createHash('sha256')
+      .update(JSON.stringify(records.slice(0, i + 1)))
+      .digest('hex');
     if (i < 0 || (request.anchorOnly ? request.revision !== revision : request.prefix !== prefix)) reset = true;
     else start = i + 1;
   }
-  if (reset) { start = 0; end = records.length; }
+  if (reset) {
+    start = 0;
+    end = records.length;
+  }
   const page: TranscriptHistoryPage['records'] = [];
   let bytes = 0;
   const forward = !!request.after && !reset;
@@ -232,22 +259,31 @@ export async function getPiSessionHistoryPage(
     for (let i = start; i < end && page.length < 120; i++) {
       const size = Buffer.byteLength(JSON.stringify(records[i]));
       if (page.length && bytes + size > 1_048_576) break;
-      page.push(records[i]); bytes += size;
+      page.push(records[i]);
+      bytes += size;
     }
     end = start + page.length;
   } else {
     for (let i = end - 1; i >= start && page.length < 120; i--) {
       const size = Buffer.byteLength(JSON.stringify(records[i]));
       if (page.length && bytes + size > 1_048_576) break;
-      page.unshift(records[i]); bytes += size;
+      page.unshift(records[i]);
+      bytes += size;
     }
     start = end - page.length;
   }
   return {
-    sessionId, revision, records: page,
-    before: page[0]?.id ?? null, after: page.at(-1)?.id ?? null,
-    prefix: createHash('sha256').update(JSON.stringify(records.slice(0, end))).digest('hex'),
-    hasOlder: start > 0, hasNewer: end < records.length, reset,
+    sessionId,
+    revision,
+    records: page,
+    before: page[0]?.id ?? null,
+    after: page.at(-1)?.id ?? null,
+    prefix: createHash('sha256')
+      .update(JSON.stringify(records.slice(0, end)))
+      .digest('hex'),
+    hasOlder: start > 0,
+    hasNewer: end < records.length,
+    reset,
   };
 }
 

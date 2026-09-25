@@ -38,17 +38,18 @@ export async function handleProjectUpdate(
           const clientIdentity = clientSocket.data.identity;
           if (clientSocket.id === socket.id || clientIdentity?.role === 'admin') continue;
 
-          const visible = await userService.visibleProjectIds(clientIdentity as import('../../services/user').UserIdentity);
+          const visible = await userService.visibleProjectIds(
+            clientIdentity as import('../../services/user').UserIdentity,
+          );
           const { cardService } = await import('../../services/card');
-          const [syncCards, syncProjects] = await Promise.all([
-            cardService.listCards(),
-            projectService.listProjects(),
-          ]);
+          const [syncCards, syncProjects] = await Promise.all([cardService.listCards(), projectService.listProjects()]);
 
-          const filteredCards = visible === 'all' ? syncCards
-            : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
-          const filteredProjects = visible === 'all' ? syncProjects
-            : syncProjects.filter((p) => (visible as number[]).includes(p.id));
+          const filteredCards =
+            visible === 'all'
+              ? syncCards
+              : syncCards.filter((c) => c.projectId != null && (visible as number[]).includes(c.projectId));
+          const filteredProjects =
+            visible === 'all' ? syncProjects : syncProjects.filter((p) => (visible as number[]).includes(p.id));
 
           clientSocket.emit('sync', {
             cards: filteredCards as unknown as import('../../../shared/ws-protocol').Card[],
@@ -65,10 +66,7 @@ export async function handleProjectUpdate(
   }
 }
 
-export async function handleProjectDelete(
-  data: { id: number },
-  callback: (res: AckResponse) => void,
-): Promise<void> {
+export async function handleProjectDelete(data: { id: number }, callback: (res: AckResponse) => void): Promise<void> {
   try {
     await projectService.deleteProject(data.id);
     callback({});

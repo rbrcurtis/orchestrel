@@ -13,12 +13,14 @@ Accumulate `text` and `thinking` deltas into a single growing conversation row i
 ### SessionState (session-store.ts)
 
 Add two fields:
+
 - `activeTextIdx: number | null` — index of the current open text block
 - `activeThinkingIdx: number | null` — index of the current open thinking block
 
 Change conversation array initialization:
+
 ```ts
-conversation: observable.array([], { deep: true })
+conversation: observable.array([], { deep: true });
 ```
 
 This makes all row properties deeply observable, so `row.content += delta` inside `runInAction` triggers MobX reactivity without splice or replacement.
@@ -26,10 +28,12 @@ This makes all row properties deeply observable, so `row.content += delta` insid
 ### ingest() logic
 
 For `text` and `thinking` messages:
+
 1. If an active block of that type exists, append `msg.content` to the existing row's content via direct mutation.
 2. If no active block, push a new row and record its index as the active block.
 
 Block-closing events reset both active indices to null:
+
 - `turn_end`
 - `tool_call`
 - `user`

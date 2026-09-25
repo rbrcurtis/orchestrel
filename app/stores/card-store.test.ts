@@ -16,7 +16,8 @@ type CreatePayload = {
 
 type SuggestPayload = { description: string };
 
-type MockEmit = ReturnType<typeof vi.fn> & ((event: 'card:suggestTitle' | 'card:create', data: SuggestPayload | CreatePayload) => Promise<unknown>);
+type MockEmit = ReturnType<typeof vi.fn> &
+  ((event: 'card:suggestTitle' | 'card:create', data: SuggestPayload | CreatePayload) => Promise<unknown>);
 
 function makeCard(overrides?: Partial<Card>): Card {
   return {
@@ -56,7 +57,11 @@ describe('CardStore.createChatCard', () => {
     const store = new CardStore();
     store.setWs({ emit } as unknown as WsClient);
 
-    const card = await store.createChatCard({ description: 'Build a new component', projectId: 12, summarizeThreshold: 0.6 });
+    const card = await store.createChatCard({
+      description: 'Build a new component',
+      projectId: 12,
+      summarizeThreshold: 0.6,
+    });
 
     expect(emit).toHaveBeenCalledTimes(2);
     expect(emit).toHaveBeenNthCalledWith(1, 'card:suggestTitle', { description: 'Build a new component' });
@@ -82,7 +87,12 @@ describe('CardStore.createChatCard', () => {
     const store = new CardStore();
     store.setWs({ emit } as unknown as WsClient);
 
-    await store.createChatCard({ description: 'What is this issue?', projectId: 12, model: 'sonnet', thinkingLevel: 'high' });
+    await store.createChatCard({
+      description: 'What is this issue?',
+      projectId: 12,
+      model: 'sonnet',
+      thinkingLevel: 'high',
+    });
 
     expect(emit).toHaveBeenCalledWith('card:create', expect.objectContaining({ title: 'New Card', projectId: 12 }));
     expect(emit.mock.calls[1]).toEqual([
@@ -102,15 +112,18 @@ describe('CardStore.createChatCard', () => {
 
     await store.createChatCard({ description: 'Need idea', projectId: 12, summarizeThreshold: 0.8 });
 
-    expect(emit).toHaveBeenCalledWith('card:create', expect.objectContaining({
-      title: 'New Card',
-      description: 'Need idea',
-      projectId: 12,
-      summarizeThreshold: 0.8,
-      archiveOthers: true,
-      model: undefined,
-      thinkingLevel: undefined,
-    }));
+    expect(emit).toHaveBeenCalledWith(
+      'card:create',
+      expect.objectContaining({
+        title: 'New Card',
+        description: 'Need idea',
+        projectId: 12,
+        summarizeThreshold: 0.8,
+        archiveOthers: true,
+        model: undefined,
+        thinkingLevel: undefined,
+      }),
+    );
     expect(store.cards.get(501)?.title).toBe('New Card');
   });
 });

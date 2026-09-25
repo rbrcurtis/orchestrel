@@ -55,7 +55,8 @@ export function buildExcerpt(path: string, maxTokens: number): Excerpt {
     } else if (role === 'assistant') {
       for (const block of contentBlocks(content)) {
         if (block.type === 'text') parts.push(redact(`ASSISTANT: ${block.text}`));
-        else if (block.type === 'toolCall') parts.push(`TOOL CALL: ${block.name}(${truncate(redact(JSON.stringify(block.arguments)), TOOL_ARGS_CAP)})`);
+        else if (block.type === 'toolCall')
+          parts.push(`TOOL CALL: ${block.name}(${truncate(redact(JSON.stringify(block.arguments)), TOOL_ARGS_CAP)})`);
         // thinking blocks intentionally dropped
       }
     } else if (role === 'toolResult') {

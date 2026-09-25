@@ -79,7 +79,6 @@ async function collectPromptFromMessage(prompt: string): Promise<string> {
   }
 }
 
-
 function createServer() {
   return new OrcdServer(
     { listen: { host: '127.0.0.1', port: 0 }, authToken: 'tok', name: 'local' },
@@ -296,7 +295,12 @@ describe('OrcdServer background compaction', () => {
     const session = bgcSession('bgc-stale');
     server.store.add(session);
     server['attachLifecycleHooks'](session);
-    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined } as never);
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({
+      summary: 'S',
+      firstKeptEntryId: 'e1',
+      tokensBefore: 9,
+      details: undefined,
+    } as never);
     const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(true);
@@ -365,7 +369,10 @@ describe('OrcdServer background compaction', () => {
     vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
-    server['handleAction'](client as never, { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm' } as CompactAction);
+    server['handleAction'](
+      client as never,
+      { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm' } as CompactAction,
+    );
     await new Promise((r) => setTimeout(r, 0));
     const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
     expect(wrote.some((w) => w.includes('bgc_started'))).toBe(true);
@@ -382,7 +389,17 @@ describe('OrcdServer background compaction', () => {
     session.subscribe(cb);
     const compactSpy = vi.spyOn(session, 'compact').mockResolvedValue(undefined);
     const bgcSpy = vi.spyOn(session, 'prepareBgCompaction');
-    server['handleAction'](client as never, { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm', mode: 'full' } as CompactAction);
+    server['handleAction'](
+      client as never,
+      {
+        action: 'compact',
+        sessionId: session.id,
+        cwd: '/tmp',
+        provider: 'test',
+        model: 'm',
+        mode: 'full',
+      } as CompactAction,
+    );
     await new Promise((r) => setTimeout(r, 0));
     expect(compactSpy).toHaveBeenCalled();
     expect(bgcSpy).not.toHaveBeenCalled(); // full compaction, not background
@@ -403,14 +420,25 @@ describe('OrcdServer background compaction', () => {
     server.store.add(session);
     server['attachLifecycleHooks'](session);
     let finishCompact: (() => void) | undefined;
-    vi.spyOn(session, 'compact').mockImplementation(() => new Promise<void>((resolve) => {
-      finishCompact = resolve;
-    }));
+    vi.spyOn(session, 'compact').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCompact = resolve;
+        }),
+    );
     const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
 
-    server['handleAction'](client as never, {
-      action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm', mode: 'full',
-    } as CompactAction);
+    server['handleAction'](
+      client as never,
+      {
+        action: 'compact',
+        sessionId: session.id,
+        cwd: '/tmp',
+        provider: 'test',
+        model: 'm',
+        mode: 'full',
+      } as CompactAction,
+    );
     await new Promise((r) => setTimeout(r, 0));
     server['handleAction'](client as never, { action: 'message', sessionId: session.id, prompt: 'after compact' });
     expect(sendSpy).not.toHaveBeenCalled();

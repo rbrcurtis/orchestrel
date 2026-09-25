@@ -18,6 +18,7 @@ Use the SDK's stable V1 `query.streamInput(asyncIterable)` method. This accepts 
 ### `createInputStream()` — new private method
 
 Returns an `AsyncGenerator<SDKUserMessage>` that:
+
 1. Yields any messages already in `inputQueue`
 2. When empty, awaits a Promise that resolves when `inputWake()` is called
 3. Loops forever (generator lifetime = query lifetime)
@@ -25,6 +26,7 @@ Returns an `AsyncGenerator<SDKUserMessage>` that:
 ### `start()` changes
 
 After creating the query instance, fire-and-forget `streamInput`:
+
 ```ts
 this.queryInstance.streamInput(this.createInputStream());
 ```
@@ -32,12 +34,14 @@ this.queryInstance.streamInput(this.createInputStream());
 ### `sendUserMessage()` changes
 
 **When query is running** (`queryInstance` exists):
+
 - Buffer/persist/emit the user message (unchanged)
 - Build an `SDKUserMessage` and push onto `inputQueue`
 - Call `inputWake()` to unblock the generator
 - No interrupt, no new query
 
 **When query is idle** (`queryInstance` is null — Claude finished):
+
 - Buffer/persist/emit the user message (unchanged)
 - Start a new query via `runQuery()` with resume ID (current behavior)
 - Wire up `streamInput` on the new query

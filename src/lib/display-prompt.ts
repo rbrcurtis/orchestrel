@@ -42,10 +42,7 @@ export function collectDisplayPrompts(entries: SessionEntry[]): Map<string, stri
 }
 
 function collapseLegacySkillBlocks(text: string): string {
-  return text.replace(
-    /<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g,
-    (_block, name: string) => `/${name}`,
-  );
+  return text.replace(/<skill name="([a-z0-9-]+)"[^>]*>[\s\S]*?<\/skill>/g, (_block, name: string) => `/${name}`);
 }
 
 /**

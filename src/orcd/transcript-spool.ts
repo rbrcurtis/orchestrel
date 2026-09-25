@@ -15,8 +15,12 @@ export class TranscriptSpool {
   private count = 0;
   private disposed = false;
 
-  get length(): number { return this.count; }
-  get bytes(): number { return this.size + this.count * 16; }
+  get length(): number {
+    return this.count;
+  }
+  get bytes(): number {
+    return this.size + this.count * 16;
+  }
 
   append(message: TranscriptOverlayMessage): number {
     if (this.disposed) throw new Error('Transcript spool is closed');
@@ -42,13 +46,18 @@ export class TranscriptSpool {
 
   // A page can exceed maxBytes only for its first record. This preserves a
   // single oversized message without truncating visible tool output.
-  page(before = this.count, limit = 80, maxBytes = 1_048_576): {
+  page(
+    before = this.count,
+    limit = 80,
+    maxBytes = 1_048_576,
+  ): {
     messages: TranscriptOverlayMessage[];
     before: number;
     hasOlder: boolean;
   } {
     if (this.disposed) throw new Error('Transcript spool is closed');
-    if (!Number.isSafeInteger(before) || before < 0 || before > this.count) throw new Error('Invalid transcript spool cursor');
+    if (!Number.isSafeInteger(before) || before < 0 || before > this.count)
+      throw new Error('Invalid transcript spool cursor');
     if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('Invalid transcript spool page limit');
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid transcript spool byte limit');
     const messages: TranscriptOverlayMessage[] = [];

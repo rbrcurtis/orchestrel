@@ -63,52 +63,65 @@ providers:
   });
 
   it('imports a session through the backend without launching Pi', async () => {
-    const requests: Array<{ url?: string; body?: unknown }> = []
+    const requests: Array<{ url?: string; body?: unknown }> = [];
     const server = createServer((req, res) => {
-      let raw = ''
-      req.on('data', (chunk: Buffer) => { raw += chunk.toString() })
+      let raw = '';
+      req.on('data', (chunk: Buffer) => {
+        raw += chunk.toString();
+      });
       req.on('end', () => {
-        requests.push({ url: req.url, body: JSON.parse(raw) as unknown })
-        res.writeHead(201, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ id: 42, title: 'Imported session' }))
-      })
-    })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-    const port = (server.address() as { port: number }).port
-    const cwd = await mkdtemp(join(tmpdir(), 'orc-import-cwd-'))
+        requests.push({ url: req.url, body: JSON.parse(raw) as unknown });
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: 42, title: 'Imported session' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    const cwd = await mkdtemp(join(tmpdir(), 'orc-import-cwd-'));
     try {
-      const { stdout } = await execFileAsync(tsxPath, [resolve(repoRoot, 'bin/orc'), '--import', 'session-123', '--config', configPath], {
-        cwd,
-        env: {
-          ...process.env,
-          ORC_API_URL: `http://127.0.0.1:${port}`,
-          ORC_PI_PATH: join(dir, 'does-not-exist'),
+      const { stdout } = await execFileAsync(
+        tsxPath,
+        [resolve(repoRoot, 'bin/orc'), '--import', 'session-123', '--config', configPath],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            ORC_API_URL: `http://127.0.0.1:${port}`,
+            ORC_PI_PATH: join(dir, 'does-not-exist'),
+          },
         },
-      })
+      );
 
-      expect(requests).toEqual([{ url: '/api/cards/import-session', body: { sessionId: 'session-123', path: await realpath(cwd), nodeName: 'import-node' } }])
-      expect(stdout).toContain('Imported card 42: Imported session')
+      expect(requests).toEqual([
+        {
+          url: '/api/cards/import-session',
+          body: { sessionId: 'session-123', path: await realpath(cwd), nodeName: 'import-node' },
+        },
+      ]);
+      expect(stdout).toContain('Imported card 42: Imported session');
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()))
-      await rm(cwd, { recursive: true, force: true })
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+      await rm(cwd, { recursive: true, force: true });
     }
-  }, 30000)
+  }, 30000);
 
   it('prints the backend error when session import fails', async () => {
     const server = createServer((_req, res) => {
-      res.writeHead(422, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'No project configured for path: /tmp/missing' }))
-    })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-    const port = (server.address() as { port: number }).port
+      res.writeHead(422, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'No project configured for path: /tmp/missing' }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
     try {
-      await expect(execFileAsync(tsxPath, [resolve(repoRoot, 'bin/orc'), '--import', 'session-123', '--config', configPath], {
-        env: { ...process.env, ORC_API_URL: `http://127.0.0.1:${port}` },
-      })).rejects.toMatchObject({ stderr: expect.stringContaining('No project configured for path: /tmp/missing') })
+      await expect(
+        execFileAsync(tsxPath, [resolve(repoRoot, 'bin/orc'), '--import', 'session-123', '--config', configPath], {
+          env: { ...process.env, ORC_API_URL: `http://127.0.0.1:${port}` },
+        }),
+      ).rejects.toMatchObject({ stderr: expect.stringContaining('No project configured for path: /tmp/missing') });
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()))
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     }
-  }, 30000)
+  }, 30000);
 
   it('uses ORC_PROVIDER and ORC_MODEL when provider and model args are absent', async () => {
     const output = await runOrc([], {
@@ -242,7 +255,10 @@ providers:
 
   async function withDefaultThinking(level: string) {
     const yaml = await readFile(configPath, 'utf8');
-    await writeFile(configPath, yaml.replace('defaultModel: sonnet', `defaultModel: sonnet\ndefaultThinkingLevel: ${level}`));
+    await writeFile(
+      configPath,
+      yaml.replace('defaultModel: sonnet', `defaultModel: sonnet\ndefaultThinkingLevel: ${level}`),
+    );
   }
 
   it('passes the runtime subagent policy and extension to Pi without creating cwd .pi files', async () => {
@@ -278,29 +294,25 @@ providers:
     }
   }, 30000);
 
-  async function runOrc(
-    cliArgs: string[],
-    env: Record<string, string | undefined>,
-  ): Promise<Record<string, unknown>> {
-    const { stdout } = await execFileAsync(
-      tsxPath,
-      ['bin/orc', '--config', configPath, '--print-env', ...cliArgs],
-      {
-        cwd: repoRoot,
-        env: {
-          ...process.env,
-          ORC_CONFIG: undefined,
-          ORC_PROVIDER: undefined,
-          ORC_MODEL: undefined,
-          ORC_PI_PATH: env.ORC_PI_PATH ?? piPath,
-          ...env,
-        },
+  async function runOrc(cliArgs: string[], env: Record<string, string | undefined>): Promise<Record<string, unknown>> {
+    const { stdout } = await execFileAsync(tsxPath, ['bin/orc', '--config', configPath, '--print-env', ...cliArgs], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        ORC_CONFIG: undefined,
+        ORC_PROVIDER: undefined,
+        ORC_MODEL: undefined,
+        ORC_PI_PATH: env.ORC_PI_PATH ?? piPath,
+        ...env,
       },
-    );
+    });
     return JSON.parse(stdout) as Record<string, unknown>;
   }
 
-  async function runOrcSpawn(cliArgs: string[], cwd: string): Promise<{
+  async function runOrcSpawn(
+    cliArgs: string[],
+    cwd: string,
+  ): Promise<{
     args: string[];
     env: { ORCHESTREL_SUBAGENT_POLICY: string };
   }> {
