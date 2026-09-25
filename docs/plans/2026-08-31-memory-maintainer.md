@@ -1192,14 +1192,12 @@ describe('consolidate', () => {
     const complete = vi.fn().mockResolvedValueOnce(assistant([{ type: 'text', text: 'no ops needed' }], 'stop'));
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ data: [] }),
-          text: () => Promise.resolve(''),
-        }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ data: [] }),
+        text: () => Promise.resolve(''),
+      }),
     );
     const ops = await consolidate({
       excerpt: { sessionId: 's1', cwd: '/x', startedAt: '', text: 't', tokenEstimate: 1 },

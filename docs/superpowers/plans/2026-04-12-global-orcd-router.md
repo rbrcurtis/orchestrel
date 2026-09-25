@@ -49,17 +49,15 @@ import { MessageBus } from '../bus';
 vi.mock('../models/index', () => ({
   AppDataSource: {
     getRepository: () => ({
-      findOneBy: vi
-        .fn()
-        .mockResolvedValue({
-          id: 42,
-          sessionId: 'sess-abc',
-          contextTokens: 0,
-          contextWindow: 200000,
-          turnsCompleted: 0,
-          updatedAt: '',
-          save: vi.fn(),
-        }),
+      findOneBy: vi.fn().mockResolvedValue({
+        id: 42,
+        sessionId: 'sess-abc',
+        contextTokens: 0,
+        contextWindow: 200000,
+        turnsCompleted: 0,
+        updatedAt: '',
+        save: vi.fn(),
+      }),
       save: vi.fn().mockResolvedValue(undefined),
     }),
   },
