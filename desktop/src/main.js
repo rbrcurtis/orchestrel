@@ -1,6 +1,8 @@
 const path = require('node:path');
 const { app, BrowserWindow, shell } = require('electron');
 
+const METRICS_INTERVAL_MS = 60_000;
+
 const apps = {
   orchestrel: {
     name: 'Orchestrel',
@@ -63,6 +65,31 @@ function createWindow() {
       mainWindow.loadURL(currentApp.url);
     }
   });
+
+  // The web app can only sample its own renderer JS heap. The main process and
+  // the GPU process are invisible from there, so sample them here and forward
+  // the line to the same endpoint through the renderer.
+  mainWindow.webContents.once('did-finish-load', () => setTimeout(reportMainMetrics, 5_000));
+}
+
+function reportMainMetrics() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const procs = app
+    .getAppMetrics()
+    .map((m) => {
+      if (!m.memory) return `${m.type} ws=n/a`;
+      const ws = Math.round(m.memory.workingSetSize / 1024);
+      const peak = Math.round(m.memory.peakWorkingSetSize / 1024);
+      return `${m.type} ws=${ws}MB peak=${peak}MB cpu=${m.cpu.percentCPUUsage.toFixed(1)}%`;
+    })
+    .join(' | ');
+
+  const rss = Math.round(process.memoryUsage().rss / 1048576);
+  const payload = JSON.stringify({ msg: `main-mem rss=${rss}MB | ${procs}`, ts: new Date().toISOString() });
+  mainWindow.webContents
+    .executeJavaScript(`navigator.sendBeacon('/api/pwa-log', ${JSON.stringify(payload)})`)
+    .catch(() => {});
 }
 
 function getTarget() {
@@ -101,6 +128,7 @@ function isInternalUrl(url) {
 
 app.whenReady().then(() => {
   createWindow();
+  setInterval(reportMainMetrics, METRICS_INTERVAL_MS);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
