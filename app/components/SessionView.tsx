@@ -76,6 +76,9 @@ export const SessionView = observer(function SessionView({
   const prevConvLen = useRef(0);
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  // Bumped on every send so the transcript follows the prompt the reader
+  // just sent, even from a manual scroll-up.
+  const [scrollToBottomSeq, setScrollToBottomSeq] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
@@ -179,6 +182,7 @@ export const SessionView = observer(function SessionView({
 
   async function handleSend(message: string, files?: FileRef[]) {
     setNotification(null); // a new prompt clears any stale session error
+    setScrollToBottomSeq((n) => n + 1);
     try {
       await sessionStore.sendMessage(cardId, message, files);
       return true;
@@ -236,6 +240,7 @@ export const SessionView = observer(function SessionView({
         historyLoaded={historyLoaded}
         showScrollButton={showScrollBtn}
         onShowScrollButtonChange={handleShowScrollButtonChange}
+        scrollToBottomSeq={scrollToBottomSeq}
       />
 
       {/* Status bar — above prompt input */}

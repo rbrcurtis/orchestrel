@@ -17,6 +17,8 @@ type Props = {
   showScrollButton: boolean;
   onNearBottomChange?: (nearBottom: boolean) => void;
   onShowScrollButtonChange: (show: boolean) => void;
+  /** Bumped when the reader sends a prompt — a send always shows the prompt. */
+  scrollToBottomSeq?: number;
 };
 
 const INITIAL_ROWS = 120;
@@ -62,6 +64,7 @@ export function LazyTranscript({
   showScrollButton,
   onNearBottomChange,
   onShowScrollButtonChange,
+  scrollToBottomSeq,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -320,6 +323,17 @@ export function LazyTranscript({
     if (!tailGrowthRef.current || !nearBottomRef.current || items.length === 0) return;
     scheduleScrollToBottom();
   }, [currentBlocks, currentBlocks.length, items.length, scheduleScrollToBottom]);
+
+  // A prompt the reader just sent outranks a manual scroll-up: the log jumps to
+  // the prompt and its reply, even when the reader was reading earlier turns.
+  const prevScrollSeqRef = useRef(scrollToBottomSeq ?? 0);
+  useEffect(() => {
+    const seq = scrollToBottomSeq ?? 0;
+    if (seq === prevScrollSeqRef.current) return;
+    prevScrollSeqRef.current = seq;
+    nearBottomRef.current = true;
+    scheduleScrollToBottom();
+  }, [scrollToBottomSeq, scheduleScrollToBottom]);
 
   useEffect(() => {
     const el = contentRef.current;

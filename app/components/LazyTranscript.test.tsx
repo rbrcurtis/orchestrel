@@ -130,6 +130,39 @@ describe('LazyTranscript auto-scroll', () => {
     expect(screen.getAllByTestId('message-block')).toHaveLength(4);
   });
 
+  it('pins to bottom when the reader sends a prompt after scrolling up', () => {
+    const props = {
+      cardId: 1,
+      currentBlocks: [],
+      accentColor: null,
+      historyLoaded: true,
+      showScrollButton: false,
+      onShowScrollButtonChange: vi.fn(),
+    };
+
+    const { container, rerender } = render(
+      <LazyTranscript {...props} conversation={conversation(3)} scrollToBottomSeq={0} />,
+    );
+    const viewport = container.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    const scrollTo = vi.fn((options?: ScrollToOptions | number) => {
+      if (typeof options === 'object') viewport.scrollTop = Number(options.top);
+    });
+    viewport.scrollTo = scrollTo as HTMLDivElement['scrollTo'];
+    act(flushAnimationFrames);
+
+    // Reader is high up in the log.
+    setViewportMetrics(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 100 });
+    act(() => viewport.dispatchEvent(new Event('scroll')));
+    scrollTo.mockClear();
+
+    // Sending a prompt bumps the sequence and appends the new user row.
+    setViewportMetrics(viewport, { scrollHeight: 1250, clientHeight: 400, scrollTop: 100 });
+    rerender(<LazyTranscript {...props} conversation={conversation(4)} scrollToBottomSeq={1} />);
+    act(flushAnimationFrames);
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1250, behavior: 'auto' });
+  });
+
   it('keeps transcript pinned to bottom while initial history content finishes sizing', () => {
     const props = {
       cardId: 1,

@@ -56,8 +56,8 @@ vi.mock('./SubagentFeed', () => ({
 }));
 
 vi.mock('./LazyTranscript', () => ({
-  LazyTranscript: ({ conversation }: { conversation: Array<{ kind: string; content?: string }> }) => (
-    <div data-testid="conversation">{conversation.map((entry) => entry.kind === 'user' ? entry.content : '').join('\n')}</div>
+  LazyTranscript: ({ conversation, scrollToBottomSeq }: { conversation: Array<{ kind: string; content?: string }>; scrollToBottomSeq?: number }) => (
+    <div data-testid="conversation" data-scroll-seq={scrollToBottomSeq ?? 0}>{conversation.map((entry) => entry.kind === 'user' ? entry.content : '').join('\n')}</div>
   ),
 }));
 
@@ -320,6 +320,27 @@ describe('SessionView prompt submission', () => {
 
     await waitFor(() => expect(sessionStore.sendMessage).toHaveBeenCalled());
     await waitFor(() => expect(textarea.value).toBe('Run the ferris wheel'));
+  });
+
+  it('asks the transcript to follow the prompt on every send', async () => {
+    setDefaultState({
+      card: { sessionId: null },
+      session: undefined,
+    });
+    let resolveSend: () => void = () => {};
+    sessionStore.sendMessage.mockReturnValue(new Promise<void>((res) => { resolveSend = res; }));
+
+    renderSessionView({ sessionId: null });
+    const textarea = screen.getByPlaceholderText('Enter a prompt to start a session...');
+    const before = screen.getByTestId('conversation').dataset.scrollSeq;
+
+    fireEvent.change(textarea, { target: { value: 'Run the ferris wheel' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('conversation').dataset.scrollSeq).not.toBe(before);
+    });
+    resolveSend();
   });
 
   it('blurs the prompt textarea after a successful send by default', async () => {
