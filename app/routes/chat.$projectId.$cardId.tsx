@@ -92,7 +92,9 @@ const ChatCardView = observer(function ChatCardView() {
         </Link>
         <InlineEdit
           value={card.title}
-          onSave={async (v) => { await cardStore.updateCard({ id: card.id, title: v }); }}
+          onSave={async (v) => {
+            await cardStore.updateCard({ id: card.id, title: v });
+          }}
           className="text-sm font-medium flex-1 min-w-0"
           placeholder="Untitled"
           minLength={1}
