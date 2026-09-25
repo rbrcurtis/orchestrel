@@ -3,3 +3,4 @@ build
 .react-router
 data
 pnpm-lock.yaml
+.opencode
