@@ -181,20 +181,28 @@ export function projectEntries(entries: SessionEntry[]): TranscriptEntryProjecti
   // original invocation so the live snapshot matches paged history. Prompt templates
   // have no <skill> wrapper, so only the display metadata can recover them.
   const replacements = collectDisplayPrompts(entries);
-  return buildContextEntries(entries).map((entry) => {
-    const messages = sessionEntryToContextMessages(entry).map((message) => {
-      if (message.role !== 'user') return message;
-      const text = userMessageText(message.content);
-      if (!text) return message;
-      const displayText = originalPromptText(text, replacements);
-      return displayText === text ? message : { ...message, content: displayText };
-    });
-    return {
+  const projected: TranscriptEntryProjection[] = [];
+  for (const entry of buildContextEntries(entries)) {
+    // Pi 0.86+ persists the system prompt and tool loadout as system messages so they
+    // survive resume and branch navigation. They are model context, never chat, so the
+    // display projection drops them (the paged-history path already does).
+    const messages = sessionEntryToContextMessages(entry)
+      .filter((message) => message.role !== 'system')
+      .map((message) => {
+        if (message.role !== 'user') return message;
+        const text = userMessageText(message.content);
+        if (!text) return message;
+        const displayText = originalPromptText(text, replacements);
+        return displayText === text ? message : { ...message, content: displayText };
+      });
+    if (messages.length === 0) continue;
+    projected.push({
       entryId: entry.id,
       entry: structuredClone(entry),
       messages: structuredClone(messages),
-    };
-  });
+    });
+  }
+  return projected;
 }
 
 function userMessageText(content: unknown): string | undefined {

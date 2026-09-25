@@ -12,6 +12,9 @@ export function reduceTranscriptState(state: TranscriptState, event: TranscriptE
   }
 
   if (event.type === 'message_started') {
+    // Pi 0.86+ emits the persisted system prompt/tool loadout as a system message at
+    // the start of a run. It is model context, not chat, so it never enters the display.
+    if (event.message.role === 'system') return state;
     return {
       ...state,
       overlay: [...state.overlay, {

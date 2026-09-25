@@ -4,6 +4,7 @@ const findCutPoint = vi.fn();
 const generateSummary = vi.fn();
 const appendCompaction = vi.fn(() => 'comp-id');
 const buildSessionContext = vi.fn(() => ({ messages: ['m1', 'm2'] }));
+const refreshContext = vi.fn();
 const getBranch = vi.fn();
 const agentState = { messages: [] as unknown[] };
 
@@ -29,6 +30,7 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
       sessionId: 'sess-1',
       agent: { state: agentState, streamFn: undefined },
       sessionManager: { getBranch, appendCompaction, buildSessionContext, getEntries: () => [] },
+      refreshContext,
       bindExtensions: vi.fn(async () => undefined),
       subscribe: () => () => undefined,
       messages: [],
@@ -49,6 +51,7 @@ describe('pi-runtime BGC', () => {
     findCutPoint.mockReset();
     generateSummary.mockReset();
     appendCompaction.mockReset();
+    refreshContext.mockReset();
     getBranch.mockReset();
     agentState.messages = [];
   });
@@ -113,10 +116,10 @@ describe('pi-runtime BGC', () => {
     expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 20_000); // DEFAULT_COMPACTION_SETTINGS.keepRecentTokens
   });
 
-  it('applyBgCompaction appends the entry and rebuilds messages', async () => {
+  it('applyBgCompaction appends the entry and refreshes the context', async () => {
     const s = await makeSession();
     await s.applyBgCompaction({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 42, details: undefined });
     expect(appendCompaction).toHaveBeenCalledWith('S', 'e1', 42, undefined, true);
-    expect(agentState.messages).toEqual(['m1', 'm2']);
+    expect(refreshContext).toHaveBeenCalledTimes(1);
   });
 });

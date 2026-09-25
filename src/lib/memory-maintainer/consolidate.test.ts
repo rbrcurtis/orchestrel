@@ -22,7 +22,7 @@ function assistant(content: Array<{ type: string; text?: string; id?: string; na
 }
 
 function toolCall(name: string, args: unknown): ToolCall {
-  return { type: 'toolCall', id: `c-${name}`, name, arguments: args as Record<string, unknown> };
+  return { type: 'toolCall', id: `c-${name}`, name, arguments: args as ToolCall['arguments'] };
 }
 
 describe('consolidate', () => {

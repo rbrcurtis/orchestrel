@@ -389,11 +389,12 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     applyBgCompaction(result) {
       const sm = session.sessionManager as unknown as {
         appendCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number, details: unknown, fromHook: boolean): string;
-        buildSessionContext(): { messages: unknown[] };
       };
       sm.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true);
-      const agent = (session as unknown as { agent: { state: { messages: unknown[] } } }).agent;
-      agent.state.messages = sm.buildSessionContext().messages;
+      // Pi 0.87 made SessionManager canonical for provider context: assigning
+      // agent.state.messages no longer replaces future request history, so rebuild
+      // through the manager instead.
+      session.refreshContext();
     },
 
     latestEntryIsCompaction() {

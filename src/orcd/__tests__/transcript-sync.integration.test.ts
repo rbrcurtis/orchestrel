@@ -138,8 +138,8 @@ it('settles queued identical prompts only after final message replacement is dur
     await prompt;
     await settledGate;
 
-    expect(messageEndRuntimeMessageCount).toBe(6);
-    expect(messageEndPersistedEntryCount).toBe(5);
+    expect(messageEndRuntimeMessageCount).toBe(7);
+    expect(messageEndPersistedEntryCount).toBe(6);
     expect(messageEndRuntimeMessageCount).not.toBe(messageEndPersistedEntryCount);
     expect(streamingFlags).toContain(true);
     expect(streamingFlags.at(-1)).toBe(false);
@@ -150,7 +150,8 @@ it('settles queued identical prompts only after final message replacement is dur
     expect(settledSessionFile).toBeDefined();
     expect(settledEntries).toBeDefined();
     const messages = settledEntries!.filter((entry) => entry.type === 'message');
-    expect(messages).toHaveLength(6);
+    // 7 = the persisted system prompt/tool loadout entry plus the 3 user and 3 assistant turns.
+    expect(messages).toHaveLength(7);
     expect(messages.map((entry) => entry.id)).toHaveLength(new Set(messages.map((entry) => entry.id)).size);
     const userMessages = messages.filter(
       (entry): entry is SessionEntry & { type: 'message'; message: { role: 'user'; content: string | Array<{ type: string; text?: string }> } } =>
@@ -439,7 +440,9 @@ it('projects Pi compaction context while preserving its append-only entry log', 
     const context = buildContextEntries(manager.getEntries());
     const projected = context.flatMap((entry) => sessionEntryToContextMessages(entry));
     expect(projected.map((message) => message.role === 'compactionSummary' ? message.summary : message.role === 'user' ? contentText(message.content) : message.role === 'assistant' ? contentText(message.content) : message.role)).toEqual([
-      'synthetic summary', 'new prompt', 'new answer',
+      // Pi 0.86+ persists the system prompt/tool loadout as a leading system message.
+      // It is model context; Orchestrel's display projection drops it (see projectEntries).
+      'system', 'synthetic summary', 'new prompt', 'new answer',
     ]);
     expect(manager.getEntries()).toHaveLength(entries.length + 1);
     expect(manager.getEntries().some((entry) => entry.type === 'message' && entry.message.role === 'user' && contentText(entry.message.content) === 'old prompt')).toBe(true);
