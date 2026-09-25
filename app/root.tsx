@@ -4,6 +4,7 @@ import { RootStore } from './stores/root-store';
 import { StoreProvider } from './stores/context';
 import { persistStore } from './lib/store-persist';
 import { startMemorySampling } from './lib/memory-sampler';
+import { trackPageLifecycle } from './lib/page-lifecycle';
 import { installPlainCopy } from './lib/plain-copy';
 import { ScrollArea, ScrollBar } from './components/ui/scroll-area';
 
@@ -95,6 +96,7 @@ if (typeof window !== 'undefined') {
     persistStore(rootStore.cards, 'orchestrel:cards:v2');
     persistStore(rootStore.projects, 'orchestrel:projects');
     (globalThis as Record<string, unknown>).__rootStore = rootStore;
+    trackPageLifecycle();
     startMemorySampling();
     installPlainCopy();
   } else {
