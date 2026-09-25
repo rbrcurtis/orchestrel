@@ -113,6 +113,21 @@ const DATEABLE_RE =
 const DAY_WORD_RE =
   /\b(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|day|days|week|weeks|month|months|year|years)\b/;
 
+// The precise tokens a phrase can be reduced to when `date` rejects it whole.
+// Deliberately narrower than DATEABLE_RE: a relative offset must not be pulled
+// out of a phrase that qualifies it, or "end of next month" would resolve to the
+// 25th of next month instead of reaching the model that answers the 31st.
+const EXTRACT_RE = /(\b(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?\b|\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b)/;
+
+// A calendar boundary: "end of the month", "by the end of next week".
+const BOUNDARY_RE = /\bend of (?:this |the |next )?(day|week|month|year)\b/;
+
+// "this afternoon", "today at 5pm": the phrase names today, so a past time is a
+// mistake, not the next occurrence. Without this, "this morning" sent at noon
+// rolled to tomorrow morning, and "until this afternoon" reached the model,
+// which answered 13:00 in one run and 12:00 in the next for the same phrase.
+const NAMES_TODAY_RE = /\b(this|today)\b/;
+
 /**
  * Human phrase → the GNU date phrase it means, or null when the mapping is not
  * unambiguous. "next friday at 10am" becomes "next friday 10am" so the host
@@ -123,7 +138,7 @@ export function normalizePhrase(phrase: string): string | null {
   let s = phrase
     .toLowerCase()
     .replace(/[.,!?]/g, ' ')
-    .replace(/\b(at|on|the|until|by|for)\b/g, ' ')
+    .replace(/\b(at|on|the|until|by|for|this)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -331,20 +346,20 @@ export function splitSleepArgument(argument: string, leftover = ''): { phrase: s
 }
 
 /**
- * Prompt handed to the card's own session when the resolver model cannot be
- * reached. The card runs now and its agent owns the wait, instead of the /sleep
- * command dying on an infrastructure failure. Left to itself the agent blocks in
- * `sleep <seconds>`, so the prompt names the deferred mechanism the session
- * already has (pi-subagents schedules, which orcd counts as pending work and
- * keeps the session alive for — see shared/scheduled-jobs.ts).
+ * `date -d` arguments, first match wins, for the first instant after a calendar
+ * period. The period start comes from `date` and the shift is added to it, so
+ * month and year ends land on the 1st no matter which day it is today.
  */
-export function sleepFallbackPrompt(phrase: string, prompt: string | null): string {
-  const then = prompt?.trim() ? prompt.trim() : 'continue with this card';
-  return (
-    `The /sleep command could not work out the time "${phrase.trim()}" — its time resolver model is unreachable. ` +
-    `Handle the wait yourself: schedule a one-shot job for that time with the Agent tool's schedule parameter, then ${then}. ` +
-    `The session stays alive while the job is pending, so do not block with a long sleep.`
-  );
+async function boundaryArgs(unit: string, next: boolean): Promise<string[]> {
+  const k = next ? 2 : 1;
+  // `date -d tomorrow` keeps the current time of day, so the end of today is
+  // tomorrow at midnight.
+  if (unit === 'day') return ['tomorrow 00:00'];
+  // On a Monday the coming Monday has already passed, so the end of that week is
+  // the Monday after it.
+  if (unit === 'week') return next ? ['monday +1 week'] : ['monday', 'monday +1 week'];
+  const { stdout } = await execFileAsync('date', [unit === 'month' ? '+%Y-%m-01' : '+%Y-01-01'], { timeout: 5_000 });
+  return [`${stdout.trim()} +${k} ${unit === 'month' ? 'months' : 'years'}`];
 }
 
 /** Epoch (ms) when a card that used /sleep may run again. */
@@ -364,22 +379,46 @@ export async function resolveSleepUntil(phrase: string, now = Date.now()): Promi
     return until;
   }
 
+  // A calendar boundary is the one phrase shape `date` cannot read and the model
+  // gets wrong (it answered 2026-10-31 for "end of the month" on 2026-09-25).
+  // Each boundary is the first instant AFTER the period, so the card resumes
+  // when the period is over: "end of the month" on Sep 25 is Oct 1 00:00.
+  const boundary = BOUNDARY_RE.exec(clean);
+  if (boundary) {
+    for (const arg of await boundaryArgs(boundary[1], /\bnext\b/.test(clean))) {
+      const until = await tryDate(arg);
+      if (until !== null && until > now + MIN_AHEAD_MS && until <= now + MAX_AHEAD_MS) return until;
+    }
+  }
+
   // Phrase the host can parse itself ("next friday at 10am", "until tuesday
   // at 5pm") never reaches the model: it resolves the weekday outright, while a
   // small model answers that arithmetic with the wrong day. An unresolvable or
   // already-past phrase falls through to the model instead of failing here.
   const normalized = normalizePhrase(clean);
   if (normalized) {
-    const until = await tryDate(normalized);
-    if (until !== null && until > now + MIN_AHEAD_MS && until <= now + MAX_AHEAD_MS) return until;
-    // A clock time or day period with no day named that has already passed means
-    // the next one: "until morning" at 6pm is tomorrow 09:00, "until 5pm" at
-    // 6pm is tomorrow 17:00. Deterministic, and it keeps the common phrases off
-    // the model — as long as the gateway is up, one is only needed for the
-    // genuinely odd phrasings.
-    if (!DAY_WORD_RE.test(normalized)) {
-      const rolled = await tryDate(`tomorrow ${normalized}`);
-      if (rolled !== null && rolled > now + MIN_AHEAD_MS && rolled <= now + MAX_AHEAD_MS) return rolled;
+    // A modifier `date` cannot read must not push the phrase to the model:
+    // "later tonight" normalizes to "later 21:00", which `date` rejects, so the
+    // clock time inside it is tried as well before giving up on the host.
+    const part = EXTRACT_RE.exec(normalized)?.[0];
+    const candidates = part && part !== normalized ? [normalized, part] : [normalized];
+    for (const cand of candidates) {
+      const until = await tryDate(cand);
+      if (until !== null && until > now + MIN_AHEAD_MS && until <= now + MAX_AHEAD_MS) return until;
+      // The phrase names a real time that has already gone by. "this"/"today"
+      // means today, so it must not silently become tomorrow.
+      if (until !== null && NAMES_TODAY_RE.test(clean)) {
+        throw new SleepResolutionError(`"${clean}" has already passed`);
+      }
+      // A clock time or day period with no day named that has already passed
+      // means the next one: "until morning" at 6pm is tomorrow 09:00, "until
+      // 5pm" at 6pm is tomorrow 17:00. Deterministic, and it keeps the common
+      // phrases off the model — as long as the gateway is up, one is only
+      // needed for the genuinely odd phrasings.
+      if (!DAY_WORD_RE.test(cand)) {
+        const rolled = await tryDate(`tomorrow ${cand}`);
+        if (rolled !== null && rolled > now + MIN_AHEAD_MS && rolled <= now + MAX_AHEAD_MS) return rolled;
+      }
     }
   }
 

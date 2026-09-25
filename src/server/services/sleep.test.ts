@@ -5,7 +5,6 @@ import {
   normalizePhrase,
   parseModelReply,
   resolveSleepUntil,
-  sleepFallbackPrompt,
   splitSleepArgument,
   weekdayInPhrase,
 } from './sleep';
@@ -52,6 +51,11 @@ describe('normalizePhrase', () => {
     expect(normalizePhrase('next friday at 10am')).toBe('next friday 10am');
     expect(normalizePhrase('until tuesday at 5pm')).toBe('tuesday 5pm');
     expect(normalizePhrase('tomorrow at 8am')).toBe('tomorrow 8am');
+    // "this" used to survive the strip, leaving "this 15:00" which `date` cannot
+    // read — so "until this afternoon" went to the model, which answered 13:00
+    // in one run and 12:00 in the next.
+    expect(normalizePhrase('until this afternoon')).toBe('15:00');
+    expect(normalizePhrase('this morning')).toBe('09:00');
   });
 
   it('turns a day period into a clock time', () => {
@@ -137,20 +141,6 @@ describe('splitSleepArgument', () => {
   });
 });
 
-describe('sleepFallbackPrompt', () => {
-  it('names the deferred mechanism instead of leaving the agent to block', () => {
-    const text = sleepFallbackPrompt('end of the month', 'check the deploy');
-    expect(text).toContain('could not work out the time "end of the month"');
-    expect(text).toContain("Agent tool's schedule parameter");
-    expect(text).toContain('check the deploy');
-    expect(text).toContain('do not block with a long sleep');
-  });
-
-  it('still says something useful without a task after "then"', () => {
-    expect(sleepFallbackPrompt('end of the month', null)).toContain('then continue with this card.');
-  });
-});
-
 describe('resolveSleepUntil', () => {
   const now = Date.UTC(2026, 8, 24, 20, 0, 0);
 
@@ -205,6 +195,98 @@ describe('resolveSleepUntil', () => {
     const morning = todayAt(8);
     await expect(resolveSleepUntil('until 5pm', morning)).resolves.toBe(todayAt(17));
     await expect(resolveSleepUntil('morning', morning)).resolves.toBe(todayAt(9));
+  });
+
+  it('resolves a "this <period>" phrase to today without the model', async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error('a day period must not need the model');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await expect(resolveSleepUntil('until this afternoon', todayAt(8))).resolves.toBe(todayAt(15));
+      await expect(resolveSleepUntil('this evening', todayAt(8))).resolves.toBe(todayAt(19));
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // "later tonight" normalizes to "later 21:00", which `date` rejects whole. The
+  // model answered midnight for it; the clock time inside the phrase is the
+  // answer, and the host can read that.
+  it('reads the time inside a phrase the host cannot parse whole', async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error('a stray modifier must not need the model');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await expect(resolveSleepUntil('later tonight', todayAt(8))).resolves.toBe(todayAt(21));
+      await expect(resolveSleepUntil('later this evening', todayAt(8))).resolves.toBe(todayAt(19));
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // The resolver model answered 2026-10-31 for "end of the month" on 2026-09-25
+  // with the date sitting in its prompt, so the host computes these itself: each
+  // boundary is the first instant AFTER the period, and the card resumes when
+  // the period is over.
+  it('computes a calendar boundary without the model', async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error('a calendar boundary must not need the model');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const month = new Date(await resolveSleepUntil('end of the month'));
+      expect(month.getDate()).toBe(1);
+      expect(month.getTime()).toBeGreaterThan(Date.now());
+      const nextMonth = new Date(await resolveSleepUntil('by the end of next month'));
+      expect(nextMonth.getMonth()).toBe((month.getMonth() + 1) % 12);
+
+      const week = new Date(await resolveSleepUntil('at the end of the week'));
+      expect(week.getDay()).toBe(1);
+      expect(week.getTime()).toBeGreaterThan(Date.now());
+
+      const day = new Date(await resolveSleepUntil('end of the day'));
+      expect(day.getHours()).toBe(0);
+      expect(day.getTime() - Date.now()).toBeLessThanOrEqual(24 * 3600_000);
+
+      const year = new Date(await resolveSleepUntil('end of the year'));
+      expect(year.getMonth()).toBe(0);
+      expect(year.getDate()).toBe(1);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // Reducing a phrase must not pull a relative offset out of the phrase that
+  // qualifies it: `date -d "next month"` is the 25th of next month, but "middle
+  // of next month" is the middle of it and belongs to the model.
+  it('leaves a qualified relative offset to the model', async () => {
+    const later = String(execFileSync('date', ['-d', '+45 days', '+%Y-%m-%d %H:%M'])).trim();
+    const want = Number(String(execFileSync('date', ['-d', later, '+%s'])).trim()) * 1000;
+    const fetchSpy = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ choices: [{ message: { content: `WAKE: ${later}` } }] }),
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await expect(resolveSleepUntil('middle of next month')).resolves.toBe(want);
+      expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('refuses a "this <period>" phrase whose time has passed instead of rolling it', async () => {
+    const evening = todayAt(18);
+    await expect(resolveSleepUntil('this morning', evening)).rejects.toThrow(/has already passed/);
+    await expect(resolveSleepUntil('until this afternoon', evening)).rejects.toThrow(/has already passed/);
   });
 
   // A weekday named in the phrase must be resolved by the host. When this went
