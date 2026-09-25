@@ -4,7 +4,7 @@ import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { OrcdServer } from '../socket-server';
 import { OrcdSession, type SessionEventCallback } from '../session';
-import type { CompactAction, StreamEventMessage } from '../../shared/orcd-protocol';
+import type { CompactAction, ContextUsageMessage, StreamEventMessage } from '../../shared/orcd-protocol';
 
 async function createSkillProject(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'orchestrel-skill-project-'));
@@ -287,7 +287,7 @@ describe('OrcdServer background compaction', () => {
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
     await server['maybeStartBgc'](session);
-    expect(prepSpy).toHaveBeenCalledWith(0.3, expect.any(Object));
+    expect(prepSpy).toHaveBeenCalledWith(0.3, expect.any(Object), expect.any(Function));
     expect(applySpy).toHaveBeenCalledWith(result);
   });
 
@@ -314,6 +314,41 @@ describe('OrcdServer background compaction', () => {
     expect(prepSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('does not re-attempt BGC at an unchanged context size after a no-op', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-noop');
+    session.summarizeThreshold = 0.7;
+    session.lastContextTokens = 180_000;
+    session.lastContextWindow = 200_000;
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const written: string[] = [];
+    session.subscribe((m) => written.push(JSON.stringify(m)));
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(null as never);
+    const hook = [...session['subscribers']][0] as SessionEventCallback;
+    const usage: ContextUsageMessage = {
+      type: 'context_usage',
+      sessionId: session.id,
+      contextTokens: 180_000,
+      contextWindow: 200_000,
+    };
+
+    // context_usage fires per streaming delta; a no-op must not retry at the same size.
+    hook(usage);
+    await new Promise((r) => setTimeout(r, 0));
+    hook(usage);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(prepSpy).toHaveBeenCalledTimes(1);
+    // A failed prepare must not announce a "Background compaction started" line.
+    expect(written.some((w) => w.includes('bgc_started'))).toBe(false);
+
+    // A larger context means the branch changed, so one retry is due.
+    session.lastContextTokens = 185_000;
+    hook({ ...usage, contextTokens: 185_000 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(prepSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('starts BGC from explicit compact action and emits bgc_started', async () => {
     const server = createServer();
     const client = createClient();
@@ -323,7 +358,10 @@ describe('OrcdServer background compaction', () => {
     const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
     client.subscriptions.set(session.id, cb);
     session.subscribe(cb);
-    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined } as never);
+    vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async (_f, _s, onStart) => {
+      onStart?.();
+      return { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined } as never;
+    });
     vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);

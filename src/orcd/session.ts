@@ -679,9 +679,9 @@ export class OrcdSession {
   }
 
   /** Run an out-of-band BGC summary. Parallel-safe; null = nothing to compact. */
-  async prepareBgCompaction(keepFraction: number, signal: AbortSignal): Promise<CompactionResult | null> {
+  async prepareBgCompaction(keepFraction: number, signal: AbortSignal, onStart?: () => void): Promise<CompactionResult | null> {
     const session = await this.getOrCreatePiSession(undefined);
-    return session.prepareBgCompaction(keepFraction, this.lastContextTokens, signal);
+    return session.prepareBgCompaction(keepFraction, this.lastContextTokens, signal, onStart);
   }
 
   /** Splice a prepared BGC compaction into the session tree. Call only when idle. */

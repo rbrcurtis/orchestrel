@@ -50,7 +50,7 @@ export interface PiRuntimeSession {
   dispose(): Promise<void>;
   compact(instructions?: string): Promise<unknown>;
   /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
-  prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal): Promise<CompactionResult | null>;
+  prepareBgCompaction(keepFraction: number, currentTokens: number, signal: AbortSignal, onStart?: () => void): Promise<CompactionResult | null>;
   /** Splice a prepared compaction into the session tree and rebuild context. Call only when idle. */
   applyBgCompaction(result: CompactionResult): void;
   /** True when the newest entry on the branch is already a compaction. */
@@ -334,7 +334,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       return session.compact(instructions);
     },
 
-    async prepareBgCompaction(keepFraction, currentTokens, signal) {
+    async prepareBgCompaction(keepFraction, currentTokens, signal, onStart) {
       const sm = session.sessionManager as unknown as {
         getBranch(): Array<{ type: string; id: string; message?: unknown; summary?: string; firstKeptEntryId?: string }>;
       };
@@ -363,6 +363,9 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         .filter((e) => e.type === 'message' && e.message !== undefined)
         .map((e) => e.message);
       if (toSummarize.length === 0) return null;
+      // A compactable range exists. Only now is a UI "started" marker truthful —
+      // a null return means nothing to compact and must not be announced.
+      onStart?.();
       const auth = await modelRegistry.getApiKeyAndHeaders(activeModel);
       const apiKey = 'apiKey' in auth ? (auth as { apiKey?: string }).apiKey : undefined;
       const headers = 'headers' in auth ? (auth as { headers?: Record<string, string> }).headers : undefined;

@@ -25,6 +25,11 @@ export class OrcdServer {
   readonly store = new SessionStore();
   private compacting = new Set<string>(); // session IDs currently compacting
   private pendingApply = new Map<string, import('@earendil-works/pi-coding-agent').CompactionResult>();
+  // Context size at which a BGC attempt found nothing to compact. `context_usage`
+  // fires on every streaming delta, so without this a failing attempt retries
+  // hundreds of times per second while the context stays over threshold (severe on
+  // small-window models). A new size means the branch changed and a retry is due.
+  private bgcNoopTokens = new Map<string, number>();
 
   constructor(
     private opts: OrcdListenConfig,
@@ -465,6 +470,7 @@ export class OrcdServer {
       return;
     }
     this.store.remove(action.sessionId);
+    this.bgcNoopTokens.delete(action.sessionId);
     session.dispose().catch((err: unknown) => {
       console.error(`[orcd] close error for session ${action.sessionId.slice(0, 8)}:`, err);
     });
@@ -626,12 +632,16 @@ export class OrcdServer {
     // Cancellation is not wired yet; summarization is short-lived.
     const signal = new AbortController().signal;
     try {
-      session.emitBgcStarted();
-      const result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal);
+      const tokens = session.lastContextTokens;
+      // Announce the job only once a compactable range is confirmed, so a failed
+      // prepare never emits a "Background compaction started" line.
+      const result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => session.emitBgcStarted());
       if (!result) {
-        console.log(`[orcd:${sid.slice(0, 8)}:bgc] nothing to compact`);
+        this.bgcNoopTokens.set(sid, tokens);
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] nothing to compact (tokens=${tokens}); suppressing retries at this size`);
         return;
       }
+      this.bgcNoopTokens.delete(sid);
       if (session.isIdle()) {
         this.applyBgcResult(session, result);
       } else {
@@ -640,6 +650,9 @@ export class OrcdServer {
       }
     } catch (err) {
       console.error(`[orcd:${sid.slice(0, 8)}:bgc] failed:`, err instanceof Error ? err.message : String(err));
+      // Hold the failing size too: a summarizer that errors would otherwise be
+      // re-hit on every streaming delta until the context changes.
+      this.bgcNoopTokens.set(sid, session.lastContextTokens);
     } finally {
       this.compacting.delete(sid);
     }
@@ -663,6 +676,8 @@ export class OrcdServer {
     // onBeforeExit hooks are persistent (fire on every run-end), so register the
     // deferred-splice apply once per session and make it one-shot via pendingApply.
     session.onBeforeExit(async () => {
+      // A new run starts from a fresh turn, so let the next threshold hit try again.
+      this.bgcNoopTokens.delete(sid);
       const pending = this.pendingApply.get(sid);
       // oxlint-disable-next-line orchestrel/log-before-early-return -- no pending splice is the common no-op case
       if (!pending) return;
@@ -677,6 +692,7 @@ export class OrcdServer {
           msg.contextWindow > 0 &&
           !this.compacting.has(sid) &&
           !this.pendingApply.has(sid) &&
+          this.bgcNoopTokens.get(sid) !== msg.contextTokens &&
           msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
         ) {
           const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
