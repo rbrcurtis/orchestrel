@@ -146,6 +146,20 @@ describe('sleepFallbackPrompt', () => {
 describe('resolveSleepUntil', () => {
   const now = Date.UTC(2026, 8, 24, 20, 0, 0);
 
+  // `date -d` resolves against the real clock, not the `now` passed in, so a
+  // fake `now` keeps today's real date and only picks the hour.
+  function todayAt(hour: number): number {
+    const d = new Date();
+    d.setHours(hour, 0, 0, 0);
+    return d.getTime();
+  }
+  function tomorrowAt(hour: number): number {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(hour, 0, 0, 0);
+    return d.getTime();
+  }
+
   it('adds durations to now without a model call', async () => {
     await expect(resolveSleepUntil('1.5 hours', now)).resolves.toBe(now + 5_400_000);
     await expect(resolveSleepUntil('2 days', now)).resolves.toBe(now + 172_800_000);
@@ -168,11 +182,11 @@ describe('resolveSleepUntil', () => {
     });
     vi.stubGlobal('fetch', fetchSpy);
     try {
-      const evening = new Date(2026, 8, 24, 18, 0, 0).getTime();
-      await expect(resolveSleepUntil('until morning', evening)).resolves.toBe(new Date(2026, 8, 25, 9, 0, 0).getTime());
-      await expect(resolveSleepUntil('until 5pm', evening)).resolves.toBe(new Date(2026, 8, 25, 17, 0, 0).getTime());
-      await expect(resolveSleepUntil('noon', evening)).resolves.toBe(new Date(2026, 8, 25, 12, 0, 0).getTime());
-      await expect(resolveSleepUntil('midnight', evening)).resolves.toBe(new Date(2026, 8, 25, 0, 0, 0).getTime());
+      const evening = todayAt(18);
+      await expect(resolveSleepUntil('until morning', evening)).resolves.toBe(tomorrowAt(9));
+      await expect(resolveSleepUntil('until 5pm', evening)).resolves.toBe(tomorrowAt(17));
+      await expect(resolveSleepUntil('noon', evening)).resolves.toBe(tomorrowAt(12));
+      await expect(resolveSleepUntil('midnight', evening)).resolves.toBe(tomorrowAt(0));
       expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
@@ -180,9 +194,9 @@ describe('resolveSleepUntil', () => {
   });
 
   it('keeps a bare clock time that is still ahead today', async () => {
-    const morning = new Date(2026, 8, 24, 8, 0, 0).getTime();
-    await expect(resolveSleepUntil('until 5pm', morning)).resolves.toBe(new Date(2026, 8, 24, 17, 0, 0).getTime());
-    await expect(resolveSleepUntil('morning', morning)).resolves.toBe(new Date(2026, 8, 24, 9, 0, 0).getTime());
+    const morning = todayAt(8);
+    await expect(resolveSleepUntil('until 5pm', morning)).resolves.toBe(todayAt(17));
+    await expect(resolveSleepUntil('morning', morning)).resolves.toBe(todayAt(9));
   });
 
   // A weekday named in the phrase must be resolved by the host. When this went

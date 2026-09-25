@@ -423,7 +423,10 @@ export async function resolveSleepUntil(phrase: string, now = Date.now()): Promi
 let wakerStarted = false;
 
 /** Start the wake timer and the stale-sleep cleanup. Safe to call twice. */
-export function startSleepWaker(bus: MessageBus = messageBus, intervalMs = 15_000): void {
+// One minute: a parked card is not urgent, and the first pass at boot covers the
+// wakes that came due while the server was down. A prompt-less wake only moves
+// the card; one with a prompt starts a session, so a tight poll buys nothing.
+export function startSleepWaker(bus: MessageBus = messageBus, intervalMs = 60_000): void {
   if (wakerStarted) return;
   wakerStarted = true;
 
