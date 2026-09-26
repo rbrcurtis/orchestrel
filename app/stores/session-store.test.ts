@@ -403,3 +403,60 @@ describe('SessionStore transcript paging', () => {
     expect(store.hasNewerHistory(7)).toBe(false);
   });
 });
+
+// A refused stop used to poll agent:stop every second until the page reloaded,
+// which spammed the server with 409 card_not_running replies.
+describe('SessionStore stop retries', () => {
+  it('caps the stop attempts and re-reads the status instead of polling forever', () => {
+    vi.useFakeTimers();
+    const socketEmit = vi.fn();
+    const emit = vi.fn().mockResolvedValue(undefined);
+    const store = new SessionStore();
+    store.setWs({ emit, socket: { emit: socketEmit } } as unknown as WsClient);
+
+    store.stopSession(1011);
+    vi.advanceTimersByTime(30_000);
+    vi.useRealTimers();
+
+    expect(socketEmit).toHaveBeenCalledTimes(5);
+    expect(store.stoppingCards.has(1011)).toBe(false);
+    expect(emit).toHaveBeenCalledWith('agent:status', { cardId: 1011 });
+  });
+});
+
+// A reconnect used to refetch every subscribed card at once. With several
+// sessions open that froze the board, because each reload re-ingested a full
+// transcript on the main thread.
+describe('SessionStore resubscribeAll', () => {
+  function statusFor(cardId: number, sessionId: string) {
+    return {
+      cardId,
+      active: false,
+      status: 'completed' as const,
+      sessionId,
+      promptsSent: 0,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
+    };
+  }
+
+  it('reloads history only for cards with a mounted view', async () => {
+    const emit = vi.fn().mockResolvedValue({ messages: [] });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+
+    store.handleAgentStatus(statusFor(1, 'sess-1'));
+    store.handleAgentStatus(statusFor(2, 'sess-2'));
+    store.subscribedCards.add(1);
+    store.subscribedCards.add(2);
+    emit.mockClear();
+
+    store.addViewer(1);
+    await store.resubscribeAll();
+
+    expect(emit).toHaveBeenCalledWith('session:load', { cardId: 1, sessionId: 'sess-1' });
+    expect(emit).not.toHaveBeenCalledWith('session:load', { cardId: 2, sessionId: 'sess-2' });
+    expect(emit).toHaveBeenCalledWith('agent:status', { cardId: 2 });
+  });
+});

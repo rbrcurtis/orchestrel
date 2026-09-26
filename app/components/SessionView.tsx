@@ -92,6 +92,14 @@ export const SessionView = observer(function SessionView({
 
   const isStreaming = sessionActive || isStarting;
 
+  // Register this view before the history effect below so a card with a live
+  // replica repaints as soon as its view mounts. Off-screen cards keep their
+  // subscription but stop repainting.
+  useEffect(() => {
+    sessionStore.addViewer(cardId);
+    return () => sessionStore.removeViewer(cardId);
+  }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load history / set up bus subscriptions on mount and when sessionId becomes available.
   // Called without sessionId on first render to register card-level bus subscriptions
   // immediately (avoiding the race where messages arrive before sessionId is known).

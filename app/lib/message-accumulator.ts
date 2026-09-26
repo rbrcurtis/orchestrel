@@ -137,6 +137,9 @@ export class MessageAccumulator {
   private historyPendingResultTimestamp?: number;
   private historyTurnCount = 0;
   private blockingSubagentToolIds = new Map<string, string>();
+  // Tool blocks by tool_use id. Tool results arrive after the block that owns
+  // them, and a linear scan of the conversation made every result O(n).
+  private toolBlocks = new Map<string, ContentBlock>();
 
   addCompactMarker(label: string, timestamp = Date.now()): void {
     this.finalizeBlocks();
@@ -144,13 +147,17 @@ export class MessageAccumulator {
   }
 
   constructor() {
-    makeAutoObservable<this, 'historyPendingResultTimestamp' | 'historyTurnCount' | 'blockingSubagentToolIds'>(this, {
+    makeAutoObservable<
+      this,
+      'historyPendingResultTimestamp' | 'historyTurnCount' | 'blockingSubagentToolIds' | 'toolBlocks'
+    >(this, {
       conversation: observable.shallow,
       currentBlocks: observable.shallow,
       subagents: observable,
       historyPendingResultTimestamp: false,
       historyTurnCount: false,
       blockingSubagentToolIds: false,
+      toolBlocks: false,
     });
   }
 
@@ -268,7 +275,7 @@ export class MessageAccumulator {
           })
           .map((b: HistoryAssistantContentBlock) => {
             if (b.type === 'tool_use') {
-              return new ContentBlock({
+              const block = new ContentBlock({
                 type: 'tool_use',
                 content: b.name ?? '',
                 id: b.id,
@@ -276,6 +283,8 @@ export class MessageAccumulator {
                 input: b.input !== undefined ? JSON.stringify(b.input) : '',
                 complete: true,
               });
+              if (block.id) this.toolBlocks.set(block.id, block);
+              return block;
             }
             if (b.type === 'thinking') {
               return new ContentBlock({ type: 'thinking', content: b.thinking ?? '', complete: true });
@@ -360,6 +369,7 @@ export class MessageAccumulator {
       input: '',
       complete: false,
     });
+    if (block.type === 'tool_use' && block.id) this.toolBlocks.set(block.id, block);
     this.currentBlocks.push(block);
   }
 
@@ -500,16 +510,7 @@ export class MessageAccumulator {
   }
 
   private attachToolOutput(toolUseId: string, output: string): void {
-    const entries = [...this.conversation].reverse();
-    for (const entry of entries) {
-      if (entry.kind !== 'blocks') continue;
-      const block = entry.blocks.find((b) => b.type === 'tool_use' && b.id === toolUseId);
-      if (!block) continue;
-      block.output = output;
-      return;
-    }
-
-    const block = this.currentBlocks.find((b) => b.type === 'tool_use' && b.id === toolUseId);
+    const block = this.toolBlocks.get(toolUseId);
     if (block) block.output = output;
   }
 
@@ -589,6 +590,7 @@ export class MessageAccumulator {
   clear(): void {
     this.conversation = [];
     this.currentBlocks = [];
+    this.toolBlocks.clear();
     this.clearSubagents();
     this.historyPendingResultTimestamp = undefined;
     this.historyTurnCount = 0;

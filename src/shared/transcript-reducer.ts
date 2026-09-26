@@ -112,6 +112,13 @@ export class TranscriptReplica {
   snapshot(): { cursor: TranscriptCursor | undefined; state: TranscriptState } {
     return structuredClone({ cursor: this.cursor, state: this.state });
   }
+
+  // Live display state for a repaint. Read-only: the caller must not mutate it.
+  // The snapshot() copy exists for callers that own the result; a repaint does
+  // not, and cloning the whole state on every paint was the hot path.
+  displayState(): TranscriptState {
+    return this.state;
+  }
 }
 
 function applyAssistantUpdate(

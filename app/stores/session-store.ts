@@ -10,6 +10,11 @@ import { MessageAccumulator } from '../lib/message-accumulator';
 import { readTranscriptPage, writeTranscriptPage, type TranscriptCacheScope } from '../lib/transcript-cache';
 import type { TranscriptHistoryPage } from '../../src/shared/transcript-history';
 
+// How many times a stop request is retried before the client gives up and
+// re-reads the real status. A card with no active turn answers 409, so an
+// uncapped poll would repeat until the page reloads.
+const STOP_ATTEMPTS = 5;
+
 export interface SessionState {
   active: boolean;
   status: 'starting' | 'running' | 'completed' | 'errored' | 'stopped';
@@ -54,8 +59,13 @@ export class SessionStore {
   private replicas = new Map<number, TranscriptReplica>();
   private liveLoading = new Map<number, TranscriptEnvelope<TranscriptEvent>[]>();
   private liveFrames = new Set<number>();
+  private viewers = new Map<number, number>();
 
   private paintLive(cardId: number): void {
+    // Only a mounted view needs the transcript. Off-screen cards keep their live
+    // replica but stop repainting, so a reconnect or a long run cannot spend the
+    // main thread on sessions nobody is looking at.
+    if (!this.hasViewer(cardId)) return;
     if (this.liveFrames.has(cardId)) return;
     this.liveFrames.add(cardId);
     setTimeout(
@@ -66,7 +76,7 @@ export class SessionStore {
           const session = this.sessions.get(cardId);
           if (!replica || !session) return;
           replica.trimVisible();
-          renderTranscriptSnapshot(session.accumulator, replica.snapshot().state);
+          renderTranscriptSnapshot(session.accumulator, replica.displayState());
           session.historyLoaded = true;
         }),
       100,
@@ -205,10 +215,11 @@ export class SessionStore {
   }
 
   constructor() {
-    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws'>(this, {
+    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws' | 'viewers'>(this, {
       stopIntervals: false,
       loadingCards: false,
       _ws: false,
+      viewers: false,
     });
   }
 
@@ -242,6 +253,24 @@ export class SessionStore {
     this.historyMessages.delete(cardId);
     this.replicas.delete(cardId);
     this.subscribedCards.delete(cardId);
+  }
+
+  // Register this view so the store paints the transcript only while a view is
+  // mounted. Off-screen cards stay subscribed but stop repainting.
+  addViewer(cardId: number): void {
+    const count = (this.viewers.get(cardId) ?? 0) + 1;
+    this.viewers.set(cardId, count);
+    if (count === 1 && this.replicas.has(cardId)) this.paintLive(cardId);
+  }
+
+  removeViewer(cardId: number): void {
+    const count = (this.viewers.get(cardId) ?? 0) - 1;
+    if (count > 0) this.viewers.set(cardId, count);
+    else this.viewers.delete(cardId);
+  }
+
+  private hasViewer(cardId: number): boolean {
+    return (this.viewers.get(cardId) ?? 0) > 0;
   }
 
   // ── Incoming server messages ────────────────────────────────────────────────
@@ -447,11 +476,21 @@ export class SessionStore {
 
     runInAction(() => this.stoppingCards.add(cardId));
 
+    // A stop that the server refuses must not poll forever. Cap the retries, then
+    // clear the stopping state and ask for the real status instead.
+    let attempts = 0;
     const sendStop = () => {
+      attempts += 1;
       this.ws().socket.emit('agent:stop', { cardId }, () => {});
+      if (attempts < STOP_ATTEMPTS) return;
+      const interval = this.stopIntervals.get(cardId);
+      if (interval !== undefined) clearInterval(interval);
+      this.stopIntervals.delete(cardId);
+      runInAction(() => this.stoppingCards.delete(cardId));
+      this.requestStatus(cardId).catch(() => {});
     };
-    sendStop();
     this.stopIntervals.set(cardId, setInterval(sendStop, 1000));
+    sendStop();
   }
 
   async requestStatus(cardId: number): Promise<void> {
@@ -475,7 +514,9 @@ export class SessionStore {
       const scope = this.cacheScopes.get(cardId);
       const version = this.messageVersions.get(cardId) ?? 0;
       if (this.replicas.has(cardId)) {
-        await this.loadLive(cardId);
+        // The replica already holds the live display. Repaint it instead of
+        // refetching a snapshot from the server.
+        this.paintLive(cardId);
         return;
       }
       if (scope && sessionId && !this.sessions.get(cardId)?.active) {
@@ -561,13 +602,16 @@ export class SessionStore {
 
   async resubscribeAll(): Promise<void> {
     for (const cardId of this.subscribedCards) {
-      const s = this.sessions.get(cardId);
-      if (s) s.historyLoaded = false;
-
-      const sid = s?.sessionId;
-      this.loadHistory(cardId, sid).catch((err) => console.warn('[ws] resubscribe failed for card', cardId, err));
-
       this.requestStatus(cardId).catch((err) => console.warn('[ws] status request failed for card', cardId, err));
+
+      // Reload history only for cards a view is showing. Unmounted cards reload
+      // when their view mounts, so a reconnect must not refetch them all at once.
+      const s = this.sessions.get(cardId);
+      if (!s || !this.hasViewer(cardId)) continue;
+      s.historyLoaded = false;
+      this.loadHistory(cardId, s.sessionId).catch((err) =>
+        console.warn('[ws] resubscribe failed for card', cardId, err),
+      );
     }
   }
 }

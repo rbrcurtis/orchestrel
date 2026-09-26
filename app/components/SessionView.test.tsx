@@ -14,6 +14,8 @@ const sessionStore = {
   loadNewerHistory: vi.fn(),
   loadOlderHistory: vi.fn(),
   evictSession: vi.fn(),
+  addViewer: vi.fn(),
+  removeViewer: vi.fn(),
   requestStatus: vi.fn(),
   sendMessage: vi.fn(),
   stopSession: vi.fn(),
