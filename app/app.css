@@ -1,6 +1,25 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* Pins the shell to the visible area. iOS pans and shrinks the visual viewport
+   when the keyboard or the iPad accessory bar appears, even though the page
+   cannot scroll (WebKit bug 311821), which drags normal-flow content off the top.
+   Fixed positioning resolves against the layout viewport, so top: --app-top lands
+   the shell on the visible region. Unlayered on purpose: it must win over the
+   Tailwind utility. */
+:root {
+  --app-h: 100dvh;
+  --app-top: 0px;
+}
+
+.h-dvh {
+  position: fixed;
+  top: var(--app-top);
+  left: 0;
+  right: 0;
+  height: var(--app-h);
+}
+
 @custom-variant dark (&:is(.dark *));
 
 /* Neon Decay — Cyberpunk Color Theme (dark-only) */

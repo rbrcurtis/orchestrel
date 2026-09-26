@@ -4,7 +4,9 @@ import { RootStore } from './stores/root-store';
 import { StoreProvider } from './stores/context';
 import { persistStore } from './lib/store-persist';
 import { startMemorySampling } from './lib/memory-sampler';
+import { trackKeyboardShift } from './lib/keyboard-probe';
 import { trackPageLifecycle } from './lib/page-lifecycle';
+import { trackViewportHeight } from './lib/viewport-height';
 import { installPlainCopy } from './lib/plain-copy';
 import { ScrollArea, ScrollBar } from './components/ui/scroll-area';
 
@@ -97,6 +99,8 @@ if (typeof window !== 'undefined') {
     persistStore(rootStore.projects, 'orchestrel:projects');
     (globalThis as Record<string, unknown>).__rootStore = rootStore;
     trackPageLifecycle();
+    trackViewportHeight();
+    trackKeyboardShift();
     startMemorySampling();
     installPlainCopy();
   } else {
