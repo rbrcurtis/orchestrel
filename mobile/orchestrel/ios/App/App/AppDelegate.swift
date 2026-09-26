@@ -1,14 +1,18 @@
 import UIKit
 import Capacitor
 import WebKit
+import os
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private var didRestoreLastURL = false
+    private var memoryTimer: Timer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        startMemoryReporting()
+
         DispatchQueue.main.async {
             self.restoreLastURL()
         }
@@ -65,6 +69,34 @@ private extension AppDelegate {
         }
 
         return bridgeViewController.webView
+    }
+
+    /// WKWebView never exposes a JS heap number, so the only memory figure the
+    /// phone can give us comes from the OS. Push it into the page on a timer and
+    /// the web app adds it to the line it posts to /api/pwa-log. A local
+    /// Capacitor plugin needs its class name in the generated
+    /// capacitor.config.json, which `cap sync` rewrites, so the value rides the
+    /// WebView instead.
+    func startMemoryReporting() {
+        guard memoryTimer == nil else {
+            return
+        }
+
+        memoryTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.pushMemorySample()
+        }
+        pushMemorySample()
+    }
+
+    func pushMemorySample() {
+        guard let webView = currentWebView() else {
+            return
+        }
+
+        let available = os_proc_available_memory()
+        let total = ProcessInfo.processInfo.physicalMemory
+        let script = "window.__iosMemory && window.__iosMemory({available:\(available),total:\(total)})"
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     func isRestorableURL(_ url: URL) -> Bool {
