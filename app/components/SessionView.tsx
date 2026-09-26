@@ -101,16 +101,18 @@ export const SessionView = observer(function SessionView({
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load history / set up bus subscriptions on mount and when sessionId becomes available.
-  // Called without sessionId on first render to register card-level bus subscriptions
-  // immediately (avoiding the race where messages arrive before sessionId is known).
-  // Called again once sessionId is available to actually load history.
+  // Load history once the board has delivered a session id. The subscription is
+  // registered by the status effect below, so a render without a session id must
+  // not fetch: loadHistory() would fall back to the whole transcript, and the paged
+  // load that runs when the id arrives replaces it — the view visibly shrank.
   useEffect(() => {
     const sid = sessionStoreId ?? sessionId;
-    if (sid && card && root.currentUser) {
+    if (!sid) return;
+    if (card && root.currentUser) {
       sessionStore.setCacheScope(cardId, { userId: root.currentUser.id, nodeName: card.nodeName, sessionId: sid });
     }
-    if (sid && session?.historyLoaded) return;
-    sessionStore.loadHistory(cardId, sid ?? undefined);
+    if (session?.historyLoaded) return;
+    sessionStore.loadHistory(cardId, sid);
   }, [cardId, sessionStoreId, sessionId, root.currentUser?.id, card?.nodeName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Request status on mount

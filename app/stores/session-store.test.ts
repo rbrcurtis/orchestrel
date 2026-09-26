@@ -459,4 +459,101 @@ describe('SessionStore resubscribeAll', () => {
     expect(emit).not.toHaveBeenCalledWith('session:load', { cardId: 2, sessionId: 'sess-2' });
     expect(emit).toHaveBeenCalledWith('agent:status', { cardId: 2 });
   });
+
+  it('refetches a card after a reconnect even when it holds a live replica', async () => {
+    // A replica's cursor is only valid while the stream stayed connected. A socket
+    // break loses the deltas in between, so a reconnect must ask the server again
+    // instead of repainting the replica the store already holds.
+    const snapshot = {
+      cursor: { streamId: 'stream-1', sequence: 1 },
+      state: { baseline: [], baselineThrough: 0, overlay: [], events: [] },
+    };
+    const emit = vi.fn(async (event: string) => (event === 'session:transcript' ? snapshot : { messages: [] }));
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-1' });
+    store.handleAgentStatus({ ...statusFor(7, 'sess-1'), active: true, status: 'running' });
+    store.subscribedCards.add(7);
+    store.addViewer(7);
+
+    // A live transcript event builds the replica the view paints from.
+    store.ingestSdkMessage(7, {
+      type: 'transcript_event',
+      envelope: { cursor: { streamId: 'stream-1', sequence: 1 }, event: { type: 'pi_event', event: {} } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Guard the setup: without a replica this test would pass for the wrong reason.
+    expect((store as unknown as { replicas: Map<number, unknown> }).replicas.has(7)).toBe(true);
+
+    emit.mockClear();
+    await store.resubscribeAll();
+
+    expect(emit).toHaveBeenCalledWith('session:load', { cardId: 7, sessionId: 'sess-1' });
+  });
+});
+
+// A card view re-runs its mount effect as the board data and the account arrive,
+// and each run asked for the same session again. Those repeats were queued, so one
+// card open fetched the same history page three times.
+describe('SessionStore load deduplication', () => {
+  function runningStatus(cardId: number, sessionId: string) {
+    return {
+      cardId,
+      active: true,
+      status: 'running' as const,
+      sessionId,
+      promptsSent: 1,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200000,
+    };
+  }
+
+  it('does not fetch history twice when the same load is already in flight', async () => {
+    const pending: Array<(page: TranscriptHistoryPage) => void> = [];
+    const emit = vi.fn(async (event: string) => {
+      if (event !== 'session:history-page') return { messages: [] };
+      return new Promise<TranscriptHistoryPage>((resolve) => {
+        pending.push(resolve);
+      });
+    });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-1' });
+    store.handleAgentStatus({ ...runningStatus(7, 'sess-1'), active: false, status: 'completed' });
+
+    const first = store.loadHistory(7, 'sess-1');
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    await store.loadHistory(7, 'sess-1'); // the mount effect runs again
+    // The repeat must not be queued as a follow-up fetch.
+    expect([...(store as unknown as { pendingLoads: Map<number, unknown> }).pendingLoads.keys()]).toEqual([]);
+    pending[0]!(historyPage({ records: [] }));
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(emit.mock.calls.filter((call) => call[0] === 'session:history-page')).toHaveLength(1);
+  });
+
+  it('still reloads when a turn ends while the same load is in flight', async () => {
+    const pending: Array<(result: unknown) => void> = [];
+    const emit = vi.fn((event: string) => {
+      if (event === 'session:load') return new Promise((resolve) => pending.push(resolve));
+      return Promise.resolve(historyPage({ records: [] }));
+    });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-1' });
+    store.handleAgentStatus(runningStatus(7, 'sess-1'));
+
+    const first = store.loadHistory(7, 'sess-1');
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+
+    // The backfill that catches the final assistant message must survive the dedupe.
+    store.handleAgentStatus({ ...runningStatus(7, 'sess-1'), active: false, status: 'completed' });
+    const fetches = () =>
+      emit.mock.calls.filter((call) => call[0] === 'session:load' || call[0] === 'session:history-page');
+    pending[0]!({ messages: [] });
+    await first;
+    await vi.waitFor(() => expect(fetches()).toHaveLength(2));
+  });
 });

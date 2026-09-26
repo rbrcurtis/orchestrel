@@ -109,6 +109,9 @@ export class SessionStore {
   }
 
   private pendingLoads = new Map<number, string | null | undefined>();
+  // The session id of the load running per card, so a repeat request is recognised
+  // as the load already in flight instead of being queued as a second fetch.
+  private runningLoads = new Map<number, string | null>();
 
   setCacheScope(cardId: number, scope: TranscriptCacheScope): void {
     const previous = this.cacheScopes.get(cardId);
@@ -215,11 +218,12 @@ export class SessionStore {
   }
 
   constructor() {
-    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws' | 'viewers'>(this, {
+    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws' | 'viewers' | 'runningLoads'>(this, {
       stopIntervals: false,
       loadingCards: false,
       _ws: false,
       viewers: false,
+      runningLoads: false,
     });
   }
 
@@ -400,7 +404,7 @@ export class SessionStore {
       }
     });
     if (justEnded) {
-      this.loadHistory(data.cardId, data.sessionId).catch(() => {});
+      this.loadHistory(data.cardId, data.sessionId, { force: true }).catch(() => {});
     }
   }
 
@@ -503,12 +507,19 @@ export class SessionStore {
     await this.ws().emit('agent:status', { cardId });
   }
 
-  async loadHistory(cardId: number, sessionId?: string | null): Promise<void> {
+  async loadHistory(cardId: number, sessionId?: string | null, opts?: { force?: boolean }): Promise<void> {
     if (this.loadingCards.has(cardId)) {
-      this.pendingLoads.set(cardId, sessionId);
+      // A view re-runs its mount effect as the board and the account arrive, and can
+      // ask again for the load that is already running. That repeat fetches nothing
+      // new, so queue only a different session or a reload the caller asked for — a
+      // reconnect, or a turn that just ended.
+      if (opts?.force || (sessionId ?? null) !== this.runningLoads.get(cardId)) {
+        this.pendingLoads.set(cardId, sessionId);
+      }
       return;
     }
     this.loadingCards.add(cardId);
+    this.runningLoads.set(cardId, sessionId ?? null);
     this.subscribedCards.add(cardId);
     try {
       const scope = this.cacheScopes.get(cardId);
@@ -592,6 +603,7 @@ export class SessionStore {
       }
     } finally {
       this.loadingCards.delete(cardId);
+      this.runningLoads.delete(cardId);
       if (this.pendingLoads.has(cardId)) {
         const pending = this.pendingLoads.get(cardId);
         this.pendingLoads.delete(cardId);
@@ -601,6 +613,11 @@ export class SessionStore {
   }
 
   async resubscribeAll(): Promise<void> {
+    // A replica's cursor is only valid while the stream stayed connected. A break
+    // loses the deltas in between, and the client cannot tell what it missed, so
+    // drop the replicas and let the loads below refetch authoritative state. Left
+    // in place they made loadHistory() return early and the tab never caught up.
+    this.replicas.clear();
     for (const cardId of this.subscribedCards) {
       this.requestStatus(cardId).catch((err) => console.warn('[ws] status request failed for card', cardId, err));
 
@@ -609,7 +626,7 @@ export class SessionStore {
       const s = this.sessions.get(cardId);
       if (!s || !this.hasViewer(cardId)) continue;
       s.historyLoaded = false;
-      this.loadHistory(cardId, s.sessionId).catch((err) =>
+      this.loadHistory(cardId, s.sessionId, { force: true }).catch((err) =>
         console.warn('[ws] resubscribe failed for card', cardId, err),
       );
     }
