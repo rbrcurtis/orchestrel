@@ -6,6 +6,23 @@ interface HeapStatsApi {
   memory?: { usedJSHeapSize: number; totalJSHeapSize: number };
 }
 
+// Numbers the iOS shell pushes in from a native timer. WKWebView has no
+// performance.memory, so on the phone this is the only memory figure we can get.
+interface IosMemoryStats {
+  available: number;
+  total: number;
+}
+
+const globalWithIosHook = globalThis as typeof globalThis & {
+  __iosMemory?: (stats: IosMemoryStats) => void;
+};
+let iosMemory: IosMemoryStats | null = null;
+if (typeof window !== 'undefined') {
+  globalWithIosHook.__iosMemory = (stats) => {
+    iosMemory = stats;
+  };
+}
+
 const sessionId = typeof window !== 'undefined' ? Math.random().toString(36).slice(2, 8) : 'none';
 
 function mb(bytes: number): number {
@@ -27,7 +44,8 @@ function sample(): void {
   const perf = performance as Performance & HeapStatsApi;
   const used = perf.memory ? mb(perf.memory.usedJSHeapSize) : -1;
   const total = perf.memory ? mb(perf.memory.totalJSHeapSize) : -1;
-  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}`;
+  const ios = iosMemory ? ` iosAvail=${mb(iosMemory.available)}MB iosTotal=${mb(iosMemory.total)}MB` : '';
+  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}${ios}`;
   console.log(`[mem-sampler] ${line}`);
   try {
     navigator.sendBeacon('/api/pwa-log', JSON.stringify({ msg: line, ts: new Date().toISOString() }));
