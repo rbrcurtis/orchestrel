@@ -105,6 +105,7 @@ class CardService {
         providerID = proj.providerID ?? undefined;
         data.model = data.model ?? proj.defaultModel;
         data.thinkingLevel = data.thinkingLevel ?? proj.defaultThinkingLevel;
+        data.summarizeThreshold = data.summarizeThreshold ?? proj.defaultSummarizeThreshold ?? 0;
         data.sourceBranch = data.sourceBranch ?? proj.defaultBranch;
         // Mirror the UI's card-create behavior: when the project defaults to
         // worktrees, derive the branch from the title. Explicit null (user
@@ -185,9 +186,36 @@ class CardService {
       }
     }
 
+    const prevThinkingLevel = card.thinkingLevel;
+    const prevProvider = card.provider;
+    const prevModel = card.model;
     Object.assign(card, data);
     card.updatedAt = new Date().toISOString();
     await card.save();
+
+    if (data.summarizeThreshold !== undefined && card.sessionId) {
+      const initState = await import('../init-state');
+      initState.getClientByNode(card.nodeName)?.setSummarizeThreshold(card.sessionId, data.summarizeThreshold);
+    }
+
+    // Sync a changed provider/model onto the live session so it takes effect on
+    // the resident Pi runtime (same conversation) instead of only on the next
+    // fresh session. orcd defers to the next turn if one is streaming.
+    if (card.sessionId && (card.provider !== prevProvider || card.model !== prevModel)) {
+      const initState = await import('../init-state');
+      initState.getClientByNode(card.nodeName)?.setModel(card.sessionId, card.provider, card.model);
+    }
+
+    // Sync a changed thinking level onto the live session so it applies on the
+    // next turn without restarting orcd. Only fires on an actual change; the
+    // session is re-created with the card's effort anyway if it is not resident.
+    if (data.thinkingLevel !== undefined && data.thinkingLevel !== prevThinkingLevel && card.sessionId) {
+      const initState = await import('../init-state');
+      initState.getClientByNode(card.nodeName)?.setEffort(
+        card.sessionId,
+        data.thinkingLevel === 'off' ? 'disabled' : data.thinkingLevel,
+      );
+    }
 
     return card;
   }

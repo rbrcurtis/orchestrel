@@ -279,8 +279,8 @@ export class OrcdClient {
   /**
    * Send a follow-up message to an existing session.
    */
-  message(sessionId: string, prompt: string): void {
-    this.send({ action: 'message', sessionId, prompt });
+  message(sessionId: string, prompt: string, effort?: string): void {
+    this.send({ action: 'message', sessionId, prompt, effort });
   }
 
   /** Cancel the current turn but retain its reusable session runtime. */
@@ -314,6 +314,16 @@ export class OrcdClient {
    */
   setEffort(sessionId: string, effort: string): void {
     this.send({ action: 'set_effort', sessionId, effort });
+  }
+
+  /** Update the automatic background-compaction threshold for a resident session. */
+  setSummarizeThreshold(sessionId: string, summarizeThreshold: number): void {
+    this.send({ action: 'set_summarize_threshold', sessionId, summarizeThreshold });
+  }
+
+  /** Switch the provider/model a resident session runs (same conversation). */
+  setModel(sessionId: string, provider: string, model: string): void {
+    this.send({ action: 'set_model', sessionId, provider, model });
   }
 
   /**

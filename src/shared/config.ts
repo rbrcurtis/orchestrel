@@ -43,6 +43,7 @@ export interface MemoryConfig {
   excerptTokens: number;
   stageDir: string;
   settleMs: number;
+  windowDays: number;
   telegram?: { botToken: string; chatId: string };
   projects: Record<string, MemoryProjectConfig>;
 }
@@ -160,6 +161,7 @@ export function parseConfig(
       excerptTokens: Number(m.excerptTokens ?? 24000),
       stageDir: String(m.stageDir ?? 'data/memory-staging'),
       settleMs: Number(m.settleMs ?? 600000),
+      windowDays: Number(m.windowDays ?? 7),
       ...(m.telegram && typeof m.telegram === 'object'
         ? {
             telegram: {

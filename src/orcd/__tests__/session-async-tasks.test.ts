@@ -37,6 +37,7 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
     applyBgCompaction: vi.fn(() => undefined),
     latestEntryIsCompaction: vi.fn(() => false),
     setEffort: vi.fn(async () => undefined),
+    setModel: vi.fn(async () => undefined),
     getMessages: vi.fn(() => []),
     debugLeafState: vi.fn(() => ({
       tag: 'test',
@@ -326,6 +327,27 @@ describe('OrcdSession Pi runtime loop', () => {
     await session.sendMessage('continue');
 
     expect(runtime.prompt).toHaveBeenCalledWith('continue', { streamingBehavior: 'followUp' });
+  });
+
+  it('re-syncs the current effort onto a resumed Pi runtime before prompting', async () => {
+    const runtime = createRuntimeSession([], 'session-effort-sync');
+    pi.createPiRuntimeSession.mockResolvedValue(runtime);
+
+    const session = new OrcdSession({
+      cwd: '/tmp',
+      model: 'test-model',
+      provider: 'test-provider',
+      sessionId: 'session-effort-sync',
+    });
+
+    await session.run({ prompt: 'go', effort: 'high' });
+    expect(runtime.setEffort).toHaveBeenLastCalledWith('high');
+
+    // A follow-up after the card's thinking level changed must flip the live
+    // runtime's level — otherwise the change only lands after an orcd restart.
+    await session.sendMessage('continue', 'adaptive');
+    expect(runtime.setEffort).toHaveBeenLastCalledWith('adaptive');
+    expect(runtime.prompt).toHaveBeenLastCalledWith('continue', { streamingBehavior: 'followUp' });
   });
 
   it('delegates setEffort, cancel, compact, and disposal to the active Pi runtime session', async () => {

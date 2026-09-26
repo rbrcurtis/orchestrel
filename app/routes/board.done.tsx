@@ -18,11 +18,12 @@ import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useCardStore, useProjectStore } from '~/stores/context';
 import { StatusRow } from '~/components/StatusRow';
 import { CardOverlay } from '~/components/Card';
+import { isProjectHidden, projectFilterActive, type ProjectFilter } from '~/lib/project-filter';
 import type { Card } from '../../src/shared/ws-protocol';
 
 type BoardContext = {
   search: string;
-  projectFilter: Set<number>;
+  projectFilter: ProjectFilter;
   selectedCardId: number | null;
   selectCard: (id: number | null) => void;
   startNewCard: (column: string) => void;
@@ -116,11 +117,11 @@ const DoneBoard = observer(function DoneBoard() {
 
   const filteredCards = useMemo(() => {
     const hasSearch = search.length > 0;
-    const hasProject = projectFilter.size > 0;
+    const hasProject = projectFilterActive(projectFilter);
     if (!hasSearch && !hasProject) return cards;
     const q = search.toLowerCase();
     return cards.filter((c) => {
-      if (hasProject && !projectFilter.has(c.projectId ?? -1)) return false;
+      if (hasProject && isProjectHidden(projectFilter, c.projectId)) return false;
       if (
         hasSearch &&
         !c.title.toLowerCase().includes(q) &&

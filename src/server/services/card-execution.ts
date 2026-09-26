@@ -131,7 +131,9 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
 
   if (card.sessionId && client.isActive(card.sessionId)) {
     trackSession(cardId, card.sessionId);
-    client.message(card.sessionId, prompt);
+    // Carry the current card effort so the active session re-syncs its
+    // thinking level before this prompt (see orcd run()).
+    client.message(card.sessionId, prompt, card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel);
     if (card.column !== 'running') card.column = 'running';
     card.updatedAt = new Date().toISOString();
     await card.save();

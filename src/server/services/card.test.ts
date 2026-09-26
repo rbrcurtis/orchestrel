@@ -6,6 +6,9 @@ import { DEFAULT_SENTINEL } from '../../shared/ws-protocol'
 
 const mockCancel = vi.fn()
 const mockClose = vi.fn()
+const mockSetSummarizeThreshold = vi.fn()
+const mockSetEffort = vi.fn()
+const mockSetModel = vi.fn()
 const mockIsActive = vi.fn(() => true)
 const mockCapabilities = {
   name: 'local',
@@ -32,6 +35,9 @@ const mockOtherNodeClient = {
   getHistory: mockGetHistory,
   cancel: mockCancel,
   close: mockClose,
+  setSummarizeThreshold: mockSetSummarizeThreshold,
+  setEffort: mockSetEffort,
+  setModel: mockSetModel,
   capabilities: { ...mockCapabilities, name: 'other' },
   isConnected: () => true,
   pathValidate: mockOtherPathValidate,
@@ -41,6 +47,9 @@ const mockNodeClient = {
   getHistory: mockGetHistory,
   cancel: mockCancel,
   close: mockClose,
+  setSummarizeThreshold: mockSetSummarizeThreshold,
+  setEffort: mockSetEffort,
+  setModel: mockSetModel,
   capabilities: mockCapabilities,
   isConnected: () => true,
   pathValidate: mockPathValidate,
@@ -194,6 +203,74 @@ describe('CardService', () => {
 
     const noWt = await cardService.createCard({ title: 'Plain card', description: 'd', column: 'backlog', projectId: proj.id, worktreeBranch: null })
     expect(noWt.worktreeBranch).toBeNull()
+  })
+
+  it('inherits the project summarize default when creating a card, unless an explicit value is given', async () => {
+    const { cardService } = await import('./card')
+    const { projectService } = await import('./project')
+    const proj = await projectService.createProject({
+      name: 'Summarize project',
+      path: '/tmp/summarize-project',
+      defaultSummarizeThreshold: 0.7,
+    })
+
+    const card = await cardService.createCard({ title: 'Defaulted card', description: 'd', column: 'backlog', projectId: proj.id })
+    expect(card.summarizeThreshold).toBe(0.7)
+
+    const explicit = await cardService.createCard({
+      title: 'Explicit card',
+      description: 'd',
+      column: 'backlog',
+      projectId: proj.id,
+      summarizeThreshold: 0.3,
+    })
+    expect(explicit.summarizeThreshold).toBe(0.3)
+
+    // Projects without a default keep cards off, matching pre-existing behavior
+    const plain = await projectService.createProject({ name: 'Plain project', path: '/tmp/plain-project' })
+    const offCard = await cardService.createCard({ title: 'Off card', description: 'd', column: 'backlog', projectId: plain.id })
+    expect(offCard.summarizeThreshold).toBe(0)
+  })
+
+  it('pushes a provider/model change onto the resident session', async () => {
+    const { cardService } = await import('./card')
+    mockSetModel.mockClear()
+    const card = await cardService.createCard({ title: 'Live model', description: 'd', column: 'review' })
+    card.sessionId = 'sess-model'
+    await card.save()
+
+    await cardService.updateCard(card.id, { model: 'opus' })
+
+    expect(mockSetModel).toHaveBeenCalledWith('sess-model', 'anthropic', 'opus')
+    expect((await Card.findOneByOrFail({ id: card.id })).model).toBe('opus')
+  })
+
+  it('updates the background-compaction threshold on a resident session', async () => {
+    const { cardService } = await import('./card')
+    mockSetSummarizeThreshold.mockClear()
+    const card = await cardService.createCard({ title: 'Live threshold', description: 'd', column: 'review' })
+    card.sessionId = 'sess-threshold'
+    await card.save()
+
+    await cardService.updateCard(card.id, { summarizeThreshold: 0.7 })
+
+    expect(mockSetSummarizeThreshold).toHaveBeenCalledWith('sess-threshold', 0.7)
+    expect((await Card.findOneByOrFail({ id: card.id })).summarizeThreshold).toBe(0.7)
+  })
+
+  it('syncs a changed thinking level onto the resident session, mapping off to disabled', async () => {
+    const { cardService } = await import('./card')
+    mockSetEffort.mockClear()
+    const card = await cardService.createCard({ title: 'Live thinking', description: 'd', column: 'review' })
+    card.sessionId = 'sess-effort'
+    await card.save()
+
+    await cardService.updateCard(card.id, { thinkingLevel: 'adaptive' })
+    expect(mockSetEffort).toHaveBeenCalledWith('sess-effort', 'adaptive')
+
+    await cardService.updateCard(card.id, { thinkingLevel: 'off' })
+    expect(mockSetEffort).toHaveBeenCalledWith('sess-effort', 'disabled')
+    expect((await Card.findOneByOrFail({ id: card.id })).thinkingLevel).toBe('off')
   })
 
   it('keeps mid-turn sessions alive on done/archive, closes idle ones, and only cancels non-terminal moves', async () => {

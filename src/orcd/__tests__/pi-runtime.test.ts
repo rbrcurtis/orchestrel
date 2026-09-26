@@ -8,6 +8,7 @@ const mockSubscribe = vi.fn();
 const mockAbort = vi.fn();
 const mockCompact = vi.fn();
 const mockSetThinkingLevel = vi.fn();
+const mockSessionSetModel = vi.fn();
 const mockBindExtensions = vi.fn();
 const mockFind = vi.fn();
 const mockCreateAgentSession = vi.fn();
@@ -65,6 +66,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     abort: mockAbort,
     compact: mockCompact,
     setThinkingLevel: mockSetThinkingLevel,
+    setModel: mockSessionSetModel,
     bindExtensions: mockBindExtensions,
     messages: [{ role: 'user', content: 'hello' }],
     ...overrides,
@@ -91,6 +93,7 @@ describe('createPiRuntimeSession', () => {
     mockPrompt.mockResolvedValue(undefined);
     mockAbort.mockResolvedValue(undefined);
     mockCompact.mockResolvedValue({ ok: true });
+    mockSessionSetModel.mockResolvedValue(undefined);
     mockBindExtensions.mockResolvedValue(undefined);
   });
 
@@ -525,5 +528,84 @@ describe('createPiRuntimeSession', () => {
     const sessionWithoutMessages = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
 
     expect(sessionWithoutMessages.getMessages()).toEqual([]);
+  });
+
+  it('registers a second provider lazily and switches the live model', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const registerProvider = vi.fn();
+    mockModelRegistryCreate.mockReturnValue({ find: mockFind, registerProvider });
+    mockFind.mockReturnValue({ provider: 'ray', id: 'qwen3.8-27b' });
+
+    const session = await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'trackable',
+      modelId: 'primary',
+      provider: {
+        type: 'anthropic',
+        label: 'Trackable',
+        baseUrl: 'http://127.0.0.1:3457',
+        apiKey: 'trackable',
+        models: { primary: { label: 'Primary', modelID: 'primary-id', contextWindow: 200_000 } },
+      },
+      providers: {
+        trackable: {
+          type: 'anthropic' as const,
+          baseUrl: 'http://127.0.0.1:3457',
+          apiKey: 'trackable',
+          models: { primary: { label: 'Primary', modelID: 'primary-id', contextWindow: 200_000 } },
+        },
+        ray: {
+          type: 'anthropic' as const,
+          baseUrl: 'http://ray.local:8000',
+          apiKey: 'ray-key',
+          models: { 'qwen3.8-27b': { label: 'Qwen3.8 27B', modelID: 'qwen3.8-27b', contextWindow: 172_032 } },
+        },
+      },
+    });
+
+    await session.setModel('ray', 'qwen3.8-27b');
+
+    expect(registerProvider).toHaveBeenCalledWith('trackable', expect.anything());
+    expect(registerProvider).toHaveBeenCalledWith('ray', expect.objectContaining({ baseUrl: 'http://ray.local:8000' }));
+    expect(mockSetRuntimeApiKey).toHaveBeenLastCalledWith('ray', 'ray-key');
+    expect(mockFind).toHaveBeenCalledWith('ray', 'qwen3.8-27b');
+    expect(mockSessionSetModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to switch live to an OAuth provider', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const registerProvider = vi.fn();
+    mockModelRegistryCreate.mockReturnValue({ find: mockFind, registerProvider });
+
+    const session = await createPiRuntimeSession({
+      cwd: '/repo',
+      providerId: 'trackable',
+      modelId: 'primary',
+      provider: {
+        type: 'anthropic',
+        label: 'Trackable',
+        baseUrl: 'http://127.0.0.1:3457',
+        apiKey: 'trackable',
+        models: { primary: { label: 'Primary', modelID: 'primary-id', contextWindow: 200_000 } },
+      },
+      providers: {
+        trackable: {
+          type: 'anthropic' as const,
+          baseUrl: 'http://127.0.0.1:3457',
+          apiKey: 'trackable',
+          models: { primary: { label: 'Primary', modelID: 'primary-id', contextWindow: 200_000 } },
+        },
+        claude: {
+          type: 'anthropic' as const,
+          baseUrl: '',
+          apiKey: '',
+          oauth: 'claude-max',
+          models: { sonnet: { label: 'Sonnet', modelID: 'claude-sonnet-4-6', contextWindow: 200_000 } },
+        },
+      },
+    });
+
+    await expect(session.setModel('claude', 'sonnet')).rejects.toThrow(/does not support live switching/);
+    expect(mockSessionSetModel).not.toHaveBeenCalled();
   });
 });

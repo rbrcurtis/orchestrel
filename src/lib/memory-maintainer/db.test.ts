@@ -2,7 +2,7 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { finishRun, getDb, insertRun, resetDb, upsertWatermark } from './db';
+import { finishRun, getDb, insertRun, recentActiveRun, resetDb, upsertWatermark } from './db';
 
 let dir: string;
 beforeEach(() => {
@@ -28,5 +28,22 @@ describe('maintainer db', () => {
     finishRun(db, id, 'done', '{"sessions":2}');
     const row = db.prepare('SELECT status, summary_json FROM memory_maintainer_runs WHERE id = ?').get(id);
     expect(row).toMatchObject({ status: 'done', summary_json: '{"sessions":2}' });
+  });
+});
+
+describe('recentActiveRun', () => {
+  it('blocks the earlier run when a later fresh run of the same type exists', () => {
+    const db = getDb();
+    const earlier = insertRun(db, 'daily', new Date().toISOString());
+    const later = insertRun(db, 'daily', new Date().toISOString());
+    expect(recentActiveRun(db, 'daily', earlier)).toBe(true); // earlier sees later
+    expect(recentActiveRun(db, 'daily', later)).toBe(false); // later sees only itself
+  });
+
+  it('ignores stale running runs of the same type', () => {
+    const db = getDb();
+    const mine = insertRun(db, 'daily', new Date().toISOString());
+    insertRun(db, 'daily', new Date(Date.now() - 7 * 3600_000).toISOString());
+    expect(recentActiveRun(db, 'daily', mine)).toBe(false); // stale daily ignored
   });
 });

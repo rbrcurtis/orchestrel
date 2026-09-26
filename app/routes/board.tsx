@@ -17,7 +17,15 @@ import SettingsProjectsModal from '~/routes/settings.projects';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
 import { dispatchTypeFocus, isTypeFocusKey, isTypingContext } from '~/lib/type-focus';
-import type { Card, Column } from '../../src/shared/ws-protocol';
+import {
+  makeProjectFilter,
+  projectFilterActive,
+  readProjectFilter,
+  toggleProjectFilter,
+  writeProjectFilter,
+  type ProjectFilter,
+} from '~/lib/project-filter';
+import type { Column } from '../../src/shared/ws-protocol';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Board' },
@@ -26,7 +34,6 @@ const NAV_ITEMS = [
 
 const MIN_COLUMN_WIDTH = 350;
 const COLUMN_COUNT_KEY = 'dispatcher-column-count';
-const PROJECT_FILTER_KEY = 'dispatcher-project-filter';
 
 function readLocalStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -87,13 +94,11 @@ const BoardLayout = observer(function BoardLayout() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const section = location.pathname === '/archive' ? 'archive' : 'board';
-  const [projectFilter, _setProjectFilter] = useState<Set<number>>(
-    () => new Set(readLocalStorage<number[]>(PROJECT_FILTER_KEY, [])),
-  );
-  const setProjectFilter = useCallback((update: Set<number> | ((prev: Set<number>) => Set<number>)) => {
+  const [projectFilter, _setProjectFilter] = useState<ProjectFilter>(() => readProjectFilter());
+  const setProjectFilter = useCallback((update: ProjectFilter | ((prev: ProjectFilter) => ProjectFilter)) => {
     _setProjectFilter((prev) => {
       const next = typeof update === 'function' ? update(prev) : update;
-      writeLocalStorage(PROJECT_FILTER_KEY, [...next]);
+      writeProjectFilter(next);
       return next;
     });
   }, []);
@@ -130,10 +135,6 @@ const BoardLayout = observer(function BoardLayout() {
   const lastPromptCardRef = useRef<number | null>(null);
   const [promptFocusRequest, setPromptFocusRequest] = useState<{ cardId: number; seq: number } | null>(null);
   const promptFocusSeq = useRef(0);
-  // After a send, the wheel may rotate (the presentation effect below focuses
-  // the new card) or keep the same card — remember the sent card so the
-  // same-card case can refocus its prompt once the server's update lands.
-  const pendingSentRef = useRef<{ cardId: number; card: Card } | null>(null);
 
   const allCards = Array.from(cardStore.cards.values());
   const {
@@ -172,16 +173,6 @@ const BoardLayout = observer(function BoardLayout() {
   }); // intentionally no deps — selectCard is a local function that closes over current state
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
-      const card = cardStore.getCard(cardId);
-      if (card) pendingSentRef.current = { cardId, card };
-    };
-    window.addEventListener('orchestrel:prompt-sent', handler);
-    return () => window.removeEventListener('orchestrel:prompt-sent', handler);
-  }, [cardStore]);
-
-  useEffect(() => {
     const onFocus = (e: Event) => {
       const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
       lastPromptCardRef.current = cardId;
@@ -196,8 +187,10 @@ const BoardLayout = observer(function BoardLayout() {
     };
   }, []);
 
-  // Ferris wheel: when a slot presents a new card and the user isn't typing
-  // anywhere, focus the new card's prompt so they can type immediately.
+
+  // Ferris wheel: when a slot presents a new card that's ready to prompt
+  // (review), focus its prompt so it's stably selected while the wheel turns.
+  // Running cards never grab focus — the user doesn't want to prompt those.
   const prevPresentedRef = useRef<Map<number, number> | null>(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally no deps, resolvedCards is a fresh Map each render
   useEffect(() => {
@@ -217,28 +210,10 @@ const BoardLayout = observer(function BoardLayout() {
     }
     for (const [idx, cardId] of resolvedCards) {
       if (prev.get(idx) !== cardId) {
+        const card = cardStore.getCard(cardId);
+        if (card == null || card.column === 'running') continue;
         promptFocusSeq.current += 1;
         setPromptFocusRequest({ cardId, seq: promptFocusSeq.current });
-        pendingSentRef.current = null;
-        return;
-      }
-    }
-    // No rotation: a prompt was just sent and the server's card update has
-    // landed (the store holds a new object), so the wheel's chance to rotate
-    // has passed — refocus the same card's prompt.
-    const pending = pendingSentRef.current;
-    if (pending == null) return;
-    const current = cardStore.getCard(pending.cardId);
-    if (current == null) {
-      pendingSentRef.current = null;
-      return;
-    }
-    if (current === pending.card) return; // server echo not here yet
-    pendingSentRef.current = null;
-    for (const [, cardId] of resolvedCards) {
-      if (cardId === pending.cardId) {
-        promptFocusSeq.current += 1;
-        setPromptFocusRequest({ cardId: pending.cardId, seq: promptFocusSeq.current });
         return;
       }
     }
@@ -340,10 +315,8 @@ const BoardLayout = observer(function BoardLayout() {
             else closeSlot(i);
             break;
           }
-          // Drop the focus lock and blur the prompt so the wheel's
-          // presentation effect can focus the next card's prompt.
+          // Drop the focus lock so the resolver rotates the slot onward.
           setFocusedCardId(null);
-          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           return;
         }
       }
@@ -393,6 +366,10 @@ const BoardLayout = observer(function BoardLayout() {
 
   // For outlet context: selectedCardId is still passed for backwards compat (slot 0)
   const selectedCardId = columnSlots[0]?.type === 'manual' ? columnSlots[0].cardId : null;
+  const filterActive = projectFilterActive(projectFilter);
+  const filterProjects = section === 'archive' ? projectStore.all : projectStore.active;
+  const includeN = projectFilter.include.size;
+  const excludeN = projectFilter.exclude.size;
 
   return (
     <div className="h-dvh overflow-hidden flex flex-col bg-background">
@@ -425,60 +402,93 @@ const BoardLayout = observer(function BoardLayout() {
           </nav>
           <SearchBar ref={searchRef} value={search} onChange={setSearch} />
           {/* Project filter */}
-          {(section === 'archive' ? projectStore.all : projectStore.active).length > 0 && (
+          {filterProjects.length > 0 && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className={`shrink-0 relative ${projectFilter.size > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
-                  title="Filter by project"
+                  className={`shrink-0 relative ${filterActive ? 'text-foreground' : 'text-muted-foreground'}`}
+                  title={
+                    !filterActive
+                      ? 'Filter by project'
+                      : excludeN > 0 && includeN > 0
+                        ? `Only ${includeN} project${includeN === 1 ? '' : 's'}, excluding ${excludeN}`
+                        : excludeN > 0
+                          ? `Showing all except ${excludeN} project${excludeN === 1 ? '' : 's'}`
+                          : `Filtering to ${includeN} project${includeN === 1 ? '' : 's'}`
+                  }
                 >
                   <Filter className="size-4" />
-                  {projectFilter.size > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 size-4 rounded-full bg-primary text-primary-foreground text-[10px] font-medium flex items-center justify-center">
-                      {projectFilter.size}
+                  {filterActive && (
+                    <span
+                      className={`absolute -top-0.5 -right-0.5 size-4 rounded-full text-[10px] font-medium flex items-center justify-center ${
+                        excludeN > 0 ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'
+                      }`}
+                    >
+                      {includeN + excludeN}
                     </span>
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-52 p-2">
+              <PopoverContent
+                align="start"
+                className="w-52 p-2"
+                // The board moves focus to a card prompt when the filter changes the
+                // presented cards (ferris-wheel focus). Radix non-modal popovers close
+                // on any focus leaving their tree, so without this the dropdown
+                // dismisses itself mid-interaction. Outside pointer clicks and Esc
+                // still close it — only focus changes are ignored.
+                onFocusOutside={(e) => e.preventDefault()}
+              >
                 <div className="flex items-center justify-between px-2 pb-2">
                   <span className="text-xs font-medium text-muted-foreground">Projects</span>
-                  {projectFilter.size > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto py-0.5 px-1.5 text-xs text-muted-foreground"
-                      onClick={() => setProjectFilter(new Set())}
-                    >
-                      Clear
-                    </Button>
-                  )}
+                  {/* Always rendered so the Clear button appearing never changes the
+                      header height and shifts the project list down. */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    tabIndex={filterActive ? undefined : -1}
+                    aria-hidden={!filterActive}
+                    className={`h-auto py-0.5 px-1.5 text-xs text-muted-foreground ${filterActive ? '' : 'invisible'}`}
+                    onClick={() => setProjectFilter(makeProjectFilter())}
+                  >
+                    Clear
+                  </Button>
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  {(section === 'archive' ? projectStore.all : projectStore.active).map((p) => (
-                    <label
-                      key={p.id}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent cursor-pointer"
-                    >
-                      <Checkbox
-                        checked={projectFilter.has(p.id)}
-                        onCheckedChange={(checked) => {
-                          setProjectFilter((prev) => {
-                            const next = new Set(prev);
-                            if (checked) next.add(p.id);
-                            else next.delete(p.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      {p.color && (
-                        <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-                      )}
-                      <span className="text-sm truncate">{p.name}</span>
-                    </label>
-                  ))}
+                  {filterProjects.map((p) => {
+                    const included = projectFilter.include.has(p.id);
+                    const excluded = projectFilter.exclude.has(p.id);
+                    return (
+                      <label
+                        key={p.id}
+                        className={`flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent cursor-pointer ${excluded ? 'text-muted-foreground' : ''}`}
+                      >
+                        {/* Excluded rows get a solid destructive fill. The border uses a
+                            translucent rim (inline style) so the fill reads as a filled
+                            square; tailwind-merge would also drop a data-[state=checked]
+                            override against the checkbox's base bg-primary. */}
+                        <Checkbox
+                          checked={included || excluded}
+                          style={
+                            excluded
+                              ? {
+                                  backgroundColor: 'var(--destructive)',
+                                  borderColor: 'color-mix(in srgb, var(--destructive) 60%, transparent)',
+                                  color: 'var(--destructive-foreground)',
+                                }
+                              : undefined
+                          }
+                          onCheckedChange={() => setProjectFilter((prev) => toggleProjectFilter(prev, p.id))}
+                        />
+                        {p.color && (
+                          <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                        )}
+                        <span className={`text-sm truncate ${excluded ? 'line-through' : ''}`}>{p.name}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </PopoverContent>
             </Popover>
@@ -648,7 +658,7 @@ type ColumnSlotProps = {
   flash: boolean;
   onFlashDone: () => void;
   newCardColumn: string | null;
-  projectFilter: Set<number>;
+  projectFilter: ProjectFilter;
   dropCard: (slotIndex: number, cardId: number, cardProjectId: number | null) => void;
   pinProjectId: PinTarget | null;
   onPin: (projectId: PinTarget) => void;

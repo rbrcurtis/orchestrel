@@ -17,6 +17,10 @@ export interface MessageAction {
   action: 'message';
   sessionId: string;
   prompt: string;
+  // Current card effort, so a mid-session thinking-level change applies to
+  // this turn even when no set_effort preceded it (e.g. orcd restarted and
+  // re-instantiated the session after the card was edited).
+  effort?: string;
   requestId?: string;
 }
 
@@ -39,6 +43,21 @@ export interface SetEffortAction {
   action: 'set_effort';
   sessionId: string;
   effort: string;
+  requestId?: string;
+}
+
+export interface SetSummarizeThresholdAction {
+  action: 'set_summarize_threshold';
+  sessionId: string;
+  summarizeThreshold: number;
+  requestId?: string;
+}
+
+export interface SetModelAction {
+  action: 'set_model';
+  sessionId: string;
+  provider: string;
+  model: string;
   requestId?: string;
 }
 
@@ -145,6 +164,8 @@ export type OrcdAction =
   | MessageAction
   | WarmAction
   | SetEffortAction
+  | SetSummarizeThresholdAction
+  | SetModelAction
   | SubscribeAction
   | UnsubscribeAction
   | ListAction

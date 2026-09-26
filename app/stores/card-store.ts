@@ -39,6 +39,23 @@ export class CardStore {
 
   // ── Hydration ───────────────────────────────────────────────────────────────
 
+  /**
+   * Merge a server card payload into the store. When the card already exists,
+   * copy fields onto the existing observable object instead of replacing it:
+   * replacing created a brand-new observable on every live update, which
+   * re-announced every field and invalidated every card observer even when
+   * nothing they read changed. In-place updates notify only the fields that
+   * actually changed.
+   */
+  private upsertCard(card: Card): void {
+    const existing = this.cards.get(card.id);
+    if (!existing) {
+      this.cards.set(card.id, card);
+      return;
+    }
+    Object.assign(existing, card);
+  }
+
   hydrate(items: unknown[], replace = false, columns?: string[]) {
     if (replace) {
       if (columns && columns.length > 0) {
@@ -54,16 +71,13 @@ export class CardStore {
       this.hydrated = true;
     }
     for (const c of items) {
-      const card = c as Card;
-      this.cards.set(card.id, card);
+      this.upsertCard(c as Card);
     }
   }
 
   handleUpdated(card: Card) {
-    this.cards.set(card.id, card);
+    this.upsertCard(card);
   }
-
-  // ── Lazy column paging (archive is not bulk-loaded on subscribe) ─────────────
 
   /** Fetch one page of a column and merge it into the store. */
   async loadPage(column: Column, cursor?: number, limit = 20): Promise<{ nextCursor?: number; total: number }> {
@@ -73,7 +87,7 @@ export class CardStore {
       total: number;
     };
     runInAction(() => {
-      for (const c of res.cards) this.cards.set(c.id, c);
+      for (const c of res.cards) this.upsertCard(c);
     });
     return { nextCursor: res.nextCursor, total: res.total };
   }
@@ -82,7 +96,7 @@ export class CardStore {
   async search(query: string): Promise<void> {
     const res = (await this.ws().emit('search', { query })) as { cards: Card[]; total: number };
     runInAction(() => {
-      for (const c of res.cards) this.cards.set(c.id, c);
+      for (const c of res.cards) this.upsertCard(c);
     });
   }
 
@@ -129,7 +143,7 @@ export class CardStore {
       sourceBranch: data.sourceBranch,
       pendingInitialFiles: data.pendingInitialFiles,
     })) as Card;
-    runInAction(() => this.cards.set(card.id, card));
+    runInAction(() => this.upsertCard(card));
     return card;
   }
 
@@ -163,7 +177,7 @@ export class CardStore {
       archiveOthers: true,
       pendingInitialFiles: data.pendingInitialFiles,
     })) as Card;
-    runInAction(() => this.cards.set(card.id, card));
+    runInAction(() => this.upsertCard(card));
     return card;
   }
 
@@ -182,18 +196,22 @@ export class CardStore {
     sourceBranch?: 'HEAD' | 'main' | 'dev' | null;
   }): Promise<Card> {
     const existing = this.cards.get(data.id);
-    if (existing) this.cards.set(data.id, { ...existing, ...data } as Card);
+    // Plain snapshot of previous field values: the optimistic write below
+    // mutates the observable in place, so rollback must restore field values
+    // rather than re-inserting the (already-mutated) object.
+    const backup = existing ? { ...existing } : null;
+    if (existing) this.upsertCard({ ...existing, ...data } as Card);
 
     try {
       const card = (await this.ws().emit('card:update', {
         ...data,
         description: data.description ?? undefined,
       })) as Card;
-      runInAction(() => this.cards.set(card.id, card));
+      runInAction(() => this.upsertCard(card));
       return card;
     } catch (err) {
       runInAction(() => {
-        if (existing) this.cards.set(data.id, existing);
+        if (backup) this.upsertCard(backup as Card);
       });
       throw err;
     }

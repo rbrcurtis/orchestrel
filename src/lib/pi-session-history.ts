@@ -46,7 +46,7 @@ function makeUuid(sessionId: string, idx: number): string {
   return `${sessionId}-pi-history-${idx}`;
 }
 
-function toHistoryMessage(message: unknown, sessionId: string, idx: number): unknown | undefined {
+function toHistoryMessage(message: unknown, sessionId: string, idx: number, backgroundCompaction: boolean): unknown | undefined {
   if (!isRecord(message)) return undefined;
 
   const timestamp = getNumber(message.timestamp);
@@ -90,6 +90,7 @@ function toHistoryMessage(message: unknown, sessionId: string, idx: number): unk
       ...base,
       type: 'system',
       subtype: 'compact_boundary',
+      ...(backgroundCompaction ? { source: 'orchestrel-bgc' } : {}),
     };
   }
 
@@ -150,8 +151,13 @@ function getMessagesFromManager(manager: {
   const ctx = manager.buildSessionContext();
   if (!isRecord(ctx) || !Array.isArray(ctx.messages)) return [];
 
+  const branch = manager.getBranch();
+  let backgroundCompaction = false;
+  for (const entry of branch) {
+    if (entry.type === 'compaction') backgroundCompaction = entry.fromHook === true;
+  }
   const replacements = new Map<string, string[]>();
-  for (const entry of manager.getBranch()) {
+  for (const entry of branch) {
     const replacement = displayPrompt(entry);
     if (!replacement) continue;
     const texts = replacements.get(replacement.expandedHash) ?? [];
@@ -181,7 +187,7 @@ function getMessagesFromManager(manager: {
       const displayText = displayTexts?.shift() ?? collapseLegacySkillBlocks(text);
       if (displayText !== text) displayMessage = { ...(message as Record<string, unknown>), content: displayText };
     }
-    const historyMessage = toHistoryMessage(displayMessage, sessionId, idx);
+    const historyMessage = toHistoryMessage(displayMessage, sessionId, idx, backgroundCompaction);
     if (historyMessage !== undefined) messages.push(historyMessage);
   }
 

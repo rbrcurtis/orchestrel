@@ -1,4 +1,6 @@
 import type { Card } from '../../src/shared/ws-protocol';
+import type { ProjectFilter } from './project-filter';
+import { isProjectHidden, projectFilterActive } from './project-filter';
 
 export type PinTarget = number | 'all';
 
@@ -39,8 +41,9 @@ function rankCards(eligible: Card[]): Card[] {
  * Slot 0 "hotseat" virtual pin: when slot 0 is empty, it acts as a virtual
  * "all projects" pin. Real pinned slots (per-project and "all") get priority;
  * the hotseat gets whatever's left. An optional projectFilter restricts which
- * projects both the hotseat and "all" pins consider (per-project pins are
- * unaffected by the filter — pinning a specific project is itself a filter).
+ * projects both the hotseat and "all" pins consider, in include or exclude
+ * mode (per-project pins are unaffected by the filter — pinning a specific
+ * project is itself a filter).
  *
  * Priority per project:
  *   1. Review cards — oldest updatedAt first
@@ -50,7 +53,7 @@ export function resolvePinnedCards(
   slots: SlotState[],
   cards: Card[],
   currentDisplayed: Map<number, number> = new Map(),
-  projectFilter?: Set<number>,
+  projectFilter?: ProjectFilter,
   lockedSlots?: Set<number>,
   suppressedHotseatCardId?: number | null,
 ): Map<number, number> {
@@ -129,12 +132,11 @@ export function resolvePinnedCards(
   // --- "All" slots: collect cards not already claimed ---
   if (allSlotIndices.length > 0) {
     const claimedByProjectPins = new Set(result.values());
-    const hasFilter = !!projectFilter && projectFilter.size > 0;
-    const passesFilter = (projectId: number) => !hasFilter || projectFilter!.has(projectId);
+    const visible = (projectId: number) => !isProjectHidden(projectFilter, projectId);
     const eligible = cards.filter(
       (c) =>
         c.projectId != null &&
-        passesFilter(c.projectId) &&
+        visible(c.projectId) &&
         (c.column === 'review' || c.column === 'running') &&
         !usedCardIds.has(c.id) &&
         !claimedByProjectPins.has(c.id),
@@ -149,7 +151,7 @@ export function resolvePinnedCards(
         if (
           card &&
           card.projectId != null &&
-          passesFilter(card.projectId) &&
+          visible(card.projectId) &&
           (card.column === 'review' || card.column === 'running') &&
           !usedCardIds.has(card.id) &&
           !claimedByProjectPins.has(card.id)
@@ -208,12 +210,12 @@ export function resolvePinnedCards(
       (card.column === 'review' || card.column === 'running') &&
       !usedCardIds.has(card.id) &&
       !claimedByPins.has(card.id) &&
-      (!projectFilter || projectFilter.size === 0 || projectFilter.has(card.projectId)) &&
+      !isProjectHidden(projectFilter, card.projectId) &&
       !isSuppressed(card.id);
 
     // Apply project filter to hotseat only (real pins are unaffected)
-    if (projectFilter && projectFilter.size > 0) {
-      eligible = eligible.filter((c) => projectFilter.has(c.projectId!));
+    if (projectFilterActive(projectFilter)) {
+      eligible = eligible.filter((c) => !isProjectHidden(projectFilter, c.projectId));
     }
 
     // Sticky behavior for hotseat

@@ -87,6 +87,7 @@ export class ProjectStore {
     defaultWorktree?: boolean;
     defaultModel?: string;
     defaultThinkingLevel?: ThinkingLevel | typeof DEFAULT_SENTINEL;
+    defaultSummarizeThreshold?: number;
     color?: string | null;
     providerID?: string;
     nodeName?: string;
@@ -110,6 +111,7 @@ export class ProjectStore {
     defaultWorktree?: boolean;
     defaultModel?: string;
     defaultThinkingLevel?: ThinkingLevel | typeof DEFAULT_SENTINEL;
+    defaultSummarizeThreshold?: number;
     color?: string | null;
     providerID?: string;
     nodeName?: string;

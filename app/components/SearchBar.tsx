@@ -18,6 +18,9 @@ export const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && value) onChange('');
+          }}
           placeholder="Search cards..."
           className="pl-9 sm:pl-10 pr-8"
         />

@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, statSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, statSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,7 +8,7 @@ import { sweepSessions } from './sweep';
 
 const MEMORY: MemoryConfig = {
   mode: 'stage', provider: 'max', model: 'assistant', maxTurns: 30,
-  excerptTokens: 24000, stageDir: 'data/memory-staging', settleMs: 0,
+  excerptTokens: 24000, stageDir: 'data/memory-staging', settleMs: 0, windowDays: 7,
   projects: {
     trackable: { match: ['/home/ryan/Code/trackable'], apiUrl: 'http://mem', apiKey: 'k', project: 'trackable' },
   },
@@ -58,5 +58,14 @@ describe('sweepSessions', () => {
     db.prepare('INSERT INTO memory_maintainer_watermark (path, mtime_ms, size, processed_at) VALUES (?, ?, ?, ?)')
       .run(p, st.mtimeMs, st.size, '2026-08-31T00:00:00Z');
     expect(sweepSessions(MEMORY).files).toHaveLength(0);
+  });
+
+  it('skips sessions older than the recency window', () => {
+    const p = session('old.jsonl', '/home/ryan/Code/trackable', 4, 0);
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    utimesSync(p, old, old);
+    const result = sweepSessions(MEMORY);
+    expect(result.files).toHaveLength(0);
+    expect(result.droppedWindow).toBe(1);
   });
 });

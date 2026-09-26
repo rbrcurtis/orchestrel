@@ -7,9 +7,10 @@ import { Type } from '@earendil-works/pi-ai';
 import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { MemoryConfig, OrchestrelConfig, ProviderDef } from '../../shared/config';
-import type { Excerpt } from './excerpt';
-import { deleteMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
+import { SECRETS_PATTERN, type Excerpt } from './excerpt';
+import { loadMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
 import type { MemoryServer, StagedOp } from './memory-api';
+import { SYSTEM_PROMPT } from './prompts';
 
 const ANONYMOUS_API_KEY = 'anonymous';
 
@@ -21,15 +22,6 @@ export interface ConsolidateOpts {
   maxTurns: number;
   mode: 'stage' | 'write';
 }
-
-const SYSTEM_PROMPT = `You consolidate a coding-agent session into durable memory entries.
-Rules:
-- One concept per memory. Use a concise descriptive title.
-- Always search_memory before storing to check for duplicates; update or skip instead.
-- Never store transient content: status checks, "repos clean", merge confirmations, or anything purely about the current moment.
-- Never store secrets, API keys, or tokens.
-- Delete a memory only when it is clearly stale and superseded.
-- When done, reply with a short summary text and no tool calls. Do not loop.`;
 
 export async function buildModel(
   cfg: OrchestrelConfig,
@@ -80,6 +72,13 @@ const tools: Tool[] = [
     }),
   },
   {
+    name: 'read_memory',
+    description: 'Read the full text of one memory by id. Required before updating a memory.',
+    parameters: Type.Object({
+      id: Type.String(),
+    }),
+  },
+  {
     name: 'store_memory',
     description: 'Store a new memory (one concept).',
     parameters: Type.Object({
@@ -90,19 +89,11 @@ const tools: Tool[] = [
   },
   {
     name: 'update_memory',
-    description: 'Update an existing memory by id.',
+    description: 'Update an existing memory by id. Requires read_memory(id) first. The rewrite must preserve all still-valid facts from the existing text.',
     parameters: Type.Object({
       id: Type.String(),
       title: Type.Optional(Type.String()),
       text: Type.String(),
-    }),
-  },
-  {
-    name: 'delete_memory',
-    description: 'Delete an existing memory by id (stale or superseded only).',
-    parameters: Type.Object({
-      id: Type.String(),
-      reason: Type.Optional(Type.String()),
     }),
   },
 ];
@@ -110,6 +101,7 @@ const tools: Tool[] = [
 export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   const { excerpt, server, runtime, model, maxTurns, mode } = opts;
   const ops: StagedOp[] = [];
+  const readIds = new Set<string>();
   const messages: Message[] = [
     { role: 'user', content: [{ type: 'text', text: `Session: ${excerpt.sessionId} (${excerpt.cwd})\n\n${excerpt.text}` }], timestamp: Date.now() },
   ];
@@ -120,7 +112,7 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
     const calls = msg.content.filter((b): b is ToolCall => b.type === 'toolCall');
     if (calls.length === 0) break;
     for (const call of calls) {
-      const result = await runTool(call, server, mode, ops);
+      const result = await runTool(call, server, mode, ops, readIds);
       messages.push(result);
     }
   }
@@ -128,14 +120,27 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   return dedupeOps(ops);
 }
 
-async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'write', ops: StagedOp[]): Promise<ToolResultMessage> {
+async function runTool(
+  call: ToolCall,
+  server: MemoryServer,
+  mode: 'stage' | 'write',
+  ops: StagedOp[],
+  readIds: Set<string>,
+): Promise<ToolResultMessage> {
   try {
     const args = call.arguments as Record<string, unknown>;
-    const text = (s: string): string => (mode === 'write' && secretsPattern.test(s) ? '[redacted]' : s);
+    const text = (s: string): string => (SECRETS_PATTERN.test(s) ? '[redacted]' : s);
     switch (call.name) {
       case 'search_memory': {
         const hits = await searchMemories(server, String(args.query), Number(args.limit ?? 10));
         return toolResult(call, JSON.stringify(hits.map((h) => ({ id: h.id, title: h.title, score: h.score }))));
+      }
+      case 'read_memory': {
+        const id = String(args.id);
+        const existing = await loadMemory(server, id);
+        if (!existing) return toolResult(call, `memory ${id} not found`, true);
+        readIds.add(id);
+        return toolResult(call, `${existing.title}\n\n${existing.text}`);
       }
       case 'store_memory': {
         const title = String(args.title);
@@ -149,19 +154,13 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
       }
       case 'update_memory': {
         const id = String(args.id);
+        if (!readIds.has(id)) {
+          return toolResult(call, `error: call read_memory(${id}) first — you must see the existing text before replacing it`, true);
+        }
         const body = text(String(args.text));
         ops.push({ op: 'update', id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
         if (mode === 'write') {
           const { success } = await updateMemory(server, { id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
-          return toolResult(call, JSON.stringify({ success }));
-        }
-        return toolResult(call, 'recorded (stage mode)');
-      }
-      case 'delete_memory': {
-        const id = String(args.id);
-        ops.push({ op: 'delete', id, ...(args.reason ? { reason: String(args.reason) } : {}) });
-        if (mode === 'write') {
-          const { success } = await deleteMemory(server, id);
           return toolResult(call, JSON.stringify({ success }));
         }
         return toolResult(call, 'recorded (stage mode)');
@@ -173,8 +172,6 @@ async function runTool(call: ToolCall, server: MemoryServer, mode: 'stage' | 'wr
     return toolResult(call, `error: ${err instanceof Error ? err.message : String(err)}`, true);
   }
 }
-
-const secretsPattern = /sk-[A-Za-z0-9]{20,}|Bearer\s+\S+|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 
 function toolResult(call: ToolCall, text: string, isError = false): ToolResultMessage {
   return {
@@ -188,12 +185,14 @@ function toolResult(call: ToolCall, text: string, isError = false): ToolResultMe
 }
 
 function dedupeOps(ops: StagedOp[]): StagedOp[] {
-  const seen = new Set<string>();
-  return ops.filter((op) => {
-    if (op.op === 'skip') return true;
+  // First store of a title wins; last update of an id wins (the model may
+  // revise an update after seeing the existing text via the tool result).
+  const seen = new Map<string, StagedOp>();
+  for (const op of ops) {
+    if (op.op === 'skip') continue;
     const key = op.op === 'store' ? `store:${op.title}` : `${op.op}:${op.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    if (op.op === 'store' && seen.has(key)) continue;
+    seen.set(key, op);
+  }
+  return [...seen.values()];
 }

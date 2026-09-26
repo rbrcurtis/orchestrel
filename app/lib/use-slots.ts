@@ -1,6 +1,7 @@
 // app/lib/use-slots.ts
 import { useState, useEffect, useRef } from 'react';
 import { resolvePinnedCards, type SlotState, type PinTarget } from './resolve-pin';
+import type { ProjectFilter } from './project-filter';
 import type { Card } from '../../src/shared/ws-protocol';
 
 // ─── localStorage helpers ────────────────────────────────────────────────────
@@ -340,7 +341,7 @@ export type UseSlotsResult = {
 export function useSlots(
   columnCount: number,
   cards: Card[],
-  projectFilter?: Set<number>,
+  projectFilter?: ProjectFilter,
   focusedCardId?: number | null,
 ): UseSlotsResult {
   const [slots, setSlots] = useState<SlotState[]>(() => {
