@@ -9,6 +9,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     private var didRestoreLastURL = false
     private var memoryTimer: Timer?
+    private var memoryWarnings = 0
+    private let launchedAt = Date()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         startMemoryReporting()
@@ -27,10 +29,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         saveCurrentURL()
+        pushMemorySample(event: "bg")
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
-        // Called as part of the transition from the background to the active state; here you can undo many of the changes made on entering the background.
+        pushMemorySample(event: "fg")
+    }
+
+    func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
+        memoryWarnings += 1
+        pushMemorySample(event: "warn")
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
@@ -88,15 +96,46 @@ private extension AppDelegate {
         pushMemorySample()
     }
 
-    func pushMemorySample() {
+    /// The payload also answers three questions the JS side cannot: how long the
+    /// app has run (a WebView reload after a content-process kill is told apart
+    /// from a cold launch), how much device memory is free (a content process can
+    /// be reclaimed when the whole device runs short, while this app's own budget
+    /// still looks healthy), and whether the OS sent memory warnings.
+    func pushMemorySample(event: String? = nil) {
         guard let webView = currentWebView() else {
             return
         }
 
-        let available = os_proc_available_memory()
-        let total = ProcessInfo.processInfo.physicalMemory
-        let script = "window.__iosMemory && window.__iosMemory({available:\(available),total:\(total)})"
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        var payload = "{available:\(os_proc_available_memory())"
+        payload += ",total:\(ProcessInfo.processInfo.physicalMemory)"
+        payload += ",up:\(Int(Date().timeIntervalSince(launchedAt)))"
+        payload += ",warn:\(memoryWarnings)"
+        payload += ",sysFree:\(systemFreeBytes())"
+        if let event = event {
+            payload += ",event:'\(event)'"
+        }
+        payload += "}"
+
+        webView.evaluateJavaScript("window.__iosMemory && window.__iosMemory(\(payload))", completionHandler: nil)
+    }
+
+    /// Device-wide free memory. os_proc_available_memory() only reports what this
+    /// app may still allocate, which is not what the system looks at when it
+    /// reclaims a WebView content process.
+    func systemFreeBytes() -> Int {
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
+        let result = withUnsafeMutablePointer(to: &stats) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, rebound, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else {
+            return 0
+        }
+
+        let pages = Int64(stats.free_count) + Int64(stats.inactive_count) + Int64(stats.speculative_count)
+        return Int(pages * Int64(getpagesize()))
     }
 
     func isRestorableURL(_ url: URL) -> Bool {
