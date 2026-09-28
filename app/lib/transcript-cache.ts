@@ -21,7 +21,7 @@ interface StoredPage extends TranscriptCachePage {
 }
 
 const DB_NAME = 'orchestrel-transcripts-v3';
-const BUDGET = 100 * 1024 * 1024;
+const BUDGET = 10 * 1024 * 1024;
 let opening: Promise<IDBDatabase> | undefined;
 
 function database(): Promise<IDBDatabase> {
