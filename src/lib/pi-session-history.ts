@@ -198,7 +198,23 @@ export async function getPiSessionHistoryPage(
 ): Promise<TranscriptHistoryPage> {
   const { SessionManager, sessionEntryToContextMessages } = await import('@earendil-works/pi-coding-agent');
   const paths = getSessionPaths(await SessionManager.list(cwd), sessionId);
-  if (paths.length !== 1) throw new Error(`Expected one history source for ${sessionId}, found ${paths.length}`);
+  if (paths.length === 0) {
+    // The session file is gone — an old card whose session was cleaned up. That is
+    // permanent, so answer with an empty page. An error here makes the client fall
+    // back to session:load on every reconnect, for a transcript that no longer exists.
+    return {
+      sessionId,
+      revision: '',
+      records: [],
+      before: null,
+      after: null,
+      prefix: '',
+      hasOlder: false,
+      hasNewer: false,
+      reset: false,
+    };
+  }
+  if (paths.length > 1) throw new Error(`Expected one history source for ${sessionId}, found ${paths.length}`);
   const manager = SessionManager.open(paths[0], undefined, cwd);
   const entries = manager.buildContextEntries();
   const records: TranscriptHistoryPage['records'] = [];

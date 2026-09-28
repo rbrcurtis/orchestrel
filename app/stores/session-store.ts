@@ -576,8 +576,11 @@ export class SessionStore {
         if (opts?.force) void this.loadLive(cardId, this.replicas.get(cardId)!.currentCursor());
         return;
       }
-      if (scope && sessionId) {
-        const cached = await readTranscriptPage(scope, 'latest');
+      // A card with a session id pages its history even before this client has a
+      // cache scope for it. The scope is only a cache key; without it the page
+      // request still fetches 100 messages instead of the whole transcript.
+      if (sessionId) {
+        const cached = scope ? await readTranscriptPage(scope, 'latest') : undefined;
         const stale = () => this.historyStale(cardId, scope, version);
         const saved = cached?.records[0] as TranscriptHistoryPage | undefined;
         const valid = saved?.sessionId === sessionId && Array.isArray(saved.records) ? saved : undefined;
@@ -622,7 +625,7 @@ export class SessionStore {
             cardId,
             page.records.map((record) => record.message),
           );
-          if (!valid || cached?.revision !== page.revision) {
+          if (scope && (!valid || cached?.revision !== page.revision)) {
             await writeTranscriptPage(
               scope,
               {

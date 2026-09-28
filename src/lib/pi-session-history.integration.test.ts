@@ -37,3 +37,20 @@ it('pages stable entry identities and rejects a changed prefix', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Card 989: an April card whose session file was cleaned up. The reader used to throw,
+// the backend turned that into an error, and the client fell back to session:load on
+// every reconnect — forever, for a transcript that no longer exists.
+it('answers an empty page when the session file is gone', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'history-gone-'));
+  try {
+    const page = await getPiSessionHistoryPage('00000000-0000-4000-8000-000000000000', dir, {});
+    expect(page.records).toEqual([]);
+    expect(page.hasOlder).toBe(false);
+    expect(page.hasNewer).toBe(false);
+    expect(page.reset).toBe(false);
+    expect(page.sessionId).toBe('00000000-0000-4000-8000-000000000000');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -192,7 +192,7 @@ describe('SessionStore subagent lifecycle', () => {
       contextWindow: 200000,
     });
 
-    expect(emit).toHaveBeenCalledWith('session:load', { cardId: 1011, sessionId: 'sess-abc' });
+    expect(emit).toHaveBeenCalledWith('session:history-page', { cardId: 1011, page: {} });
   });
 
   it('does not reload history for an unsubscribed card on terminal status', () => {
@@ -455,7 +455,11 @@ describe('SessionStore resubscribeAll', () => {
     store.addViewer(1);
     await store.resubscribeAll();
 
-    expect(emit).toHaveBeenCalledWith('session:load', { cardId: 1, sessionId: 'sess-1' });
+    expect(emit).toHaveBeenCalledWith('session:history-page', { cardId: 1, page: {} });
+    // A session id is enough to page: the cache scope is only a cache key, so a card
+    // this client has never cached still fetches one page instead of the whole
+    // transcript. Only a card with no session falls back to session:load.
+    expect(emit).not.toHaveBeenCalledWith('session:load', { cardId: 1, sessionId: 'sess-1' });
     expect(emit).not.toHaveBeenCalledWith('session:load', { cardId: 2, sessionId: 'sess-2' });
     expect(emit).toHaveBeenCalledWith('agent:status', { cardId: 2 });
   });
