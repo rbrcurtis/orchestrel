@@ -88,16 +88,36 @@ export const SessionView = observer(function SessionView({
   // just sent, even from a manual scroll-up.
   const [scrollToBottomSeq, setScrollToBottomSeq] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
   const isStreaming = sessionActive || isStarting;
 
   // Register this view before the history effect below so a card with a live
-  // replica repaints as soon as its view mounts. Off-screen cards keep their
-  // subscription but stop repainting.
+  // replica repaints as soon as its view mounts. A view that is off screen keeps
+  // its subscription but stops repainting: the board holds more column slots than
+  // a tablet can show, and every live event repaints every registered view, so
+  // painting the hidden ones costs memory the WebView never gets back. Scrolling a
+  // slot back into view registers it again, and addViewer repaints it at once.
   useEffect(() => {
     sessionStore.addViewer(cardId);
-    return () => sessionStore.removeViewer(cardId);
+    let registered = true;
+    const sync = (visible: boolean) => {
+      if (visible === registered) return;
+      registered = visible;
+      if (visible) sessionStore.addViewer(cardId);
+      else sessionStore.removeViewer(cardId);
+    };
+    const el = panelRef.current;
+    const observer =
+      el && typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver((entries) => sync(entries.some((e) => e.isIntersecting)), { threshold: 0 })
+        : null;
+    if (el && observer) observer.observe(el);
+    return () => {
+      observer?.disconnect();
+      if (registered) sessionStore.removeViewer(cardId);
+    };
   }, [cardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load history / set up bus subscriptions on mount and when sessionId becomes available.
@@ -247,6 +267,7 @@ export const SessionView = observer(function SessionView({
 
   return (
     <div
+      ref={panelRef}
       className="flex flex-col flex-1 min-h-0 min-w-0 max-w-full overflow-hidden border-t border-border"
       onMouseDown={handlePanelMouseDown}
       onClick={handlePanelClick}
@@ -282,7 +303,11 @@ export const SessionView = observer(function SessionView({
             onChange={(e) => {
               const newProvider = e.target.value;
               const defaultModel = config.defaultModelForNode(card?.nodeName ?? '', newProvider);
-              handleUpdateCard({ provider: newProvider, model: defaultModel });
+              handleUpdateCard({
+                provider: newProvider,
+                model: defaultModel,
+                ...config.modelDefaultsForNode(card?.nodeName ?? '', newProvider, defaultModel),
+              });
             }}
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -295,7 +320,12 @@ export const SessionView = observer(function SessionView({
           <select
             value={model}
             disabled={nodeOffline}
-            onChange={(e) => handleUpdateCard({ model: e.target.value })}
+            onChange={(e) =>
+              handleUpdateCard({
+                model: e.target.value,
+                ...config.modelDefaultsForNode(card?.nodeName ?? '', providerID, e.target.value),
+              })
+            }
             className="text-[11px] bg-transparent text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground w-auto truncate disabled:cursor-not-allowed disabled:opacity-50"
           >
             {config.getModelsForNode(card?.nodeName ?? '', providerID).map(([alias, m]) => (
