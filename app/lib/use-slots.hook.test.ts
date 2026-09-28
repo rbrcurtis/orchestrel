@@ -220,11 +220,17 @@ describe('flash', () => {
     expect(result.current.flashSlot).toBe(1);
   });
 
-  it('flashes on selectCard placement', () => {
+  // The wheel's presentation flash (the test above) marks a card that appeared.
+  // Selecting a card is not an arrival, so it must not flash: that flashed every
+  // card on every select, including one already on the board.
+  it('does not flash on selectCard, whether the card is new to the board or already there', () => {
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const { result } = renderHook(() => useSlots(2, cards));
     act(() => result.current.selectCard(1));
-    expect(result.current.flashSlot).toBe(1); // placed in first empty slot >= 1
+    expect(result.current.slots[1]).toEqual({ type: 'manual', cardId: 1 });
+    expect(result.current.flashSlot).toBeNull();
+    act(() => result.current.selectCard(1));
+    expect(result.current.flashSlot).toBeNull();
   });
 
   it('flashes on dropCard placement', () => {
@@ -315,7 +321,7 @@ describe('flash', () => {
   it('clearFlash resets flashSlot to null', () => {
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const { result } = renderHook(() => useSlots(2, cards));
-    act(() => result.current.selectCard(1));
+    act(() => result.current.dropCard(1, 1, 10));
     expect(result.current.flashSlot).not.toBeNull();
     act(() => result.current.clearFlash());
     expect(result.current.flashSlot).toBeNull();
@@ -377,13 +383,13 @@ describe('flash', () => {
 // ─── Action integration through hook ──────────────────────────────────────────
 
 describe('actions through hook', () => {
-  it('selectCard flashes existing card instead of duplicating', () => {
+  it('selectCard reuses the existing slot instead of duplicating, without a flash', () => {
     const stored: SlotState[] = [{ type: 'manual', cardId: 1 }, { type: 'empty' }];
     localStorage.setItem('dispatcher-slots', JSON.stringify(stored));
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const { result } = renderHook(() => useSlots(2, cards));
     act(() => result.current.selectCard(1));
-    expect(result.current.flashSlot).toBe(0); // existing slot flashed
+    expect(result.current.flashSlot).toBeNull();
     expect(result.current.slots[1]).toEqual({ type: 'empty' }); // not duplicated
   });
 

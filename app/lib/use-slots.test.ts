@@ -44,40 +44,36 @@ function makeCard(overrides: Partial<Card> & { id: number }): Card {
 // ─── applySelectCard ────────────────────────────────────────────────────────
 
 describe('applySelectCard', () => {
-  it('flashes slot when card is already in a manual slot', () => {
+  it('leaves the board alone when the card is already in a manual slot', () => {
     const slots: SlotState[] = [{ type: 'manual', cardId: 1 }, { type: 'empty' }];
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const resolved = new Map<number, number>();
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next).toBe(slots); // no mutation
-    expect(flashIndex).toBe(0);
   });
 
-  it('flashes slot when card is shown via resolver in a pinned slot', () => {
+  it('leaves the board alone when the card shows via the resolver in a pinned slot', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const resolved = new Map([[1, 1]]); // slot 1 currently shows card 1
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next).toBe(slots);
-    expect(flashIndex).toBe(1);
   });
 
-  it('flashes slot when card is shown as a pinned override', () => {
+  it('leaves the board alone when the card shows as a pinned override', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10, cardId: 1 }];
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const resolved = new Map<number, number>();
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next).toBe(slots);
-    expect(flashIndex).toBe(1);
   });
 
   it('places card as override in empty pinned slot for matching project', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
     const cards = [makeCard({ id: 1, projectId: 10, column: 'done' })];
     const resolved = new Map<number, number>(); // no resolver result for slot 1
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[1]).toEqual({ type: 'pinned', projectId: 10, cardId: 1 });
-    expect(flashIndex).toBe(1);
   });
 
   it('does not treat "all" pinned slot as project-specific for override placement', () => {
@@ -85,36 +81,32 @@ describe('applySelectCard', () => {
     const cards = [makeCard({ id: 1, projectId: 10, column: 'done' })];
     const resolved = new Map<number, number>();
     // "all" slots don't match a specific projectId, so card goes to slot 0 fallback
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(0);
   });
 
   it('does not use a pinned slot as a fallback empty slot for different project', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 20 }];
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const resolved = new Map<number, number>();
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[0]).toEqual({ type: 'manual', cardId: 1 }); // falls back to slot 0
-    expect(flashIndex).toBe(0);
   });
 
   it('places card in first empty slot at index >= 1', () => {
     const slots: SlotState[] = [{ type: 'manual', cardId: 99 }, { type: 'empty' }, { type: 'empty' }];
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const resolved = new Map<number, number>();
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[1]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(1);
   });
 
   it('falls back to slot 0 when no empty slots at index >= 1', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'manual', cardId: 99 }];
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const resolved = new Map<number, number>();
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[0]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(0);
   });
 
   it('does not place card in pinned-with-resolver-result slot when looking for empty pinned slot', () => {
@@ -123,27 +115,24 @@ describe('applySelectCard', () => {
     const cards = [makeCard({ id: 1, projectId: 10, column: 'done' })];
     const resolved = new Map([[1, 99]]); // slot 1 has a resolver result (card 99)
     // Card 1 is for project 10 but the pinned slot is occupied — should fall back
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[0]).toEqual({ type: 'manual', cardId: 1 }); // slot 0 fallback
-    expect(flashIndex).toBe(0);
   });
 
   it('handles card with null projectId — places in first empty non-hotseat slot', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'empty' }];
     const cards = [makeCard({ id: 1, projectId: null })];
     const resolved = new Map<number, number>();
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[1]).toEqual({ type: 'manual', cardId: 1 });
-    expect(flashIndex).toBe(1);
   });
 
-  it('flashes slot 0 when card is shown via hotseat virtual resolver', () => {
+  it('leaves the board alone when the card shows via the hotseat resolver', () => {
     const slots: SlotState[] = [{ type: 'empty' }, { type: 'empty' }];
     const cards = [makeCard({ id: 1, projectId: 10 })];
     const resolved = new Map([[0, 1]]); // resolver placed card 1 in slot 0 (hotseat)
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next).toBe(slots); // no mutation
-    expect(flashIndex).toBe(0);
   });
 
   it('places override in second pinned slot when first is occupied by resolver', () => {
@@ -154,9 +143,8 @@ describe('applySelectCard', () => {
     ];
     const cards = [makeCard({ id: 1, projectId: 10, column: 'done' })];
     const resolved = new Map([[1, 99]]); // slot 1 is occupied by resolver
-    const { slots: next, flashIndex } = applySelectCard(slots, 1, cards, resolved);
+    const next = applySelectCard(slots, 1, cards, resolved);
     expect(next[2]).toEqual({ type: 'pinned', projectId: 10, cardId: 1 }); // goes to slot 2
-    expect(flashIndex).toBe(2);
   });
 });
 

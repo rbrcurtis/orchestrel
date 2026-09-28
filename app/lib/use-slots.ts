@@ -59,12 +59,16 @@ function migrateSlots(): SlotState[] | null {
 
 // ─── Pure action functions (exported for testing) ────────────────────────────
 
+// Selecting a card does not flash the slot. The flash confirms that something
+// appeared on the board, and that comes from the resolver change effect below; a
+// select that places a card shows the card itself. Flashing on every select —
+// including a card that was already on the board — reads as noise, not feedback.
 export function applySelectCard(
   slots: SlotState[],
   cardId: number,
   cards: Card[],
   resolvedCards: Map<number, number>,
-): { slots: SlotState[]; flashIndex: number | null } {
+): SlotState[] {
   // Already visible anywhere? Check manual slots, pinned slots (with resolver/override),
   // and empty slots that may have a virtual resolver result (hotseat).
   for (let i = 0; i < slots.length; i++) {
@@ -75,7 +79,7 @@ export function applySelectCard(
         : slot.type === 'pinned'
           ? (resolvedCards.get(i) ?? slot.cardId ?? null)
           : (resolvedCards.get(i) ?? null);
-    if (displayed === cardId) return { slots, flashIndex: i };
+    if (displayed === cardId) return slots;
   }
 
   const card = cards.find((c) => c.id === cardId);
@@ -93,7 +97,7 @@ export function applySelectCard(
         slot.cardId == null
       ) {
         next[i] = { type: 'pinned', projectId, cardId };
-        return { slots: next, flashIndex: i };
+        return next;
       }
     }
   }
@@ -102,7 +106,7 @@ export function applySelectCard(
   const emptyIdx = next.findIndex((s, i) => i >= 1 && s.type === 'empty');
   const targetIdx = emptyIdx >= 0 ? emptyIdx : 0;
   next[targetIdx] = { type: 'manual', cardId };
-  return { slots: next, flashIndex: targetIdx };
+  return next;
 }
 
 export function applyDropCard(
@@ -487,12 +491,11 @@ export function useSlots(
 
   function selectCard(cardId: number) {
     // resolvedCards is already computed above in the hook body — reuse it
-    const { slots: next, flashIndex } = applySelectCard(slots, cardId, cards, resolvedCards);
+    const next = applySelectCard(slots, cardId, cards, resolvedCards);
     if (next !== slots) {
       setSlots(next);
       writeLocalStorage(SLOTS_KEY, next);
     }
-    if (flashIndex != null) setFlashSlot(flashIndex);
   }
 
   function dropCard(slotIndex: number, cardId: number, cardProjectId: number | null) {
