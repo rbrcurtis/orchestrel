@@ -69,7 +69,15 @@ function sample(): void {
   const ios = iosMemory
     ? ` iosAvail=${mb(iosMemory.available)}MB iosTotal=${mb(iosMemory.total)}MB iosUp=${iosMemory.up}s iosWarn=${iosMemory.warn} sysFree=${mb(iosMemory.sysFree)}MB`
     : '';
-  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}${ios}`;
+  // A page read that returns the page the client asked for is a hit; a read that
+  // returns nothing or a page for another session is a miss. liveWrite counts the
+  // cached live replicas, and liveHit the returns that started from one.
+  const stats = (globalThis as { __rootStore?: { sessions?: { cacheStats?: Record<string, number> } } }).__rootStore
+    ?.sessions?.cacheStats;
+  const cache = stats
+    ? ` cachePageRead=${stats.pageRead} cachePageHit=${stats.pageHit} cachePageMiss=${stats.pageMiss} cacheLiveRead=${stats.liveRead} cacheLiveFound=${stats.liveFound} cacheLiveWrite=${stats.liveWrite} cacheLiveHit=${stats.liveHit}`
+    : '';
+  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}${ios}${cache}`;
   console.log(`[mem-sampler] ${line}`);
   report(line);
 }

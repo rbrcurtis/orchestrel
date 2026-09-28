@@ -206,6 +206,17 @@
   pointer-events: none;
 }
 
+/* Transcript rows are tall and a live transcript is very long. Without containment
+   WebKit re-rasterizes the whole scroll content on every live repaint: the JS per
+   paint measured 2.4 ms with an idle main thread, while the renderer burned a full
+   core, and the layer memory grew until iOS killed the WebView content process.
+   Rows outside the viewport are now skipped, and the last rendered size keeps the
+   scroll height stable. */
+[data-message-row] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+
 @keyframes slot-flash {
   0% {
     opacity: 0;

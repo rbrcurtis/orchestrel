@@ -128,7 +128,11 @@ export const SessionView = observer(function SessionView({
   useEffect(() => {
     const sid = sessionStoreId ?? sessionId;
     if (!sid) return;
-    if (card && root.currentUser) {
+    // The cache scope needs the account, and without it the load cannot read the
+    // cached page or its live replica: it would fetch everything again only to have
+    // the scope arrive too late to use. Wait for the user, then load once.
+    if (!root.currentUser) return;
+    if (card) {
       sessionStore.setCacheScope(cardId, { userId: root.currentUser.id, nodeName: card.nodeName, sessionId: sid });
     }
     if (session?.historyLoaded) return;

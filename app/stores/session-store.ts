@@ -4,7 +4,12 @@ import { parseAppCommands } from '../../src/shared/slash-commands';
 import type { WsClient } from '../lib/ws-client';
 import type { SdkMessage, HistoryMessage } from '../lib/sdk-types';
 import { TranscriptReplica } from '../../src/shared/transcript-reducer';
-import type { TranscriptCursor, TranscriptEnvelope, TranscriptEvent } from '../../src/shared/transcript-sync';
+import type {
+  TranscriptCursor,
+  TranscriptEnvelope,
+  TranscriptEvent,
+  TranscriptState,
+} from '../../src/shared/transcript-sync';
 import type { TranscriptSnapshotMessage } from '../../src/shared/orcd-protocol';
 import { renderTranscriptSnapshot } from '../lib/transcript-display';
 import { MessageAccumulator } from '../lib/message-accumulator';
@@ -17,8 +22,19 @@ import { TRANSCRIPT_PAGE_SIZE } from '../../src/shared/transcript-history';
 // uncapped poll would repeat until the page reloads.
 const STOP_ATTEMPTS = 5;
 
-// The live transcript repaint is coalesced to this interval.
-const LIVE_PAINT_MS = 100;
+// The live transcript repaint is coalesced to this interval, and the delay follows
+// the measured cost of the last paint. A paint rebuilds and re-renders the whole
+// transcript: with a streaming card that measured at ~240 ms, which at a fixed
+// 250 ms was 97% of a core — the reported reason iOS killed the WebView content
+// process for exceeding its 50%-of-a-core limit. Delaying by four times the cost
+// keeps painting near a quarter of a core: a fast device stays at LIVE_PAINT_MS,
+// a slow one backs off instead of burning the CPU.
+const LIVE_PAINT_MS = 250;
+const LIVE_PAINT_MAX_MS = 2000;
+// How often the live replica is written to the transcript cache. The confirmed
+// history page only holds what the session file had at load time, so without this
+// a return to a running card rewinds to that page and refetches the streamed tail.
+const LIVE_CACHE_MS = 5000;
 
 export interface SessionState {
   active: boolean;
@@ -65,27 +81,78 @@ export class SessionStore {
   private liveLoading = new Map<number, TranscriptEnvelope<TranscriptEvent>[]>();
   private liveFrames = new Set<number>();
   private viewers = new Map<number, number>();
+  // Transcript events that arrived since the last paint tick. A busy session sends
+  // hundreds a second, so they are applied in the tick rather than one at a time.
+  private liveBuffers = new Map<number, TranscriptEnvelope<TranscriptEvent>[]>();
+  private paintCostMs = 0;
+  private lastLiveWrite = new Map<number, number>();
+  // Cache effectiveness, read by the memory sampler and reported in the pwa log so
+  // the hit rate is visible from a device that cannot be profiled.
+  cacheStats = { pageRead: 0, pageHit: 0, pageMiss: 0, liveRead: 0, liveFound: 0, liveWrite: 0, liveHit: 0 };
+
+  private nextPaintDelay(): number {
+    return Math.min(Math.max(LIVE_PAINT_MS, this.paintCostMs * 4), LIVE_PAINT_MAX_MS);
+  }
 
   private paintLive(cardId: number): void {
-    // Only a mounted view needs the transcript. Off-screen cards keep their live
-    // replica but stop repainting, so a reconnect or a long run cannot spend the
-    // main thread on sessions nobody is looking at.
-    if (!this.hasViewer(cardId)) return;
     if (this.liveFrames.has(cardId)) return;
     this.liveFrames.add(cardId);
-    setTimeout(
-      () =>
-        runInAction(() => {
-          this.liveFrames.delete(cardId);
-          const replica = this.replicas.get(cardId);
-          const session = this.sessions.get(cardId);
-          if (!replica || !session) return;
-          replica.trimVisible();
-          renderTranscriptSnapshot(session.accumulator, replica.displayState());
-          session.historyLoaded = true;
-        }),
-      LIVE_PAINT_MS,
-    );
+    setTimeout(() => {
+      this.liveFrames.delete(cardId);
+      this.applyLiveBuffer(cardId);
+      // Only a mounted view needs the transcript. Off-screen cards keep their live
+      // replica but stop repainting, so a reconnect or a long run cannot spend the
+      // main thread on sessions nobody is looking at.
+      if (!this.hasViewer(cardId)) return;
+      const started = performance.now();
+      runInAction(() => {
+        const replica = this.replicas.get(cardId);
+        const session = this.sessions.get(cardId);
+        if (!replica || !session) return;
+        replica.trimVisible();
+        renderTranscriptSnapshot(session.accumulator, replica.displayState());
+        session.historyLoaded = true;
+      });
+      this.paintCostMs = this.paintCostMs
+        ? this.paintCostMs * 0.5 + (performance.now() - started) * 0.5
+        : performance.now() - started;
+      this.writeLiveCache(cardId);
+    }, this.nextPaintDelay());
+  }
+
+  // Keep the cached live replica close to now. It is stored under the reserved
+  // 'live' anchor as one record, keyed by a revision that is just the cursor, so a
+  // reader can tell whether the replica it finds still continues from a cursor.
+  private writeLiveCache(cardId: number): void {
+    const scope = this.cacheScopes.get(cardId);
+    const replica = this.replicas.get(cardId);
+    const session = this.sessions.get(cardId);
+    if (!scope || !replica || !session?.active) return;
+    const now = Date.now();
+    if (now - (this.lastLiveWrite.get(cardId) ?? 0) < LIVE_CACHE_MS) return;
+    this.lastLiveWrite.set(cardId, now);
+    const { cursor, state } = replica.snapshot();
+    if (!cursor) return;
+    const revision = `${cursor.streamId}:${cursor.sequence}`;
+    this.cacheStats.liveWrite++;
+    void (async () => {
+      const existing = await readTranscriptPage(scope, 'live');
+      await writeTranscriptPage(
+        scope,
+        { anchor: 'live', revision, records: [{ cursor, state }] },
+        existing?.revision ?? null,
+      );
+    })().catch(() => {});
+  }
+
+  // Apply the events buffered since the last tick. A gap in them means the replica
+  // cannot be continued, which needs a fresh snapshot.
+  private applyLiveBuffer(cardId: number): void {
+    const buffer = this.liveBuffers.get(cardId);
+    if (!buffer?.length) return;
+    const events = buffer.splice(0, buffer.length);
+    const replica = this.replicas.get(cardId);
+    if (!replica || !this.applyEnvelopes(replica, events)) void this.loadLive(cardId);
   }
 
   private async loadLive(cardId: number, cursor?: TranscriptCursor): Promise<void> {
@@ -254,21 +321,35 @@ export class SessionStore {
   }
 
   constructor() {
-    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws' | 'viewers' | 'runningLoads' | 'liveLoading'>(
+    makeAutoObservable<
       this,
-      {
-        stopIntervals: false,
-        loadingCards: false,
-        _ws: false,
-        viewers: false,
-        runningLoads: false,
-        // Make this observable and MobX stores a converted copy, so the array a load
-        // buffers live events into is not the array it later drains: every event that
-        // arrived while a snapshot was in flight was dropped, which left the replica
-        // behind and made the next event ask for another whole snapshot.
-        liveLoading: false,
-      },
-    );
+      | 'stopIntervals'
+      | 'loadingCards'
+      | '_ws'
+      | 'viewers'
+      | 'runningLoads'
+      | 'liveLoading'
+      | 'liveBuffers'
+      | 'paintCostMs'
+      | 'cacheStats'
+      | 'lastLiveWrite'
+    >(this, {
+      stopIntervals: false,
+      loadingCards: false,
+      _ws: false,
+      viewers: false,
+      runningLoads: false,
+      // Make this observable and MobX stores a converted copy, so the array a load
+      // buffers live events into is not the array it later drains: every event that
+      // arrived while a snapshot was in flight was dropped, which left the replica
+      // behind and made the next event ask for another whole snapshot.
+      liveLoading: false,
+      // Not observable for the same reason, and the paint cost only steers a timer.
+      liveBuffers: false,
+      paintCostMs: false,
+      cacheStats: false,
+      lastLiveWrite: false,
+    });
   }
 
   setWs(ws: WsClient) {
@@ -343,8 +424,19 @@ export class SessionStore {
           return;
         }
         const replica = this.replicas.get(cardId);
-        if (!replica || replica.accept(envelope).type === 'snapshot_required') void this.loadLive(cardId);
-        else this.paintLive(cardId);
+        if (!replica) {
+          void this.loadLive(cardId);
+          return;
+        }
+        // Buffer the event and let the paint tick apply it. Applying and repainting
+        // per event kept the renderer at 66% of a core, over the iOS CPU limit that
+        // kills the content process, for a transcript that only needs to look
+        // current a few times a second.
+        let buffer = this.liveBuffers.get(cardId);
+        if (!buffer) this.liveBuffers.set(cardId, (buffer = []));
+        if (buffer.length >= 2048) buffer.splice(0, buffer.length - 1);
+        buffer.push(envelope);
+        this.paintLive(cardId);
         return;
       }
       if (this.replicas.has(cardId) && ['stream_event', 'assistant', 'user', 'result'].includes(sdkMsg.type)) return;
@@ -580,11 +672,30 @@ export class SessionStore {
       // cache scope for it. The scope is only a cache key; without it the page
       // request still fetches 100 messages instead of the whole transcript.
       if (sessionId) {
-        const cached = scope ? await readTranscriptPage(scope, 'latest') : undefined;
         const stale = () => this.historyStale(cardId, scope, version);
+        // The confirmed page stops where the session file stopped when it was read.
+        // If a live replica was cached since, it continues further, so start from it
+        // and let the resume request fetch only the short gap after its cursor.
+        const live = scope ? await readTranscriptPage(scope, 'live') : undefined;
+        if (scope) this.cacheStats.liveRead++;
+        if (live) this.cacheStats.liveFound++;
+        const entry = live?.records[0] as { cursor: TranscriptCursor; state: TranscriptState } | undefined;
+        const liveApplied = Boolean(entry?.cursor && entry.state && !stale());
+        if (liveApplied && entry) {
+          const replica = new TranscriptReplica();
+          replica.applySnapshot(entry.cursor, entry.state);
+          this.replicas.set(cardId, replica);
+          this.cacheStats.liveHit++;
+          this.paintLive(cardId);
+          void this.loadLive(cardId, entry.cursor);
+        }
+        const cached = scope ? await readTranscriptPage(scope, 'latest') : undefined;
+        if (scope) this.cacheStats.pageRead++;
         const saved = cached?.records[0] as TranscriptHistoryPage | undefined;
         const valid = saved?.sessionId === sessionId && Array.isArray(saved.records) ? saved : undefined;
-        if (valid && !stale())
+        if (cached && valid) this.cacheStats.pageHit++;
+        if (scope && !cached) this.cacheStats.pageMiss++;
+        if (valid && !stale() && !liveApplied)
           this.ingestHistory(
             cardId,
             valid.records.map((record) => record.message),
@@ -621,6 +732,8 @@ export class SessionStore {
         if (page && page.sessionId === sessionId && !stale()) {
           const confirmed = page;
           runInAction(() => this.historyPages.set(cardId, confirmed));
+          // Ingest either way: this page is the window older pages extend, and the
+          // live replica repaints its own newest window over it on the next tick.
           this.ingestHistory(
             cardId,
             page.records.map((record) => record.message),
