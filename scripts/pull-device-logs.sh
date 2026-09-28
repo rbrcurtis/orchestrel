@@ -11,11 +11,10 @@ set -uo pipefail
 
 ONI=oni
 DESKTOP_LOG='/Users/ryan/Library/Application Support/Orchestrel/orchestrel-desktop-metrics.log'
-IPAD_UDID=00008030-001145142260C02E
-IPAD_BUNDLE=com.orchestrel.ios
+IOS_BUNDLE=com.orchestrel.ios
+IOS_DEVICES=("ipad:00008030-001145142260C02E" "juno:294C9522-5D62-5E2D-A654-ECFD7092D36A")
 CACHE=/home/ryan/.cache/orchestrel-device-logs
 DESKTOP_STATE=$CACHE/desktop-metrics.log
-IPAD_STATE=$CACHE/ipad-native.log
 TAG=device-log
 
 mkdir -p "$CACHE"
@@ -47,10 +46,17 @@ if ssh "$ONI" "cat '$DESKTOP_LOG'" >"$CACHE/desktop-metrics.new" 2>/dev/null; th
   forward "$CACHE/desktop-metrics.new" "$DESKTOP_STATE" desktop
 fi
 
-# iPad: the app's container. devicectl can read it, and it works while the device
-# is unlocked and on the network, which is also when the faults happen.
-if ssh "$ONI" "zsh -lic 'xcrun devicectl device copy from --device $IPAD_UDID --domain-type appDataContainer --domain-identifier $IPAD_BUNDLE --source Documents/orchestrel-native.log --destination /tmp/ipad-native.log'" >/dev/null 2>&1; then
-  if ssh "$ONI" "cat /tmp/ipad-native.log" >"$CACHE/ipad-native.new" 2>/dev/null; then
-    forward "$CACHE/ipad-native.new" "$IPAD_STATE" ipad
+# iPad and Juno: the app's container. devicectl can read it, and it works while
+# the device is unlocked and on the network, which is also when the faults happen.
+# A device that is asleep, or one that has not been given this build yet, simply
+# produces nothing here.
+for entry in "${IOS_DEVICES[@]}"; do
+  name=${entry%%:*}
+  udid=${entry#*:}
+  remote=/tmp/${name}-native.log
+  if ssh "$ONI" "zsh -lic 'xcrun devicectl device copy from --device $udid --domain-type appDataContainer --domain-identifier $IOS_BUNDLE --source Documents/orchestrel-native.log --destination $remote'" >/dev/null 2>&1; then
+    if ssh "$ONI" "cat $remote" >"$CACHE/$name-native.new" 2>/dev/null; then
+      forward "$CACHE/$name-native.new" "$CACHE/$name-native.log" "$name"
+    fi
   fi
-fi
+done
