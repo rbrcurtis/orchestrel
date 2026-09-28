@@ -4,7 +4,13 @@ import { Card } from '../models/Card';
 import { DEFAULT_SENTINEL } from '../../shared/ws-protocol';
 import type { Column } from '../../shared/ws-protocol';
 import { Project } from '../models/Project';
-import { contextWindowFor, defaultProviderFor, defaultModelFor, defaultThinkingFor } from '../config/capabilities';
+import {
+  contextWindowFor,
+  defaultProviderFor,
+  defaultModelFor,
+  defaultThinkingFor,
+  modelDefaultsFor,
+} from '../config/capabilities';
 import { slugify } from '../../shared/worktree';
 
 export interface PageResult {
@@ -92,6 +98,11 @@ class CardService {
   async createCard(data: Partial<Card> & { archiveOthers?: boolean }): Promise<Card> {
     const col = (data.column ?? 'backlog') as Column;
 
+    // Whether the caller chose these values, before project inheritance fills
+    // them in. A caller choice always wins over the model's configured defaults.
+    const explicitThinking = data.thinkingLevel !== undefined && data.thinkingLevel !== DEFAULT_SENTINEL;
+    const explicitSummarize = data.summarizeThreshold !== undefined;
+
     // Compute next position in column
     const maxCard = await Card.findOne({
       where: { column: col },
@@ -129,6 +140,20 @@ class CardService {
     providerID = providerID ?? defaultProviderFor(nodeName) ?? 'anthropic';
     data.provider = providerID;
     data.nodeName = nodeName;
+
+    // A model's configured defaults win over the project/node defaults; the
+    // project values stay for models that define none. This is the same rule the
+    // UI applies when the user switches a card to a model, and it covers card
+    // creation paths that carry no explicit settings (for example the chat
+    // composer). The node may not have advertised capabilities yet, in which
+    // case the project values stay.
+    const modelDefaults = modelDefaultsFor(nodeName, providerID, data.model ?? '');
+    if (!explicitThinking && modelDefaults.thinkingLevel) {
+      data.thinkingLevel = modelDefaults.thinkingLevel;
+    }
+    if (!explicitSummarize && modelDefaults.summarizeThreshold != null) {
+      data.summarizeThreshold = modelDefaults.summarizeThreshold;
+    }
     data.summarizeThreshold = data.summarizeThreshold ?? 0;
 
     // Best-effort initial context window from the node's advertised capabilities.
@@ -164,6 +189,17 @@ class CardService {
       const providerID = data.provider ?? card.provider ?? 'anthropic';
       const cw = contextWindowFor(card.nodeName, providerID, data.model ?? card.model);
       if (cw) data.contextWindow = cw;
+    }
+
+    // A model change with no explicit thinking level or summarize threshold
+    // follows the new model's configured defaults. The UI sends these values on
+    // a model toggle; this covers callers that change only the model.
+    if (data.model !== undefined && data.model !== card.model) {
+      const defs = modelDefaultsFor(card.nodeName, data.provider ?? card.provider, data.model);
+      if (defs.thinkingLevel && data.thinkingLevel === undefined) data.thinkingLevel = defs.thinkingLevel;
+      if (defs.summarizeThreshold != null && data.summarizeThreshold === undefined) {
+        data.summarizeThreshold = defs.summarizeThreshold;
+      }
     }
 
     // Done and archive are terminal ownership boundaries: release the resident

@@ -12,7 +12,10 @@ export interface ProviderConfig {
   region?: string;
   profile?: string;
   models: Record<string, ModelDef>;
-  modelLabels?: Record<string, { alias: string; label: string; contextWindow: number }>;
+  modelLabels?: Record<
+    string,
+    { alias: string; label: string; contextWindow: number; thinkingLevel?: string; summarizeThreshold?: number }
+  >;
   aliases?: ProviderAliases;
   agents?: Record<string, string>;
 }
@@ -35,9 +38,18 @@ export { resolveEnvVars };
 function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
   const providers: Record<string, ProviderConfig> = {};
   for (const [id, p] of Object.entries(cfg.providers)) {
-    const modelLabels: Record<string, { alias: string; label: string; contextWindow: number }> = {};
+    const modelLabels: Record<
+      string,
+      { alias: string; label: string; contextWindow: number; thinkingLevel?: string; summarizeThreshold?: number }
+    > = {};
     for (const [alias, m] of Object.entries(p.models)) {
-      modelLabels[m.modelID] = { alias, label: m.label, contextWindow: m.contextWindow };
+      modelLabels[m.modelID] = {
+        alias,
+        label: m.label,
+        contextWindow: m.contextWindow,
+        ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
+        ...(m.summarizeThreshold != null ? { summarizeThreshold: m.summarizeThreshold } : {}),
+      };
     }
     providers[id] = {
       type: p.type ?? 'anthropic',

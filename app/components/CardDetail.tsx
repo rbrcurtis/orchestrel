@@ -3,6 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch } from 'lucide-react';
 import { useCardStore, useProjectStore, useSessionStore, useConfigStore } from '~/stores/context';
 import { DEFAULT_NEW_CARD_TITLE } from '~/stores/card-store';
+import type { ConfigStore } from '~/stores/config-store';
 import { SessionView } from './SessionView';
 import { InlineEdit } from './InlineEdit';
 import { Input } from '~/components/ui/input';
@@ -63,6 +64,27 @@ type Draft = {
   thinkingLevel: string;
   summarizeThreshold: number;
 };
+
+/**
+ * A model's own configured defaults win over the project/node defaults, so a
+ * card starts on the values the model was tuned for (for example coder at
+ * medium/0.7 and deepseek at high/0.2). The project and node values are the
+ * fallback when the model defines nothing.
+ */
+function withModelDefaults(
+  config: ConfigStore,
+  nodeName: string,
+  provider: string,
+  model: string,
+  fallbackThinking: string,
+  fallbackSummarize: number,
+): { thinkingLevel: string; summarizeThreshold: number } {
+  const d = config.modelDefaultsForNode(nodeName, provider, model);
+  return {
+    thinkingLevel: d.thinkingLevel ?? fallbackThinking,
+    summarizeThreshold: d.summarizeThreshold ?? fallbackSummarize,
+  };
+}
 
 type CardFieldsProps = {
   draft: Draft;
@@ -208,18 +230,23 @@ function CardFields({
                     proj.defaultThinkingLevel ?? DEFAULT_SENTINEL,
                   )
                 : undefined;
+              const provider = resolved?.provider ?? draft.provider;
+              const model = resolved?.model ?? config.defaultModelForNode('', draft.provider);
+              const fallbackThinking = resolved?.thinkingLevel ?? draft.thinkingLevel;
+              const fallbackSummarize = proj ? (proj.defaultSummarizeThreshold ?? 0) : draft.summarizeThreshold;
+              const settings = proj
+                ? withModelDefaults(config, proj.nodeName, provider, model, fallbackThinking, fallbackSummarize)
+                : { thinkingLevel: fallbackThinking, summarizeThreshold: fallbackSummarize };
               patch({
                 projectId: pid,
                 useWorktree: !!(proj?.isGitRepo && proj.defaultWorktree),
                 worktreeBranch:
                   proj?.isGitRepo && proj.defaultWorktree ? slugify(draft.title || cardTitle) || null : null,
                 sourceBranch: null,
-                provider: resolved?.provider ?? draft.provider,
-                model: resolved?.model ?? config.defaultModelForNode('', draft.provider),
-                thinkingLevel: resolved?.thinkingLevel ?? draft.thinkingLevel,
-                // New cards inherit the project's summarize default (edit flow only
-                // when the card has no session; project change re-applies defaults)
-                summarizeThreshold: proj ? (proj.defaultSummarizeThreshold ?? 0) : draft.summarizeThreshold,
+                provider,
+                model,
+                thinkingLevel: settings.thinkingLevel,
+                summarizeThreshold: settings.summarizeThreshold,
               });
               onColorChange?.(proj?.color ?? null);
             }}
@@ -292,9 +319,14 @@ function CardFields({
             <label className="block text-xs font-medium text-muted-foreground mb-1">Provider</label>
             <Select
               value={draft.provider}
-              onValueChange={(val) =>
-                patch({ provider: val, model: config.defaultModelForNode(selectedProject.nodeName, val) })
-              }
+              onValueChange={(val) => {
+                const defaultModel = config.defaultModelForNode(selectedProject.nodeName, val);
+                patch({
+                  provider: val,
+                  model: defaultModel,
+                  ...config.modelDefaultsForNode(selectedProject.nodeName, val, defaultModel),
+                });
+              }}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -310,7 +342,16 @@ function CardFields({
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Model</label>
-            <Select key={draft.provider} value={draft.model} onValueChange={(val) => patch({ model: val })}>
+            <Select
+              key={draft.provider}
+              value={draft.model}
+              onValueChange={(val) =>
+                patch({
+                  model: val,
+                  ...config.modelDefaultsForNode(selectedProject.nodeName, draft.provider, val),
+                })
+              }
+            >
               <SelectTrigger className="w-full">
                 <span data-slot="select-value">
                   {config.getModelForNode(selectedProject.nodeName, draft.provider, draft.model)?.label ?? draft.model}
@@ -815,6 +856,14 @@ export const NewCardDetail = observer(function NewCardDetail({
           proj.defaultModel ?? DEFAULT_SENTINEL,
           proj.defaultThinkingLevel ?? DEFAULT_SENTINEL,
         );
+        const settings = withModelDefaults(
+          config,
+          proj.nodeName,
+          provider,
+          model,
+          thinkingLevel,
+          proj.defaultSummarizeThreshold ?? 0,
+        );
         return {
           title: '',
           description,
@@ -824,8 +873,8 @@ export const NewCardDetail = observer(function NewCardDetail({
           sourceBranch: null,
           provider,
           model,
-          thinkingLevel,
-          summarizeThreshold: proj.defaultSummarizeThreshold ?? 0,
+          thinkingLevel: settings.thinkingLevel,
+          summarizeThreshold: settings.summarizeThreshold,
         };
       }
     }

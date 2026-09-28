@@ -297,7 +297,13 @@ export interface SessionListMessage {
 export interface CapabilityProvider {
   id: string;
   label: string;
-  models: Array<{ alias: string; label: string; contextWindow: number }>;
+  models: Array<{
+    alias: string;
+    label: string;
+    contextWindow: number;
+    thinkingLevel?: string;
+    summarizeThreshold?: number;
+  }>;
 }
 
 export interface CapabilitiesMessage {

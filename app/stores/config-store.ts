@@ -1,6 +1,6 @@
 import { makeAutoObservable } from 'mobx';
 import { DEFAULT_SENTINEL } from '../../src/shared/ws-protocol';
-import type { ProvidersMap, ProviderConfig, ModelConfig, NodeInfo } from '../../src/shared/ws-protocol';
+import type { ProvidersMap, ProviderConfig, ModelConfig, NodeInfo, ThinkingLevel } from '../../src/shared/ws-protocol';
 
 /** Alphabetical by label, case-insensitive, with the provider id as the tie-break. */
 function byProviderLabel([aId, a]: [string, ProviderConfig], [bId, b]: [string, ProviderConfig]): number {
@@ -47,6 +47,23 @@ export class ConfigStore {
 
   getModelForNode(name: string, providerID: string, modelAlias: string): ModelConfig | undefined {
     return this.providersForNode(name)[providerID]?.models[modelAlias];
+  }
+
+  /**
+   * The node's configured defaults for one model, if any. Used when the user
+   * switches a card (or a new-session draft) to this model, so thinking level
+   * and the summarize threshold follow the model instead of the project/node.
+   */
+  modelDefaultsForNode(
+    name: string,
+    providerID: string,
+    modelAlias: string,
+  ): { thinkingLevel?: ThinkingLevel; summarizeThreshold?: number } {
+    const m = this.getModelForNode(name, providerID, modelAlias);
+    return {
+      ...(m?.thinkingLevel ? { thinkingLevel: m.thinkingLevel as ThinkingLevel } : {}),
+      ...(m?.summarizeThreshold != null ? { summarizeThreshold: m.summarizeThreshold } : {}),
+    };
   }
 
   defaultModelForNode(name: string, providerID: string): string {

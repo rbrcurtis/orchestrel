@@ -46,6 +46,12 @@ providers:
       sonnet: { label: 'Sonnet 5', modelID: claude-sonnet-5, contextWindow: 1000000 }
       haiku: { label: 'Haiku 4.5', modelID: claude-haiku-4-5-20251001, contextWindow: 200000 }
       fable: { label: 'Fable 5', modelID: claude-fable-5, contextWindow: 1000000 }
+    # Optional per-model defaults. When a card (or a new-session draft) switches
+    # to one of these models, the UI seeds the card's thinking level and
+    # summarize threshold from here. Values the user sets afterward are kept.
+    # A model without these fields leaves the current values alone.
+    #   coder:  { label: Coder, modelID: coder, contextWindow: 240000, thinkingLevel: medium, summarizeThreshold: 0.7 }
+    #   reasoner: { label: Reasoner, modelID: deepseek-reasoner, contextWindow: 128000, thinkingLevel: high, summarizeThreshold: 0.2 }
 
   # Example: Claude Max subscription auth (OAuth) instead of an API key.
   # claude-max:

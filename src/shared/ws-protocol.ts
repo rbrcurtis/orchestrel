@@ -126,6 +126,8 @@ export const modelConfigSchema = z.object({
   label: z.string(),
   modelID: z.string(),
   contextWindow: z.number(),
+  thinkingLevel: z.string().optional(),
+  summarizeThreshold: z.number().optional(),
 });
 
 export const providerConfigSchema = z.object({

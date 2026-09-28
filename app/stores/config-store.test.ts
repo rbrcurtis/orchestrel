@@ -70,6 +70,40 @@ describe('ConfigStore node capabilities', () => {
     expect(store.defaultModelForNode('local', 'trackable')).toBe('auto');
     expect(store.defaultModelForNode('unknown', 'trackable')).toBe('sonnet');
   });
+
+  it('returns per-model defaults only for the models that define them', () => {
+    const store = new ConfigStore();
+    store.hydrateNodes([
+      {
+        name: 'local',
+        connected: true,
+        providers: {
+          ray: {
+            label: 'Ray',
+            models: {
+              coder: {
+                label: 'Coder',
+                modelID: 'coder',
+                contextWindow: 240000,
+                thinkingLevel: 'medium',
+                summarizeThreshold: 0.7,
+              },
+              spark: { label: 'Spark', modelID: 'spark', contextWindow: 65536 },
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(store.modelDefaultsForNode('local', 'ray', 'coder')).toEqual({
+      thinkingLevel: 'medium',
+      summarizeThreshold: 0.7,
+    });
+    // A model with no configured defaults returns nothing, so a switch keeps
+    // the card's current thinking level and summarize threshold.
+    expect(store.modelDefaultsForNode('local', 'ray', 'spark')).toEqual({});
+    expect(store.modelDefaultsForNode('local', 'ray', 'missing')).toEqual({});
+  });
 });
 
 describe('ConfigStore resolveDefaults', () => {

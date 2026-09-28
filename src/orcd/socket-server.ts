@@ -236,6 +236,8 @@ export class OrcdServer {
         alias: m.alias,
         label: m.label,
         contextWindow: m.contextWindow,
+        ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
+        ...(m.summarizeThreshold != null ? { summarizeThreshold: m.summarizeThreshold } : {}),
       })),
     }));
     return { type: 'capabilities', requestId, name: this.opts.name, providers, defaults: this.defaults };

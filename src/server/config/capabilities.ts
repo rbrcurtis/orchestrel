@@ -42,6 +42,25 @@ export function defaultThinkingFor(nodeName: string): string | undefined {
   return getClientByNode(nodeName)?.capabilities?.defaults.thinkingLevel;
 }
 
+/**
+ * The node's configured defaults for one model, if any. A model's own defaults
+ * win over the project/node defaults, and the UI applies the same rule when the
+ * user switches a card to a model. Empty when the model defines nothing or the
+ * node has not advertised capabilities yet.
+ */
+export function modelDefaultsFor(
+  nodeName: string,
+  provider: string,
+  modelAlias: string,
+): { thinkingLevel?: string; summarizeThreshold?: number } {
+  const caps = getClientByNode(nodeName)?.capabilities;
+  const m = caps?.providers.find((x) => x.id === provider)?.models.find((x) => x.alias === modelAlias);
+  return {
+    ...(m?.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
+    ...(m?.summarizeThreshold != null ? { summarizeThreshold: m.summarizeThreshold } : {}),
+  };
+}
+
 // Convert a node's advertised capabilities into the FE provider-config shape.
 // modelID is unknown to the BE (orcd hides it), and the FE only needs
 // alias/label/contextWindow for selection, so the alias doubles as modelID.
@@ -56,7 +75,16 @@ function providersFromNode(nodeName: string): Record<string, ProviderConfig> {
     providers[p.id] = {
       label: p.label,
       models: Object.fromEntries(
-        p.models.map((m) => [m.alias, { label: m.label, modelID: m.alias, contextWindow: m.contextWindow }]),
+        p.models.map((m) => [
+          m.alias,
+          {
+            label: m.label,
+            modelID: m.alias,
+            contextWindow: m.contextWindow,
+            ...(m.thinkingLevel ? { thinkingLevel: m.thinkingLevel } : {}),
+            ...(m.summarizeThreshold != null ? { summarizeThreshold: m.summarizeThreshold } : {}),
+          },
+        ]),
       ),
     };
   }

@@ -13,7 +13,14 @@ const mockIsActive = vi.fn(() => true);
 const mockCapabilities = {
   name: 'local',
   providers: [
-    { id: 'anthropic', label: 'Anthropic', models: [{ alias: 'sonnet', label: 'Sonnet', contextWindow: 1_000_000 }] },
+    {
+      id: 'anthropic',
+      label: 'Anthropic',
+      models: [
+        { alias: 'sonnet', label: 'Sonnet', contextWindow: 1_000_000 },
+        { alias: 'coder', label: 'Coder', contextWindow: 240_000, thinkingLevel: 'low', summarizeThreshold: 0.2 },
+      ],
+    },
   ],
   defaults: { provider: 'anthropic', model: 'sonnet', thinkingLevel: 'medium' },
 };
@@ -218,6 +225,39 @@ describe('CardService', () => {
     expect(card.model).toBe('sonnet');
     expect(card.thinkingLevel).toBe('medium');
     expect(card.contextWindow).toBe(1_000_000);
+  });
+
+  it('follows the selected model defaults over the project defaults, unless the caller chose values', async () => {
+    const { cardService } = await import('./card');
+    const { projectService } = await import('./project');
+    const proj = await projectService.createProject({
+      name: 'Model defaults project',
+      path: '/tmp/model-defaults-project',
+      defaultThinkingLevel: 'high',
+      defaultSummarizeThreshold: 0.7,
+    });
+
+    const card = await cardService.createCard({
+      title: 'Model defaults card',
+      description: 'd',
+      column: 'backlog',
+      projectId: proj.id,
+      model: 'coder',
+    });
+    expect(card.thinkingLevel).toBe('low');
+    expect(card.summarizeThreshold).toBe(0.2);
+
+    const explicit = await cardService.createCard({
+      title: 'Explicit card',
+      description: 'd',
+      column: 'backlog',
+      projectId: proj.id,
+      model: 'coder',
+      thinkingLevel: 'adaptive',
+      summarizeThreshold: 0.9,
+    });
+    expect(explicit.thinkingLevel).toBe('adaptive');
+    expect(explicit.summarizeThreshold).toBe(0.9);
   });
 
   it('applies project worktree and base-branch defaults, respecting an explicit opt-out', async () => {

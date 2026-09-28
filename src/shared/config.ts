@@ -8,6 +8,10 @@ export interface ModelDef {
   label: string;
   modelID: string;
   contextWindow: number;
+  /** Default thinking level (off|low|medium|high|adaptive) applied when this model is selected on a card. */
+  thinkingLevel?: string;
+  /** Default compaction threshold (0-1) applied when this model is selected on a card. */
+  summarizeThreshold?: number;
 }
 
 export type ProviderType = 'anthropic' | 'bedrock' | 'google';
@@ -116,6 +120,8 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
         label: String(m.label ?? alias),
         modelID: resolveEnvVars(String(m.modelID), env),
         contextWindow: Number(m.contextWindow ?? 200000),
+        ...(m.thinkingLevel != null ? { thinkingLevel: String(m.thinkingLevel) } : {}),
+        ...(m.summarizeThreshold != null ? { summarizeThreshold: Number(m.summarizeThreshold) } : {}),
       };
     }
 

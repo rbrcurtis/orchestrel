@@ -52,6 +52,41 @@ providers:
     expect(cfg.providers.anthropic.label).toBe('Anthropic');
   });
 
+  it('carries per-model thinking and summarize defaults into modelLabels', () => {
+    const yaml = `
+listen: { host: 127.0.0.1, port: 7420 }
+authToken: tok
+defaultProvider: ray
+defaultModel: coder
+
+providers:
+  ray:
+    label: Ray
+    baseUrl: http://127.0.0.1:11434
+    models:
+      coder: { label: Coder, modelID: coder, contextWindow: 240000, thinkingLevel: medium, summarizeThreshold: 0.7 }
+      spark: { label: Spark, modelID: spark, contextWindow: 65536 }
+`;
+    const cfg = parseConfig(yaml, {});
+    expect(cfg.providers.ray.models.coder).toEqual({
+      label: 'Coder',
+      modelID: 'coder',
+      contextWindow: 240000,
+      thinkingLevel: 'medium',
+      summarizeThreshold: 0.7,
+    });
+    // Models without the fields omit them, so the UI leaves current values alone.
+    expect(cfg.providers.ray.models.spark).toEqual({ label: 'Spark', modelID: 'spark', contextWindow: 65536 });
+    expect(cfg.providers.ray.modelLabels?.coder).toEqual({
+      alias: 'coder',
+      label: 'Coder',
+      contextWindow: 240000,
+      thinkingLevel: 'medium',
+      summarizeThreshold: 0.7,
+    });
+    expect(cfg.providers.ray.modelLabels?.spark).toEqual({ alias: 'spark', label: 'Spark', contextWindow: 65536 });
+  });
+
   it('resolves env vars in apiKey', () => {
     const yaml = `
 listen: { host: 127.0.0.1, port: 7420 }
