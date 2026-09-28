@@ -88,7 +88,36 @@ export class SessionStore {
   private lastLiveWrite = new Map<number, number>();
   // Cache effectiveness, read by the memory sampler and reported in the pwa log so
   // the hit rate is visible from a device that cannot be profiled.
-  cacheStats = { pageRead: 0, pageHit: 0, pageMiss: 0, liveRead: 0, liveFound: 0, liveWrite: 0, liveHit: 0 };
+  cacheStats = {
+    pageRead: 0,
+    pageHit: 0,
+    pageMiss: 0,
+    liveRead: 0,
+    liveFound: 0,
+    liveWrite: 0,
+    liveHit: 0,
+    paints: 0,
+    evictions: 0,
+    cardLoads: 0,
+  };
+
+  // A snapshot of what the client is holding, so a running app can be diagnosed
+  // without a rebuild. The cost of a live transcript is not in the JS heap and not
+  // in the DOM, so the sampler reports both this and the numbers it can measure.
+  diagStats(): Record<string, number> {
+    return {
+      cards: this.cacheScopes.size,
+      replicas: this.replicas.size,
+      historyPages: this.historyPages.size,
+      historyMessages: this.historyMessages.size,
+      viewers: this.viewers.size,
+      liveBuffers: this.liveBuffers.size,
+      paints: this.cacheStats.paints,
+      evictions: this.cacheStats.evictions,
+      cardLoads: this.cacheStats.cardLoads,
+      paintCostMs: Math.round(this.paintCostMs * 10) / 10,
+    };
+  }
 
   private nextPaintDelay(): number {
     return Math.min(Math.max(LIVE_PAINT_MS, this.paintCostMs * 4), LIVE_PAINT_MAX_MS);
@@ -116,6 +145,7 @@ export class SessionStore {
       this.paintCostMs = this.paintCostMs
         ? this.paintCostMs * 0.5 + (performance.now() - started) * 0.5
         : performance.now() - started;
+      this.cacheStats.paints += 1;
       this.writeLiveCache(cardId);
     }, this.nextPaintDelay());
   }
@@ -377,6 +407,7 @@ export class SessionStore {
   evictSession(cardId: number): void {
     const s = this.sessions.get(cardId);
     if (!s || s.active) return;
+    this.cacheStats.evictions += 1;
     this.sessions.delete(cardId);
     this.historyPages.delete(cardId);
     this.historyMessages.delete(cardId);
@@ -644,6 +675,7 @@ export class SessionStore {
   }
 
   async loadHistory(cardId: number, sessionId?: string | null, opts?: { force?: boolean }): Promise<void> {
+    this.cacheStats.cardLoads += 1;
     if (this.loadingCards.has(cardId)) {
       // A view re-runs its mount effect as the board and the account arrive, and can
       // ask again for the load that is already running. That repeat fetches nothing

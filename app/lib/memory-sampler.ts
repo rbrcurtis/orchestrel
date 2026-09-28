@@ -77,7 +77,15 @@ function sample(): void {
   const cache = stats
     ? ` cachePageRead=${stats.pageRead} cachePageHit=${stats.pageHit} cachePageMiss=${stats.pageMiss} cacheLiveRead=${stats.liveRead} cacheLiveFound=${stats.liveFound} cacheLiveWrite=${stats.liveWrite} cacheLiveHit=${stats.liveHit}`
     : '';
-  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}${ios}${cache}`;
+  // What the client is holding, and how much painting it is doing. The renderer's
+  // memory sits outside all of these, so comparing the two lines is the measurement.
+  const diag = (
+    globalThis as { __rootStore?: { sessions?: { diagStats?: () => Record<string, number> } } }
+  ).__rootStore?.sessions?.diagStats?.();
+  const hold = diag
+    ? ` paint=${diag.paintCostMs}ms paints=${diag.paints} loads=${diag.cardLoads} evict=${diag.evictions} cards=${diag.cards} replicas=${diag.replicas} hist=${diag.historyMessages} pages=${diag.historyPages} viewers=${diag.viewers} liveBuf=${diag.liveBuffers}`
+    : '';
+  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}${ios}${cache}${hold}`;
   console.log(`[mem-sampler] ${line}`);
   report(line);
 }
