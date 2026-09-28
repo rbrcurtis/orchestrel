@@ -4,16 +4,21 @@ import { parseAppCommands } from '../../src/shared/slash-commands';
 import type { WsClient } from '../lib/ws-client';
 import type { SdkMessage, HistoryMessage } from '../lib/sdk-types';
 import { TranscriptReplica } from '../../src/shared/transcript-reducer';
-import type { TranscriptEnvelope, TranscriptEvent } from '../../src/shared/transcript-sync';
+import type { TranscriptCursor, TranscriptEnvelope, TranscriptEvent } from '../../src/shared/transcript-sync';
+import type { TranscriptSnapshotMessage } from '../../src/shared/orcd-protocol';
 import { renderTranscriptSnapshot } from '../lib/transcript-display';
 import { MessageAccumulator } from '../lib/message-accumulator';
 import { readTranscriptPage, writeTranscriptPage, type TranscriptCacheScope } from '../lib/transcript-cache';
 import type { TranscriptHistoryPage } from '../../src/shared/transcript-history';
+import { TRANSCRIPT_PAGE_SIZE } from '../../src/shared/transcript-history';
 
 // How many times a stop request is retried before the client gives up and
 // re-reads the real status. A card with no active turn answers 409, so an
 // uncapped poll would repeat until the page reloads.
 const STOP_ATTEMPTS = 5;
+
+// The live transcript repaint is coalesced to this interval.
+const LIVE_PAINT_MS = 100;
 
 export interface SessionState {
   active: boolean;
@@ -79,26 +84,36 @@ export class SessionStore {
           renderTranscriptSnapshot(session.accumulator, replica.displayState());
           session.historyLoaded = true;
         }),
-      100,
+      LIVE_PAINT_MS,
     );
   }
 
-  private async loadLive(cardId: number): Promise<void> {
+  private async loadLive(cardId: number, cursor?: TranscriptCursor): Promise<void> {
     if (this.liveLoading.has(cardId)) return;
     const pending: TranscriptEnvelope<TranscriptEvent>[] = [];
     this.liveLoading.set(cardId, pending);
     const scope = this.cacheScopes.get(cardId);
     try {
-      const snapshot = (await this.ws().emit('session:transcript', {
+      // With a cursor orcd answers with the events after it — sent down the normal
+      // event path and buffered in `pending` — and no snapshot. Without one, or when
+      // the cursor is too old to replay, it answers with the whole transcript state.
+      const reply = (await this.ws().emit('session:transcript', {
         cardId,
-      })) as import('../../src/shared/orcd-protocol').TranscriptSnapshotMessage['snapshot'];
-      if (!snapshot || this.cacheScopes.get(cardId) !== scope) return;
+        ...(cursor ? { cursor } : {}),
+      })) as { snapshot?: TranscriptSnapshotMessage['snapshot']; replayed?: boolean } | undefined;
+      if (this.cacheScopes.get(cardId) !== scope) return;
+      if (reply?.replayed) {
+        // The events continue the replica this cursor came from, so keep it.
+        const replica = this.replicas.get(cardId);
+        if (replica && this.applyEnvelopes(replica, pending)) this.paintLive(cardId);
+        else this.replicas.delete(cardId);
+        return;
+      }
+      const snapshot = reply?.snapshot;
+      if (!snapshot) return;
       const replica = new TranscriptReplica();
       replica.applySnapshot(snapshot.cursor, snapshot.state);
-      for (const envelope of pending) {
-        if (replica.accept(envelope).type === 'snapshot_required')
-          throw new Error('Live transcript changed during snapshot');
-      }
+      if (!this.applyEnvelopes(replica, pending)) return;
       this.replicas.set(cardId, replica);
       this.paintLive(cardId);
     } catch (err) {
@@ -106,6 +121,15 @@ export class SessionStore {
     } finally {
       this.liveLoading.delete(cardId);
     }
+  }
+
+  // Apply buffered envelopes in order. False when they do not continue the replica,
+  // which means the events missed while disconnected are not all here.
+  private applyEnvelopes(replica: TranscriptReplica, envelopes: TranscriptEnvelope<TranscriptEvent>[]): boolean {
+    for (const envelope of envelopes) {
+      if (replica.accept(envelope).type === 'snapshot_required') return false;
+    }
+    return true;
   }
 
   private pendingLoads = new Map<number, string | null | undefined>();
@@ -158,7 +182,9 @@ export class SessionStore {
   private async loadHistoryRange(cardId: number, direction: 'older' | 'newer'): Promise<void> {
     const page = this.historyPages.get(cardId);
     const session = this.sessions.get(cardId);
-    if (!page?.before || !session || session.active || this.loadingCards.has(cardId)) {
+    // A running card pages backwards too: its older rows come from the session file
+    // and the live replica paints on top of them.
+    if (!page?.before || !session || this.loadingCards.has(cardId)) {
       console.debug('[transcript] older page unavailable', cardId);
       return;
     }
@@ -179,7 +205,7 @@ export class SessionStore {
                   ? { before: page.before, revision: page.revision }
                   : { after: page.after ?? undefined, prefix: page.prefix, revision: page.revision, anchorOnly: true },
             })) as TranscriptHistoryPage | undefined);
-      if (!result || result.reset || version !== (this.messageVersions.get(cardId) ?? 0)) {
+      if (!result || result.reset || this.historyStale(cardId, scope, version)) {
         console.debug('[transcript] discarded stale older page', cardId);
         return;
       }
@@ -217,14 +243,32 @@ export class SessionStore {
     }
   }
 
+  // A running session streams while a history load is in flight, so a changed
+  // version only invalidates the page once the session has stopped: until then the
+  // live replica repaints over the history and the page is still the right window.
+  private historyStale(cardId: number, scope: TranscriptCacheScope | undefined, version: number): boolean {
+    return (
+      this.cacheScopes.get(cardId) !== scope ||
+      (!this.sessions.get(cardId)?.active && version !== (this.messageVersions.get(cardId) ?? 0))
+    );
+  }
+
   constructor() {
-    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws' | 'viewers' | 'runningLoads'>(this, {
-      stopIntervals: false,
-      loadingCards: false,
-      _ws: false,
-      viewers: false,
-      runningLoads: false,
-    });
+    makeAutoObservable<this, 'stopIntervals' | 'loadingCards' | '_ws' | 'viewers' | 'runningLoads' | 'liveLoading'>(
+      this,
+      {
+        stopIntervals: false,
+        loadingCards: false,
+        _ws: false,
+        viewers: false,
+        runningLoads: false,
+        // Make this observable and MobX stores a converted copy, so the array a load
+        // buffers live events into is not the array it later drains: every event that
+        // arrived while a snapshot was in flight was dropped, which left the replica
+        // behind and made the next event ask for another whole snapshot.
+        liveLoading: false,
+      },
+    );
   }
 
   setWs(ws: WsClient) {
@@ -526,19 +570,18 @@ export class SessionStore {
       const version = this.messageVersions.get(cardId) ?? 0;
       if (this.replicas.has(cardId)) {
         // The replica already holds the live display. Repaint it instead of
-        // refetching a snapshot from the server.
+        // refetching a snapshot from the server, and after a reconnect ask for the
+        // events after its cursor: orcd replays only those.
         this.paintLive(cardId);
+        if (opts?.force) void this.loadLive(cardId, this.replicas.get(cardId)!.currentCursor());
         return;
       }
-      if (scope && sessionId && !this.sessions.get(cardId)?.active) {
+      if (scope && sessionId) {
         const cached = await readTranscriptPage(scope, 'latest');
-        const unchanged = () =>
-          version === (this.messageVersions.get(cardId) ?? 0) &&
-          !this.sessions.get(cardId)?.active &&
-          this.cacheScopes.get(cardId) === scope;
+        const stale = () => this.historyStale(cardId, scope, version);
         const saved = cached?.records[0] as TranscriptHistoryPage | undefined;
         const valid = saved?.sessionId === sessionId && Array.isArray(saved.records) ? saved : undefined;
-        if (valid && unchanged())
+        if (valid && !stale())
           this.ingestHistory(
             cardId,
             valid.records.map((record) => record.message),
@@ -559,7 +602,7 @@ export class SessionStore {
             return undefined;
           })) as TranscriptHistoryPage | undefined;
         if (page && valid && !page.reset) {
-          const records = [...valid.records, ...page.records].slice(-120);
+          const records = [...valid.records, ...page.records].slice(-TRANSCRIPT_PAGE_SIZE);
           page = {
             ...page,
             records,
@@ -568,11 +611,11 @@ export class SessionStore {
             hasOlder: valid.hasOlder || valid.records.length + page.records.length > 120,
           };
         }
-        if (page?.hasNewer && unchanged()) {
+        if (page?.hasNewer && !stale()) {
           page = (await this.ws().emit('session:history-page', { cardId, page: {} })) as
             TranscriptHistoryPage | undefined;
         }
-        if (page && page.sessionId === sessionId && unchanged()) {
+        if (page && page.sessionId === sessionId && !stale()) {
           const confirmed = page;
           runInAction(() => this.historyPages.set(cardId, confirmed));
           this.ingestHistory(
@@ -613,16 +656,16 @@ export class SessionStore {
   }
 
   async resubscribeAll(): Promise<void> {
-    // A replica's cursor is only valid while the stream stayed connected. A break
-    // loses the deltas in between, and the client cannot tell what it missed, so
-    // drop the replicas and let the loads below refetch authoritative state. Left
-    // in place they made loadHistory() return early and the tab never caught up.
-    this.replicas.clear();
+    // A break in the stream may have skipped transcript events. Every card a view is
+    // showing re-syncs: a card that kept its replica asks for the events after its
+    // cursor and orcd replays only those, a card without one reloads its history.
+    // The node decides from the cursor, so neither path pulls the whole transcript
+    // unless the break was long enough that the events are no longer replayable.
     for (const cardId of this.subscribedCards) {
       this.requestStatus(cardId).catch((err) => console.warn('[ws] status request failed for card', cardId, err));
 
-      // Reload history only for cards a view is showing. Unmounted cards reload
-      // when their view mounts, so a reconnect must not refetch them all at once.
+      // Resync only cards a view is showing. Unmounted cards reload when their view
+      // mounts, so a reconnect must not refetch them all at once.
       const s = this.sessions.get(cardId);
       if (!s || !this.hasViewer(cardId)) continue;
       s.historyLoaded = false;

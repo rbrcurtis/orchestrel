@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { fauxAssistantMessage } from '@earendil-works/pi-ai/providers/faux';
 import { getPiSessionHistoryPage } from './pi-session-history';
+import { TRANSCRIPT_PAGE_SIZE } from '../shared/transcript-history';
 
 it('pages stable entry identities and rejects a changed prefix', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'history-page-'));
@@ -16,11 +17,11 @@ it('pages stable entry identities and rejects a changed prefix', async () => {
     }
     const id = manager.getSessionId();
     const latest = await getPiSessionHistoryPage(id, dir, {});
-    expect(latest.records).toHaveLength(120);
-    expect(new Set(latest.records.map((r) => r.id)).size).toBe(120);
+    expect(latest.records).toHaveLength(TRANSCRIPT_PAGE_SIZE);
+    expect(new Set(latest.records.map((r) => r.id)).size).toBe(TRANSCRIPT_PAGE_SIZE);
     expect(latest.hasOlder).toBe(true);
     const older = await getPiSessionHistoryPage(id, dir, { before: latest.before!, revision: latest.revision });
-    expect(older.records).toHaveLength(120);
+    expect(older.records).toHaveLength(TRANSCRIPT_PAGE_SIZE);
     expect(older.hasNewer).toBe(true);
     expect(latest.records.some((r) => older.records.some((o) => o.id === r.id))).toBe(false);
     const unchanged = await getPiSessionHistoryPage(id, dir, { after: latest.after!, prefix: latest.prefix });

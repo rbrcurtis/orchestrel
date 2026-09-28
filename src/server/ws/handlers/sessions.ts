@@ -2,15 +2,17 @@ import type { AckResponse } from '../../../shared/ws-protocol';
 import { resolveWorkDir } from '../../../shared/worktree';
 import type { AppSocket } from '../types';
 import { busRoomBridge } from '../subscriptions';
+import { trackSession } from '../../controllers/card-sessions';
 import { Card } from '../../models/Card';
 import { Project } from '../../models/Project';
 import { getPiSessionMessages, getPiSessionHistoryPage } from '../../../lib/pi-session-history';
 import { userService } from '../../services/user';
 import type { TranscriptHistoryPage, TranscriptHistoryRequest } from '../../../shared/transcript-history';
+import type { TranscriptCursor } from '../../../shared/transcript-sync';
 
 export async function handleTranscriptSnapshot(
-  data: { cardId: number },
-  callback: (res: AckResponse<import('../../../shared/orcd-protocol').TranscriptSnapshotMessage['snapshot']>) => void,
+  data: { cardId: number; cursor?: TranscriptCursor },
+  callback: (res: AckResponse<import('../../../shared/orcd-protocol').TranscriptReply>) => void,
   socket: AppSocket,
 ): Promise<void> {
   try {
@@ -27,7 +29,10 @@ export async function handleTranscriptSnapshot(
     if (!client) throw new Error('Node unavailable');
     busRoomBridge.joinCard(socket, card.id);
     client.subscribe(card.sessionId);
-    callback({ data: await client.getTranscriptSnapshot(card.sessionId) });
+    // A cursor answered by a replay pushes the missed events through the session
+    // router, so it has to know which card this session belongs to.
+    if (data.cursor) trackSession(card.id, card.sessionId);
+    callback({ data: await client.getTranscriptSnapshot(card.sessionId, data.cursor) });
   } catch (err) {
     console.warn('[session:transcript] snapshot failed', err);
     callback({ error: String(err) });

@@ -18,6 +18,7 @@ import type {
   TurnCompleteMessage,
 } from '../shared/orcd-protocol';
 import type { TaskNotificationEvent, TaskProgressEvent, TaskStartedEvent } from './async-task-tracker';
+import type { TranscriptCursor } from '../shared/transcript-sync';
 
 export type SessionEventCallback = (
   msg:
@@ -288,6 +289,10 @@ export class OrcdSession {
 
   getTranscriptSnapshot() {
     return this.piSession?.getTranscriptSnapshot() ?? null;
+  }
+
+  replayTranscript(cursor: TranscriptCursor | undefined) {
+    return this.piSession?.replayTranscript(cursor);
   }
 
   private emitMappedPiEvent(event: unknown): void {

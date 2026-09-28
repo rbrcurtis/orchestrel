@@ -173,6 +173,27 @@ export class OrcdServer {
         break;
       case 'get_transcript': {
         const session = this.store.get(action.sessionId);
+        const decision = session?.replayTranscript(action.cursor);
+        if (decision?.type === 'replay') {
+          // The subscriber's cursor is still inside the replay window, so the events
+          // after it are all it needs. Send them down the normal event path and skip
+          // the snapshot: the client applies them to the replica that produced the
+          // cursor. Only a cursor orcd cannot replay falls back to a snapshot.
+          for (const envelope of decision.events) {
+            this.send(client, {
+              type: 'stream_event',
+              sessionId: action.sessionId,
+              event: { type: 'transcript_event', envelope },
+            });
+          }
+          this.send(client, {
+            type: 'transcript_snapshot',
+            requestId: action.requestId,
+            snapshot: null,
+            replayed: true,
+          });
+          break;
+        }
         this.send(client, {
           type: 'transcript_snapshot',
           requestId: action.requestId,

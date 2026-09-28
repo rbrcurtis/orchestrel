@@ -119,6 +119,12 @@ export class TranscriptReplica {
   displayState(): TranscriptState {
     return this.state;
   }
+
+  // Cursor of the last applied event. A reconnect sends it back so orcd can replay
+  // only what was missed. Read-only, like displayState().
+  currentCursor(): TranscriptCursor | undefined {
+    return this.cursor;
+  }
 }
 
 function applyAssistantUpdate(

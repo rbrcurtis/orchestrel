@@ -143,6 +143,9 @@ export interface GetTranscriptAction {
   action: 'get_transcript';
   requestId?: string;
   sessionId: string;
+  // The subscriber's last known cursor. When orcd still holds the events after
+  // it, it replays only those instead of rebuilding the whole transcript state.
+  cursor?: import('./transcript-sync').TranscriptCursor;
 }
 
 export interface GetHistoryPageAction {
@@ -206,7 +209,9 @@ export interface SessionCreatedMessage {
 export interface StreamEventMessage {
   type: 'stream_event';
   sessionId: string;
-  eventIndex: number;
+  // Index into the session's raw event buffer, set by a reconnect replay. A
+  // transcript envelope replay carries its own cursor, so it omits this.
+  eventIndex?: number;
   event: unknown; // Runtime stream event
 }
 
@@ -302,6 +307,16 @@ export interface TranscriptSnapshotMessage {
     cursor: import('./transcript-sync').TranscriptCursor;
     state: import('./transcript-sync').TranscriptState;
   } | null;
+  // Set when orcd answered the cursor with the missed events (sent through the
+  // normal stream_event path) and no snapshot was needed.
+  replayed?: boolean;
+}
+
+export interface TranscriptReply {
+  snapshot: TranscriptSnapshotMessage['snapshot'];
+  // True when the events after the caller's cursor were replayed, so `snapshot`
+  // is null and the caller keeps the state it already had.
+  replayed: boolean;
 }
 
 export interface HistoryPageMessage {

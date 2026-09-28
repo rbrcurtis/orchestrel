@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { TranscriptHistoryPage, TranscriptHistoryRequest } from '../shared/transcript-history';
+import { TRANSCRIPT_PAGE_SIZE } from '../shared/transcript-history';
 import { collectDisplayPrompts, originalPromptText } from './display-prompt';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -256,7 +257,7 @@ export async function getPiSessionHistoryPage(
   let bytes = 0;
   const forward = !!request.after && !reset;
   if (forward) {
-    for (let i = start; i < end && page.length < 120; i++) {
+    for (let i = start; i < end && page.length < TRANSCRIPT_PAGE_SIZE; i++) {
       const size = Buffer.byteLength(JSON.stringify(records[i]));
       if (page.length && bytes + size > 1_048_576) break;
       page.push(records[i]);
@@ -264,7 +265,7 @@ export async function getPiSessionHistoryPage(
     }
     end = start + page.length;
   } else {
-    for (let i = end - 1; i >= start && page.length < 120; i--) {
+    for (let i = end - 1; i >= start && page.length < TRANSCRIPT_PAGE_SIZE; i--) {
       const size = Buffer.byteLength(JSON.stringify(records[i]));
       if (page.length && bytes + size > 1_048_576) break;
       page.unshift(records[i]);

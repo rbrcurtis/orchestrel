@@ -232,8 +232,8 @@ export interface ClientToServerEvents {
 
   // Session
   'session:transcript': (
-    data: { cardId: number },
-    ack: (res: AckResponse<import('./orcd-protocol').TranscriptSnapshotMessage['snapshot']>) => void,
+    data: { cardId: number; cursor?: import('./transcript-sync').TranscriptCursor },
+    ack: (res: AckResponse<import('./orcd-protocol').TranscriptReply>) => void,
   ) => void;
   'session:history-page': (
     data: { cardId: number; page: import('./transcript-history').TranscriptHistoryRequest },

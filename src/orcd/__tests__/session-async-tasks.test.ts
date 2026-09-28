@@ -45,6 +45,11 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
       cursor: { streamId: 'test', sequence: 0 },
       state: { baseline: [], baselineThrough: 0, overlay: [], events: [] },
     })),
+    replayTranscript: vi.fn(() => ({
+      type: 'snapshot' as const,
+      cursor: { streamId: 'test', sequence: 0 },
+      state: { baseline: [], baselineThrough: 0, overlay: [], events: [] },
+    })),
     debugLeafState: vi.fn(() => ({
       tag: 'test',
       leafId: null,

@@ -443,10 +443,12 @@ export class OrcdClient {
   /**
    * Get session history (conversation messages) from the remote node's local files.
    */
-  async getTranscriptSnapshot(sessionId: string) {
-    const msg = await this.request({ action: 'get_transcript', sessionId });
+  async getTranscriptSnapshot(sessionId: string, cursor?: import('../shared/transcript-sync').TranscriptCursor) {
+    const msg = await this.request({ action: 'get_transcript', sessionId, ...(cursor ? { cursor } : {}) });
     if (msg.type !== 'transcript_snapshot') throw new Error('Expected transcript snapshot');
-    return msg.snapshot;
+    // A replayed answer carries no snapshot: orcd already sent the events the
+    // caller missed, so the caller keeps the state it had.
+    return { snapshot: msg.snapshot, replayed: msg.replayed === true };
   }
 
   async getHistoryPage(

@@ -460,15 +460,17 @@ describe('SessionStore resubscribeAll', () => {
     expect(emit).toHaveBeenCalledWith('agent:status', { cardId: 2 });
   });
 
-  it('refetches a card after a reconnect even when it holds a live replica', async () => {
-    // A replica's cursor is only valid while the stream stayed connected. A socket
-    // break loses the deltas in between, so a reconnect must ask the server again
-    // instead of repainting the replica the store already holds.
+  it('asks for the events after the replica cursor after a reconnect', async () => {
+    // A socket break can lose transcript events. The replica keeps its cursor, so
+    // the reconnect asks for the events after it and the node replays only those,
+    // instead of the client rebuilding the whole transcript state.
     const snapshot = {
       cursor: { streamId: 'stream-1', sequence: 1 },
       state: { baseline: [], baselineThrough: 0, overlay: [], events: [] },
     };
-    const emit = vi.fn(async (event: string) => (event === 'session:transcript' ? snapshot : { messages: [] }));
+    const emit = vi.fn(async (event: string) =>
+      event === 'session:transcript' ? { snapshot, replayed: false } : { messages: [] },
+    );
     const store = new SessionStore();
     store.setWs({ emit } as unknown as WsClient);
     store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-1' });
@@ -488,14 +490,20 @@ describe('SessionStore resubscribeAll', () => {
     emit.mockClear();
     await store.resubscribeAll();
 
-    expect(emit).toHaveBeenCalledWith('session:load', { cardId: 7, sessionId: 'sess-1' });
+    // The cursor travels with the request, so the node answers with the delta — or
+    // with a snapshot when it cannot replay — and never with the whole transcript.
+    expect(emit).toHaveBeenCalledWith('session:transcript', {
+      cardId: 7,
+      cursor: { streamId: 'stream-1', sequence: 1 },
+    });
+    expect(emit).not.toHaveBeenCalledWith('session:load', { cardId: 7, sessionId: 'sess-1' });
   });
 });
 
 // A card view re-runs its mount effect as the board data and the account arrive,
 // and each run asked for the same session again. Those repeats were queued, so one
 // card open fetched the same history page three times.
-describe('SessionStore load deduplication', () => {
+describe('SessionStore history loading', () => {
   function runningStatus(cardId: number, sessionId: string) {
     return {
       cardId,
@@ -535,25 +543,129 @@ describe('SessionStore load deduplication', () => {
   });
 
   it('still reloads when a turn ends while the same load is in flight', async () => {
-    const pending: Array<(result: unknown) => void> = [];
+    const pending: Array<(page: TranscriptHistoryPage) => void> = [];
     const emit = vi.fn((event: string) => {
-      if (event === 'session:load') return new Promise((resolve) => pending.push(resolve));
+      if (event === 'session:history-page') {
+        return new Promise<TranscriptHistoryPage>((resolve) => pending.push(resolve));
+      }
       return Promise.resolve(historyPage({ records: [] }));
     });
     const store = new SessionStore();
     store.setWs({ emit } as unknown as WsClient);
-    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-1' });
-    store.handleAgentStatus(runningStatus(7, 'sess-1'));
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-turn' });
+    store.handleAgentStatus(runningStatus(7, 'sess-turn'));
 
-    const first = store.loadHistory(7, 'sess-1');
+    const first = store.loadHistory(7, 'sess-turn');
     await vi.waitFor(() => expect(pending).toHaveLength(1));
 
     // The backfill that catches the final assistant message must survive the dedupe.
-    store.handleAgentStatus({ ...runningStatus(7, 'sess-1'), active: false, status: 'completed' });
+    store.handleAgentStatus({ ...runningStatus(7, 'sess-turn'), active: false, status: 'completed' });
     const fetches = () =>
       emit.mock.calls.filter((call) => call[0] === 'session:load' || call[0] === 'session:history-page');
-    pending[0]!({ messages: [] });
+    pending[0]!(historyPage({ sessionId: 'sess-turn', records: [] }));
     await first;
     await vi.waitFor(() => expect(fetches()).toHaveLength(2));
+  });
+
+  // A running card used to skip the cache and the diff entirely and refetch every
+  // message through session:load, on every reconnect and every page load.
+  it('loads a running card from the paged history instead of the whole transcript', async () => {
+    const emit = vi.fn(async (event: string) => {
+      if (event === 'session:history-page') {
+        return historyPage({ sessionId: 'sess-live', records: [{ id: 'id1', message: userHistory('id1', 'one') }] });
+      }
+      return { messages: [userHistory('id1', 'one')] };
+    });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-live' });
+    store.handleAgentStatus({ ...runningStatus(7, 'sess-live'), active: true, status: 'running' });
+
+    await store.loadHistory(7, 'sess-live');
+
+    expect(emit).toHaveBeenCalledWith('session:history-page', { cardId: 7, page: {} });
+    expect(emit).not.toHaveBeenCalledWith('session:load', expect.anything());
+    expect(store.getSession(7)!.historyLoaded).toBe(true);
+  });
+
+  // A focused card is usually running. Scroll-up used to be refused outright for a
+  // running card, and a live event during the fetch threw the older page away.
+  it('pages backwards on a running card and keeps the page when a live event lands', async () => {
+    const latest = historyPage({
+      sessionId: 'sess-scroll',
+      records: [{ id: 'id3', message: userHistory('id3', 'three') }],
+      before: 'id3',
+      after: 'id3',
+      hasOlder: true,
+    });
+    const older = historyPage({
+      sessionId: 'sess-scroll',
+      records: [{ id: 'id2', message: userHistory('id2', 'two') }],
+      before: 'id2',
+      after: 'id2',
+    });
+    const store = new SessionStore();
+    const emit = vi.fn(async (event: string, data: { page?: { before?: string } }) => {
+      if (event !== 'session:history-page') return { messages: [] };
+      if (!data.page?.before) return latest;
+      // A live event during the fetch must not turn the older page away.
+      store.ingestSdkMessage(7, {
+        type: 'stream_event',
+        event: {
+          type: 'message_start',
+          message: { id: 'msg-1', role: 'assistant', model: 'test-model', content: [] },
+        },
+      } as SdkMessage);
+      return older;
+    });
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-scroll' });
+    store.handleAgentStatus({ ...runningStatus(7, 'sess-scroll'), active: true, status: 'running' });
+    await store.loadHistory(7, 'sess-scroll');
+
+    await store.loadOlderHistory(7);
+
+    const contents = store
+      .getSession(7)!
+      .accumulator.conversation.filter((entry) => entry.kind === 'user')
+      .map((entry) => (entry.kind === 'user' ? entry.content : ''));
+    expect(contents).toEqual(['two', 'three']);
+  });
+
+  // orcd answers a cursor it can replay with the missed events and no snapshot.
+  // Those events arrive while the request is in flight, so dropping them would
+  // leave a hole where a snapshot should not have been needed.
+  it('applies replayed events to the replica it already holds', async () => {
+    const snapshot = {
+      cursor: { streamId: 'stream-1', sequence: 1 },
+      state: { baseline: [], baselineThrough: 0, overlay: [], events: [] },
+    };
+    const envelope = (sequence: number) => ({
+      cursor: { streamId: 'stream-1', sequence },
+      event: { type: 'pi_event', event: {} },
+    });
+    const store = new SessionStore();
+    const emit = vi.fn(async (event: string, data: { cursor?: unknown }) => {
+      if (event !== 'session:transcript') return { messages: [] };
+      if (!data.cursor) return { snapshot, replayed: false };
+      store.ingestSdkMessage(7, { type: 'transcript_event', envelope: envelope(2) });
+      return { snapshot: null, replayed: true };
+    });
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, { userId: 1, nodeName: 'local', sessionId: 'sess-replay' });
+    store.handleAgentStatus({ ...runningStatus(7, 'sess-replay'), active: true, status: 'running' });
+    const cursor = () =>
+      (store as unknown as { replicas: Map<number, { currentCursor(): unknown }> }).replicas.get(7)?.currentCursor();
+
+    store.ingestSdkMessage(7, { type: 'transcript_event', envelope: envelope(1) });
+    await vi.waitFor(() => expect(cursor()).toEqual({ streamId: 'stream-1', sequence: 1 }));
+
+    await store.loadHistory(7, 'sess-replay', { force: true });
+
+    expect(emit).toHaveBeenCalledWith('session:transcript', {
+      cardId: 7,
+      cursor: { streamId: 'stream-1', sequence: 1 },
+    });
+    await vi.waitFor(() => expect(cursor()).toEqual({ streamId: 'stream-1', sequence: 2 }));
   });
 });

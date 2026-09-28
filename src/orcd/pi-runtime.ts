@@ -1,6 +1,7 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
 import { randomUUID } from 'node:crypto';
 import { TranscriptSync } from './transcript-sync';
+import type { ReplayDecision, TranscriptCursor, TranscriptEvent, TranscriptState } from '../shared/transcript-sync';
 import {
   DEFAULT_COMPACTION_SETTINGS,
   DefaultResourceLoader,
@@ -81,6 +82,11 @@ export interface PiRuntimeSession {
   setModel(provider: string, model: string): Promise<void>;
   getMessages(): unknown[];
   getTranscriptSnapshot(): ReturnType<TranscriptSync['snapshot']>;
+  /**
+   * Answer a subscriber's cursor with the events it missed, or a snapshot when the
+   * cursor is too old, from another stream, or ahead of this one.
+   */
+  replayTranscript(cursor: TranscriptCursor | undefined): ReplayDecision<TranscriptEvent, TranscriptState>;
   /**
    * Temporary diagnostic probe for the "chat lost when a background subagent
    * finishes" bug: reports the SessionManager instance tag + current leaf so we
@@ -326,6 +332,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     id: session.sessionId,
     getTranscriptSnapshot() {
       return transcript.snapshot();
+    },
+
+    replayTranscript(cursor) {
+      return transcript.replaySince(cursor);
     },
 
     async prompt(text, promptOpts) {
