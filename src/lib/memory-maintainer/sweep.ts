@@ -30,8 +30,21 @@ interface SessionHeader {
   cwd?: string;
 }
 
-export function sweepSessions(memory: MemoryConfig): SweepResult {
+export interface SweepOptions {
+  /**
+   * When false, do not require the session cwd to map to a knowledge project —
+   * the preference sweep wants every settled session with human prompts,
+   * including projects not in `memory.projects`. projectKey is '' for those.
+   */
+  requireProject?: boolean;
+  /** Watermark table. The preference sweep uses its own so the two sweeps do not clobber each other. */
+  watermarkTable?: 'memory_maintainer_watermark' | 'preference_maintainer_watermark';
+}
+
+export function sweepSessions(memory: MemoryConfig, opts?: SweepOptions): SweepResult {
   const sessionsDir = join(getAgentDir(), 'sessions');
+  const requireProject = opts?.requireProject !== false;
+  const watermarkTable = opts?.watermarkTable ?? 'memory_maintainer_watermark';
   const db = getDb();
   const now = Date.now();
   const files: SessionFile[] = [];
@@ -71,16 +84,21 @@ export function sweepSessions(memory: MemoryConfig): SweepResult {
         result.droppedWindow += 1;
         continue;
       }
-      const seen = db.prepare('SELECT mtime_ms, size FROM memory_maintainer_watermark WHERE path = ?').get(path) as
-        { mtime_ms: number; size: number } | undefined;
+      const seen = db
+        .prepare(`SELECT mtime_ms, size FROM ${watermarkTable} WHERE path = ?`)
+        .get(path) as { mtime_ms: number; size: number } | undefined;
       if (seen && seen.mtime_ms === st.mtimeMs && seen.size === st.size) continue;
 
       const header = readHeader(path);
       if (!header?.cwd) continue;
-      const routed = routeProject(header.cwd, memory);
-      if (!routed) {
-        result.droppedUnknownProject += 1;
-        continue;
+      let projectKey = '';
+      if (requireProject) {
+        const routed = routeProject(header.cwd, memory);
+        if (!routed) {
+          result.droppedUnknownProject += 1;
+          continue;
+        }
+        projectKey = routed.key;
       }
       const stats = scanSession(path);
       if (stats.userMessages === 0 || stats.assistantTurns < 3) {
@@ -93,7 +111,7 @@ export function sweepSessions(memory: MemoryConfig): SweepResult {
         size: st.size,
         sessionId: header.id ?? name,
         cwd: header.cwd,
-        projectKey: routed.key,
+        projectKey,
       });
     }
   }

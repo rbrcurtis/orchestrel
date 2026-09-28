@@ -8,7 +8,21 @@ import { ensureWorktree } from '../sessions/worktree';
 import { windowForCard } from '../config/capabilities';
 import { parseAppCommands, type AppSlashAction } from '../../shared/slash-commands';
 import type { OrcdClient } from '../orcd-client';
+import { SYSTEM_AUTHOR, type OrcdAuthor } from '../../shared/orcd-protocol';
 import type { FileRef } from '../../shared/ws-protocol';
+
+/** The socket/REST identity that drove a turn (numeric users.id is the stable key). */
+export interface PromptIdentity {
+  id: number;
+  email: string;
+  role: string;
+}
+
+function authorForIdentity(identity: PromptIdentity | undefined): OrcdAuthor {
+  return identity
+    ? { userId: identity.id, email: identity.email, kind: 'human' }
+    : SYSTEM_AUTHOR;
+}
 
 export class CardExecutionError extends Error {
   constructor(
@@ -32,7 +46,13 @@ async function cardAndClient(cardId: number) {
   return { card, client };
 }
 
-export async function submitCardPrompt(cardId: number, message: string, files?: FileRef[]): Promise<Card | null> {
+export async function submitCardPrompt(
+  cardId: number,
+  message: string,
+  files?: FileRef[],
+  identity?: PromptIdentity,
+): Promise<Card | null> {
+  const author = authorForIdentity(identity);
   // App slash commands (/done, /archive, /ready, /sleep, /delete) are addressed
   // to Orchestrel, not the model: strip them from the prompt, send what remains,
   // then apply the card action. A message of only app commands acts without
@@ -77,7 +97,7 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
       if (err instanceof SleepResolutionError && err.unreachable) {
         console.log(`[session:${cardId}] app command /sleep: resolver down, sending it as a normal prompt`);
         broadcastCardError(cardId, `Sleep time not resolved (${msg}) — the card runs now and the agent does the wait.`);
-        return sendPrompt(cardId, message, files);
+        return sendPrompt(cardId, message, files, author);
       }
       broadcastCardError(cardId, `Sleep failed: ${msg}`);
       throw new CardExecutionError(422, 'sleep_unresolved', msg);
@@ -92,7 +112,7 @@ export async function submitCardPrompt(cardId: number, message: string, files?: 
     return moveCardToColumn(cardId, action);
   }
 
-  const card = await sendPrompt(cardId, text, files);
+  const card = await sendPrompt(cardId, text, files, author);
   if (action) {
     console.log(`[session:${cardId}] app command /${action}: moving card after prompt`);
     return moveCardToColumn(cardId, action);
@@ -160,7 +180,12 @@ async function stagePromptFiles(client: OrcdClient, cardId: number, files: FileR
   return staged;
 }
 
-async function sendPrompt(cardId: number, message: string, files?: FileRef[]): Promise<Card> {
+async function sendPrompt(
+  cardId: number,
+  message: string,
+  files?: FileRef[],
+  author: OrcdAuthor = SYSTEM_AUTHOR,
+): Promise<Card> {
   // A prompt reopens a card from any column, including done/archive: the
   // explicit prompt is what pulls it back into play.
   const { card, client } = await cardAndClient(cardId);
@@ -173,7 +198,7 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
     trackSession(cardId, card.sessionId);
     // Carry the current card effort so the active session re-syncs its
     // thinking level before this prompt (see orcd run()).
-    client.message(card.sessionId, prompt, card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel);
+    client.message(card.sessionId, prompt, card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel, author);
     if (card.column !== 'running') card.column = 'running';
     card.sleepUntil = null;
     card.updatedAt = new Date().toISOString();
@@ -209,6 +234,7 @@ async function sendPrompt(cardId: number, message: string, files?: FileRef[]): P
       contextWindow: window,
       summarizeThreshold: card.summarizeThreshold,
       effort: card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel,
+      author,
     });
 
     card.sessionId = sessionId;

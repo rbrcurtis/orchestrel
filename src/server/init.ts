@@ -3,6 +3,7 @@ import type { Router as ExpressRouter, Request, Response, NextFunction } from 'e
 import { Server as IoServer } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from '../shared/ws-protocol';
 import { startMemoryMaintainer } from '../lib/memory-maintainer/scheduler';
+import { startPreferenceMaintainer } from '../lib/preference-maintainer/scheduler';
 
 // Production-mode backend init, used by server.js when NODE_ENV !== 'development'.
 // Mirrors the dev-mode init in ws/server.ts (wsServerPlugin) minus the Vite
@@ -130,6 +131,7 @@ export async function initBackend(): Promise<{
   console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
   startMemoryMaintainer();
+  startPreferenceMaintainer();
 
   const { startSleepWaker } = await import('./services/sleep');
   startSleepWaker();

@@ -2,11 +2,11 @@
  * src/orcd/pi-runtime.ts provider registration. In stage mode, search executes
  * and store/update/delete are recorded as StagedOps; in write mode they execute
  * against the memory API and are still recorded for the run log. */
-import type { Api, Message, Model, Tool, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
+import type { Api, Message, Model, Tool, ToolCall, ToolResultMessage, ThinkingLevel } from '@earendil-works/pi-ai';
 import { Type } from '@earendil-works/pi-ai';
 import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
-import type { MemoryConfig, OrchestrelConfig, ProviderDef } from '../../shared/config';
+import type { OrchestrelConfig, ProviderDef } from '../../shared/config';
 import { SECRETS_PATTERN, type Excerpt } from './excerpt';
 import { loadMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
 import type { MemoryServer, StagedOp } from './memory-api';
@@ -21,16 +21,26 @@ export interface ConsolidateOpts {
   model: Model<Api>;
   maxTurns: number;
   mode: 'stage' | 'write';
+  /** Override the consolidation system prompt (preference pass uses its own). */
+  systemPrompt?: string;
+  /** Thinking level for the consolidation model. Omitted = provider default. */
+  reasoning?: ThinkingLevel;
 }
 
+/**
+ * Build a pi-ai model runtime for a configured provider/model. Used by the
+ * knowledge maintainer with `memory.provider`/`memory.model` and by the
+ * preference maintainer with the node defaults from orcd.yaml.
+ */
 export async function buildModel(
   cfg: OrchestrelConfig,
-  memory: MemoryConfig,
+  providerId: string,
+  modelId: string,
 ): Promise<{ runtime: ModelRuntime; model: Model<Api> }> {
-  const provider = cfg.providers[memory.provider];
-  if (!provider) throw new Error(`memory: provider "${memory.provider}" not in config`);
-  const modelDef = provider.models[memory.model];
-  if (!modelDef) throw new Error(`memory: model "${memory.model}" not in provider "${memory.provider}"`);
+  const provider = cfg.providers[providerId];
+  if (!provider) throw new Error(`memory: provider "${providerId}" not in config`);
+  const modelDef = provider.models[modelId];
+  if (!modelDef) throw new Error(`memory: model "${modelId}" not in provider "${providerId}"`);
 
   const agentDir = getAgentDir();
   const runtime = await ModelRuntime.create({
@@ -38,9 +48,9 @@ export async function buildModel(
     modelsPath: `${agentDir}/models.json`,
   });
   const registry = new ModelRegistry(runtime);
-  registry.registerProvider(memory.provider, toProviderConfig(provider, modelDef.modelID));
-  const model = registry.find(memory.provider, modelDef.modelID);
-  if (!model) throw new Error(`memory: failed to resolve model ${memory.provider}/${modelDef.modelID}`);
+  registry.registerProvider(providerId, toProviderConfig(provider, modelDef.modelID));
+  const model = registry.find(providerId, modelDef.modelID);
+  if (!model) throw new Error(`memory: failed to resolve model ${providerId}/${modelDef.modelID}`);
   return { runtime, model };
 }
 
@@ -115,7 +125,11 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
   ];
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    const msg = await runtime.completeSimple(model, { systemPrompt: SYSTEM_PROMPT, messages, tools });
+    const msg = await runtime.completeSimple(
+      model,
+      { systemPrompt: opts.systemPrompt ?? SYSTEM_PROMPT, messages, tools },
+      opts.reasoning ? { reasoning: opts.reasoning } : undefined,
+    );
     messages.push(msg);
     const calls = msg.content.filter((b): b is ToolCall => b.type === 'toolCall');
     if (calls.length === 0) break;

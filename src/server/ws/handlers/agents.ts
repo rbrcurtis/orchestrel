@@ -32,7 +32,7 @@ export async function handleAgentSend(
       return;
     }
 
-    await submitCardPrompt(cardId, message, files);
+    await submitCardPrompt(cardId, message, files, socket.data.identity);
   } catch (err) {
     console.error(`[session:${cardId}] agent:send error:`, err instanceof Error ? err.message : String(err));
   }

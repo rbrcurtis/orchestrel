@@ -262,7 +262,7 @@ export class OrcdServer {
       }
       this.send(client, { type: 'session_created', sessionId: existing.id });
       const runPrompt = () =>
-        existing.sendMessage(action.prompt, action.effort).finally(() => {
+        existing.sendMessage(action.prompt, action.effort, action.author).finally(() => {
           console.log(`[orcd] session ${existing.id.slice(0, 8)} follow-up exited (state=${existing.state})`);
         });
       // Self-heal a stale runtime: a card's provider/model may have changed
@@ -329,6 +329,7 @@ export class OrcdServer {
         prompt: action.prompt,
         resume: !!action.sessionId,
         effort,
+        author: action.author,
       })
       .finally(() => {
         console.log(`[orcd] session ${session.id.slice(0, 8)} exited (state=${session.state})`);
@@ -422,7 +423,7 @@ export class OrcdServer {
       return;
     }
 
-    session.sendMessage(action.prompt, action.effort).finally(() => {
+    session.sendMessage(action.prompt, action.effort, action.author).finally(() => {
       console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
     });
   }

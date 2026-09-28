@@ -107,3 +107,51 @@ memory:
     expect(() => parseConfig(bad, {})).toThrow('apiKey');
   });
 });
+
+describe('memory.preferences config', () => {
+  beforeEach(() => resetConfigCache());
+
+  const WITH_PREFS = `
+providers:
+  max:
+    models:
+      assistant: { modelID: qwen3.8-27b-oq8 }
+memory:
+  provider: max
+  model: assistant
+  projects:
+    trackable:
+      match: ["/home/ryan/Code/trackable"]
+      apiUrl: https://memory.trackable.io
+      apiKey: "k"
+      project: trackable
+  preferences:
+    apiUrl: https://memory.trackable.io
+    apiKey: "\${TRACKABLE_MEMORY_API_KEY}"
+    project: preferences
+    stalenessDays: 14
+`;
+
+  it('parses the canonical preferences project and resolves its env apiKey', () => {
+    const cfg = parseConfig(WITH_PREFS, { TRACKABLE_MEMORY_API_KEY: 'pref-key' });
+    expect(cfg.memory?.preferences).toEqual({
+      apiUrl: 'https://memory.trackable.io',
+      apiKey: 'pref-key',
+      project: 'preferences',
+      stalenessDays: 14,
+    });
+  });
+
+  it('omits stalenessDays when absent so the maintainer default applies', () => {
+    const cfg = parseConfig(WITH_PREFS.replace('    stalenessDays: 14\n', ''), { TRACKABLE_MEMORY_API_KEY: 'k' });
+    expect(cfg.memory?.preferences?.stalenessDays).toBeUndefined();
+  });
+
+  it('throws when the preferences entry lacks apiUrl or project', () => {
+    const bad = WITH_PREFS.replace(
+      '    apiUrl: https://memory.trackable.io\n    apiKey: "${TRACKABLE_MEMORY_API_KEY}"\n    project: preferences\n',
+      '    apiKey: "k"\n',
+    );
+    expect(() => parseConfig(bad, {})).toThrow('memory.preferences');
+  });
+});

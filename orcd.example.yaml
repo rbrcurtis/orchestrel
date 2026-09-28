@@ -132,3 +132,8 @@ memory:
       apiUrl: https://memory.trackable.io
       apiKey: ${TRACKABLE_MEMORY_API_KEY}
       project: trackable
+  preferences: # canonical per-user preference memories (preference maintainer); omit to disable
+    apiUrl: https://memory.trackable.io
+    apiKey: ${TRACKABLE_MEMORY_API_KEY}
+    project: preferences
+    stalenessDays: 30 # drop a preference not re-observed within this many days

@@ -16,10 +16,18 @@ interface SessionEntry {
   id?: string;
   timestamp?: string;
   cwd?: string;
+  customType?: string;
+  data?: unknown;
   message?: {
     role?: string;
     content?: unknown;
   };
+}
+
+interface PendingAuthor {
+  kind: string;
+  userId: number;
+  email: string;
 }
 
 const TOOL_ARGS_CAP = 200;
@@ -27,10 +35,35 @@ const TOOL_RESULT_CAP = 400;
 
 export const SECRETS_PATTERN = /sk-[A-Za-z0-9]{20,}|Bearer\s+\S+|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 
-export function buildExcerpt(path: string, maxTokens: number): Excerpt {
+/** Distinct human (non-system) authors in a session, by numeric users.id, with the email used for the canonical preference title. */
+export function listHumanAuthors(path: string): Array<{ userId: number; email: string }> {
+  const byId = new Map<number, string>();
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    if (!line) continue;
+    let entry: SessionEntry;
+    try {
+      entry = JSON.parse(line) as SessionEntry;
+    } catch {
+      continue;
+    }
+    if (entry.type === 'custom' && entry.customType === 'orc.author') {
+      const a = entry.data as { kind?: string; userId?: number; email?: string } | undefined;
+      if (a && a.kind === 'human' && typeof a.userId === 'number' && a.userId > 0 && !byId.has(a.userId)) {
+        byId.set(a.userId, a.email ?? `user-${a.userId}`);
+      }
+    }
+  }
+  return [...byId].map(([userId, email]) => ({ userId, email }));
+}
+
+export function buildExcerpt(path: string, maxTokens: number, opts?: { humanOnly?: boolean; userId?: number }): Excerpt {
   let sessionId = '';
   let cwd = '';
   let startedAt = '';
+  // The author of the next user message. orcd writes an `orc.author` custom
+  // entry immediately before each user message; we carry it forward so the
+  // excerpt can attribute each turn (human vs system) to the maintainer.
+  let pendingAuthor: PendingAuthor | null = null;
   const parts: string[] = [];
 
   for (const line of readFileSync(path, 'utf8').split('\n')) {
@@ -47,10 +80,31 @@ export function buildExcerpt(path: string, maxTokens: number): Excerpt {
       startedAt = entry.timestamp ?? startedAt;
       continue;
     }
+    if (entry.type === 'custom' && entry.customType === 'orc.author') {
+      const a = entry.data as { userId?: number; email?: string; kind?: string } | undefined;
+      if (a) pendingAuthor = { kind: a.kind ?? 'system', userId: a.userId ?? 0, email: a.email ?? 'system' };
+      continue;
+    }
     if (entry.type !== 'message' || !entry.message) continue;
     const role = entry.message.role;
     const content = entry.message.content;
+
+    // Preference pass: keep only the target human's own user turns. Preferences
+    // and corrections live in what the person typed; system prompts and other
+    // people's prompts must never feed one user's preference memory.
+    if (opts?.humanOnly) {
+      if (role === 'user' && pendingAuthor?.kind === 'human' && (opts.userId == null || pendingAuthor.userId === opts.userId)) {
+        parts.push(redact(`USER: ${contentText(content)}`));
+      }
+      pendingAuthor = null;
+      continue;
+    }
+
     if (role === 'user') {
+      if (pendingAuthor) {
+        parts.push(redact(`AUTHOR: kind=${pendingAuthor.kind} userId=${pendingAuthor.userId} email=${pendingAuthor.email}`));
+        pendingAuthor = null;
+      }
       parts.push(redact(`USER: ${contentText(content)}`));
     } else if (role === 'assistant') {
       for (const block of contentBlocks(content)) {

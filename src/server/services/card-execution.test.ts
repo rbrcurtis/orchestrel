@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { SYSTEM_AUTHOR } from '../../shared/orcd-protocol';
 
 const mockFindOneBy = vi.fn();
 const mockFindOne = vi.fn();
@@ -101,7 +102,7 @@ describe('submitCardPrompt app slash commands', () => {
 
     await submitCardPrompt(42, 'great! /merge /qa /archive');
 
-    expect(mockMessage).toHaveBeenCalledWith('sess-abc', 'great! /merge /qa', 'high');
+    expect(mockMessage).toHaveBeenCalledWith('sess-abc', 'great! /merge /qa', 'high', SYSTEM_AUTHOR);
     expect(mockUpdateCard).toHaveBeenCalledWith(42, { column: 'archive' });
     // The move must land AFTER the prompt is accepted — reversed, the card
     // would be parked before the model ever sees the message.
@@ -186,7 +187,7 @@ describe('submitCardPrompt app slash commands', () => {
 
     await submitCardPrompt(42, 'plain prompt with a path /tmp/x');
 
-    expect(mockMessage).toHaveBeenCalledWith('sess-abc', 'plain prompt with a path /tmp/x', 'high');
+    expect(mockMessage).toHaveBeenCalledWith('sess-abc', 'plain prompt with a path /tmp/x', 'high', SYSTEM_AUTHOR);
     expect(mockUpdateCard).not.toHaveBeenCalled();
   });
 

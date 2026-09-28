@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageBus } from '../bus';
+import { SYSTEM_AUTHOR } from '../../shared/orcd-protocol';
 
 type MockCard = {
   id: number;
@@ -688,6 +689,7 @@ describe('reconcileRunningCards', () => {
       contextWindow: 200000,
       summarizeThreshold: 0.6,
       effort: undefined,
+      author: SYSTEM_AUTHOR,
     });
     expect(mockCards[0].promptsSent).toBe(1);
     expect(mockRepo.save).toHaveBeenCalled();

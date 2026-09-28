@@ -23,6 +23,7 @@ import type {
 import type { AnthropicMessagesCompat, Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
 import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
+import type { OrcdAuthor } from '../shared/orcd-protocol';
 import { createOrchestrelSubagentPolicyExtension } from '../pi-extensions/orchestrel-subagent-policy';
 import { expandInlineCommands } from './inline-commands';
 import type { ProviderAliases } from '../shared/subagent-policy';
@@ -57,7 +58,10 @@ export interface CreatePiRuntimeSessionOpts {
 
 export interface PiRuntimeSession {
   id: string;
-  prompt(text: string, opts?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void>;
+  prompt(
+    text: string,
+    opts?: { streamingBehavior?: 'steer' | 'followUp'; author?: OrcdAuthor },
+  ): Promise<void>;
   /** True while a Pi run is active, including a run started by a background-subagent notification. */
   isStreaming(): boolean;
   /** Resolve once Pi has no active run. */
@@ -339,6 +343,19 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     },
 
     async prompt(text, promptOpts) {
+      // Author annotation: write a non-context custom entry as the current leaf
+      // so the session JSONL records who sent this turn before the user message
+      // (Pi appends the user message as a child of the leaf). Custom entries do
+      // not enter LLM context, so this annotates without polluting the prompt.
+      // Kept here, immediately before session.prompt, so every prompt path
+      // (fresh turn, followUp, mid-session message) is covered.
+      if (promptOpts?.author) {
+        try {
+          session.sessionManager.appendCustomEntry('orc.author', promptOpts.author);
+        } catch (err) {
+          console.warn(`[orcd] author annotation failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       // expandInlineCommands keeps `text` verbatim and appends the expansion
       // after a marker. Disable Pi's own expansion so a leading /command is not
       // expanded a second time.

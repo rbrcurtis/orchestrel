@@ -35,6 +35,20 @@ export interface MemoryProjectConfig {
   project: string;
 }
 
+/**
+ * Canonical per-user preference project. Preference memories are personal and
+ * cross-project: one project holds every user's canonical preference memory,
+ * distinguished by title (`Preferences: <email>`). Absent = preference
+ * learning is disabled.
+ */
+export interface MemoryPreferencesConfig {
+  apiUrl: string;
+  apiKey: string;
+  project: string;
+  /** Days after which a preference not re-observed is dropped by the updater. Defaults to 30. */
+  stalenessDays?: number;
+}
+
 export interface MemoryConfig {
   mode: 'stage' | 'write';
   provider: string;
@@ -46,6 +60,8 @@ export interface MemoryConfig {
   windowDays: number;
   telegram?: { botToken: string; chatId: string };
   projects: Record<string, MemoryProjectConfig>;
+  /** Canonical per-user preference project. Absent = preference learning disabled. */
+  preferences?: MemoryPreferencesConfig;
 }
 
 export interface OrchestrelConfig {
@@ -162,6 +178,20 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
         project: resolveEnvVars(String(p.project), env),
       };
     }
+    let preferences: MemoryPreferencesConfig | undefined;
+    const rawPrefs = m.preferences;
+    if (rawPrefs && typeof rawPrefs === 'object') {
+      const p = rawPrefs as Record<string, unknown>;
+      if (!p.apiUrl || !p.project) {
+        throw new Error('config: memory.preferences requires apiUrl and project');
+      }
+      preferences = {
+        apiUrl: resolveEnvVars(String(p.apiUrl), env),
+        apiKey: resolveEnvVars(String(p.apiKey ?? ''), env),
+        project: resolveEnvVars(String(p.project), env),
+        ...(p.stalenessDays != null ? { stalenessDays: Number(p.stalenessDays) } : {}),
+      };
+    }
     memory = {
       mode: m.mode === 'write' ? 'write' : 'stage',
       provider: String(m.provider),
@@ -180,6 +210,7 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
           }
         : {}),
       projects,
+      ...(preferences ? { preferences } : {}),
     };
   }
 

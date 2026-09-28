@@ -451,6 +451,28 @@ describe('createPiRuntimeSession', () => {
     expect(mockAppendCustomEntry).not.toHaveBeenCalled();
   });
 
+  it('writes an orc.author custom entry immediately before the prompt when author is provided', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const session = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
+    const author = { userId: 3, email: 'ryan@example.com', kind: 'human' as const };
+
+    await session.prompt('hello', { author });
+
+    expect(mockAppendCustomEntry).toHaveBeenCalledWith('orc.author', author);
+    // The annotation must precede the prompt so the JSONL attributes the user message.
+    expect(mockAppendCustomEntry.mock.invocationCallOrder[0]).toBeLessThan(mockPrompt.mock.invocationCallOrder[0]);
+  });
+
+  it('still writes a system author annotation for prompts carrying a system author', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+    const session = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
+    const author = { userId: 0, email: 'system', kind: 'system' as const };
+
+    await session.prompt('wake up', { author });
+
+    expect(mockAppendCustomEntry).toHaveBeenCalledWith('orc.author', author);
+  });
+
   it('keeps the slash command verbatim and appends the expansion after a marker', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     mockDefaultResourceLoader.mockImplementation((opts: Record<string, unknown>) => ({

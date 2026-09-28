@@ -128,7 +128,7 @@ describe('OrcdServer session lifecycle', () => {
     });
 
     expect(server.store.get(session.id)).toBe(session);
-    expect(sendSpy).toHaveBeenCalledWith('continue', undefined);
+    expect(sendSpy).toHaveBeenCalledWith('continue', undefined, undefined);
   });
 
   it('updates the summarize threshold on a resident session', () => {
@@ -197,7 +197,7 @@ describe('OrcdServer session lifecycle', () => {
     // The switch lands (fields update synchronously when no runtime exists),
     // then the prompt starts after it resolves.
     expect(session.model).toBe('other-model');
-    await vi.waitFor(() => expect(sendSpy).toHaveBeenCalledWith('continue', undefined));
+    await vi.waitFor(() => expect(sendSpy).toHaveBeenCalledWith('continue', undefined, undefined));
   });
 
   it('removes and disposes a closed resident session', () => {

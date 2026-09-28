@@ -21,6 +21,12 @@ export function getDb(): Database.Database {
       size INTEGER NOT NULL,
       processed_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS preference_maintainer_watermark (
+      path TEXT PRIMARY KEY,
+      mtime_ms INTEGER NOT NULL,
+      size INTEGER NOT NULL,
+      processed_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS memory_maintainer_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       run_type TEXT NOT NULL,
@@ -39,9 +45,15 @@ export function resetDb(): void {
   db = null;
 }
 
-export function upsertWatermark(db: Database.Database, path: string, mtimeMs: number, size: number): void {
+export function upsertWatermark(
+  db: Database.Database,
+  path: string,
+  mtimeMs: number,
+  size: number,
+  table: 'memory_maintainer_watermark' | 'preference_maintainer_watermark' = 'memory_maintainer_watermark',
+): void {
   db.prepare(
-    `INSERT INTO memory_maintainer_watermark (path, mtime_ms, size, processed_at)
+    `INSERT INTO ${table} (path, mtime_ms, size, processed_at)
      VALUES (?, ?, ?, ?)
      ON CONFLICT(path) DO UPDATE SET mtime_ms = excluded.mtime_ms, size = excluded.size, processed_at = excluded.processed_at`,
   ).run(path, mtimeMs, size, new Date().toISOString());

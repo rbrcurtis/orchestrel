@@ -19,6 +19,7 @@ import type {
 } from '../shared/orcd-protocol';
 import type { TaskNotificationEvent, TaskProgressEvent, TaskStartedEvent } from './async-task-tracker';
 import type { TranscriptCursor } from '../shared/transcript-sync';
+import type { OrcdAuthor } from '../shared/orcd-protocol';
 
 export type SessionEventCallback = (
   msg:
@@ -382,7 +383,7 @@ export class OrcdSession {
   /**
    * Start or resume a session.
    */
-  async run(opts: { prompt: string; resume?: boolean; effort?: string }): Promise<void> {
+  async run(opts: { prompt: string; resume?: boolean; effort?: string; author?: OrcdAuthor }): Promise<void> {
     const log = (msg: string) => console.log(`[orcd:${this.id.slice(0, 8)}] ${msg}`);
 
     if (this.running) {
@@ -400,7 +401,7 @@ export class OrcdSession {
         // Sync the current effort before queueing so Pi's per-turn snapshot
         // (prepared when the queued follow-up starts) picks it up.
         if (opts.effort) await this.piSession.setEffort(opts.effort);
-        await this.piSession.prompt(opts.prompt, { streamingBehavior: 'followUp' });
+        await this.piSession.prompt(opts.prompt, { streamingBehavior: 'followUp', author: opts.author });
         this.probeLeaf('overlap-prompt:after'); // TEMP diagnostic
       } else {
         log('session running but no pi session yet; dropping overlapping prompt');
@@ -440,7 +441,12 @@ export class OrcdSession {
       // cache_control on empty text blocks, so resume without running a turn.
       if (opts.prompt.trim()) {
         this.probeLeaf('run-prompt:before'); // TEMP diagnostic
-        await session.prompt(opts.prompt, opts.resume ? { streamingBehavior: 'followUp' } : undefined);
+        const promptOpts = opts.resume
+          ? { streamingBehavior: 'followUp' as const, author: opts.author }
+          : opts.author
+            ? { author: opts.author }
+            : undefined;
+        await session.prompt(opts.prompt, promptOpts);
         this.probeLeaf('run-prompt:after'); // TEMP diagnostic
       } else {
         log('empty prompt; session resumed without running a turn');
@@ -571,9 +577,9 @@ export class OrcdSession {
   /**
    * Send a follow-up message (resume into existing session).
    */
-  async sendMessage(prompt: string, effort?: string): Promise<void> {
+  async sendMessage(prompt: string, effort?: string, author?: OrcdAuthor): Promise<void> {
     if (!this.running) this.state = 'running';
-    await this.run({ prompt, resume: true, effort });
+    await this.run({ prompt, resume: true, effort, author });
   }
 
   /**

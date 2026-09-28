@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, readlinkSync } from 'fs';
 import { Card } from '../models/Card';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
-import type { OrcdMessage } from '../../shared/orcd-protocol';
+import { SYSTEM_AUTHOR, type OrcdMessage } from '../../shared/orcd-protocol';
 import type { OrcdClient } from '../orcd-client';
 import { windowForCard } from '../config/capabilities';
 
@@ -740,6 +740,7 @@ async function startCardSession(client: OrcdClient, card: Card, bus: MessageBus 
       contextWindow: window,
       summarizeThreshold: card.summarizeThreshold,
       effort,
+      author: SYSTEM_AUTHOR,
     });
 
     card.sessionId = sessionId;

@@ -14,7 +14,9 @@
     "orcd": "tsx src/orcd/index.ts",
     "memory-maintainer": "tsx src/lib/memory-maintainer/cli.ts",
     "prepare": "husky",
-    "memory-maintainer:run": "tsx scripts/run-memory-maintainer.ts"
+    "memory-maintainer:run": "tsx scripts/run-memory-maintainer.ts",
+    "preference-maintainer": "tsx src/lib/preference-maintainer/cli.ts",
+    "preference-maintainer:run": "tsx scripts/run-preference-maintainer.ts"
   },
   "dependencies": {
     "@capacitor/core": "8.4.0",

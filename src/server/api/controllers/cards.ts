@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Header, Patch, Path, Post, Query, Route, SuccessResponse } from 'tsoa';
+import { Body, Controller, Delete, Get, Header, Patch, Path, Post, Query, Request, Route, SuccessResponse } from 'tsoa';
+import type { IncomingMessage } from 'http';
 import { Card } from '../../models/Card';
 import { Project } from '../../models/Project';
 import { isCreatePending } from '../../controllers/card-sessions';
@@ -6,6 +7,7 @@ import * as initState from '../../init-state';
 import { cardService } from '../../services/card';
 import { compactCardSession, stopCardExecution, submitCardPrompt } from '../../services/card-execution';
 import { runIdempotent } from '../../services/api-idempotency';
+import { resolveIdentity } from '../../ws/auth';
 import type {
   CardActionResponse,
   CardColumn,
@@ -24,6 +26,25 @@ function httpError(status: number, code: string, message: string): Error & { sta
   err.status = status;
   err.code = code;
   return err;
+}
+
+// Resolve the human who sent a REST prompt, mirroring the socket path. Runs
+// behind the same Apache/CF-Access front door, so the request carries the same
+// identity headers/cookie validateCfAccess reads. A failure yields no identity
+// (system author), never blocks the prompt.
+async function promptIdentity(req?: IncomingMessage): Promise<{ id: number; email: string; role: string } | undefined> {
+  if (!req) {
+    console.log('[rest:auth] promptIdentity: no request, prompt author defaults to system');
+    return undefined;
+  }
+  let identity: { id: number; email: string; role: string } | undefined;
+  try {
+    identity = (await resolveIdentity(req)) ?? undefined;
+    if (!identity) console.log('[rest:auth] promptIdentity: identity not resolved, author defaults to system');
+  } catch (err) {
+    console.error('[rest:auth] promptIdentity: identity resolution threw, defaulting to system author:', err);
+  }
+  return identity;
 }
 
 function toCardResponse(card: Card): CardResponse {
@@ -113,7 +134,9 @@ export class CardsController extends Controller {
   public async createCard(
     @Body() body: CardCreateBody,
     @Header('Idempotency-Key') idempotencyKey?: string,
+    @Request() req?: IncomingMessage,
   ): Promise<CardResponse> {
+    const identity = await promptIdentity(req);
     const proj = await Project.findOneBy({ id: body.projectId });
     if (!proj) throw httpError(404, 'project_not_found', `Project ${body.projectId} not found`);
     const column = body.column ?? 'running';
@@ -142,7 +165,7 @@ export class CardsController extends Controller {
         archiveOthers: body.archiveOthers,
         pendingInitialFiles: body.pendingInitialFiles,
       });
-      const started = body.initialPrompt !== undefined ? await submitCardPrompt(card.id, body.initialPrompt) : card;
+      const started = body.initialPrompt !== undefined ? await submitCardPrompt(card.id, body.initialPrompt, undefined, identity) : card;
       // An initial prompt of only app commands (e.g. /delete) removes the card
       // it was supposed to start — nothing left to return.
       if (!started) throw httpError(422, 'invalid_initial_prompt', 'initialPrompt cannot be an app command');
@@ -178,9 +201,11 @@ export class CardsController extends Controller {
     @Path() id: number,
     @Body() body: CardPromptBody,
     @Header('Idempotency-Key') idempotencyKey?: string,
+    @Request() req?: IncomingMessage,
   ): Promise<CardActionResponse> {
+    const identity = await promptIdentity(req);
     const result = await runIdempotent(idempotencyKey, `prompt-card-${id}`, body, async () => {
-      const card = await submitCardPrompt(id, body.message);
+      const card = await submitCardPrompt(id, body.message, undefined, identity);
       // A /delete command removes the card — nothing left to serialize.
       return card ? { accepted: true, card: toCardResponse(card) } : { accepted: true };
     });

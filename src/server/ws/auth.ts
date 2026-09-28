@@ -98,18 +98,32 @@ export async function validateCfAccess(req: IncomingMessage): Promise<AuthResult
 
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 
+/**
+ * Resolve the acting identity from an HTTP request the same way the socket
+ * middleware does (CF Access JWT, Apache user map, or LOCAL_ADMIN on loopback).
+ * Returns null when the request is not authenticated. Shared by the Socket.IO
+ * auth middleware and the REST prompt controllers so a card prompt always knows
+ * who sent it.
+ */
+export async function resolveIdentity(req: IncomingMessage): Promise<import('../services/user').UserIdentity | null> {
+  const auth = await validateCfAccess(req);
+  if (!auth.valid) {
+    console.log(`[ws:auth] resolveIdentity: request not authenticated (host=${req.headers.host})`);
+    return null;
+  }
+  const { userService, LOCAL_ADMIN } = await import('../services/user');
+  return auth.isLocal || !auth.email ? LOCAL_ADMIN : await userService.findOrCreate(auth.email);
+}
+
 /** Socket.IO middleware — validates the upstream identity and attaches it to socket.data */
 export async function socketAuthMiddleware(socket: AppSocket, next: (err?: Error) => void): Promise<void> {
   try {
-    const req = socket.request;
-    const auth = await validateCfAccess(req);
-    if (!auth.valid) {
+    const identity = await resolveIdentity(socket.request);
+    if (!identity) {
       console.warn(`[ws:auth] socket connect rejected: Unauthorized (host=${socket.request.headers.host})`);
       next(new Error('Unauthorized'));
       return;
     }
-    const { userService, LOCAL_ADMIN } = await import('../services/user');
-    const identity = auth.isLocal || !auth.email ? LOCAL_ADMIN : await userService.findOrCreate(auth.email);
     socket.data.identity = { id: identity.id, email: identity.email, role: identity.role };
     console.log(`[ws] auth: ${identity.email} (${identity.role})`);
     next();

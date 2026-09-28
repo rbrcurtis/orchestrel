@@ -213,6 +213,7 @@ export class OrcdClient {
     sessionId?: string;
     contextWindow?: number;
     summarizeThreshold?: number;
+    author?: import('../shared/orcd-protocol').OrcdAuthor;
   }): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!this.socket?.writable) {
@@ -242,6 +243,7 @@ export class OrcdClient {
         sessionId: opts.sessionId,
         contextWindow: opts.contextWindow,
         summarizeThreshold: opts.summarizeThreshold,
+        author: opts.author,
       });
     });
   }
@@ -292,8 +294,13 @@ export class OrcdClient {
   /**
    * Send a follow-up message to an existing session.
    */
-  message(sessionId: string, prompt: string, effort?: string): void {
-    this.send({ action: 'message', sessionId, prompt, effort });
+  message(
+    sessionId: string,
+    prompt: string,
+    effort?: string,
+    author?: import('../shared/orcd-protocol').OrcdAuthor,
+  ): void {
+    this.send({ action: 'message', sessionId, prompt, effort, author });
   }
 
   /** Cancel the current turn but retain its reusable session runtime. */

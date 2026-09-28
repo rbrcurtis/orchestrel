@@ -74,7 +74,7 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
       return summary;
     }
     const groups = groupByServer(entries);
-    const { runtime, model } = await buildModel(cfg, memory);
+    const { runtime, model } = await buildModel(cfg, memory.provider, memory.model);
     const mergedOps: StagedOp[] = [];
 
     for (const group of groups) {

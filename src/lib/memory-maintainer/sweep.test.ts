@@ -82,4 +82,33 @@ describe('sweepSessions', () => {
     expect(result.files).toHaveLength(0);
     expect(result.droppedWindow).toBe(1);
   });
+
+  it('keeps unconfigured-project sessions when requireProject is false (preference sweep)', () => {
+    session('a.jsonl', '/home/ryan/Code/trackable', 4, 0);
+    session('b.jsonl', '/home/ryan/Code/unconfigured', 4, 0);
+    // The knowledge sweep drops the unknown project; the preference sweep keeps
+    // every settled session, because preferences are cross-project.
+    expect(sweepSessions(MEMORY).files.map((f) => f.sessionId)).toEqual(['a.jsonl']);
+    const pref = sweepSessions(MEMORY, { requireProject: false, watermarkTable: 'preference_maintainer_watermark' });
+    expect(pref.files.map((f) => f.sessionId).sort()).toEqual(['a.jsonl', 'b.jsonl']);
+    expect(pref.files.every((f) => f.projectKey === '')).toBe(true);
+  });
+
+  it('uses an independent watermark so the preference sweep re-sees knowledge-swept files', () => {
+    const p = session('c.jsonl', '/home/ryan/Code/trackable', 4, 0);
+    const db = getDb();
+    const st = statSync(p);
+    // Knowledge sweep already saw this file. The preference watermark is separate,
+    // so the preference sweep must still pick it up.
+    db.prepare('INSERT INTO memory_maintainer_watermark (path, mtime_ms, size, processed_at) VALUES (?, ?, ?, ?)').run(
+      p,
+      st.mtimeMs,
+      st.size,
+      '2026-08-31T00:00:00Z',
+    );
+    expect(sweepSessions(MEMORY).files).toHaveLength(0);
+    expect(
+      sweepSessions(MEMORY, { requireProject: false, watermarkTable: 'preference_maintainer_watermark' }).files,
+    ).toHaveLength(1);
+  });
 });

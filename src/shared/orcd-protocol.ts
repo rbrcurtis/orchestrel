@@ -1,5 +1,32 @@
 // ── Client → orcd ────────────────────────────────────────────────────────────
 
+/**
+ * Who sent the prompt that opened or continued this turn. Written by orcd as a
+ * `type:'custom'` (`customType:'orc.author'`) entry immediately before the user
+ * message, so the session JSONL is self-describing about who was working. A
+ * per-node memory maintainer can attribute authorship (and feed preference
+ * learning) from the file alone, without backend DB access.
+ *
+ * kind:'human' — a real person drove this turn (CF/Apache identity). Feeds
+ * preference learning and drives Part 3 preference injection.
+ * kind:'system' — auto-start on card move, sleep wakes, scheduled jobs, or any
+ * prompt with no identity. Must never inherit the card's last operator, so a
+ * human is never attributed for autonomous work.
+ */
+export interface OrcdAuthor {
+  userId: number;
+  email: string;
+  kind: 'human' | 'system';
+}
+
+/**
+ * The author for any prompt with no human operator: auto-start on a card move,
+ * a sleep wake, a scheduled job, or a prompt that carried no identity. Never
+ * inherits the card's last operator, so autonomous work is never attributed to
+ * a person.
+ */
+export const SYSTEM_AUTHOR: OrcdAuthor = { userId: 0, email: 'system', kind: 'system' };
+
 export interface CreateAction {
   action: 'create';
   prompt: string;
@@ -10,6 +37,7 @@ export interface CreateAction {
   sessionId?: string; // Resume existing session
   contextWindow?: number;
   summarizeThreshold?: number; // 0-1, fraction of context window to trigger compaction
+  author?: OrcdAuthor;
   requestId?: string;
 }
 
@@ -21,6 +49,7 @@ export interface MessageAction {
   // this turn even when no set_effort preceded it (e.g. orcd restarted and
   // re-instantiated the session after the card was edited).
   effort?: string;
+  author?: OrcdAuthor;
   requestId?: string;
 }
 
