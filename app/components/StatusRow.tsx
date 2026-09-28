@@ -89,16 +89,24 @@ export function StatusRow({ id, cards, onCardClick, onAddCard }: StatusRowProps)
   );
 
   const header = (
-    <div className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${isOver ? 'bg-accent/50' : ''}`}>
-      {collapsible && (
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="icon-xs" className="size-5">
-            <ChevronRight className={`size-3.5 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-          </Button>
+    <div
+      className={`flex items-center gap-2 rounded-md transition-colors ${isOver ? 'bg-accent/50' : ''} ${
+        collapsible ? 'pr-2' : 'px-4 py-2'
+      }`}
+    >
+      {collapsible ? (
+        // The whole header is the tap target: tapping the title opens and closes the section.
+        <CollapsibleTrigger className="flex flex-1 min-w-0 items-center gap-2 px-4 py-2.5 text-left cursor-pointer">
+          <ChevronRight className={`size-3.5 shrink-0 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+          <span className="text-sm font-semibold text-muted-foreground">{displayNames[id]}</span>
+          <Badge variant="secondary">{cards.length}</Badge>
         </CollapsibleTrigger>
+      ) : (
+        <>
+          <h2 className="text-sm font-semibold text-muted-foreground">{displayNames[id]}</h2>
+          <Badge variant="secondary">{cards.length}</Badge>
+        </>
       )}
-      <h2 className="text-sm font-semibold text-muted-foreground">{displayNames[id]}</h2>
-      <Badge variant="secondary">{cards.length}</Badge>
       {onAddCard && !(collapsible && collapsed) && (
         <Button variant="ghost" size="icon-xs" onClick={() => onAddCard(id)} title="Add card">
           <Plus className="size-4" />
