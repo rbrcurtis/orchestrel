@@ -380,9 +380,7 @@ export function LazyTranscript({
                 <div
                   key={index}
                   data-message-row
-                  className={
-                    j === 0 && entry.kind === 'user' ? 'sticky top-0 z-10 bg-card/95 py-1 backdrop-blur-sm' : undefined
-                  }
+                  className={j === 0 && entry.kind === 'user' ? 'sticky top-0 z-10 bg-card/95 py-1' : undefined}
                 >
                   <MessageBlock entry={entry} index={index} accentColor={accentColor} />
                 </div>
