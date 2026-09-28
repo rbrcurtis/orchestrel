@@ -11,7 +11,8 @@
  * consistently-failing session is not retried forever (same as the knowledge
  * maintainer). */
 import type { ThinkingLevel } from '@earendil-works/pi-ai';
-import type { OrchestrelConfig } from '../../shared/config';
+import type Database from 'better-sqlite3';
+import type { MemoryPreferencesConfig, OrchestrelConfig } from '../../shared/config';
 import { buildModel, consolidate } from '../memory-maintainer/consolidate';
 import { finishRun, getDb, insertRun, recentActiveRun, upsertWatermark } from '../memory-maintainer/db';
 import { buildExcerpt, listHumanAuthors } from '../memory-maintainer/excerpt';
@@ -52,7 +53,7 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
 
   const started = Date.now();
   const prefCfg = memory.preferences;
-  const server: MemoryServer = { apiUrl: prefCfg.apiUrl, apiKey: prefCfg.apiKey, project: prefCfg.project };
+  const server = resolvePreferenceServer(db, prefCfg);
   const stalenessDays = prefCfg.stalenessDays ?? 30;
   const today = new Date().toISOString().slice(0, 10);
 
@@ -136,6 +137,25 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
     finishRun(db, runId, 'failed', JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
     throw err;
   }
+}
+
+/**
+ * Resolve the canonical preference memory server. Project rows still carry the
+ * legacy per-project memory url/key, while the service env does not carry
+ * TRACKABLE_MEMORY_API_KEY, so a row with a key wins over the orcd.yaml
+ * default. The project slug stays the preferences slug from config.
+ */
+export function resolvePreferenceServer(db: Database.Database, prefs: MemoryPreferencesConfig): MemoryServer {
+  const row = db
+    .prepare(
+      `SELECT memory_base_url, memory_api_key FROM projects
+       WHERE memory_api_key IS NOT NULL AND memory_api_key <> '' ORDER BY id LIMIT 1`,
+    )
+    .get() as { memory_base_url: string | null; memory_api_key: string } | undefined;
+  if (row?.memory_api_key) {
+    return { apiUrl: row.memory_base_url || prefs.apiUrl, apiKey: row.memory_api_key, project: prefs.project };
+  }
+  return { apiUrl: prefs.apiUrl, apiKey: prefs.apiKey, project: prefs.project };
 }
 
 /** Keep the newest sessions that fit the excerpt budget (sweep sorts newest first). */
