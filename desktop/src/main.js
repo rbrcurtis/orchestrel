@@ -6,6 +6,16 @@ const METRICS_INTERVAL_MS = 60_000;
 const METRICS_RING_SIZE = 20;
 const RELOAD_WINDOW_MS = 10 * 60_000;
 const RELOAD_LIMIT = 5;
+// The renderer cannot bound its own raster memory, and Chromium purges its caches
+// only when something tells it memory is short - on macOS that signal arrives once
+// the machine is already thrashing. So bound the tile budget at start-up, and apply
+// the pressure from here, where the renderer's footprint is actually measured.
+const TILE_BUDGET_MB = 1024;
+const TAB_PURGE_MB = 1400;
+const TAB_RECYCLE_MB = 3000;
+const PURGE_COOLDOWN_MS = 60_000;
+
+app.commandLine.appendSwitch('force-gpu-mem-available-mb', String(TILE_BUDGET_MB));
 
 const apps = {
   orchestrel: {
@@ -31,6 +41,7 @@ let windowOpenedAt = 0;
 let reloadTimes = [];
 let lastReportStatus = 0;
 let lastReportError = '';
+let lastPurgeAt = 0;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -183,9 +194,49 @@ function recoverRenderer() {
   }, 500);
 }
 
+// The Tab entry in the app metrics is the page renderer: the process that holds the
+// transcript, its layout objects and its raster tiles.
+function tabWorkingSetMb() {
+  const metric = app.getAppMetrics().find((m) => m.type === 'Tab');
+  if (!metric || !metric.memory) return 0;
+  return Math.round(metric.memory.workingSetSize / 1024);
+}
+
+// Ask Chromium to release what it is holding. It answers a pressure signal by
+// lowering its internal caches and collecting, which is the release that otherwise
+// never happens until the machine is out of memory and the process hits its ceiling.
+// A notification in the middle of a paint is cheaper than a dead renderer.
+async function purgeRenderer(reason, mb) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (Date.now() - lastPurgeAt < PURGE_COOLDOWN_MS) return;
+  lastPurgeAt = Date.now();
+
+  try {
+    const dbg = mainWindow.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Memory.simulatePressureNotification', { level: 'critical' });
+    await dbg.sendCommand('Memory.forciblyPurgeJavaScriptMemory');
+    if (dbg.isAttached()) dbg.detach();
+    logDesktopLine(`tab-purge reason=${reason} ws=${mb}MB`);
+  } catch (err) {
+    logDesktopLine(`tab-purge-failed reason=${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 function reportMainMetrics() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   logDesktopLine(metricsLine());
+
+  // Keep the renderer under the ceiling that kills it. A reload below is the same
+  // path a crash takes, so one budget covers both, and a controlled reload costs a
+  // few seconds instead of a white window.
+  const tab = tabWorkingSetMb();
+  if (tab >= TAB_RECYCLE_MB) {
+    logDesktopLine(`tab-recycle ws=${tab}MB`);
+    recoverRenderer();
+    return;
+  }
+  if (tab >= TAB_PURGE_MB) purgeRenderer('high', tab);
 }
 
 function getTarget() {
@@ -224,6 +275,9 @@ function isInternalUrl(url) {
 
 app.whenReady().then(() => {
   metricsLogPath = path.join(app.getPath('userData'), 'orchestrel-desktop-metrics.log');
+  logDesktopLine(
+    `desktop-start tileBudget=${TILE_BUDGET_MB}MB purgeAt=${TAB_PURGE_MB}MB recycleAt=${TAB_RECYCLE_MB}MB electron=${process.versions.electron} chrome=${process.versions.chrome}`,
+  );
   createWindow();
   setInterval(reportMainMetrics, METRICS_INTERVAL_MS);
 
