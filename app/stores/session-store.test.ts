@@ -50,6 +50,22 @@ describe('SessionStore subagent lifecycle', () => {
     });
   });
 
+  it('clears the in-progress flag when background compaction fails', () => {
+    const store = new SessionStore();
+
+    store.ingestSdkMessage(1011, { type: 'system', subtype: 'bgc_started', timestamp: Date.now() } as SdkMessage);
+    expect(store.getSession(1011)?.bgcInProgress).toBe(true);
+
+    store.ingestSdkMessage(1011, {
+      type: 'system',
+      subtype: 'bgc_failed',
+      message: 'generation hit the token cap',
+      timestamp: Date.now(),
+    } as SdkMessage);
+
+    expect(store.getSession(1011)?.bgcInProgress).toBe(false);
+  });
+
   it('shows blocked compact notice with timestamp when background compaction is already in progress', async () => {
     const emit = vi.fn().mockResolvedValue(undefined);
     const store = new SessionStore();

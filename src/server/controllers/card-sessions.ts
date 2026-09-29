@@ -49,10 +49,11 @@ async function clientForCard(card: { nodeName: string }): Promise<OrcdClient | n
 
 function isBgcSystemEvent(
   event: Record<string, unknown>,
-): event is { type: 'system'; subtype?: string; session_id?: string } {
+): event is { type: 'system'; subtype?: string; session_id?: string; message?: string } {
   return (
     event.type === 'system' &&
     (event.subtype === 'bgc_started' ||
+      event.subtype === 'bgc_failed' ||
       event.subtype === 'compact_boundary' ||
       event.subtype === 'compact_started' ||
       event.subtype === 'compact_done')
@@ -127,7 +128,7 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
       }
 
       if (sdkEvent.type === 'system') {
-        const sys = sdkEvent as { subtype?: string; session_id?: string };
+        const sys = sdkEvent as { subtype?: string; session_id?: string; message?: string };
 
         if (sys.subtype === 'init' && sys.session_id) {
           const card = await repo().findOneBy({ id: cardId });
@@ -145,6 +146,13 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
           // fires — move the card to running here so it shows "turn started" while
           // the compaction runs.
           if (sys.subtype === 'compact_started') await handleTurnStart(cardId);
+        }
+
+        // A failed BGC is terminal too, but it is not a compaction: leave the card's
+        // context size and column alone, just stop routing its late events.
+        if (sys.subtype === 'bgc_failed') {
+          bgcMap.delete(msg.sessionId);
+          console.log(`[oc:${cardId}] bgc_failed: ${String(sys.message ?? 'no reason given')}`);
         }
 
         if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done') {

@@ -593,6 +593,42 @@ describe('orcd message router', () => {
 
     expect(sdkSpy).not.toHaveBeenCalled();
   });
+
+  it('routes a bgc_failed event and leaves the card context size alone', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    mockCards[0].contextTokens = 50000;
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'system', subtype: 'bgc_started', session_id: 'sess-abc' },
+    });
+
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 1,
+      event: {
+        type: 'system',
+        subtype: 'bgc_failed',
+        session_id: 'sess-abc',
+        message: 'generation hit the token cap',
+      },
+    });
+
+    // Terminal for the UI's in-progress state, but not a compaction: no context reset.
+    expect(sdkSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ subtype: 'bgc_failed', message: 'generation hit the token cap' }),
+    );
+    expect(mockCards[0].contextTokens).toBe(50000);
+    expect(mockRepo.save).not.toHaveBeenCalled();
+  });
 });
 
 describe('reconcileRunningCards', () => {

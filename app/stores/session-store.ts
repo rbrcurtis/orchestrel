@@ -524,6 +524,11 @@ export class SessionStore {
         if (sdkMsg.subtype === 'bgc_started') {
           s.bgcInProgress = true;
         }
+        // A failed BGC never splices, so it must clear the same state bgc_started set —
+        // otherwise the card shows a compaction that never finishes.
+        if (sdkMsg.subtype === 'bgc_failed') {
+          s.bgcInProgress = false;
+        }
         if (sdkMsg.subtype === 'compact_boundary') {
           s.bgcInProgress = false;
           s.contextTokens = 1;

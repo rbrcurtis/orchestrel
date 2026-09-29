@@ -56,6 +56,22 @@ describe('MessageAccumulator compaction markers', () => {
     expect(acc.conversation).toEqual([{ kind: 'compact', label: 'Background compaction started', timestamp }]);
   });
 
+  it('surfaces a failed BGC as its own terminal marker with the reason', () => {
+    const acc = new MessageAccumulator();
+    const timestamp = Date.UTC(2026, 3, 27, 12, 2, 0);
+
+    acc.handleMessage({
+      type: 'system',
+      subtype: 'bgc_failed',
+      message: 'generation hit the token cap',
+      timestamp,
+    } as SdkMessage);
+
+    expect(acc.conversation).toEqual([
+      { kind: 'compact', label: 'Background compaction failed: generation hit the token cap', timestamp },
+    ]);
+  });
+
   it('surfaces BGC applied messages as compact markers', () => {
     const acc = new MessageAccumulator();
     const timestamp = Date.UTC(2026, 3, 27, 12, 1, 0);
