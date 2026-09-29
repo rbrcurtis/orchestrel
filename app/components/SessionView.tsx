@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
-import { Send, Square, Play, AlertCircle, X, WifiOff } from 'lucide-react';
+import { Send, Square, Play, AlertCircle, X, WifiOff, Loader2 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 import { Textarea } from '~/components/ui/textarea';
 import { Badge } from '~/components/ui/badge';
@@ -9,6 +9,7 @@ import { SubagentFeed } from './SubagentFeed';
 import { LazyTranscript } from './LazyTranscript';
 import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
+import { parseAppCommands } from '../../src/shared/slash-commands';
 import { FileAttachments, FilePickerButton } from './FileAttachments';
 import { uploadFiles } from '~/lib/file-attachments';
 import { TYPE_FOCUS_EVENT, type TypeFocusDetail } from '~/lib/type-focus';
@@ -81,6 +82,20 @@ export const SessionView = observer(function SessionView({
 
   const [notification, setNotification] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  // True while the result of a prompt send is still outstanding. The agent:send
+  // ack is immediate — the server calls back before it even submits the prompt
+  // — and the first card:updated is only the preemptive running-column move,
+  // so neither marks "the server did the thing". The real signals are later:
+  //   • a prompt: the backend's user-echo broadcast, emitted once it has
+  //     accepted the prompt (after the session message/create call) — seconds
+  //     for a cold session start
+  //   • a command-only message (/ready, /archive, /sleep): the card:updated
+  //     carrying the column move
+  // A fallback timeout keeps the spinner from sticking.
+  const [sendPending, setSendPending] = useState(false);
+  // What "the result arrived" means for this send: the echo sequence and card
+  // state at send time, and whether the message prompts at all.
+  const pendingBaseline = useRef<{ echoSeq: number; cardUpdatedAt: string | null; prompt: boolean } | null>(null);
   const prevConvLen = useRef(0);
   const [compacted, setCompacted] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -92,6 +107,12 @@ export const SessionView = observer(function SessionView({
   const mouseDownPos = useRef<{ x: number; y: number } | null>(null);
 
   const isStreaming = sessionActive || isStarting;
+  // The send button doubles as the card's data-in-flight indicator: it spins
+  // while the card has any server round trip outstanding — the status request
+  // and transcript load that run when the view opens, history paging, or the
+  // result of a prompt send (see the effects above) — and shows the send icon
+  // once the card's data is settled.
+  const sendButtonPending = sendPending || sessionStore.isDataPending(cardId);
 
   // Register this view before the history effect below so a card with a live
   // replica repaints as soon as its view mounts. A view that is off screen keeps
@@ -157,6 +178,8 @@ export const SessionView = observer(function SessionView({
   useEffect(() => {
     setNotification(null);
     setIsStarting(false);
+    setSendPending(false);
+    pendingBaseline.current = null;
     setCompacted(false);
     prevConvLen.current = 0; // ensure scroll-to-bottom fires for the new card
   }, [cardId]);
@@ -225,14 +248,51 @@ export const SessionView = observer(function SessionView({
   async function handleSend(message: string, files?: FileRef[]) {
     setNotification(null); // a new prompt clears any stale session error
     setScrollToBottomSeq((n) => n + 1);
+    // Same classification the server applies: app commands (/ready, /archive,
+    // /sleep, /delete) never prompt, so only real prompts wait for the echo.
+    const { text, action } = parseAppCommands(message);
+    const prompt = action !== 'delete' && action !== 'sleep' && (text.trim().length > 0 || (files?.length ?? 0) > 0);
+    pendingBaseline.current = { echoSeq: sessionStore.getUserEchoSeq(cardId), cardUpdatedAt: card?.updatedAt ?? null, prompt };
+    setSendPending(true);
     try {
       await sessionStore.sendMessage(cardId, message, files);
       return true;
     } catch (err) {
       setNotification(err instanceof Error ? err.message : String(err));
+      // The send failed — no result is coming for this prompt.
+      pendingBaseline.current = null;
+      setSendPending(false);
       return false;
     }
   }
+
+  // Clear the spinner when the result of the send lands. Prompts resolve when
+  // the server's user-echo arrives (the prompt was actually accepted); command
+  // moves resolve on the card:updated with the new column. An errored session
+  // or a deleted card settles it too. An unrelated card event that doesn't
+  // change updatedAt (model/thinking picks) leaves a prompt's spinner alone.
+  const cardUpdatedAt = card?.updatedAt ?? null;
+  const echoSeq = sessionStore.getUserEchoSeq(cardId);
+  useEffect(() => {
+    const b = pendingBaseline.current;
+    if (!sendPending || b === null) return;
+    const arrived =
+      notification != null ||
+      (b.cardUpdatedAt !== null && cardUpdatedAt === null) ||
+      (b.prompt ? echoSeq > b.echoSeq : cardUpdatedAt !== b.cardUpdatedAt);
+    if (arrived) {
+      pendingBaseline.current = null;
+      setSendPending(false);
+    }
+  }, [sendPending, echoSeq, cardUpdatedAt, notification]);
+
+  // Safety net: if no result ever arrives (node flake, dropped echo, ...), the
+  // spinner must not stick.
+  useEffect(() => {
+    if (!sendPending) return;
+    const id = setTimeout(() => setSendPending(false), 15_000);
+    return () => clearTimeout(id);
+  }, [sendPending]);
 
   function handleStop() {
     sessionStore.stopSession(cardId);
@@ -416,7 +476,7 @@ export const SessionView = observer(function SessionView({
             : undefined
         }
         onPromptSent={onPromptSent}
-        sendPending={false}
+        sendPending={sendButtonPending}
         contextPercent={contextPercent}
         compacted={compacted}
         textareaRef={textareaRef}
@@ -713,7 +773,7 @@ function PromptInput({
             <div className="flex shrink-0 flex-col items-center justify-end gap-1.5">
               <ContextGauge percent={contextPercent} compacted={compacted} onCompact={onCompact} />
               <Button type="submit" disabled={disabled} className="size-[50px] p-0 sm:size-[34px]">
-                <Send className="size-5 sm:size-4" />
+                {sendPending ? <Loader2 className="size-5 sm:size-4 animate-spin" /> : <Send className="size-5 sm:size-4" />}
               </Button>
             </div>
           </div>

@@ -20,6 +20,8 @@ const sessionStore = {
   sendMessage: vi.fn(),
   stopSession: vi.fn(),
   compactSession: vi.fn(),
+  getUserEchoSeq: vi.fn(() => 0),
+  isDataPending: vi.fn(() => false),
   stoppingCards: new Set<number>(),
 };
 
@@ -409,6 +411,70 @@ describe('SessionView prompt submission', () => {
       expect(sessionStore.sendMessage).toHaveBeenCalledWith(1011, 'Run the ferris wheel', undefined);
       expect(document.activeElement).toBe(textarea);
     });
+  });
+
+  it('spins until the server user-echo arrives, surviving the interim card move', async () => {
+    const card = { ...makeCard(0, 200000), sessionId: null };
+    cardStore.getCard.mockReturnValue(card);
+    sessionStore.getSession.mockReturnValue(undefined);
+    let echoSeq = 0;
+    sessionStore.getUserEchoSeq.mockImplementation(() => echoSeq);
+    // The server acks agent:send before it submits the prompt, so the send
+    // promise resolving does not end the spinner.
+    sessionStore.sendMessage.mockResolvedValue(undefined);
+
+    const element = (thr: number) => (
+      <SessionView cardId={1011} sessionId={null} model="gpt-5.5" providerID="chatgpt" summarizeThreshold={thr} />
+    );
+    const { container, rerender } = render(element(0.7));
+    const sendBtn = () => container.querySelector('form button[type="submit"]') as HTMLButtonElement;
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Enter a prompt to start a session...');
+
+    expect(sendBtn().querySelector('.lucide-send')).not.toBeNull();
+
+    fireEvent.change(textarea, { target: { value: 'Run the ferris wheel' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => expect(sessionStore.sendMessage).toHaveBeenCalledTimes(1));
+    expect(sendBtn().querySelector('.lucide-loader-circle')).not.toBeNull();
+
+    // The preemptive card:updated (running-column move, no echo yet) must not
+    // settle a real prompt — the session is still being created.
+    card.updatedAt = '2026-04-27T20:00:00.500Z';
+    rerender(element(0.71));
+    expect(sendBtn().querySelector('.lucide-loader-circle')).not.toBeNull();
+
+    // The server accepts the prompt and broadcasts the user echo.
+    echoSeq = 1;
+    rerender(element(0.72));
+    await waitFor(() => expect(sendBtn().querySelector('.lucide-loader-circle')).toBeNull());
+    expect(sendBtn().querySelector('.lucide-send')).not.toBeNull();
+  });
+
+  it('settles a command-only message on the card update, without an echo', async () => {
+    const card = { ...makeCard(0, 200000), sessionId: null };
+    cardStore.getCard.mockReturnValue(card);
+    sessionStore.getSession.mockReturnValue(undefined);
+    sessionStore.sendMessage.mockResolvedValue(undefined);
+
+    const element = (thr: number) => (
+      <SessionView cardId={1011} sessionId={null} model="gpt-5.5" providerID="chatgpt" summarizeThreshold={thr} />
+    );
+    const { container, rerender } = render(element(0.7));
+    const sendBtn = () => container.querySelector('form button[type="submit"]') as HTMLButtonElement;
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>('Enter a prompt to start a session...');
+
+    fireEvent.change(textarea, { target: { value: '/ready' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => expect(sessionStore.sendMessage).toHaveBeenCalledTimes(1));
+    expect(sendBtn().querySelector('.lucide-loader-circle')).not.toBeNull();
+
+    // /ready broadcasts no user echo — the column-move card:updated settles it.
+    card.updatedAt = '2026-04-27T20:00:01.000Z';
+    rerender(element(0.8));
+    await waitFor(() => expect(sendBtn().querySelector('.lucide-loader-circle')).toBeNull());
+    expect(sendBtn().querySelector('.lucide-send')).not.toBeNull();
   });
 
   it('focuses the prompt textarea when promptFocusSeq changes', async () => {

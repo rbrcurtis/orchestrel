@@ -77,6 +77,15 @@ export class SessionStore {
   private historyPages = new Map<number, TranscriptHistoryPage>();
   private historyMessages = new Map<number, unknown[]>();
   private messageVersions = new Map<number, number>();
+  // Live user messages the SERVER has broadcast per card (the prompt echo the
+  // backend emits once it has accepted a prompt — after the session message or
+  // create call). Observers use it to know the send's result has arrived.
+  userEchoSeq = observable.map<number, number>();
+  // In-flight server round trips per card: the status request, the transcript
+  // snapshot / history pages, and the paging fetches. While any of them is
+  // outstanding the card's data is in flight, and the view shows the pending
+  // affordance instead of the plain send button.
+  private dataRequests = observable.map<number, number>();
   private replicas = new Map<number, TranscriptReplica>();
   private liveLoading = new Map<number, TranscriptEnvelope<TranscriptEvent>[]>();
   private liveFrames = new Set<number>();
@@ -187,6 +196,10 @@ export class SessionStore {
 
   private async loadLive(cardId: number, cursor?: TranscriptCursor): Promise<void> {
     if (this.liveLoading.has(cardId)) return;
+    await this.trackDataRequest(cardId, () => this.doLoadLive(cardId, cursor));
+  }
+
+  private async doLoadLive(cardId: number, cursor?: TranscriptCursor): Promise<void> {
     const pending: TranscriptEnvelope<TranscriptEvent>[] = [];
     this.liveLoading.set(cardId, pending);
     const scope = this.cacheScopes.get(cardId);
@@ -285,6 +298,11 @@ export class SessionStore {
       console.debug('[transcript] older page unavailable', cardId);
       return;
     }
+    await this.trackDataRequest(cardId, () => this.doLoadHistoryRange(cardId, direction));
+  }
+
+  private async doLoadHistoryRange(cardId: number, direction: 'older' | 'newer'): Promise<void> {
+    const page = this.historyPages.get(cardId) as TranscriptHistoryPage;
     this.loadingCards.add(cardId);
     const version = this.messageVersions.get(cardId) ?? 0;
     try {
@@ -435,8 +453,32 @@ export class SessionStore {
 
   // ── Incoming server messages ────────────────────────────────────────────────
 
+  getUserEchoSeq(cardId: number): number {
+    return this.userEchoSeq.get(cardId) ?? 0;
+  }
+
+  isDataPending(cardId: number): boolean {
+    return (this.dataRequests.get(cardId) ?? 0) > 0;
+  }
+
+  private trackDataRequest<T>(cardId: number, fn: () => Promise<T>): Promise<T> {
+    runInAction(() => {
+      this.dataRequests.set(cardId, (this.dataRequests.get(cardId) ?? 0) + 1);
+    });
+    return fn().finally(() => {
+      runInAction(() => {
+        const remaining = (this.dataRequests.get(cardId) ?? 1) - 1;
+        if (remaining > 0) this.dataRequests.set(cardId, remaining);
+        else this.dataRequests.delete(cardId);
+      });
+    });
+  }
+
   ingestSdkMessage(cardId: number, msg: unknown): void {
     this.messageVersions.set(cardId, (this.messageVersions.get(cardId) ?? 0) + 1);
+    if (typeof msg === 'object' && msg !== null && 'type' in msg && (msg as SdkMessage).type === 'user') {
+      this.userEchoSeq.set(cardId, (this.userEchoSeq.get(cardId) ?? 0) + 1);
+    }
     runInAction(() => {
       const s = this.getOrCreate(cardId);
       const sdkMsg = msg as SdkMessage;
@@ -671,7 +713,7 @@ export class SessionStore {
     // cache path — otherwise resubscribeAll() skips it after a reconnect and the
     // socket silently stops receiving this card's live events.
     this.subscribedCards.add(cardId);
-    await this.ws().emit('agent:status', { cardId });
+    await this.trackDataRequest(cardId, () => this.ws().emit('agent:status', { cardId }));
   }
 
   async loadHistory(cardId: number, sessionId?: string | null, opts?: { force?: boolean }): Promise<void> {
@@ -686,6 +728,10 @@ export class SessionStore {
       }
       return;
     }
+    await this.trackDataRequest(cardId, () => this.doLoadHistory(cardId, sessionId, opts));
+  }
+
+  private async doLoadHistory(cardId: number, sessionId?: string | null, opts?: { force?: boolean }): Promise<void> {
     this.loadingCards.add(cardId);
     this.runningLoads.set(cardId, sessionId ?? null);
     this.subscribedCards.add(cardId);
