@@ -14,8 +14,14 @@ const TILE_BUDGET_MB = 1024;
 const TAB_PURGE_MB = 1400;
 const TAB_RECYCLE_MB = 3000;
 const PURGE_COOLDOWN_MS = 60_000;
+// Off by default. A page that stops updating a few seconds after a reload is what an
+// exhausted tile budget looks like: the JavaScript keeps running, the screen does not.
+// Both measures stay behind this until the freeze is settled one way or the other.
+const RENDERER_GUARD = process.env.ORCHESTREL_RENDERER_GUARD === '1';
 
-app.commandLine.appendSwitch('force-gpu-mem-available-mb', String(TILE_BUDGET_MB));
+if (RENDERER_GUARD) {
+  app.commandLine.appendSwitch('force-gpu-mem-available-mb', String(TILE_BUDGET_MB));
+}
 
 const apps = {
   orchestrel: {
@@ -226,6 +232,7 @@ async function purgeRenderer(reason, mb) {
 function reportMainMetrics() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   logDesktopLine(metricsLine());
+  if (!RENDERER_GUARD) return;
 
   // Keep the renderer under the ceiling that kills it. A reload below is the same
   // path a crash takes, so one budget covers both, and a controlled reload costs a
@@ -276,7 +283,7 @@ function isInternalUrl(url) {
 app.whenReady().then(() => {
   metricsLogPath = path.join(app.getPath('userData'), 'orchestrel-desktop-metrics.log');
   logDesktopLine(
-    `desktop-start tileBudget=${TILE_BUDGET_MB}MB purgeAt=${TAB_PURGE_MB}MB recycleAt=${TAB_RECYCLE_MB}MB electron=${process.versions.electron} chrome=${process.versions.chrome}`,
+    `desktop-start rendererGuard=${RENDERER_GUARD ? 'on' : 'off'} tileBudget=${TILE_BUDGET_MB}MB purgeAt=${TAB_PURGE_MB}MB recycleAt=${TAB_RECYCLE_MB}MB electron=${process.versions.electron} chrome=${process.versions.chrome}`,
   );
   createWindow();
   setInterval(reportMainMetrics, METRICS_INTERVAL_MS);
