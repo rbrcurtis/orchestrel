@@ -689,3 +689,26 @@ describe('SessionStore history loading', () => {
     await vi.waitFor(() => expect(cursor()).toEqual({ streamId: 'stream-1', sequence: 2 }));
   });
 });
+
+describe('SessionStore pending request guard', () => {
+  it('releases a request whose acknowledgement never arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = new SessionStore();
+      // An ack that never comes: the socket accepts the emit and never answers.
+      store.setWs({ emit: vi.fn(() => new Promise(() => {})) } as unknown as WsClient);
+
+      void store.requestStatus(4242);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.isDataPending(4242)).toBe(true);
+
+      // The emit has its own ack timeout, and this is the backstop behind it. Either
+      // way the pending count must clear, because it disables the send button.
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(store.isDataPending(4242)).toBe(false);
+      expect(store.diagStats().stuckReleases).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

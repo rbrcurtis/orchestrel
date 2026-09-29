@@ -37,6 +37,11 @@ class FakeSocket {
     open: vi.fn(),
   };
 
+  timeout(_ms: number): this {
+    // socket.io sets the ack timeout on the socket and returns the same socket.
+    return this;
+  }
+
   emitWithAck(event: keyof ClientToServerEvents, _data: unknown): Promise<AckResponse> {
     if (event === 'subscribe') {
       return this.nextSubscribeResponse ?? Promise.resolve({ data: this.nextSubscribeData });

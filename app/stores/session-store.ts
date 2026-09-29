@@ -31,6 +31,10 @@ const STOP_ATTEMPTS = 5;
 // a slow one backs off instead of burning the CPU.
 const LIVE_PAINT_MS = 250;
 const LIVE_PAINT_MAX_MS = 2000;
+// How long a tracked request may stay pending before the guard releases it anyway.
+// Generous enough for a slow history read of a large transcript, short enough that a
+// card never stays unusable for a session.
+const REQUEST_GUARD_MS = 90_000;
 // How often the live replica is written to the transcript cache. The confirmed
 // history page only holds what the session file had at load time, so without this
 // a return to a running card rewinds to that page and refetches the streamed tail.
@@ -108,6 +112,7 @@ export class SessionStore {
     paints: 0,
     evictions: 0,
     cardLoads: 0,
+    stuckReleases: 0,
   };
 
   // A snapshot of what the client is holding, so a running app can be diagnosed
@@ -125,6 +130,7 @@ export class SessionStore {
       evictions: this.cacheStats.evictions,
       cardLoads: this.cacheStats.cardLoads,
       paintCostMs: Math.round(this.paintCostMs * 10) / 10,
+      stuckReleases: this.cacheStats.stuckReleases,
     };
   }
 
@@ -465,12 +471,25 @@ export class SessionStore {
     runInAction(() => {
       this.dataRequests.set(cardId, (this.dataRequests.get(cardId) ?? 0) + 1);
     });
-    return fn().finally(() => {
+    const release = () => {
       runInAction(() => {
         const remaining = (this.dataRequests.get(cardId) ?? 1) - 1;
         if (remaining > 0) this.dataRequests.set(cardId, remaining);
         else this.dataRequests.delete(cardId);
       });
+    };
+    // Backstop for a request that never settles. Every emit carries its own ack
+    // timeout, but this count gates the send button and the history load, so a wedge
+    // here costs the whole card until the app is reloaded. The guard errs toward
+    // releasing, and reports itself on the sampler line so a stuck request is visible
+    // from a running app.
+    const guard = setTimeout(() => {
+      this.cacheStats.stuckReleases += 1;
+      release();
+    }, REQUEST_GUARD_MS);
+    return fn().finally(() => {
+      clearTimeout(guard);
+      release();
     });
   }
 

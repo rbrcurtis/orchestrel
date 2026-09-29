@@ -10,6 +10,12 @@ import type {
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
+// An acknowledgement that never arrives must not wedge the caller. emitWithAck waits
+// forever by default, and a stuck ack leaves the session store's pending count above
+// zero, which disables the send button until the app is reloaded and leaves a card's
+// history half loaded. A node that is busy, restarting or gone fails silently here.
+const ACK_TIMEOUT_MS = 30_000;
+
 export class WsClient {
   readonly socket: AppSocket;
   private subscribedColumns: Column[] = [];
@@ -89,7 +95,7 @@ export class WsClient {
 
   async subscribe(columns: Column[]): Promise<SyncPayload | undefined> {
     this.subscribedColumns = columns;
-    const res = await this.socket.emitWithAck('subscribe', columns);
+    const res = await this.socket.timeout(ACK_TIMEOUT_MS).emitWithAck('subscribe', columns);
     if (res.error) {
       console.error('[ws] subscribe error:', res.error);
       return undefined;
@@ -97,14 +103,23 @@ export class WsClient {
     return res.data;
   }
 
-  /** Generic ack-based emit. Throws on error response. */
+  /** Generic ack-based emit. Throws on error response or on a missing ack. */
   async emit(event: string, data: unknown): Promise<unknown> {
-    const res = await (this.socket as AppSocket).emitWithAck(event as keyof ClientToServerEvents, data as never);
-    const r = res as AckResponse;
-    if (r && typeof r === 'object' && 'error' in r && r.error) {
-      throw new Error(r.error);
+    let res: AckResponse;
+    try {
+      res = (await (this.socket as AppSocket)
+        .timeout(ACK_TIMEOUT_MS)
+        .emitWithAck(event as keyof ClientToServerEvents, data as never)) as AckResponse;
+    } catch (err) {
+      // Reported so a lost ack is visible in the console rather than looking like a
+      // UI that quietly stopped responding.
+      console.error(`[ws] no ack for ${event} within ${ACK_TIMEOUT_MS}ms`, err);
+      throw err;
     }
-    return r && typeof r === 'object' && 'data' in r ? r.data : undefined;
+    if (res && typeof res === 'object' && 'error' in res && res.error) {
+      throw new Error(res.error);
+    }
+    return res && typeof res === 'object' && 'data' in res ? res.data : undefined;
   }
 
   dispose() {

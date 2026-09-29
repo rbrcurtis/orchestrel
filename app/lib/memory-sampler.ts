@@ -52,6 +52,51 @@ function clientTag(): string {
   return 'other';
 }
 
+// Whether the page would still accept a click. When the app looks normal but nothing
+// responds, either the page is not listening or something is sitting on top of it,
+// and these figures separate the two: a locked pointer, a popover or dialog left
+// mounted, and whatever element actually owns the centre of the screen.
+function uiState(): string {
+  const bodyPe = getComputedStyle(document.body).pointerEvents;
+  const htmlPe = getComputedStyle(document.documentElement).pointerEvents;
+  const open = document.querySelectorAll('[data-state="open"]').length;
+  const layers = document.querySelectorAll(
+    '[data-radix-popper-content-wrapper], [role="dialog"], [role="alertdialog"], [role="menu"], [offcanvas]',
+  ).length;
+  const hit = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+  const hitTag = hit
+    ? `${hit.tagName.toLowerCase()}${hit.getAttribute('data-testid') ? '#' + hit.getAttribute('data-testid') : ''}`
+    : 'null';
+  const active = document.activeElement ? document.activeElement.tagName.toLowerCase() : 'none';
+  return `ui bodyPe=${bodyPe} htmlPe=${htmlPe} open=${open} layers=${layers} hit=${hitTag} focus=${active} ${pointerState()}`;
+}
+
+// A click that never arrives is invisible from inside React, so count the raw events.
+// A pointer that went down and never came up, or pointer downs that never became
+// clicks, means the event was consumed before it reached the handler - which is what a
+// drag sensor left listening after its item unmounted looks like.
+const pointer = { down: 0, up: 0, cancel: 0, click: 0, last: 'none' };
+
+function pointerState(): string {
+  return `pt down=${pointer.down} up=${pointer.up} cancel=${pointer.cancel} click=${pointer.click} last=${pointer.last}`;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      pointer.down += 1;
+      const t = e.target instanceof HTMLElement ? e.target : null;
+      const name = t ? (t.getAttribute('data-testid') ?? t.tagName.toLowerCase()) : '?';
+      pointer.last = `${name}@${Math.round(e.clientX)},${Math.round(e.clientY)}`;
+    },
+    true,
+  );
+  window.addEventListener('pointerup', () => (pointer.up += 1), true);
+  window.addEventListener('pointercancel', () => (pointer.cancel += 1), true);
+  window.addEventListener('click', () => (pointer.click += 1), true);
+}
+
 function report(line: string): void {
   try {
     navigator.sendBeacon('/api/pwa-log', JSON.stringify({ msg: line, ts: new Date().toISOString() }));
@@ -83,9 +128,9 @@ function sample(): void {
     globalThis as { __rootStore?: { sessions?: { diagStats?: () => Record<string, number> } } }
   ).__rootStore?.sessions?.diagStats?.();
   const hold = diag
-    ? ` paint=${diag.paintCostMs}ms paints=${diag.paints} loads=${diag.cardLoads} evict=${diag.evictions} cards=${diag.cards} replicas=${diag.replicas} hist=${diag.historyMessages} pages=${diag.historyPages} viewers=${diag.viewers} liveBuf=${diag.liveBuffers}`
+    ? ` paint=${diag.paintCostMs}ms paints=${diag.paints} loads=${diag.cardLoads} evict=${diag.evictions} stuck=${diag.stuckReleases} cards=${diag.cards} replicas=${diag.replicas} hist=${diag.historyMessages} pages=${diag.historyPages} viewers=${diag.viewers} liveBuf=${diag.liveBuffers}`
     : '';
-  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}${ios}${cache}${hold}`;
+  const line = `mem sid=${sessionId} ua=${clientTag()} uptime=${uptimeSec}s used=${used}MB total=${total}MB dom=${domNodes}${ios}${cache}${hold} ${uiState()}`;
   console.log(`[mem-sampler] ${line}`);
   report(line);
 }
