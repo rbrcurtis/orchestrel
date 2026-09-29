@@ -74,7 +74,6 @@ describe('handleAgentCompact', () => {
       model: 'sonnet',
       contextWindow: 200_000,
       summarizeThreshold: 0.6,
-      mode: 'full',
     });
   });
 });

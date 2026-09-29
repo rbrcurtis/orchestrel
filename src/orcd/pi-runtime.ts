@@ -8,6 +8,7 @@ import {
   ModelRegistry,
   ModelRuntime,
   SessionManager,
+  SettingsManager,
   createAgentSession,
   createEventBus,
   findCutPoint,
@@ -69,7 +70,6 @@ export interface PiRuntimeSession {
   subscribe(cb: (event: unknown) => void): () => void;
   abort(): Promise<void>;
   dispose(): Promise<void>;
-  compact(instructions?: string): Promise<unknown>;
   /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
   prepareBgCompaction(
     keepFraction: number,
@@ -77,10 +77,12 @@ export interface PiRuntimeSession {
     signal: AbortSignal,
     onStart?: () => void,
   ): Promise<CompactionResult | null>;
-  /** Splice a prepared compaction into the session tree and rebuild context. Call only when idle. */
-  applyBgCompaction(result: CompactionResult): void;
-  /** True when the newest entry on the branch is already a compaction. */
-  latestEntryIsCompaction(): boolean;
+  /**
+   * Splice a prepared compaction into the session tree and rebuild context. Call
+   * only when idle. False = the prepared cut is stale (a newer compaction already
+   * moved the boundary past it) and nothing was spliced.
+   */
+  applyBgCompaction(result: CompactionResult): boolean;
   setEffort(effort: string): Promise<void>;
   /** Switch provider/model on the live Pi session (same conversation; Pi appends a model_change entry). */
   setModel(provider: string, model: string): Promise<void>;
@@ -91,29 +93,7 @@ export interface PiRuntimeSession {
    * cursor is too old, from another stream, or ahead of this one.
    */
   replayTranscript(cursor: TranscriptCursor | undefined): ReplayDecision<TranscriptEvent, TranscriptState>;
-  /**
-   * Temporary diagnostic probe for the "chat lost when a background subagent
-   * finishes" bug: reports the SessionManager instance tag + current leaf so we
-   * can catch the tree fork (notification appended off a stale leaf, orphaning
-   * interleaved user turns). Remove once the fork's origin is confirmed.
-   */
-  debugLeafState(prevLeafId?: string | null): {
-    tag: string;
-    leafId: string | null;
-    count: number;
-    lastId: string | null;
-    lastParentId: string | null;
-    // False when prevLeafId is set but is NOT an ancestor of the current leaf —
-    // i.e. the active branch diverged and everything appended after prevLeafId on
-    // the old branch is now orphaned. This is the fork we're hunting.
-    prevIsAncestor: boolean;
-  };
 }
-
-// Monotonic tag so we can tell distinct SessionManager instances apart in logs
-// (a tag change between the interleaved chat prompt and the subagent-completion
-// append would prove a desynced/duplicate manager is the fork's origin).
-let managerTagSeq = 0;
 
 type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -133,10 +113,31 @@ export function isAdaptiveEffort(effort: string | undefined): boolean {
   return effort === 'adaptive';
 }
 
-function canCompact(session: AgentSession): session is AgentSession & {
-  compact(instructions?: string): Promise<unknown>;
-} {
-  return typeof session.compact === 'function';
+/**
+ * One entry of Pi's session branch. Compaction entries carry the boundary the live
+ * context starts at; message entries are the only ones a summary can be built from.
+ */
+type BranchEntry = {
+  type: string;
+  id: string;
+  message?: unknown;
+  summary?: string;
+  firstKeptEntryId?: string;
+};
+
+/**
+ * Locate the live context's start: the newest compaction's kept entry. Everything
+ * before it is already summarized, so summarizing it again overflows the model's
+ * window (a 1M-token model gets ~3M tokens after a handful of compactions) and the
+ * splice never lands. Pi's own prepareCompaction starts at the same boundary.
+ */
+function compactionBoundary(entries: BranchEntry[]): { index: number; previousSummary: string | undefined } {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].type !== 'compaction') continue;
+    const keptIdx = entries.findIndex((e) => e.id === entries[i].firstKeptEntryId);
+    return { index: keptIdx >= 0 ? keptIdx : i + 1, previousSummary: entries[i].summary };
+  }
+  return { index: 0, previousSummary: undefined };
 }
 
 function canSetThinkingLevel(session: AgentSession): session is AgentSession & {
@@ -295,20 +296,23 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       : SessionManager.create(opts.cwd, undefined, { id: requestedSessionId });
   }
 
+  // orcd owns compaction (see maybeStartBgc). Pi's threshold and overflow
+  // compactor would race the background compactor and can splice a cut the other
+  // has already superseded, so turn it off and leave BGC as the only compactor.
+  const settingsManager = SettingsManager.create(opts.cwd, agentDir);
+  settingsManager.applyOverrides({ compaction: { enabled: false } });
+
   const result = await createAgentSession({
     cwd: opts.cwd,
     agentDir,
     modelRuntime,
     resourceLoader,
     sessionManager,
+    settingsManager,
     model: activeModel,
     thinkingLevel: effortToThinkingLevel(opts.effort),
   });
   const session = result.session;
-
-  // Tag the live SessionManager so leaf-probe logs can distinguish instances.
-  const taggedManager = session.sessionManager as unknown as { __orcdTag?: string };
-  if (!taggedManager.__orcdTag) taggedManager.__orcdTag = `m${++managerTagSeq}`;
 
   // Bind extensions to emit the `session_start` event. Extensions that only
   // register providers/tools at load (e.g. claude-max) work without this, but
@@ -395,35 +399,12 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       }
     },
 
-    async compact(instructions) {
-      if (!canCompact(session)) return undefined;
-      return session.compact(instructions);
-    },
-
     async prepareBgCompaction(keepFraction, currentTokens, signal, onStart) {
-      const sm = session.sessionManager as unknown as {
-        getBranch(): Array<{
-          type: string;
-          id: string;
-          message?: unknown;
-          summary?: string;
-          firstKeptEntryId?: string;
-        }>;
-      };
+      const sm = session.sessionManager as unknown as { getBranch(): BranchEntry[] };
       const entries = sm.getBranch();
-      // The live context starts at the previous compaction's kept boundary. Everything before
-      // it is already summarized, so sending it to the summarizer again overflows the model's
-      // window (a 1M-token model gets ~3M tokens after a handful of compactions) and the
-      // splice never lands. Pi's own prepareCompaction starts at the same boundary.
-      let boundaryStart = 0;
-      let previousSummary: string | undefined;
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i].type !== 'compaction') continue;
-        previousSummary = entries[i].summary;
-        const keptIdx = entries.findIndex((e) => e.id === entries[i].firstKeptEntryId);
-        boundaryStart = keptIdx >= 0 ? keptIdx : i + 1;
-        break;
-      }
+      const boundary = compactionBoundary(entries);
+      const boundaryStart = boundary.index;
+      const previousSummary = boundary.previousSummary;
       const keepRecentTokens =
         currentTokens > 0 ? Math.floor(currentTokens * keepFraction) : DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
       const cut = findCutPoint(entries as never, boundaryStart, entries.length, keepRecentTokens);
@@ -451,7 +432,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         undefined,
         // Merge the previous summary so a BGC never drops the history it already compacted.
         previousSummary,
-        effortToThinkingLevel(currentEffort),
+        // Summarizing is mechanical restatement of history, so thinking only delays
+        // the splice and eats output budget. BGC never thinks, whatever the session's
+        // thinking level is (a background job must not inherit a per-turn setting).
+        'off',
         agent.streamFn as never,
       );
       return { summary, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
@@ -459,6 +443,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
 
     applyBgCompaction(result) {
       const sm = session.sessionManager as unknown as {
+        getBranch(): BranchEntry[];
         appendCompaction(
           summary: string,
           firstKeptEntryId: string,
@@ -467,18 +452,20 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
           fromHook: boolean,
         ): string;
       };
+      const entries = sm.getBranch();
+      const boundaryStart = compactionBoundary(entries).index;
+      const firstKeptIdx = entries.findIndex((e) => e.id === result.firstKeptEntryId);
+      // A compaction that landed while we were summarizing moved the boundary past
+      // our cut. Splicing it would re-include entries that are already summarized
+      // and grow the live context (one stale splice took a session from ~178k to
+      // 230k tokens, past its 240k window). Refuse; the caller re-prepares.
+      if (firstKeptIdx <= boundaryStart) return false;
       sm.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true);
       // Pi 0.87 made SessionManager canonical for provider context: assigning
       // agent.state.messages no longer replaces future request history, so rebuild
       // through the manager instead.
       session.refreshContext();
-    },
-
-    latestEntryIsCompaction() {
-      const sm = session.sessionManager as unknown as { getBranch(): Array<{ type?: string }> };
-      const entries = sm.getBranch();
-      const last = entries[entries.length - 1];
-      return !!last && last.type === 'compaction';
+      return true;
     },
 
     async setEffort(effort) {
@@ -524,41 +511,6 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     getMessages() {
       const messages = session.messages;
       return Array.isArray(messages) ? [...messages] : [];
-    },
-
-    debugLeafState(prevLeafId?: string | null) {
-      const sm = session.sessionManager as unknown as {
-        __orcdTag?: string;
-        getLeafId(): string | null;
-        getEntry(id: string): { id: string; parentId: string | null } | undefined;
-        getEntries(): Array<{ id: string; parentId: string | null }>;
-      };
-      const entries = sm.getEntries();
-      const last = entries[entries.length - 1];
-      const leafId = sm.getLeafId();
-
-      let prevIsAncestor = true;
-      if (prevLeafId) {
-        prevIsAncestor = false;
-        let cur = leafId ? sm.getEntry(leafId) : undefined;
-        // Bounded walk up the parent chain from the current leaf to the root.
-        for (let i = 0; cur && i <= entries.length; i++) {
-          if (cur.id === prevLeafId) {
-            prevIsAncestor = true;
-            break;
-          }
-          cur = cur.parentId ? sm.getEntry(cur.parentId) : undefined;
-        }
-      }
-
-      return {
-        tag: sm.__orcdTag ?? '?',
-        leafId,
-        count: entries.length,
-        lastId: last?.id ?? null,
-        lastParentId: last?.parentId ?? null,
-        prevIsAncestor,
-      };
     },
   };
 }

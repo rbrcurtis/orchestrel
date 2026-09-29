@@ -7,8 +7,9 @@ import { INJECTED_COMMANDS_MARKER } from '../../shared/slash-commands';
 const mockPrompt = vi.fn();
 const mockSubscribe = vi.fn();
 const mockAbort = vi.fn();
-const mockCompact = vi.fn();
 const mockSetThinkingLevel = vi.fn();
+const mockApplyOverrides = vi.fn();
+const mockSettingsManagerCreate = vi.fn(() => ({ applyOverrides: mockApplyOverrides }));
 const mockSessionSetModel = vi.fn();
 const mockBindExtensions = vi.fn();
 const mockFind = vi.fn();
@@ -40,6 +41,7 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
     list: mockSessionManagerList,
     open: mockSessionManagerOpen,
   },
+  SettingsManager: { create: mockSettingsManagerCreate },
   createAgentSession: mockCreateAgentSession,
   createEventBus: mockCreateEventBus,
   DefaultResourceLoader: class {
@@ -67,7 +69,6 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     prompt: mockPrompt,
     subscribe: mockSubscribe,
     abort: mockAbort,
-    compact: mockCompact,
     setThinkingLevel: mockSetThinkingLevel,
     setModel: mockSessionSetModel,
     bindExtensions: mockBindExtensions,
@@ -95,7 +96,6 @@ describe('createPiRuntimeSession', () => {
     mockCreateAgentSession.mockResolvedValue({ session: makeSession() });
     mockPrompt.mockResolvedValue(undefined);
     mockAbort.mockResolvedValue(undefined);
-    mockCompact.mockResolvedValue({ ok: true });
     mockSessionSetModel.mockResolvedValue(undefined);
     mockBindExtensions.mockResolvedValue(undefined);
   });
@@ -126,12 +126,22 @@ describe('createPiRuntimeSession', () => {
       modelRuntime,
       resourceLoader: expect.any(Object),
       sessionManager: { kind: 'session-manager-create' },
+      settingsManager: expect.any(Object),
       model: { provider: 'anthropic', id: 'claude-sonnet-4-6' },
       thinkingLevel: 'xhigh',
     });
     // Must bind extensions so the session_start event fires — extensions like
     // the MCP adapter initialize on it. Without this, MCP servers never connect.
     expect(mockBindExtensions).toHaveBeenCalledOnce();
+  });
+
+  it('turns Pi compaction off so orcd background compaction is the only compactor', async () => {
+    const { createPiRuntimeSession } = await import('../pi-runtime');
+
+    await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
+
+    expect(mockSettingsManagerCreate).toHaveBeenCalledWith('/repo', '/home/ryan/.pi/agent');
+    expect(mockApplyOverrides).toHaveBeenCalledWith({ compaction: { enabled: false } });
   });
 
   it('gives each session an isolated policy loader and cleans legacy agent files without creating .pi', async () => {
@@ -514,17 +524,14 @@ describe('createPiRuntimeSession', () => {
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it('abort, compact, and setEffort call through when supported', async () => {
+  it('abort and setEffort call through when supported', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     const session = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
 
     await session.abort();
-    const compactResult = await session.compact('keep only the summary');
     await session.setEffort('disabled');
 
     expect(mockAbort).toHaveBeenCalledOnce();
-    expect(mockCompact).toHaveBeenCalledWith('keep only the summary');
-    expect(compactResult).toEqual({ ok: true });
     expect(mockSetThinkingLevel).toHaveBeenCalledWith('off');
   });
 
@@ -564,42 +571,14 @@ describe('createPiRuntimeSession', () => {
     expect(mockSetThinkingLevel.mock.calls.map(([level]) => level)).toEqual(['high', 'low']);
   });
 
-  it('compact and setEffort no-op when Pi runtime methods are absent', async () => {
-    const { createPiRuntimeSession } = await import('../pi-runtime');
-    mockCreateAgentSession.mockResolvedValue({
-      session: makeSession({ compact: undefined, setThinkingLevel: undefined }),
-    });
-    const session = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
-
-    await expect(session.compact()).resolves.toBeUndefined();
-    await expect(session.setEffort('high')).resolves.toBeUndefined();
-  });
-
-  it('setEffort still calls setThinkingLevel when compact is missing', async () => {
-    const { createPiRuntimeSession } = await import('../pi-runtime');
-    mockCreateAgentSession.mockResolvedValue({
-      session: makeSession({ compact: undefined }),
-    });
-    const session = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
-
-    await expect(session.compact()).resolves.toBeUndefined();
-    await session.setEffort('max');
-
-    expect(mockSetThinkingLevel).toHaveBeenCalledWith('xhigh');
-  });
-
-  it('compact still executes when setThinkingLevel is missing', async () => {
+  it('setEffort no-ops when Pi cannot set a thinking level', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
     mockCreateAgentSession.mockResolvedValue({
       session: makeSession({ setThinkingLevel: undefined }),
     });
     const session = await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
 
-    const compactResult = await session.compact('summarize');
     await expect(session.setEffort('high')).resolves.toBeUndefined();
-
-    expect(mockCompact).toHaveBeenCalledWith('summarize');
-    expect(compactResult).toEqual({ ok: true });
   });
 
   it('getMessages returns messages array or []', async () => {

@@ -21,6 +21,7 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
     getApiKeyAndHeaders = vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} }));
   },
   SessionManager: { create: () => ({}), open: () => ({}), list: vi.fn(async () => []) },
+  SettingsManager: { create: () => ({ applyOverrides: () => undefined }) },
   createEventBus: () => ({}),
   DefaultResourceLoader: class {
     async reload() {}
@@ -101,6 +102,8 @@ describe('pi-runtime BGC', () => {
       { role: 'user', content: 'old half' },
     ]);
     expect(generateSummary.mock.calls[0][7]).toBe('OLD SUMMARY');
+    // BGC never thinks, whatever the session's thinking level is.
+    expect(generateSummary.mock.calls[0][8]).toBe('off');
     expect(r?.firstKeptEntryId).toBe('e3');
   });
 
@@ -117,9 +120,30 @@ describe('pi-runtime BGC', () => {
   });
 
   it('applyBgCompaction appends the entry and refreshes the context', async () => {
+    getBranch.mockReturnValue([
+      { type: 'message', id: 'e0', message: { role: 'user' } },
+      { type: 'message', id: 'e1', message: { role: 'assistant' } },
+    ]);
     const s = await makeSession();
-    await s.applyBgCompaction({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 42, details: undefined });
+    const applied = s.applyBgCompaction({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 42, details: undefined });
+    expect(applied).toBe(true);
     expect(appendCompaction).toHaveBeenCalledWith('S', 'e1', 42, undefined, true);
     expect(refreshContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a cut a newer compaction has already superseded', async () => {
+    // Regression: a splice prepared against the old boundary was applied after Pi
+    // had compacted again, re-including summarized entries and pushing the live
+    // context past the model's window.
+    getBranch.mockReturnValue([
+      { type: 'message', id: 'e0', message: { role: 'user' } },
+      { type: 'message', id: 'e1', message: { role: 'assistant' } },
+      { type: 'compaction', id: 'c1', firstKeptEntryId: 'e1', summary: 'NEWER' },
+    ]);
+    const s = await makeSession();
+    const applied = s.applyBgCompaction({ summary: 'S', firstKeptEntryId: 'e0', tokensBefore: 42, details: undefined });
+    expect(applied).toBe(false);
+    expect(appendCompaction).not.toHaveBeenCalled();
+    expect(refreshContext).not.toHaveBeenCalled();
   });
 });

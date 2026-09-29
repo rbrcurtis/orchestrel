@@ -346,11 +346,7 @@ export class OrcdClient {
     this.send({ action: 'set_model', sessionId, provider, model });
   }
 
-  /**
-   * Compact a session. `mode: 'full'` runs Pi's native blocking compaction
-   * (the chat `/compact` command and the UI context wheel); omitting it (or
-   * 'background') runs Orchestrel's incremental background compaction.
-   */
+  /** Compact a session with Orchestrel's incremental background compaction. */
   compact(opts: {
     sessionId: string;
     cwd: string;
@@ -358,7 +354,6 @@ export class OrcdClient {
     model: string;
     contextWindow?: number;
     summarizeThreshold?: number;
-    mode?: 'full' | 'background';
   }): void {
     this.send({ action: 'compact', ...opts });
   }

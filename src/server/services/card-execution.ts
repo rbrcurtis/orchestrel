@@ -282,7 +282,6 @@ export async function compactCardSession(cardId: number): Promise<Card> {
     model: card.model,
     contextWindow: windowForCard(card),
     summarizeThreshold: card.summarizeThreshold,
-    mode: 'full',
   });
   return card;
 }

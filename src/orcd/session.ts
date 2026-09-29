@@ -75,16 +75,10 @@ export class OrcdSession {
   private readonly cancelGraceMs: number;
   private subscribers = new Set<SessionEventCallback>();
   // Guards the foreground `/compact` marker pair (compact_started/compact_done)
-  // so it emits exactly once whether driven explicitly by runFullCompaction or
-  // mapped from Pi's own compaction_start/end during an active run.
+  // so it emits exactly once when Pi reports a manual compaction during a run.
   private fullCompacting = false;
   private onFork: ((oldId: string, newId: string) => void) | undefined;
   private forkedTo: string | undefined;
-
-  // TEMP diagnostic: last leaf id observed by the leaf-probe, used to detect the
-  // session-tree fork that orphans interleaved user chat when a background
-  // subagent completes. Remove once the fork's origin is confirmed from logs.
-  private probePrevLeafId: string | null = null;
 
   constructor(opts: {
     cwd: string;
@@ -265,29 +259,6 @@ export class OrcdSession {
     return this.contextWindow && this.contextWindow > 0 ? this.contextWindow : undefined;
   }
 
-  /**
-   * TEMP diagnostic probe for the "interleaved chat disappears when a background
-   * subagent finishes" bug. Logs the SessionManager instance tag + current leaf,
-   * and loudly flags when the previously-observed leaf is no longer an ancestor
-   * of the active leaf (the fork that orphans the chat). Compare `tag` across
-   * `where=` sites: a tag change between the chat prompt and the subagent
-   * notification proves a desynced/duplicate manager; a same-tag fork points at
-   * a leaf reset inside Pi. Remove once the origin is confirmed.
-   */
-  private probeLeaf(where: string): void {
-    if (!this.piSession) return;
-    const s = this.piSession.debugLeafState(this.probePrevLeafId);
-    const tag = `[orcd:${this.id.slice(0, 8)}][leaf-probe] where=${where} mgr=${s.tag} leaf=${s.leafId ?? 'null'} count=${s.count} last=${s.lastId ?? 'null'}<-${s.lastParentId ?? 'null'} prevLeaf=${this.probePrevLeafId ?? 'null'}`;
-    if (!s.prevIsAncestor) {
-      console.log(
-        `${tag} *** LEAF-FORK: prevLeaf orphaned — interleaved entries after it are off the active branch ***`,
-      );
-    } else {
-      console.log(tag);
-    }
-    this.probePrevLeafId = s.leafId;
-  }
-
   getTranscriptSnapshot() {
     return this.piSession?.getTranscriptSnapshot() ?? null;
   }
@@ -297,9 +268,6 @@ export class OrcdSession {
   }
 
   private emitMappedPiEvent(event: unknown): void {
-    // TEMP: catch the tree fork the instant it becomes observable.
-    this.probeLeaf('event');
-
     if (this.isRecord(event) && event.type === 'compaction_start') {
       // A manual `/compact` (reason 'manual') is a distinct, foreground full
       // compaction — NOT the background compactor. Keep its lifecycle separate so
@@ -397,12 +365,10 @@ export class OrcdSession {
         log('session running; ignoring empty overlapping prompt');
       } else if (this.piSession) {
         log('session running; queueing overlapping prompt as followUp');
-        this.probeLeaf('overlap-prompt:before'); // TEMP diagnostic (interleaved chat)
         // Sync the current effort before queueing so Pi's per-turn snapshot
         // (prepared when the queued follow-up starts) picks it up.
         if (opts.effort) await this.piSession.setEffort(opts.effort);
         await this.piSession.prompt(opts.prompt, { streamingBehavior: 'followUp', author: opts.author });
-        this.probeLeaf('overlap-prompt:after'); // TEMP diagnostic
       } else {
         log('session running but no pi session yet; dropping overlapping prompt');
       }
@@ -440,14 +406,12 @@ export class OrcdSession {
       // would persist an empty user message and Anthropic rejects requests with
       // cache_control on empty text blocks, so resume without running a turn.
       if (opts.prompt.trim()) {
-        this.probeLeaf('run-prompt:before'); // TEMP diagnostic
         const promptOpts = opts.resume
           ? { streamingBehavior: 'followUp' as const, author: opts.author }
           : opts.author
             ? { author: opts.author }
             : undefined;
         await session.prompt(opts.prompt, promptOpts);
-        this.probeLeaf('run-prompt:after'); // TEMP diagnostic
       } else {
         log('empty prompt; session resumed without running a turn');
       }
@@ -683,19 +647,19 @@ export class OrcdSession {
     return this.disposePromise;
   }
 
-  async compact(): Promise<unknown> {
-    const session = await this.getOrCreatePiSession(undefined);
-    return session.compact();
-  }
-
   /** True when no turn is currently streaming — safe to splice a compaction. */
   isIdle(): boolean {
     return !this.running;
   }
 
-  /** True when the newest branch entry is already a compaction (Pi safety net beat us). */
-  latestEntryIsCompaction(): boolean {
-    return this.piSession?.latestEntryIsCompaction() ?? false;
+  /** True when the live context is at or past this session's summarize threshold. */
+  needsCompaction(): boolean {
+    // lastContextWindow is the window that came with lastContextTokens, so the two
+    // describe the same turn; resolveContextWindow covers a session that has not
+    // reported usage yet.
+    const window = this.lastContextWindow || this.resolveContextWindow();
+    if (this.summarizeThreshold <= 0 || !window || window <= 0) return false;
+    return this.lastContextTokens / window >= this.summarizeThreshold;
   }
 
   /** Run an out-of-band BGC summary. Parallel-safe; null = nothing to compact. */
@@ -709,10 +673,15 @@ export class OrcdSession {
   }
 
   /** Splice a prepared BGC compaction into the session tree. Call only when idle. */
-  applyBgCompaction(result: CompactionResult): void {
-    if (!this.piSession) return;
-    this.piSession.applyBgCompaction(result);
+  applyBgCompaction(result: CompactionResult): boolean {
+    if (!this.piSession) return false;
+    const applied = this.piSession.applyBgCompaction(result);
+    if (!applied) return false;
     this.emitCompactBoundary();
+    // The next usage event carries the post-splice count. Until it arrives the old
+    // count still looks over-threshold and would re-trigger a summary.
+    this.lastContextTokens = 0;
+    return true;
   }
 
   /**

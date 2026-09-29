@@ -400,11 +400,11 @@ export class OrcdServer {
 
     // `/compact` (and other Pi TUI slash commands) are not interpreted on the
     // headless SDK path — without this they reach the model as literal prompt
-    // text. The chat command runs Pi's full native compaction (the UI context
-    // wheel uses the same full compaction via the `compact` action).
+    // text. Both this command and the UI context wheel drive the background
+    // compactor; Pi's own compactor is off for these sessions (see pi-runtime).
     if (isCompactCommand(action.prompt)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → full compaction`);
-      void this.runFullCompaction(session);
+      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → background compaction`);
+      void this.maybeStartBgc(session);
       return;
     }
 
@@ -414,14 +414,17 @@ export class OrcdServer {
       return;
     }
 
-    // Pi rejects prompts while its blocking manual compactor is mutating the
-    // session. Match the TUI: hold messages submitted during `/compact`, then
-    // start them as soon as compaction finishes.
-    if (this.compactionQueuedMessages.has(session.id)) {
-      const queued = this.compactionQueuedMessages.get(session.id) ?? [];
-      queued.push(action.prompt);
-      this.compactionQueuedMessages.set(session.id, queued);
-      console.log(`[orcd:${session.id.slice(0, 8)}:compact] queued message for after compaction`);
+    // Pi's compactor used to be the within-run safety net. With it disabled BGC is
+    // the only compactor, so a run must not start over the threshold — it would
+    // walk into the model's window mid-run and every request from there would be
+    // rejected. The session is idle here, so this splice lands immediately.
+    if (session.needsCompaction()) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] over threshold on dispatch; compacting first`);
+      void this.maybeStartBgc(session).then(() => {
+        session.sendMessage(action.prompt, action.effort, action.author).finally(() => {
+          console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
+        });
+      });
       return;
     }
 
@@ -538,7 +541,7 @@ export class OrcdServer {
       client.subscriptions.set(session.id, cb);
       session.subscribe(cb);
     }
-    const run = action.mode === 'full' ? this.runFullCompaction(session) : this.maybeStartBgc(session);
+    const run = this.maybeStartBgc(session);
     void run.finally(() => {
       if (hydrated) this.store.remove(session.id);
     });
@@ -629,64 +632,14 @@ export class OrcdServer {
     }
   }
 
-  // ── Full compaction (chat `/compact`) ───────────────────────────────────
-
-  /**
-   * Pi's native blocking compaction — summarizes the whole conversation and
-   * rebuilds context in one shot, the same behavior as `/compact` in the Pi TUI.
-   *
-   * A manual `/compact` runs session.compact() OUTSIDE a run(), so no Pi event
-   * subscription is attached to map compaction_start/end → synthetic markers.
-   * Emit the compact_started/compact_done pair explicitly here so the UI shows a
-   * "Compacting context…" line and the card moves to running while it runs.
-   * emitCompactStarted/Done are idempotent, so if a subscription is somehow
-   * active it won't double-emit.
-   */
-  private readonly compactionQueuedMessages = new Map<string, string[]>();
-
-  private async runFullCompaction(session: OrcdSession): Promise<void> {
-    const sid = session.id;
-    if (this.compacting.has(sid) || this.pendingApply.has(sid)) {
-      console.log(`[orcd:${sid.slice(0, 8)}:compact] already in flight or pending, ignoring`);
-      return;
-    }
-    this.compacting.add(sid);
-    this.compactionQueuedMessages.set(sid, []);
-    session.emitCompactStarted();
-    try {
-      await session.compact();
-      console.log(`[orcd:${sid.slice(0, 8)}:compact] full compaction applied`);
-    } catch (err) {
-      console.error(`[orcd:${sid.slice(0, 8)}:compact] failed:`, err instanceof Error ? err.message : String(err));
-    } finally {
-      session.emitCompactDone();
-      this.compacting.delete(sid);
-
-      const queued = this.compactionQueuedMessages.get(sid) ?? [];
-      this.compactionQueuedMessages.delete(sid);
-      if (queued.length > 0) {
-        console.log(`[orcd:${sid.slice(0, 8)}:compact] sending ${queued.length} queued message(s)`);
-        const [first, ...rest] = queued;
-        const run = session.sendMessage(first);
-        // Once the first call marks the session running, Pi natively queues the
-        // rest as follow-ups in submission order.
-        for (const prompt of rest) void session.sendMessage(prompt);
-        void run.finally(() => {
-          console.log(`[orcd] session ${sid.slice(0, 8)} post-compaction follow-up exited (state=${session.state})`);
-        });
-      }
-    }
-  }
-
   // ── Background compaction ───────────────────────────────────────────────
 
   private readonly BGC_KEEP_FRACTION = 0.3;
 
   /**
-   * Background compactor. Summarize the oldest ~70% off-band (parallel-safe).
-   * If the session is idle, splice the Pi-native compaction entry now; otherwise
-   * defer the splice to the next run-end (onBeforeExit) — never mutate the agent
-   * message array mid-run. Pi's own auto-compaction is the within-run safety net.
+   * Background compactor. Summarize the oldest ~70% off-band (parallel-safe). If the
+   * session is idle, splice the cut now; otherwise defer the splice to the next
+   * run-end (onBeforeExit) — never mutate the agent message array mid-run.
    */
   private async maybeStartBgc(session: OrcdSession): Promise<void> {
     const sid = session.id;
@@ -701,7 +654,7 @@ export class OrcdServer {
       const tokens = session.lastContextTokens;
       // Announce the job only once a compactable range is confirmed, so a failed
       // prepare never emits a "Background compaction started" line.
-      const result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => session.emitBgcStarted());
+      let result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => session.emitBgcStarted());
       if (!result) {
         this.bgcNoopTokens.set(sid, tokens);
         console.log(
@@ -710,11 +663,18 @@ export class OrcdServer {
         return;
       }
       this.bgcNoopTokens.delete(sid);
-      if (session.isIdle()) {
-        this.applyBgcResult(session, result);
-      } else {
+      if (!session.isIdle()) {
         this.pendingApply.set(sid, result);
         console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready; deferring splice to run-end`);
+        return;
+      }
+      if (!this.applyBgcResult(session, result)) {
+        // A compaction that landed while we summarized moved the boundary past our
+        // cut, so the splice was refused. Re-derive it from the new boundary once; a
+        // second refusal means the branch is churning — hold this size and let the
+        // next threshold hit (or prompt) try again.
+        result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal);
+        if (!result || !this.applyBgcResult(session, result)) this.bgcNoopTokens.set(sid, session.lastContextTokens);
       }
     } catch (err) {
       console.error(`[orcd:${sid.slice(0, 8)}:bgc] failed:`, err instanceof Error ? err.message : String(err));
@@ -726,17 +686,19 @@ export class OrcdServer {
     }
   }
 
-  /** Splice a prepared compaction unless Pi's safety net already compacted. */
+  /** Splice a prepared compaction; false when a newer compaction already moved its cut. */
   private applyBgcResult(
     session: OrcdSession,
     result: import('@earendil-works/pi-coding-agent').CompactionResult,
-  ): void {
-    if (session.latestEntryIsCompaction()) {
-      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] stale — a compaction already landed, skipping apply`);
-      return;
+  ): boolean {
+    if (!session.applyBgCompaction(result)) {
+      console.log(
+        `[orcd:${session.id.slice(0, 8)}:bgc] stale cut (a compaction landed after we prepared); re-deriving`,
+      );
+      return false;
     }
-    session.applyBgCompaction(result);
     console.log(`[orcd:${session.id.slice(0, 8)}:bgc] applied (tokensBefore=${result.tokensBefore})`);
+    return true;
   }
 
   // ── Session lifecycle hooks (called from handleCreate) ──────────────────
@@ -750,10 +712,17 @@ export class OrcdServer {
       // A new run starts from a fresh turn, so let the next threshold hit try again.
       this.bgcNoopTokens.delete(sid);
       const pending = this.pendingApply.get(sid);
-      // oxlint-disable-next-line orchestrel/log-before-early-return -- no pending splice is the common no-op case
-      if (!pending) return;
       this.pendingApply.delete(sid);
-      this.applyBgcResult(session, pending);
+      // No pending splice, or the pending one was refused because a compaction landed
+      // after we prepared it — either way re-derive one from the boundary this run
+      // just left. BGC is the only compactor now, so no run may end above the
+      // threshold without a splice: otherwise the next turn starts past the window.
+      if (!pending || !this.applyBgcResult(session, pending)) {
+        if (session.needsCompaction()) {
+          console.log(`[orcd:${sid.slice(0, 8)}:bgc] over threshold at run end; compacting`);
+          await this.maybeStartBgc(session);
+        }
+      }
     });
 
     const hook: SessionEventCallback = (msg) => {

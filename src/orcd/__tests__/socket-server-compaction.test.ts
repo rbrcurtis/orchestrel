@@ -282,30 +282,35 @@ describe('OrcdServer background compaction', () => {
     server['attachLifecycleHooks'](session);
     const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined };
     const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
-    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
-    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
     await server['maybeStartBgc'](session);
     expect(prepSpy).toHaveBeenCalledWith(0.3, expect.any(Object), expect.any(Function));
     expect(applySpy).toHaveBeenCalledWith(result);
   });
 
-  it('skips apply when a compaction already landed (staleness guard)', async () => {
+  it('re-derives the cut when the prepared one is stale', async () => {
     const server = createServer();
     const session = bgcSession('bgc-stale');
     server.store.add(session);
     server['attachLifecycleHooks'](session);
-    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue({
-      summary: 'S',
-      firstKeptEntryId: 'e1',
-      tokensBefore: 9,
-      details: undefined,
-    } as never);
-    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    const stale = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined };
+    const fresh = { summary: 'S2', firstKeptEntryId: 'e2', tokensBefore: 9, details: undefined };
+    const prepSpy = vi
+      .spyOn(session, 'prepareBgCompaction')
+      .mockResolvedValueOnce(stale as never)
+      .mockResolvedValueOnce(fresh as never);
+    const applySpy = vi
+      .spyOn(session, 'applyBgCompaction')
+      .mockReturnValueOnce(false) // a compaction landed after we prepared
+      .mockReturnValueOnce(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
-    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(true);
+
     await server['maybeStartBgc'](session);
-    expect(applySpy).not.toHaveBeenCalled();
+
+    expect(prepSpy).toHaveBeenCalledTimes(2);
+    expect(applySpy).toHaveBeenNthCalledWith(1, stale);
+    expect(applySpy).toHaveBeenNthCalledWith(2, fresh);
   });
 
   it('does not start a second BGC while one is in flight', async () => {
@@ -366,9 +371,8 @@ describe('OrcdServer background compaction', () => {
       onStart?.();
       return { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined } as never;
     });
-    vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
-    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
     server['handleAction'](
       client as never,
       { action: 'compact', sessionId: session.id, cwd: '/tmp', provider: 'test', model: 'm' } as CompactAction,
@@ -378,76 +382,6 @@ describe('OrcdServer background compaction', () => {
     expect(wrote.some((w) => w.includes('bgc_started'))).toBe(true);
   });
 
-  it('runs Pi-native full compaction for mode:full and emits the foreground compact markers', async () => {
-    const server = createServer();
-    const client = createClient();
-    const session = bgcSession('compact-full');
-    server.store.add(session);
-    server['attachLifecycleHooks'](session);
-    const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
-    client.subscriptions.set(session.id, cb);
-    session.subscribe(cb);
-    const compactSpy = vi.spyOn(session, 'compact').mockResolvedValue(undefined);
-    const bgcSpy = vi.spyOn(session, 'prepareBgCompaction');
-    server['handleAction'](
-      client as never,
-      {
-        action: 'compact',
-        sessionId: session.id,
-        cwd: '/tmp',
-        provider: 'test',
-        model: 'm',
-        mode: 'full',
-      } as CompactAction,
-    );
-    await new Promise((r) => setTimeout(r, 0));
-    expect(compactSpy).toHaveBeenCalled();
-    expect(bgcSpy).not.toHaveBeenCalled(); // full compaction, not background
-    const wrote = client.socket.write.mock.calls.map((c) => String(c[0]));
-    // A manual /compact runs outside a run(), so orcd must emit the foreground
-    // compact_started/compact_done pair explicitly (drives the card→running line
-    // and the "Compacting context…" UI marker). It must NOT emit the BGC markers.
-    expect(wrote.some((w) => w.includes('compact_started'))).toBe(true);
-    expect(wrote.some((w) => w.includes('compact_done'))).toBe(true);
-    expect(wrote.some((w) => w.includes('bgc_started'))).toBe(false);
-    expect(wrote.some((w) => w.includes('compact_boundary'))).toBe(false);
-  });
-
-  it('runs messages submitted during full compaction after it finishes', async () => {
-    const server = createServer();
-    const client = createClient();
-    const session = bgcSession('compact-queue');
-    server.store.add(session);
-    server['attachLifecycleHooks'](session);
-    let finishCompact: (() => void) | undefined;
-    vi.spyOn(session, 'compact').mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          finishCompact = resolve;
-        }),
-    );
-    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
-
-    server['handleAction'](
-      client as never,
-      {
-        action: 'compact',
-        sessionId: session.id,
-        cwd: '/tmp',
-        provider: 'test',
-        model: 'm',
-        mode: 'full',
-      } as CompactAction,
-    );
-    await new Promise((r) => setTimeout(r, 0));
-    server['handleAction'](client as never, { action: 'message', sessionId: session.id, prompt: 'after compact' });
-    expect(sendSpy).not.toHaveBeenCalled();
-
-    finishCompact?.();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(sendSpy).toHaveBeenCalledWith('after compact');
-  });
-
   it('defers the splice to run-end when the session is busy, then applies', async () => {
     const server = createServer();
     const session = bgcSession('bgc-defer');
@@ -455,12 +389,30 @@ describe('OrcdServer background compaction', () => {
     server['attachLifecycleHooks'](session);
     const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 7, details: undefined };
     vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
-    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue();
+    const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(false);
-    vi.spyOn(session, 'latestEntryIsCompaction').mockReturnValue(false);
     await server['maybeStartBgc'](session);
     expect(applySpy).not.toHaveBeenCalled(); // deferred, not applied mid-run
     await session['runBeforeExitHooks'](); // simulate run-end
     expect(applySpy).toHaveBeenCalledWith(result);
+  });
+
+  it('compacts before dispatching a prompt when a run ended over the threshold', async () => {
+    const server = createServer();
+    const client = createClient();
+    const session = bgcSession('bgc-dispatch');
+    session.summarizeThreshold = 0.7;
+    session.lastContextTokens = 180_000;
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(null as never);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    server['handleAction'](client as never, { action: 'message', sessionId: session.id, prompt: 'go' });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 180k of 200k is past the 70% threshold, so the summary has to land first.
+    expect(prepSpy).toHaveBeenCalled();
+    expect(sendSpy).toHaveBeenCalledWith('go', undefined, undefined);
   });
 });
