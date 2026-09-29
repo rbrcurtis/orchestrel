@@ -650,11 +650,17 @@ export class OrcdServer {
     this.compacting.add(sid);
     // Cancellation is not wired yet; summarization is short-lived.
     const signal = new AbortController().signal;
+    // Only an attempt that announced itself needs a terminal event: the UI holds its
+    // "compacting" state from bgc_started until compact_boundary.
+    let announced = false;
     try {
       const tokens = session.lastContextTokens;
       // Announce the job only once a compactable range is confirmed, so a failed
       // prepare never emits a "Background compaction started" line.
-      let result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => session.emitBgcStarted());
+      let result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => {
+        announced = true;
+        session.emitBgcStarted();
+      });
       if (!result) {
         this.bgcNoopTokens.set(sid, tokens);
         console.log(
@@ -663,26 +669,45 @@ export class OrcdServer {
         return;
       }
       this.bgcNoopTokens.delete(sid);
+      // Log the summary size every time: the summarizer is asked to stay under a token
+      // budget, so the journal is where a summary that is creeping back up shows itself.
+      const size = `chars=${result.summary.length} ~${Math.round(result.summary.length / 4)}t`;
       if (!session.isIdle()) {
         this.pendingApply.set(sid, result);
-        console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready; deferring splice to run-end`);
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready (${size}); deferring splice to run-end`);
         return;
       }
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready (${size}); applying now`);
       if (!this.applyBgcResult(session, result)) {
         // A compaction that landed while we summarized moved the boundary past our
         // cut, so the splice was refused. Re-derive it from the new boundary once; a
         // second refusal means the branch is churning — hold this size and let the
         // next threshold hit (or prompt) try again.
         result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal);
-        if (!result || !this.applyBgcResult(session, result)) this.bgcNoopTokens.set(sid, session.lastContextTokens);
+        if (!result || !this.applyBgcResult(session, result)) {
+          this.bgcNoopTokens.set(sid, session.lastContextTokens);
+          this.failBgc(session, announced, 'the compaction boundary moved while the summary was generated');
+        }
       }
     } catch (err) {
       console.error(`[orcd:${sid.slice(0, 8)}:bgc] failed:`, err instanceof Error ? err.message : String(err));
       // Hold the failing size too: a summarizer that errors would otherwise be
       // re-hit on every streaming delta until the context changes.
       this.bgcNoopTokens.set(sid, session.lastContextTokens);
+      this.failBgc(session, announced, err instanceof Error ? err.message : String(err));
     } finally {
       this.compacting.delete(sid);
+    }
+  }
+
+  /**
+   * Close out an announced BGC attempt that produced no splice. Silently leaving it open is
+   * what makes a failed compaction look like a running one in the UI.
+   */
+  private failBgc(session: OrcdSession, announced: boolean, reason: string): void {
+    if (announced) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] failed: ${reason}`);
+      session.emitBgcFailed(reason);
     }
   }
 

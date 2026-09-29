@@ -7,6 +7,7 @@ const buildSessionContext = vi.fn(() => ({ messages: ['m1', 'm2'] }));
 const refreshContext = vi.fn();
 const getBranch = vi.fn();
 const agentState = { messages: [] as unknown[] };
+let mockModel: Record<string, unknown> = { id: 'm', api: 'anthropic-messages' };
 
 vi.mock('@earendil-works/pi-coding-agent', () => ({
   buildContextEntries: () => [],
@@ -17,7 +18,7 @@ vi.mock('@earendil-works/pi-coding-agent', () => ({
   ModelRuntime: { create: async () => ({ setRuntimeApiKey: vi.fn() }) },
   ModelRegistry: class {
     registerProvider = vi.fn();
-    find = () => ({ id: 'm', api: 'anthropic-messages' });
+    find = () => mockModel;
     getApiKeyAndHeaders = vi.fn(async () => ({ ok: true, apiKey: 'k', headers: {} }));
   },
   SessionManager: { create: () => ({}), open: () => ({}), list: vi.fn(async () => []) },
@@ -55,6 +56,7 @@ describe('pi-runtime BGC', () => {
     refreshContext.mockReset();
     getBranch.mockReset();
     agentState.messages = [];
+    mockModel = { id: 'm', api: 'anthropic-messages' };
   });
 
   it('prepareBgCompaction returns null when there is no older half to summarize', async () => {
@@ -117,6 +119,26 @@ describe('pi-runtime BGC', () => {
     const s = await makeSession();
     await s.prepareBgCompaction(0.5, 0, new AbortController().signal);
     expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 20_000); // DEFAULT_COMPACTION_SETTINGS.keepRecentTokens
+    // No maxTokens on the model -> pi's default reserve, and therefore pi's 13,107-token cap.
+    expect(generateSummary.mock.calls[0][2]).toBe(16_384);
+  });
+
+  it('gives the summarizer the model output budget instead of pi default reserve', async () => {
+    // Regression: the default reserve (16,384) capped the summary at 13,107 tokens. A long
+    // session outgrew it, every compaction failed on the cap, and BGC could never apply again.
+    mockModel = { id: 'm', api: 'anthropic-messages', maxTokens: 64_000 };
+    getBranch.mockReturnValue([
+      { type: 'message', id: 'e0', message: { role: 'user', content: 'old' } },
+      { type: 'message', id: 'e1', message: { role: 'assistant', content: 'keep' } },
+    ]);
+    findCutPoint.mockReturnValue({ firstKeptEntryIndex: 1, turnStartIndex: -1, isSplitTurn: false });
+    generateSummary.mockResolvedValue('S');
+    const s = await makeSession();
+    await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
+    // Pi caps the reply at floor(0.8 * reserveTokens), so 80,000 makes the cap the model's 64,000.
+    expect(generateSummary.mock.calls[0][2]).toBe(80_000);
+    // And the summary is given a hard ceiling: the pass otherwise grows until it hits the cap.
+    expect(generateSummary.mock.calls[0][6]).toContain('under 8000 tokens');
   });
 
   it('applyBgCompaction appends the entry and refreshes the context', async () => {

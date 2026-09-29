@@ -140,6 +140,31 @@ function compactionBoundary(entries: BranchEntry[]): { index: number; previousSu
   return { index: 0, previousSummary: undefined };
 }
 
+/**
+ * Reserve for a summarization call. Pi caps the response at
+ * min(floor(0.8 * reserveTokens), model.maxTokens) and refuses a summary that hits that cap
+ * (a partial summary must not become a checkpoint). Pi's default reserve caps it at 13,107
+ * tokens, which a long session outgrows — once the iterative summary passes the cap every
+ * future compaction fails, so scale the reserve to the model's own output limit instead.
+ */
+function summaryReserveTokens(model: { maxTokens: number }): number {
+  return model.maxTokens > 0 ? Math.ceil(model.maxTokens / 0.8) : DEFAULT_COMPACTION_SETTINGS.reserveTokens;
+}
+
+/**
+ * Ceiling asked of the summarizer, in tokens. Each pass merges the previous summary and adds
+ * new history, so the summary grows monotonically unless it is held down; pi's own prompt only
+ * says "keep each section concise", which let one session's summaries climb from 10k to 72k
+ * characters before they stopped fitting the output cap. 8,000 tokens leaves roughly an order
+ * of magnitude of headroom under a 64,000-token cap, and only the summarized span (not the
+ * kept tail) is compressed to that size.
+ */
+const BGC_SUMMARY_TOKEN_BUDGET = 8000;
+const BGC_SUMMARY_INSTRUCTIONS =
+  `Keep the entire summary under ${BGC_SUMMARY_TOKEN_BUDGET} tokens. Collapse older items to one terse line ` +
+  'each, and drop detail that the code, the file paths or the git history already record. Never re-explain ' +
+  'something a previous section already states; compress the oldest material hardest.';
+
 function canSetThinkingLevel(session: AgentSession): session is AgentSession & {
   setThinkingLevel(level: PiThinkingLevel): void;
 } {
@@ -425,11 +450,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       const summary = await generateSummary(
         toSummarize as never,
         activeModel,
-        DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+        summaryReserveTokens(activeModel),
         apiKey,
         headers,
         signal,
-        undefined,
+        // Bound the summary: without a budget it grows with the session until it no longer
+        // fits the output cap, and then every compaction fails (see BGC_SUMMARY_TOKEN_BUDGET).
+        BGC_SUMMARY_INSTRUCTIONS,
         // Merge the previous summary so a BGC never drops the history it already compacted.
         previousSummary,
         // Summarizing is mechanical restatement of history, so thinking only delays

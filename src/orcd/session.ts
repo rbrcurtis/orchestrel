@@ -696,6 +696,16 @@ export class OrcdSession {
     this.emitSyntheticSystemEvent('bgc_started');
   }
 
+  /**
+   * Terminal marker for a BGC attempt that announced itself and then produced no splice
+   * (summarization failed, or the prepared cut was superseded). Downstream holds a
+   * "compacting" state from bgc_started until compact_boundary, so a failure needs its own
+   * event or the card looks like it is still compacting, forever.
+   */
+  emitBgcFailed(reason: string): void {
+    this.emitSyntheticSystemEvent('bgc_failed', 'orchestrel-bgc', reason);
+  }
+
   /** Foreground full-compaction (`/compact`) lifecycle — distinct from BGC so the
    *  UI shows a "Compacting" marker and returns the session to idle on done.
    *  Idempotent: runFullCompaction emits these explicitly (a manual `/compact`
@@ -741,8 +751,9 @@ export class OrcdSession {
   }
 
   private emitSyntheticSystemEvent(
-    subtype: 'compact_boundary' | 'bgc_started' | 'compact_started' | 'compact_done',
+    subtype: 'compact_boundary' | 'bgc_started' | 'bgc_failed' | 'compact_started' | 'compact_done',
     source = 'orchestrel-bgc',
+    message?: string,
   ): void {
     const event = {
       type: 'system',
@@ -750,6 +761,7 @@ export class OrcdSession {
       session_id: this.id,
       source,
       timestamp: Date.now(),
+      ...(message ? { message } : {}),
     };
     const eventIndex = this.buffer.push(event);
     const msg: StreamEventMessage = {

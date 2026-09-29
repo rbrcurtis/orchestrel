@@ -382,6 +382,25 @@ describe('OrcdServer background compaction', () => {
     expect(wrote.some((w) => w.includes('bgc_started'))).toBe(true);
   });
 
+  it('emits bgc_failed when an announced BGC attempt produces no splice', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-fail');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const emitted: string[] = [];
+    session.subscribe((m) => emitted.push(JSON.stringify(m)));
+    vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async (_f, _s, onStart) => {
+      onStart?.();
+      throw new Error('Summarization failed: generation hit the token cap');
+    });
+
+    await server['maybeStartBgc'](session);
+
+    // The UI holds its "compacting" state from bgc_started until a terminal event.
+    expect(emitted.some((e) => e.includes('bgc_started'))).toBe(true);
+    expect(emitted.some((e) => e.includes('bgc_failed') && e.includes('hit the token cap'))).toBe(true);
+  });
+
   it('defers the splice to run-end when the session is busy, then applies', async () => {
     const server = createServer();
     const session = bgcSession('bgc-defer');
