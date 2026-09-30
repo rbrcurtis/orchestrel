@@ -134,6 +134,10 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   socket.on('session:transcript', (data, cb) => void handleTranscriptSnapshot(data, cb, socket));
   socket.on('session:history-page', (data, cb) => void handleHistoryPage(data, cb, socket));
   socket.on('session:load', (data, cb) => void handleSessionLoad(data, cb, socket));
+  socket.on('session:unsubscribe', (data, cb) => {
+    busRoomBridge.leaveCard(socket, data.cardId);
+    cb({});
+  });
 
   socket.on('session:set-model', async (data, callback) => {
     const { cardId, provider, model } = data;

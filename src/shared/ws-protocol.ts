@@ -231,6 +231,10 @@ export interface ClientToServerEvents {
   'agent:compact': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
   'agent:stop': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
   'agent:status': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
+  // A card that leaves running and review stops streaming. The client leaves the card's
+  // room so the server drops its bus listeners and stops sending its messages; the
+  // transcript is fetched again when a view opens the card.
+  'session:unsubscribe': (data: { cardId: number }, ack: (res: AckResponse) => void) => void;
 
   // Session
   'session:transcript': (

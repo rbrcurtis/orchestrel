@@ -10,13 +10,23 @@ export class CardStore {
   cards = new Map<number, Card>();
   hydrated = false;
   private _ws: WsClient | null = null;
+  private _onCardChange: ((card: Card, previousColumn: string | undefined) => void) | null = null;
 
   constructor() {
-    makeAutoObservable<this, '_ws'>(this, { _ws: false });
+    makeAutoObservable<this, '_ws' | '_onCardChange'>(this, { _ws: false, _onCardChange: false });
   }
 
   setWs(ws: WsClient) {
     this._ws = ws;
+  }
+
+  /**
+   * Watch for column changes. Every card reaches the board through upsertCard - a live
+   * update, a hydration, an optimistic local move - so this one hook sees all of them and
+   * the session store can release a card that leaves the columns that stream.
+   */
+  setOnCardChange(fn: (card: Card, previousColumn: string | undefined) => void): void {
+    this._onCardChange = fn;
   }
   private ws(): WsClient {
     if (!this._ws) throw new Error('WsClient not set');
@@ -57,9 +67,12 @@ export class CardStore {
     const existing = this.cards.get(card.id);
     if (!existing) {
       this.cards.set(card.id, card);
+      this._onCardChange?.(card, undefined);
       return;
     }
+    const previousColumn = existing.column;
     Object.assign(existing, card);
+    if (previousColumn !== existing.column) this._onCardChange?.(existing, previousColumn);
   }
 
   hydrate(items: unknown[], replace = false, columns?: string[]) {

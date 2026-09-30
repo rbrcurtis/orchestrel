@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
 import { SessionStore } from './session-store';
+import { readTranscriptPage } from '../lib/transcript-cache';
 import type { HistoryMessage, SdkMessage } from '../lib/sdk-types';
 import type { WsClient } from '../lib/ws-client';
 import type { TranscriptHistoryPage } from '../../src/shared/transcript-history';
@@ -687,6 +688,118 @@ describe('SessionStore history loading', () => {
       cursor: { streamId: 'stream-1', sequence: 1 },
     });
     await vi.waitFor(() => expect(cursor()).toEqual({ streamId: 'stream-1', sequence: 2 }));
+  });
+});
+
+describe('SessionStore transcript cache', () => {
+  // The cache is written by the handler that receives messages, not by the paint tick.
+  // A card that no view is painting still streams, and its cached transcript has to keep
+  // up, or reopening it pays full price and a kill loses everything since the cache was
+  // last touched.
+  it('caches a streamed message for a card no view is painting', async () => {
+    const scope = { userId: 1, nodeName: 'local', sessionId: 'sess-cache' };
+    const snapshot = {
+      cursor: { streamId: 'stream-1', sequence: 1 },
+      state: { baseline: [], baselineThrough: 0, overlay: [], events: [] },
+    };
+    const emit = vi.fn(async (event: string) => {
+      if (event === 'session:transcript') return { snapshot, replayed: false };
+      return { messages: [] };
+    });
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    store.setCacheScope(7, scope);
+    store.handleAgentStatus({
+      cardId: 7,
+      active: true,
+      status: 'running' as const,
+      sessionId: 'sess-cache',
+      promptsSent: 1,
+      turnsCompleted: 0,
+      contextTokens: 0,
+      contextWindow: 200_000,
+    });
+
+    // No viewer registered: nothing is painting this card.
+    expect(store.diagStats().viewers).toBe(0);
+    const cursor = () =>
+      (store as unknown as { replicas: Map<number, { currentCursor(): unknown }> }).replicas.get(7)?.currentCursor();
+    // The first streamed event is what asks for a snapshot and builds the replica, so
+    // the event below is the one under test rather than the one that triggered the load.
+    store.ingestSdkMessage(7, {
+      type: 'transcript_event',
+      envelope: { cursor: { streamId: 'stream-1', sequence: 1 }, event: { type: 'pi_event', event: {} } },
+    });
+    await vi.waitFor(() => expect(cursor()).toEqual({ streamId: 'stream-1', sequence: 1 }));
+
+    // Writes are throttled to LIVE_CACHE_MS, and the snapshot just wrote, so move the
+    // clock past the window: this measures the stream path, not the throttle.
+    (store as unknown as { lastLiveWrite: Map<number, number> }).lastLiveWrite.set(7, Date.now() - 10_000);
+
+    store.ingestSdkMessage(7, {
+      type: 'transcript_event',
+      envelope: { cursor: { streamId: 'stream-1', sequence: 2 }, event: { type: 'pi_event', event: {} } },
+    });
+
+    await vi.waitFor(() => expect(cursor()).toEqual({ streamId: 'stream-1', sequence: 2 }));
+    await vi.waitFor(async () => {
+      const page = await readTranscriptPage(scope, 'live');
+      const record = page?.records[0] as { cursor?: { sequence: number } } | undefined;
+      expect(record?.cursor?.sequence).toBe(2);
+    });
+  });
+});
+
+describe('SessionStore stream subscriptions', () => {
+  it('releases a card that leaves running for a history column', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    await store.requestStatus(77);
+    store.ingestSdkMessage(77, { type: 'result', subtype: 'success' } as SdkMessage);
+    expect(store.getSession(77)).toBeDefined();
+
+    store.handleCardColumn(77, 'done', 'running');
+
+    expect(emit).toHaveBeenCalledWith('session:unsubscribe', { cardId: 77 });
+    expect(store.getSession(77)).toBeUndefined();
+    expect(store.subscribedCards.has(77)).toBe(false);
+  });
+
+  it('keeps a card that moves into review or running', async () => {
+    for (const column of ['review', 'running']) {
+      const emit = vi.fn().mockResolvedValue(undefined);
+      const store = new SessionStore();
+      store.setWs({ emit } as unknown as WsClient);
+      await store.requestStatus(88);
+
+      store.handleCardColumn(88, column, 'ready');
+
+      expect(emit).not.toHaveBeenCalledWith('session:unsubscribe', { cardId: 88 });
+      expect(store.subscribedCards.has(88)).toBe(true);
+    }
+  });
+
+  it('releases a card dragged out of review', async () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+    await store.requestStatus(99);
+
+    store.handleCardColumn(99, 'archive', 'review');
+
+    expect(emit).toHaveBeenCalledWith('session:unsubscribe', { cardId: 99 });
+  });
+
+  it('does nothing for a card that was never streaming', () => {
+    const emit = vi.fn().mockResolvedValue(undefined);
+    const store = new SessionStore();
+    store.setWs({ emit } as unknown as WsClient);
+
+    store.handleCardColumn(55, 'backlog', undefined);
+    store.handleCardColumn(56, 'done', 'backlog');
+
+    expect(emit).not.toHaveBeenCalled();
   });
 });
 

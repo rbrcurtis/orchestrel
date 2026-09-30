@@ -31,6 +31,8 @@ const STOP_ATTEMPTS = 5;
 // a slow one backs off instead of burning the CPU.
 const LIVE_PAINT_MS = 250;
 const LIVE_PAINT_MAX_MS = 2000;
+// A card streams only while it is running or waiting in review.
+const STREAMING_COLUMNS = new Set(['running', 'review']);
 // How long a tracked request may stay pending before the guard releases it anyway.
 // Generous enough for a slow history read of a large transcript, short enough that a
 // card never stays unusable for a session.
@@ -146,7 +148,8 @@ export class SessionStore {
       this.applyLiveBuffer(cardId);
       // Only a mounted view needs the transcript. Off-screen cards keep their live
       // replica but stop repainting, so a reconnect or a long run cannot spend the
-      // main thread on sessions nobody is looking at.
+      // main thread on sessions nobody is looking at. Their cache is still kept
+      // current by the message handler, which is the one writer.
       if (!this.hasViewer(cardId)) return;
       const started = performance.now();
       runInAction(() => {
@@ -161,8 +164,23 @@ export class SessionStore {
         ? this.paintCostMs * 0.5 + (performance.now() - started) * 0.5
         : performance.now() - started;
       this.cacheStats.paints += 1;
-      this.writeLiveCache(cardId);
     }, this.nextPaintDelay());
+  }
+
+  // The transcript cache is written in one place: the handler that receives messages.
+  // It used to be written from the paint tick, below the viewer check, so a card no view
+  // was painting streamed and buffered and never cached - reopening it paid full price,
+  // and a kill lost everything that had arrived since. A hidden card now applies its own
+  // buffer here and writes, so its cached transcript stays current though nothing renders
+  // it. Applying is not extra work: the paint tick applies the same buffer and finds it
+  // empty, and only the render is left to the tick, which is the expensive part.
+  private maybeCacheLive(cardId: number): void {
+    if (!this.cacheScopes.has(cardId)) return;
+    const now = Date.now();
+    if (now - (this.lastLiveWrite.get(cardId) ?? 0) < LIVE_CACHE_MS) return;
+    this.lastLiveWrite.set(cardId, now);
+    this.applyLiveBuffer(cardId);
+    this.writeLiveCache(cardId);
   }
 
   // Keep the cached live replica close to now. It is stored under the reserved
@@ -173,9 +191,6 @@ export class SessionStore {
     const replica = this.replicas.get(cardId);
     const session = this.sessions.get(cardId);
     if (!scope || !replica || !session?.active) return;
-    const now = Date.now();
-    if (now - (this.lastLiveWrite.get(cardId) ?? 0) < LIVE_CACHE_MS) return;
-    this.lastLiveWrite.set(cardId, now);
     const { cursor, state } = replica.snapshot();
     if (!cursor) return;
     const revision = `${cursor.streamId}:${cursor.sequence}`;
@@ -221,8 +236,10 @@ export class SessionStore {
       if (reply?.replayed) {
         // The events continue the replica this cursor came from, so keep it.
         const replica = this.replicas.get(cardId);
-        if (replica && this.applyEnvelopes(replica, pending)) this.paintLive(cardId);
-        else this.replicas.delete(cardId);
+        if (replica && this.applyEnvelopes(replica, pending)) {
+          this.paintLive(cardId);
+          this.maybeCacheLive(cardId);
+        } else this.replicas.delete(cardId);
         return;
       }
       const snapshot = reply?.snapshot;
@@ -232,6 +249,9 @@ export class SessionStore {
       if (!this.applyEnvelopes(replica, pending)) return;
       this.replicas.set(cardId, replica);
       this.paintLive(cardId);
+      // Events that arrived while this snapshot was in flight are in the replica now,
+      // and with them the first state worth caching.
+      this.maybeCacheLive(cardId);
     } catch (err) {
       console.warn('[transcript] live snapshot failed', err);
     } finally {
@@ -439,6 +459,37 @@ export class SessionStore {
     this.subscribedCards.delete(cardId);
   }
 
+  /**
+   * React to a card's column. Only running and review need a live stream: anything else
+   * is history that a view fetches when it opens. Leaving those columns lets the card go,
+   * including on a mid-turn move, because a move is the user saying they are done looking
+   * at it. A socket never leaves a room on its own, so without this a client keeps every
+   * card it has ever opened subscribed for the life of the socket.
+   */
+  handleCardColumn(cardId: number, column: string, previousColumn?: string): void {
+    if (STREAMING_COLUMNS.has(column)) return;
+    // Only a card that was streaming has anything to release, plus any card still in the
+    // subscribed set - the board hydrates cards long after their last event.
+    if (previousColumn !== undefined && !STREAMING_COLUMNS.has(previousColumn)) return;
+    if (!this.subscribedCards.has(cardId) && !this.sessions.has(cardId)) return;
+    this.unsubscribe(cardId);
+  }
+
+  /** Drop a card's stream and everything held for it. */
+  unsubscribe(cardId: number): void {
+    const wasSubscribed = this.subscribedCards.delete(cardId);
+    this.sessions.delete(cardId);
+    this.historyPages.delete(cardId);
+    this.historyMessages.delete(cardId);
+    this.replicas.delete(cardId);
+    this.liveBuffers.delete(cardId);
+    this.pendingLoads.delete(cardId);
+    if (!wasSubscribed) return;
+    this.ws()
+      .emit('session:unsubscribe', { cardId })
+      .catch((err: unknown) => console.warn('[ws] unsubscribe failed for card', cardId, err));
+  }
+
   // Register this view so the store paints the transcript only while a view is
   // mounted. Off-screen cards stay subscribed but stop repainting.
   addViewer(cardId: number): void {
@@ -529,6 +580,7 @@ export class SessionStore {
         if (buffer.length >= 2048) buffer.splice(0, buffer.length - 1);
         buffer.push(envelope);
         this.paintLive(cardId);
+        this.maybeCacheLive(cardId);
         return;
       }
       if (this.replicas.has(cardId) && ['stream_event', 'assistant', 'user', 'result'].includes(sdkMsg.type)) return;

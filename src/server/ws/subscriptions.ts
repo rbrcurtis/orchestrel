@@ -80,6 +80,16 @@ export const busRoomBridge = {
     this.ensureCardListeners(cardId);
   },
 
+  /**
+   * Leave a card's room. When the last socket leaves, the bus listeners for that card
+   * go too, so a card nobody is watching costs nothing on the server either.
+   */
+  leaveCard(socket: AppSocket, cardId: number) {
+    const room = `card:${cardId}`;
+    if (socket.rooms.has(room)) socket.leave(room);
+    this.cleanupCardIfEmpty(cardId, socket.id);
+  },
+
   /** Ensure bus→room listeners exist for a card. Called when a socket joins card:N. */
   ensureCardListeners(cardId: number) {
     if (cardListeners.has(cardId)) {

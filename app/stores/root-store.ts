@@ -80,6 +80,12 @@ export class RootStore {
     this.projects.setWs(this.ws);
     this.sessions.setWs(this.ws);
 
+    // A card that leaves running and review stops streaming. The card store sees every
+    // card change, so the column rule lives here rather than at each call site.
+    this.cards.setOnCardChange((card, previousColumn) =>
+      this.sessions.handleCardColumn(card.id, card.column, previousColumn),
+    );
+
     this.ws.onReconnect(async () => {
       const columns = this.ws.getSubscribedColumns();
       if (columns.length > 0) await this.syncBoard(columns);
