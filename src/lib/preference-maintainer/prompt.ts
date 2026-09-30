@@ -17,9 +17,11 @@ export function buildPreferencePrompt(opts: {
   /** Run date, YYYY-MM-DD. */
   today: string;
   stalenessDays: number;
+  /** Hard token budget for the canonical body. */
+  maxTokens: number;
   existing: MemoryHit | null;
 }): string {
-  const { email, title, today, stalenessDays, existing } = opts;
+  const { email, title, today, stalenessDays, maxTokens, existing } = opts;
   const existingBlock = existing
     ? `A canonical memory already holds this person's current preferences. Its id is ${existing.id}.
 Call read_memory(${existing.id}) first, then update_memory(${existing.id}, title=${JSON.stringify(title)}, text=<the full revised body>). Keep the title exactly as given.`
@@ -47,6 +49,7 @@ Today is ${today}. Rules:
 - Refresh "seen:" to ${today} for every preference this person expressed again.
 - Drop any line whose "seen:" date is more than ${stalenessDays} days before today — it is stale.
 - Add genuinely new preferences as new lines. Merge duplicates.
+- The full body MUST stay under ${maxTokens} tokens (about ${maxTokens * 4} characters). At capacity, merge related lines into denser ones; keep the most salient and most recent.
 - Keep each line self-contained and phrased as a standing preference. Never drop or rewrite a still-valid line.
 - If nothing changed, make no tool calls.
 

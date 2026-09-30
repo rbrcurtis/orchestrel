@@ -51,6 +51,8 @@ export interface MemoryPreferencesConfig {
   project: string;
   /** Days after which a preference not re-observed is dropped by the updater. Defaults to 30. */
   stalenessDays?: number;
+  /** Hard token budget for the canonical body. Enforced post-run. Defaults to 2000. */
+  maxTokens?: number;
 }
 
 export interface MemoryConfig {
@@ -196,6 +198,7 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
         apiKey: resolveEnvVars(String(p.apiKey ?? ''), env),
         project: resolveEnvVars(String(p.project), env),
         ...(p.stalenessDays != null ? { stalenessDays: Number(p.stalenessDays) } : {}),
+        ...(p.maxTokens != null ? { maxTokens: Number(p.maxTokens) } : {}),
       };
     }
     memory = {

@@ -130,6 +130,7 @@ memory:
     apiKey: "\${TRACKABLE_MEMORY_API_KEY}"
     project: preferences
     stalenessDays: 14
+    maxTokens: 2000
 `;
 
   it('parses the canonical preferences project and resolves its env apiKey', () => {
@@ -139,6 +140,7 @@ memory:
       apiKey: 'pref-key',
       project: 'preferences',
       stalenessDays: 14,
+      maxTokens: 2000,
     });
   });
 

@@ -15,6 +15,7 @@ describe('buildPreferencePrompt', () => {
       title: canonicalTitle('ryan@example.com'),
       today: '2026-09-25',
       stalenessDays: 30,
+      maxTokens: 2000,
       existing: HIT,
     });
     expect(p).toContain('Preferences: ryan@example.com');
@@ -30,6 +31,7 @@ describe('buildPreferencePrompt', () => {
       title: canonicalTitle('ryan@example.com'),
       today: '2026-09-25',
       stalenessDays: 30,
+      maxTokens: 2000,
       existing: null,
     });
     expect(p).toContain('store_memory');
@@ -43,9 +45,23 @@ describe('buildPreferencePrompt', () => {
       title: canonicalTitle('r@x.com'),
       today: '2026-09-25',
       stalenessDays: 14,
+      maxTokens: 2000,
       existing: null,
     });
     expect(p).toContain('2026-09-25');
     expect(p).toContain('14 days');
+  });
+
+  it('declares the token budget the body must stay under', () => {
+    const p = buildPreferencePrompt({
+      email: 'r@x.com',
+      title: canonicalTitle('r@x.com'),
+      today: '2026-09-25',
+      stalenessDays: 30,
+      maxTokens: 1500,
+      existing: null,
+    });
+    expect(p).toContain('1500 tokens');
+    expect(p).toContain('6000 characters');
   });
 });

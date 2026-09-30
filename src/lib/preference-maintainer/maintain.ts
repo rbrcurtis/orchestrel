@@ -10,13 +10,14 @@
  * never abort the run; the per-file watermark advances regardless so a
  * consistently-failing session is not retried forever (same as the knowledge
  * maintainer). */
-import type { ThinkingLevel } from '@earendil-works/pi-ai';
+import type { Api, Model, ThinkingLevel } from '@earendil-works/pi-ai';
+import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type Database from 'better-sqlite3';
 import type { MemoryPreferencesConfig, OrchestrelConfig } from '../../shared/config';
 import { buildModel, consolidate } from '../memory-maintainer/consolidate';
 import { finishRun, getDb, insertRun, recentActiveRun, upsertWatermark } from '../memory-maintainer/db';
 import { buildExcerpt, listHumanAuthors } from '../memory-maintainer/excerpt';
-import type { MemoryServer } from '../memory-maintainer/memory-api';
+import { updateMemory, type MemoryHit, type MemoryServer } from '../memory-maintainer/memory-api';
 import { sweepSessions, type SessionFile } from '../memory-maintainer/sweep';
 import { sendTelegramAlert } from '../memory-maintainer/telegram';
 import { findCanonical } from './canonical';
@@ -29,6 +30,8 @@ export interface PreferenceUserSummary {
   userId: number;
   email: string;
   ops: number;
+  /** Set when the budget enforcement changed the canonical body. */
+  budget?: string;
   error?: string;
   trailFile?: string;
 }
@@ -55,6 +58,7 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
   const prefCfg = memory.preferences;
   const server = resolvePreferenceServer(db, prefCfg);
   const stalenessDays = prefCfg.stalenessDays ?? 30;
+  const maxTokens = prefCfg.maxTokens ?? 2000;
   const today = new Date().toISOString().slice(0, 10);
 
   try {
@@ -103,12 +107,28 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
             model,
             maxTurns: memory.maxTurns,
             mode: 'write',
-            systemPrompt: buildPreferencePrompt({ email, title, today, stalenessDays, existing: before }),
+            systemPrompt: buildPreferencePrompt({ email, title, today, stalenessDays, maxTokens, existing: before }),
             ...(reasoning ? { reasoning } : {}),
           });
-          const after = await findCanonical(server, title);
-          const trailFile = writeTrail({ userId, email, at: new Date().toISOString(), before, after, ops });
-          users.push({ userId, email, ops: ops.length, trailFile });
+          let after = await findCanonical(server, title);
+          let budget: string | undefined;
+          if (after && estTokens(after.text) > maxTokens) {
+            const enforced = await enforceBudget(server, runtime, model, reasoning, after, maxTokens);
+            if (enforced.note) {
+              after = enforced.hit;
+              budget = enforced.note;
+            }
+          }
+          const trailFile = writeTrail({
+            userId,
+            email,
+            at: new Date().toISOString(),
+            before,
+            after,
+            ops,
+            ...(budget ? { budget } : {}),
+          });
+          users.push({ userId, email, ops: ops.length, trailFile, ...(budget ? { budget } : {}) });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.error(`[preference-maintainer] user ${userId} (${email}) failed:`, message);
@@ -158,6 +178,97 @@ export function resolvePreferenceServer(db: Database.Database, prefs: MemoryPref
   return { apiUrl: prefs.apiUrl, apiKey: prefs.apiKey, project: prefs.project };
 }
 
+/** Rough token estimate (4 chars/token), good enough for budgeting. */
+export const estTokens = (text: string): number => Math.ceil(text.length / 4);
+
+/**
+ * Deterministic budget floor: keep the most recently seen lines until the body
+ * fits the token budget, preserving the original line order. When even a
+ * single line exceeds the budget, that most-recent line is kept alone.
+ */
+export function pruneToBudget(text: string, maxTokens: number): string {
+  const lines = text.split('\n').filter((l) => l.trim());
+  if (lines.length === 0) return '';
+  const seen = (l: string) => l.match(/\(seen: (\d{4}-\d{2}-\d{2})\)/)?.[1] ?? '';
+  const order = lines.map((l, i) => ({ l, i, s: seen(l) })).sort((a, b) => b.s.localeCompare(a.s) || a.i - b.i);
+  let total = 0;
+  const keep = new Set<number>();
+  for (const { l, i } of order) {
+    const cost = estTokens(l) + (total > 0 ? 1 : 0);
+    if (total + cost > maxTokens) continue;
+    total += cost;
+    keep.add(i);
+  }
+  if (keep.size === 0) keep.add(order[0].i);
+  return lines.filter((_, i) => keep.has(i)).join('\n');
+}
+
+/** Single no-tools model call: rewrite the body so it fits the budget. */
+async function condenseBody(
+  runtime: ModelRuntime,
+  model: Model<Api>,
+  reasoning: ThinkingLevel | undefined,
+  text: string,
+  maxTokens: number,
+): Promise<string | null> {
+  const msg = await runtime.completeSimple(
+    model,
+    {
+      systemPrompt: `Rewrite the preference memory below so the entire body fits under ${maxTokens} tokens (about ${maxTokens * 4} characters). Merge related lines into denser ones, drop the least salient and least recent, keep the most important standing preferences. Keep the exact format: one preference per line, each line self-contained, each ending with " (seen: YYYY-MM-DD)". Output ONLY the rewritten body — no preamble, no markdown fences.`,
+      messages: [{ role: 'user', content: [{ type: 'text', text }], timestamp: Date.now() }],
+      tools: [],
+    },
+    reasoning ? { reasoning } : undefined,
+  );
+  const out = msg.content
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+    .trim();
+  if (!out) return null;
+  return (
+    out
+      .replace(/^```[a-z]*\n?/i, '')
+      .replace(/\n?```\s*$/i, '')
+      .trim() || null
+  );
+}
+
+/**
+ * Enforce the token budget on the canonical body: model condensation first,
+ * deterministic line-pruning as the floor. Returns the final hit plus a note
+ * when the body changed.
+ */
+async function enforceBudget(
+  server: MemoryServer,
+  runtime: ModelRuntime,
+  model: Model<Api>,
+  reasoning: ThinkingLevel | undefined,
+  hit: MemoryHit,
+  maxTokens: number,
+): Promise<{ hit: MemoryHit; note?: string }> {
+  let candidate: string | null = null;
+  try {
+    candidate = await condenseBody(runtime, model, reasoning, hit.text, maxTokens);
+    if (!candidate || estTokens(candidate) > maxTokens || estTokens(candidate) >= estTokens(hit.text)) candidate = null;
+  } catch (err) {
+    console.error('[preference-maintainer] condense failed, falling back to prune:', err);
+  }
+  if (candidate) {
+    await updateMemory(server, { id: hit.id, text: candidate });
+    return { hit: { ...hit, text: candidate }, note: `budget: condensed to ${estTokens(candidate)} tokens` };
+  }
+  const pruned = pruneToBudget(hit.text, maxTokens);
+  if (pruned !== hit.text && estTokens(pruned) <= maxTokens) {
+    await updateMemory(server, { id: hit.id, text: pruned });
+    return { hit: { ...hit, text: pruned }, note: `budget: pruned to ${estTokens(pruned)} tokens` };
+  }
+  if (estTokens(hit.text) > maxTokens) {
+    console.warn(`[preference-maintainer] budget not met for ${hit.id}; a single line exceeds the limit`);
+  }
+  return { hit };
+}
+
 /** Keep the newest sessions that fit the excerpt budget (sweep sorts newest first). */
 function combineHumanExcerpts(files: SessionFile[], userId: number, maxTokens: number): string {
   const budget = maxTokens * 4;
@@ -181,7 +292,8 @@ function toReasoning(level: string | undefined): ThinkingLevel | undefined {
 export function buildPreferenceAlert(summary: PreferenceSummary): string {
   if (summary.skipped) return 'Preference maintainer: run skipped — another preference run already in progress.';
   const lines = summary.users.map(
-    (u) => `${u.email} (user ${u.userId}): ${u.ops} op(s)${u.error ? ` — ERROR: ${u.error}` : ''}`,
+    (u) =>
+      `${u.email} (user ${u.userId}): ${u.ops} op(s)${u.budget ? ` — ${u.budget}` : ''}${u.error ? ` — ERROR: ${u.error}` : ''}`,
   );
   return [
     `Preference maintainer (${new Date().toISOString().slice(0, 10)})`,
