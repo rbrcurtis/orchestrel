@@ -54,18 +54,11 @@ export function wsServerPlugin(): Plugin {
             const { createAttachmentRouter } = await import('../attachments');
             router.use(createAttachmentRouter());
 
-            // Serve OpenAPI spec and Swagger UI
-            const { readFileSync } = await import('fs');
+            // OpenAPI spec + Swagger UI are mounted lazily: nothing but those docs
+            // routes uses either, so neither is loaded on the boot path.
             const { resolve } = await import('path');
-            const swaggerUi = await import('swagger-ui-express');
-
-            const specPath = resolve(import.meta.dirname, '../api/generated/swagger.json');
-            const spec = JSON.parse(readFileSync(specPath, 'utf-8'));
-
-            router.get('/api/docs/swagger.json', (_req: import('express').Request, res: import('express').Response) => {
-              res.json(spec);
-            });
-            router.use('/api/docs', swaggerUi.serve, swaggerUi.setup(spec));
+            const { mountDocs } = await import('../api/docs-router');
+            mountDocs(router, resolve(import.meta.dirname, '../api/generated/swagger.json'));
 
             // Error handler for tsoa validation errors
             router.use(
@@ -131,60 +124,71 @@ export function wsServerPlugin(): Plugin {
             const { OrcdClient } = await import('../orcd-client');
             const { loadNodeRegistry } = await import('../config/nodes');
             const {
+              createSyncContext,
               initOrcdRouter,
-              reconcileRunningCards,
-              rearmScheduledSessions,
               registerAutoStart,
-              registerWorktreeCleanup,
               registerProcessReaper,
+              registerWorktreeCleanup,
+              syncNode,
             } = await import('../controllers/card-sessions');
 
             const nodes = loadNodeRegistry();
 
-            // Register the board/session listeners BEFORE the node loop. The loop blocks
-            // on each node's connect + reconcile, so an unreachable node (oni over
-            // Tailscale) used to hold it for minutes and a card that entered running in
-            // that window was silently ignored — it hung in running with no session.
+            // Register the board/session listeners BEFORE the node loop. The loop waits
+            // on each node's connect + sync, so an unreachable node (oni over Tailscale)
+            // used to hold it for minutes and a card that entered running in that window
+            // was silently ignored — it hung in running with no session.
             registerAutoStart();
             registerWorktreeCleanup();
             registerProcessReaper();
 
-            for (const node of nodes) {
-              let client = initState.getClientByNode(node.name);
-              if (!client) {
-                client = new OrcdClient({ host: node.host, port: node.port, token: node.authToken, name: node.name });
-                initState.setClientForNode(node.name, client);
-                // Store the client BEFORE connecting. If a node's orcd isn't bound
-                // yet at startup, connect() rejects; the client auto-reconnects, so
-                // once it's stored + wired here, handlers resolve it and it works as
-                // soon as that orcd comes up.
-                try {
-                  await client.connect();
-                } catch (err) {
-                  console.error(
-                    `[orcd] node ${node.name} initial connect failed (will retry):`,
-                    (err as Error).message,
-                  );
+            // Projects and worktrees are shared by all three nodes, so load them once
+            // for the whole pass instead of once per node.
+            const syncCtx = await createSyncContext();
+
+            // The nodes are independent, so connect and sync them together.
+            await Promise.all(
+              nodes.map(async (node) => {
+                let client = initState.getClientByNode(node.name);
+                const fresh = !client;
+                if (!client) {
+                  client = new OrcdClient({
+                    host: node.host,
+                    port: node.port,
+                    token: node.authToken,
+                    name: node.name,
+                  });
+                  // Store the client BEFORE connecting. If a node's orcd isn't bound
+                  // yet at startup, connect() rejects; the client auto-reconnects, so
+                  // once it's stored + wired here, handlers resolve it and it works as
+                  // soon as that orcd comes up.
+                  initState.setClientForNode(node.name, client);
                 }
-              }
-              initOrcdRouter(client);
-              try {
-                await reconcileRunningCards(client);
-                await rearmScheduledSessions(client);
-              } catch (err) {
-                console.error(`[startup] reconcile failed for ${node.name}:`, err);
-              }
-              const nodeClient = client;
-              nodeClient.onReconnect(() => {
-                console.log(`[orcd] node ${node.name} reconnected, reconciling...`);
-                reconcileRunningCards(nodeClient).catch((e) =>
-                  console.error(`[orcd] reconnect reconcile ${node.name}:`, e),
-                );
-                rearmScheduledSessions(nodeClient).catch((e) =>
-                  console.error(`[orcd] reconnect re-arm ${node.name}:`, e),
-                );
-              });
-            }
+                const nodeClient = client;
+                // Wire the router before connecting so messages that arrive during the
+                // handshake are still routed.
+                initOrcdRouter(nodeClient);
+                if (fresh) {
+                  try {
+                    await nodeClient.connect();
+                  } catch (err) {
+                    console.error(
+                      `[orcd] node ${node.name} initial connect failed (will retry):`,
+                      (err as Error).message,
+                    );
+                  }
+                }
+                try {
+                  await syncNode(nodeClient, syncCtx);
+                } catch (err) {
+                  console.error(`[startup] sync failed for ${node.name}:`, err);
+                }
+                nodeClient.onReconnect(() => {
+                  console.log(`[orcd] node ${node.name} reconnected, syncing...`);
+                  syncNode(nodeClient, syncCtx).catch((e) => console.error(`[orcd] reconnect sync ${node.name}:`, e));
+                });
+              }),
+            );
 
             console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
@@ -194,8 +198,8 @@ export function wsServerPlugin(): Plugin {
             const { startPreferenceMaintainer } = await import('../../lib/preference-maintainer/scheduler');
             startPreferenceMaintainer();
 
-            const { startSleepWaker } = await import('../services/sleep');
-            startSleepWaker();
+            const { startSleepScheduleCleanup } = await import('../services/sleep');
+            startSleepScheduleCleanup();
 
             initState.markInitialized();
           },

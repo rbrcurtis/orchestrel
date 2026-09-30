@@ -1,8 +1,13 @@
 import { readdirSync, readFileSync, readlinkSync } from 'fs';
+import { In, IsNull, Not } from 'typeorm';
 import { Card } from '../models/Card';
+import { Project } from '../models/Project';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
 import { SYSTEM_AUTHOR, type OrcdMessage } from '../../shared/orcd-protocol';
+import { resolveWorkDir } from '../../shared/worktree';
+import { hasEnabledScheduledJobs } from '../../shared/scheduled-jobs';
+import { wakeDueCard } from '../services/sleep';
 import type { OrcdClient } from '../orcd-client';
 import { windowForCard } from '../config/capabilities';
 
@@ -81,6 +86,17 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
   const repo = () => AppDataSource.getRepository(Card);
 
   client.onMessage(async (msg: OrcdMessage) => {
+    if (msg.type === 'sleep_due') {
+      // orcd held the timer. Every connected backend hears this, so the wake is claimed
+      // against the database before anything acts on it — exactly one wakes the card.
+      const { wakeDueCard } = await import('../services/sleep');
+      const woken = await wakeDueCard(msg.cardId).catch((err) => {
+        console.error(`[sleep] wake for card ${msg.cardId} failed:`, err);
+        return false;
+      });
+      console.log(`[orcd-router] sleep_due card ${msg.cardId} woken=${woken}`);
+      return;
+    }
     if (!('sessionId' in msg)) {
       console.log(`[orcd-router] dropping message with no sessionId: type=${msg.type}`);
       return;
@@ -338,50 +354,61 @@ async function handleSessionExit(
   });
 }
 
-// ── Reconciliation ──────────────────────────────────────────────────────────
+// ── Per-node sync ───────────────────────────────────────────────────────────
 
-export async function reconcileRunningCards(client: OrcdClient, bus: MessageBus = messageBus): Promise<void> {
-  const r = AppDataSource.getRepository(Card);
+/**
+ * Work that outlives one node's pass. Projects are loaded once and the scheduled-job
+ * probe is memoized per worktree, because the same few projects and worktrees come up
+ * again for every card and every node.
+ */
+export interface SyncContext {
+  projects: Map<number, Project>;
+  worktreeJobs: Map<string, boolean>;
+}
 
-  // Query orcd's live session list first. This is the source of truth —
-  // client.isActive() reads from in-memory cache which gets cleared on
-  // orchestrel restart / orcd disconnect.
-  const activeList = await client.list();
-  const runningSessions = activeList.sessions.filter((s) => s.state === 'running');
-  const activeIds = new Set(runningSessions.map((s) => s.id));
+export async function createSyncContext(): Promise<SyncContext> {
+  const projects = await AppDataSource.getRepository(Project).find();
+  return { projects: new Map(projects.map((p) => [p.id, p])), worktreeJobs: new Map() };
+}
 
-  // Re-seed in-memory isActive tracking + router mapping for every orcd
-  // session that maps to a known card. This ensures client.isActive() tells
-  // the truth after an orchestrel restart, so auto-start + agent:send
-  // correctly detect whether a session exists and route through create
-  // (which passes summarizeThreshold + attaches lifecycle hooks).
-  const allCards = await r.find();
-  const cardBySession = new Map<string, Card>();
-  for (const c of allCards) {
-    if (c.sessionId && c.nodeName === client.nodeName) cardBySession.set(c.sessionId, c);
+/**
+ * Bring one node's cards in line with what its orcd actually holds, then re-arm the
+ * timers orcd keeps in memory only.
+ *
+ * orcd's session list is the source of truth: client.isActive() reads an in-memory
+ * cache that is empty after an orchestrel restart. Every query filters by this node in
+ * SQL and selects only the columns the pass reads. The previous shape hydrated every
+ * card twice per node and filtered afterwards, and could hand another node's card to
+ * this daemon's warm(), which creates the session it is asked to warm.
+ */
+export async function syncNode(client: OrcdClient, ctx: SyncContext, bus: MessageBus = messageBus): Promise<void> {
+  const repo = AppDataSource.getRepository(Card);
+  const node = client.nodeName;
+
+  const sessions = await client.list();
+  const live = new Set(sessions.sessions.filter((s) => s.state === 'running').map((s) => s.id));
+
+  // Re-seed in-memory isActive tracking + router mapping for every live session that
+  // maps to a card on this node. isActive() then tells the truth, so auto-start and
+  // agent:send detect an existing session and route through create (which passes
+  // summarizeThreshold + attaches the lifecycle hooks).
+  const liveCards = live.size
+    ? await repo.find({ where: { sessionId: In([...live]), nodeName: node }, select: ['id', 'sessionId'] })
+    : [];
+  for (const card of liveCards) {
+    const sessionId = card.sessionId as string;
+    client.markActive(sessionId);
+    trackSession(card.id, sessionId);
+    console.log(`[reconcile] re-seeded tracking for card ${card.id} session ${sessionId.slice(0, 8)}`);
   }
 
-  for (const sess of runningSessions) {
-    const card = cardBySession.get(sess.id);
-    if (!card) continue;
-    client.markActive(sess.id);
-    trackSession(card.id, sess.id);
-    console.log(`[reconcile] re-seeded tracking for card ${card.id} session ${sess.id.slice(0, 8)}`);
-  }
-
-  // Reconcile running-column cards whose session is no longer alive in orcd.
-  // Cards with no sessionId are still in the pre-session starting window and stay in running.
-  // Only reconcile cards that belong to this node. Another node's session
-  // list never contains this node's sessions, so unfiltered cards get
-  // wrongly moved to review (or started on the wrong node).
-  const runningCards = allCards.filter((c) => c.column === 'running' && c.nodeName === client.nodeName);
-  if (runningCards.length === 0) {
-    console.log(`[reconcile] no running cards to reconcile`);
-    return;
-  }
-
+  // Settle the running column. A card with no sessionId is still in the pre-session
+  // starting window and stays in running: start what never started, park what died.
+  // Another node's session list never holds this node's sessions, so the node filter
+  // is what keeps those cards from being parked or started on the wrong daemon.
+  const runningCards = await repo.find({ where: { column: 'running', nodeName: node } });
   for (const card of runningCards) {
-    if (card.sessionId && activeIds.has(card.sessionId)) {
+    if (card.sessionId && live.has(card.sessionId)) {
       console.log(`[reconcile] card ${card.id} still active in orcd`);
       continue;
     }
@@ -394,55 +421,104 @@ export async function reconcileRunningCards(client: OrcdClient, bus: MessageBus 
     untrackSession(card.sessionId);
     card.column = 'review';
     card.updatedAt = new Date().toISOString();
-    await r.save(card);
+    await repo.save(card);
     console.log(`[reconcile] card ${card.id} moved to review (session not in orcd)`);
     bus.publish(`card:${card.id}:exit`, {
       sessionId: card.sessionId,
       status: 'stopped',
     });
   }
+
+  const warmed = await rearmScheduledSessions(client, live, ctx);
+  const armed = await rearmSleepWakes(client);
+  console.log(
+    `[sync] node ${node}: ${live.size} live session(s), ${runningCards.length} running card(s), ${warmed} warmed, ${armed} wake(s) armed`,
+  );
 }
 
 // Re-arm scheduled background agents after an orcd restart. The pi-subagents
-// scheduler's timers live only in orcd memory, so a restart drops them; the
-// enabled jobs persist on disk in each worktree. For every card whose worktree
-// still has an enabled scheduled job, ask orcd to warm (resume + hold) the
-// session so the scheduler re-arms and the job fires at its time. Column-
-// independent: a job fires whether the card sits in review, done, etc. Runs at
-// startup and on every orcd reconnect — warm() no-ops if already resident.
-export async function rearmScheduledSessions(client: OrcdClient): Promise<void> {
-  const r = AppDataSource.getRepository(Card);
-  const cards = await r.find();
-  const { Project } = await import('../models/Project');
-  const { resolveWorkDir } = await import('../../shared/worktree');
-  const { hasEnabledScheduledJobs } = await import('../../shared/scheduled-jobs');
+// scheduler's timers live only in orcd memory, so a restart drops them; the enabled
+// jobs persist on disk in each worktree. For every card on this node whose worktree
+// still has an enabled job, ask orcd to warm (resume + hold) the session so the
+// scheduler re-arms and the job fires at its time. Column-independent: a job fires
+// whether the card sits in review, done, etc. warm() no-ops when the session is
+// already resident.
+async function rearmScheduledSessions(client: OrcdClient, live: Set<string>, ctx: SyncContext): Promise<number> {
+  const repo = AppDataSource.getRepository(Card);
+  const cards = await repo.find({
+    where: { nodeName: client.nodeName, projectId: Not(IsNull()), sessionId: Not(IsNull()) },
+    select: [
+      'id',
+      'sessionId',
+      'sessionCwd',
+      'worktreeBranch',
+      'projectId',
+      'provider',
+      'model',
+      'nodeName',
+      'contextWindow',
+      'summarizeThreshold',
+    ],
+  });
 
   let warmed = 0;
   for (const card of cards) {
-    if (!card.sessionId || (!card.sessionCwd && !card.worktreeBranch) || !card.projectId) continue;
-    if (client.isActive(card.sessionId)) continue;
-    const proj = await Project.findOneBy({ id: card.projectId });
+    const sessionId = card.sessionId as string;
+    if (live.has(sessionId)) continue;
+    const proj = card.projectId == null ? undefined : ctx.projects.get(card.projectId);
     if (!proj) continue;
-    const cwd = card.sessionCwd ?? resolveWorkDir(card.worktreeBranch, proj.path);
-    if (!hasEnabledScheduledJobs(cwd)) continue;
+    const cwd = card.sessionCwd ?? (card.worktreeBranch ? resolveWorkDir(card.worktreeBranch, proj.path) : null);
+    if (!cwd || !hasJobsIn(cwd, ctx)) continue;
 
     try {
-      console.log(`[rearm] card ${card.id} has scheduled jobs; warming session ${card.sessionId.slice(0, 8)}`);
+      console.log(`[rearm] card ${card.id} has scheduled jobs; warming session ${sessionId.slice(0, 8)}`);
       await client.warm({
-        sessionId: card.sessionId,
+        sessionId,
         cwd,
         provider: card.provider,
         model: card.model,
         contextWindow: windowForCard(card),
         summarizeThreshold: card.summarizeThreshold,
       });
-      trackSession(card.id, card.sessionId);
+      trackSession(card.id, sessionId);
       warmed++;
     } catch (err) {
       console.error(`[rearm] card ${card.id} warm failed:`, err instanceof Error ? err.message : String(err));
     }
   }
-  console.log(`[rearm] scanned ${cards.length} cards, warmed ${warmed} with scheduled jobs`);
+  return warmed;
+}
+
+/** The scheduled-job probe hits the filesystem, and cards share worktrees. */
+function hasJobsIn(cwd: string, ctx: SyncContext): boolean {
+  let found = ctx.worktreeJobs.get(cwd);
+  if (found === undefined) {
+    found = hasEnabledScheduledJobs(cwd);
+    ctx.worktreeJobs.set(cwd, found);
+  }
+  return found;
+}
+
+// orcd keeps only in-memory timers, so the rows are re-registered here: a wake that
+// came due while this node was unreachable happens now.
+async function rearmSleepWakes(client: OrcdClient, now = Date.now()): Promise<number> {
+  const repo = AppDataSource.getRepository(Card);
+  const cards = await repo.find({
+    where: { column: 'ready', nodeName: client.nodeName },
+    select: ['id', 'sleepUntil'],
+  });
+
+  let armed = 0;
+  for (const card of cards) {
+    if (card.sleepUntil == null) continue;
+    if (card.sleepUntil <= now) {
+      await wakeDueCard(card.id, now);
+      continue;
+    }
+    client.scheduleSleep(card.id, card.sleepUntil);
+    armed++;
+  }
+  return armed;
 }
 
 // ── Board event listeners ────────────────────────────────────────────────────

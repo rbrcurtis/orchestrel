@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageBus } from '../bus';
 import { SYSTEM_AUTHOR } from '../../shared/orcd-protocol';
+import { resolveWorkDir } from '../../shared/worktree';
+import type { SyncContext } from './card-sessions';
 
 type MockCard = {
   id: number;
@@ -17,6 +19,10 @@ type MockCard = {
   updatedAt: string;
   save: ReturnType<typeof vi.fn>;
   description: string;
+  projectId?: number | null;
+  sessionCwd?: string | null;
+  worktreeBranch?: string | null;
+  sleepUntil?: number | null;
 };
 
 const mockCards: MockCard[] = [
@@ -37,13 +43,40 @@ const mockCards: MockCard[] = [
     description: '',
   },
 ];
+// TypeORM FindOperator duck-typing, so the mocked find() honours the where clause the
+// production code pushes into SQL. Without this, a test asserting that a query filters
+// by node would pass whatever the query actually said.
+type FindOp = { type?: string; _type?: string; value?: unknown; _value?: unknown };
+
+function matchesOp(actual: unknown, expected: unknown): boolean {
+  if (expected && typeof expected === 'object') {
+    const op = expected as FindOp;
+    const type = op.type ?? op._type;
+    const value = op.value ?? op._value;
+    if (type === 'in') return Array.isArray(value) && value.includes(actual);
+    if (type === 'not') return !matchesOp(actual, value);
+    if (type === 'isNull') return actual === null || actual === undefined;
+    if (type === 'equal') return actual === value;
+  }
+  return actual === expected;
+}
+
+function matchesWhere(card: MockCard, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([key, expected]) =>
+    matchesOp((card as unknown as Record<string, unknown>)[key], expected),
+  );
+}
+
 const mockRepo = {
   findOneBy: vi.fn(async (where: { id?: number; sessionId?: string }) => {
     if (where.id !== undefined) return mockCards.find((card) => card.id === where.id) ?? null;
     if (where.sessionId !== undefined) return mockCards.find((card) => card.sessionId === where.sessionId) ?? null;
     return null;
   }),
-  find: vi.fn(async () => mockCards),
+  find: vi.fn(async (opts?: { where?: Record<string, unknown> }) => {
+    const where = opts?.where;
+    return where ? mockCards.filter((card) => matchesWhere(card, where)) : mockCards;
+  }),
   save: vi.fn(async (card: (typeof mockCards)[number]) => card),
 };
 const mockEnsureWorktree = vi.fn(async () => '/tmp/project/.worktrees/card-42');
@@ -66,6 +99,18 @@ vi.mock('../init-state', async (importOriginal) => ({
   getOrcdClient: mockGetOrcdClient,
   getClientByNode: mockGetClientByNode,
 }));
+
+const mockHasEnabledScheduledJobs = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock('../../shared/scheduled-jobs', () => ({ hasEnabledScheduledJobs: mockHasEnabledScheduledJobs }));
+
+/** Sync context with no memoized worktrees, as a fresh startup pass would have. */
+function syncCtx(projects: Array<{ id: number; path: string }> = []): SyncContext {
+  return {
+    projects: new Map(projects.map((p) => [p.id, p])) as SyncContext['projects'],
+    worktreeJobs: new Map<string, boolean>(),
+  };
+}
 
 // We test the routing concept: orcd messages for a tracked session
 // should be published to the correct card's bus topics.
@@ -631,14 +676,16 @@ describe('orcd message router', () => {
   });
 });
 
-describe('reconcileRunningCards', () => {
+describe('syncNode', () => {
   beforeEach(() => {
     mockEnsureWorktree.mockReset();
     mockEnsureWorktree.mockResolvedValue('/tmp/project/.worktrees/card-42');
+    mockHasEnabledScheduledJobs.mockReset();
+    mockHasEnabledScheduledJobs.mockReturnValue(false);
   });
 
   it('moves prompted running cards to review when orcd only lists stopped session', async () => {
-    const { reconcileRunningCards } = await import('./card-sessions');
+    const { syncNode } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
     bus.on('card:42:exit', exitSpy);
@@ -655,7 +702,7 @@ describe('reconcileRunningCards', () => {
       markActive: vi.fn(),
     };
 
-    await reconcileRunningCards(client as never, bus);
+    await syncNode(client as never, syncCtx(), bus);
 
     expect(client.markActive).not.toHaveBeenCalled();
     expect(mockCards[0].column).toBe('review');
@@ -667,7 +714,7 @@ describe('reconcileRunningCards', () => {
   });
 
   it('moves auto-started running cards with an existing stopped session to review', async () => {
-    const { reconcileRunningCards } = await import('./card-sessions');
+    const { syncNode } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
     bus.on('card:42:exit', exitSpy);
@@ -683,7 +730,7 @@ describe('reconcileRunningCards', () => {
       markActive: vi.fn(),
     };
 
-    await reconcileRunningCards(client as never, bus);
+    await syncNode(client as never, syncCtx(), bus);
 
     expect(mockCards[0].column).toBe('review');
     expect(mockRepo.save).toHaveBeenCalled();
@@ -694,7 +741,7 @@ describe('reconcileRunningCards', () => {
   });
 
   it('starts running cards with no sessionId during reconciliation', async () => {
-    const { reconcileRunningCards } = await import('./card-sessions');
+    const { syncNode } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
     bus.on('card:42:exit', exitSpy);
@@ -712,7 +759,7 @@ describe('reconcileRunningCards', () => {
       create: vi.fn(async () => 'sess-new'),
     };
 
-    await reconcileRunningCards(client as never, bus);
+    await syncNode(client as never, syncCtx(), bus);
 
     expect(mockCards[0].column).toBe('running');
     expect(mockCards[0].sessionId).toBe('sess-new');
@@ -733,7 +780,7 @@ describe('reconcileRunningCards', () => {
   });
 
   it('moves cards to review when auto-start setup fails during reconciliation', async () => {
-    const { reconcileRunningCards } = await import('./card-sessions');
+    const { syncNode } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
     bus.on('card:42:exit', exitSpy);
@@ -750,7 +797,7 @@ describe('reconcileRunningCards', () => {
       create: vi.fn(async () => 'sess-new'),
     };
 
-    await reconcileRunningCards(client as never, bus);
+    await syncNode(client as never, syncCtx(), bus);
 
     expect(mockCards[0].column).toBe('review');
     expect(mockCards[0].sessionId).toBeNull();
@@ -764,7 +811,7 @@ describe('reconcileRunningCards', () => {
 
   it('routes early session events before the new sessionId save finishes', async () => {
     vi.resetModules();
-    const { initOrcdRouter, reconcileRunningCards } = await import('./card-sessions');
+    const { initOrcdRouter, syncNode } = await import('./card-sessions');
     const bus = new MessageBus();
     let earlyHandler: ((msg: unknown) => void | Promise<void>) | null = null;
     const sdkSpy = vi.fn();
@@ -799,14 +846,14 @@ describe('reconcileRunningCards', () => {
       return card;
     });
 
-    await reconcileRunningCards(client as never, bus);
+    await syncNode(client as never, syncCtx(), bus);
 
     expect(sdkSpy).toHaveBeenCalledWith({ type: 'assistant', message: 'early output' });
     expect(mockCards[0].sessionId).toBe('sess-new');
   });
 
   it('ignores cards belonging to another node', async () => {
-    const { reconcileRunningCards } = await import('./card-sessions');
+    const { syncNode } = await import('./card-sessions');
     const bus = new MessageBus();
     const exitSpy = vi.fn();
     bus.on('card:42:exit', exitSpy);
@@ -825,12 +872,66 @@ describe('reconcileRunningCards', () => {
       create: vi.fn(async () => 'sess-new'),
     };
 
-    await reconcileRunningCards(client as never, bus);
+    await syncNode(client as never, syncCtx(), bus);
 
     expect(mockCards[0].column).toBe('running');
     expect(mockRepo.save).not.toHaveBeenCalled();
     expect(client.create).not.toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('warms a card on this node whose worktree has enabled jobs', async () => {
+    const { syncNode } = await import('./card-sessions');
+    const bus = new MessageBus();
+    mockCards[0].column = 'review';
+    mockCards[0].sessionId = 'sess-abc';
+    mockCards[0].projectId = 7;
+    mockCards[0].worktreeBranch = 'card-42';
+    mockHasEnabledScheduledJobs.mockReturnValue(true);
+    const warm = vi.fn(async () => undefined);
+    const client = {
+      nodeName: 'local',
+      list: vi.fn(async () => ({ type: 'session_list', sessions: [] })),
+      markActive: vi.fn(),
+      warm,
+      scheduleSleep: vi.fn(),
+    };
+
+    await syncNode(client as never, syncCtx([{ id: 7, path: '/tmp/project' }]), bus);
+
+    expect(mockHasEnabledScheduledJobs).toHaveBeenCalledWith(resolveWorkDir('card-42', '/tmp/project'));
+    expect(warm).toHaveBeenCalledWith({
+      sessionId: 'sess-abc',
+      cwd: resolveWorkDir('card-42', '/tmp/project'),
+      provider: 'anthropic',
+      model: 'sonnet',
+      contextWindow: 200000,
+      summarizeThreshold: 0.6,
+    });
+  });
+
+  it('does not warm a card belonging to another node', async () => {
+    const { syncNode } = await import('./card-sessions');
+    const bus = new MessageBus();
+    mockCards[0].column = 'review';
+    mockCards[0].projectId = 7;
+    mockCards[0].worktreeBranch = 'card-42';
+    mockHasEnabledScheduledJobs.mockReturnValue(true);
+    const warm = vi.fn(async () => undefined);
+    // warm() creates the session it is asked to warm, so handing max a local card
+    // would run that card's agent on the wrong box.
+    const client = {
+      nodeName: 'max',
+      list: vi.fn(async () => ({ type: 'session_list', sessions: [] })),
+      markActive: vi.fn(),
+      warm,
+      scheduleSleep: vi.fn(),
+    };
+
+    await syncNode(client as never, syncCtx([{ id: 7, path: '/tmp/project' }]), bus);
+
+    expect(warm).not.toHaveBeenCalled();
+    expect(mockHasEnabledScheduledJobs).not.toHaveBeenCalled();
   });
 });
 
