@@ -46,11 +46,15 @@ vi.mock('../../shared/config', () => ({
   }),
 }));
 
+const mockScheduleSleep = vi.fn();
+
 const mockClient = {
   isConnected: () => true,
   isActive: mockIsActive,
   message: mockMessage,
   create: mockCreate,
+  // /sleep hands the wake timer to the daemon; the backend no longer polls for it.
+  scheduleSleep: mockScheduleSleep,
 };
 
 vi.mock('../init-state', () => ({

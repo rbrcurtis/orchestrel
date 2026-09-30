@@ -309,6 +309,19 @@ export class OrcdClient {
     this.activeSessions.delete(sessionId);
   }
 
+  /**
+   * Ask the daemon to hold the wake timer for a parked card. The timer lives in orcd so
+   * one board cannot be woken twice by two backends; the backend that receives
+   * the sleep_due event claims the wake in the database before acting.
+   */
+  scheduleSleep(cardId: number, wakeAt: number): void {
+    this.send({ action: 'schedule_sleep', cardId, wakeAt });
+  }
+
+  cancelSleep(cardId: number): void {
+    this.send({ action: 'cancel_sleep', cardId });
+  }
+
   /** Permanently close a session and all resources owned by its runtime. */
   close(sessionId: string): void {
     this.send({ action: 'close', sessionId });

@@ -1,11 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockFind = vi.fn();
+const mockFindOneBy = vi.fn();
+const mockExecute = vi.fn();
 const mockSubmit = vi.fn();
 const mockPublish = vi.fn();
 
 vi.mock('../models/Card', () => ({
-  Card: { find: (...args: unknown[]) => mockFind(...args) },
+  Card: { findOneBy: (...args: unknown[]) => mockFindOneBy(...args), find: vi.fn() },
+}));
+
+// The claim is a conditional UPDATE whose row count decides whether this backend acts.
+// Its WHERE clause is TypeORM's business; what matters here is that a claim of zero rows
+// ends the wake without prompting anything.
+vi.mock('../models/index', () => ({
+  AppDataSource: {
+    getRepository: () => ({
+      createQueryBuilder: () => ({
+        update() {
+          return this;
+        },
+        set() {
+          return this;
+        },
+        where() {
+          return this;
+        },
+        execute: (...args: unknown[]) => mockExecute(...args),
+      }),
+    }),
+  },
 }));
 
 vi.mock('./card-execution', () => ({
@@ -19,9 +42,9 @@ vi.mock('../bus', () => ({
   },
 }));
 
-// The waker is the only thing that turns a stored wake time into work. Its two
-// branches (send the stored prompt, or just start the card) and the failure
-// branch decide what a parked card does when its time arrives.
+// orcd holds the wake timer now, but the wake itself is still the backend's: its two
+// branches (send the stored prompt, or just start the card) decide what a parked card does
+// when its time arrives. The claim is what stops a second backend doing it again.
 function sleepingCard(overrides: Record<string, unknown> = {}) {
   return {
     id: 7,
@@ -34,53 +57,71 @@ function sleepingCard(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('wakeDueCards', () => {
+async function wake(cardId = 7, now = 1000) {
+  const { wakeDueCard } = await import('./sleep');
+  return wakeDueCard(cardId, now);
+}
+
+describe('wakeDueCard', () => {
   beforeEach(() => {
-    mockFind.mockReset();
+    mockFindOneBy.mockReset();
+    mockExecute.mockReset().mockResolvedValue({ affected: 1 });
     mockSubmit.mockReset();
     mockPublish.mockReset();
   });
 
   it('sends the stored prompt when the wake time arrives', async () => {
-    const card = sleepingCard({ sleepPrompt: 'check the deploy' });
-    mockFind.mockResolvedValue([card]);
-    const { wakeDueCards } = await import('./sleep');
+    mockFindOneBy.mockResolvedValue(sleepingCard({ sleepPrompt: 'check the deploy' }));
 
-    await wakeDueCards(1000);
-
+    expect(await wake()).toBe(true);
+    expect(mockExecute).toHaveBeenCalled();
     expect(mockSubmit).toHaveBeenCalledWith(7, 'check the deploy');
-    // submitCardPrompt moves the card and starts the session itself.
-    expect(card.column).toBe('ready');
-    expect(card.sleepUntil).toBeNull();
-    expect(card.sleepPrompt).toBeNull();
   });
 
-  it('moves a card with no stored prompt straight to running', async () => {
+  it('moves a card with no stored prompt to running instead', async () => {
     const card = sleepingCard();
-    mockFind.mockResolvedValue([card]);
-    const { wakeDueCards } = await import('./sleep');
+    mockFindOneBy.mockResolvedValue(card);
 
-    await wakeDueCards(1000);
-
+    expect(await wake()).toBe(true);
     expect(card.column).toBe('running');
-    expect(card.sleepUntil).toBeNull();
+    expect(card.save).toHaveBeenCalled();
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
-  it('reports a wake prompt that could not be sent instead of retrying it', async () => {
-    const card = sleepingCard({ sleepPrompt: 'check the deploy' });
-    mockFind.mockResolvedValue([card]);
-    mockSubmit.mockRejectedValue(new Error('node offline'));
-    const { wakeDueCards } = await import('./sleep');
+  // Two backends can both be told a card is due. Only the one whose claim changes a row
+  // may act, or the card would be woken twice.
+  it('does nothing when another backend already claimed the wake', async () => {
+    mockFindOneBy.mockResolvedValue(sleepingCard({ sleepPrompt: 'check the deploy' }));
+    mockExecute.mockResolvedValue({ affected: 0 });
 
-    await expect(wakeDueCards(1000)).resolves.toBe(1);
+    expect(await wake()).toBe(false);
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
 
-    // Cleared before sending: a failing prompt must not fire on every tick.
-    expect(card.sleepPrompt).toBeNull();
-    expect(card.sleepUntil).toBeNull();
+  it('ignores a card that is gone, not in ready, not asleep, or not due yet', async () => {
+    mockFindOneBy.mockResolvedValue(undefined);
+    expect(await wake()).toBe(false);
+
+    mockFindOneBy.mockResolvedValue(sleepingCard({ column: 'running' }));
+    expect(await wake()).toBe(false);
+
+    mockFindOneBy.mockResolvedValue(sleepingCard({ sleepUntil: null }));
+    expect(await wake()).toBe(false);
+
+    mockFindOneBy.mockResolvedValue(sleepingCard({ sleepUntil: 5000 }));
+    expect(await wake()).toBe(false);
+
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('reports a wake prompt that failed instead of retrying it', async () => {
+    mockFindOneBy.mockResolvedValue(sleepingCard({ sleepPrompt: 'check the deploy' }));
+    mockSubmit.mockRejectedValue(new Error('node down'));
+
+    expect(await wake()).toBe(true);
     expect(mockPublish).toHaveBeenCalledWith(
       'card:7:sdk',
-      expect.objectContaining({ type: 'error', message: expect.stringContaining('node offline') }),
+      expect.objectContaining({ type: 'error', message: expect.stringContaining('node down') }),
     );
   });
 });

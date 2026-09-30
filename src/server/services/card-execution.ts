@@ -19,9 +19,7 @@ export interface PromptIdentity {
 }
 
 function authorForIdentity(identity: PromptIdentity | undefined): OrcdAuthor {
-  return identity
-    ? { userId: identity.id, email: identity.email, kind: 'human' }
-    : SYSTEM_AUTHOR;
+  return identity ? { userId: identity.id, email: identity.email, kind: 'human' } : SYSTEM_AUTHOR;
 }
 
 export class CardExecutionError extends Error {
@@ -84,7 +82,13 @@ export async function submitCardPrompt(
         `[session:${cardId}] app command /sleep: parked until ${new Date(until).toISOString()} ("${phrase}")` +
           (prompt ? ` then: ${prompt}` : ''),
       );
-      return await moveCardToColumn(cardId, 'ready', { sleepUntil: until, sleepPrompt: prompt });
+      const parked = await moveCardToColumn(cardId, 'ready', { sleepUntil: until, sleepPrompt: prompt });
+      // orcd holds the wake timer, so one card wakes once however many backends run against
+      // this board. The card's own node carries it, and the node that receives the
+      // sleep_due event claims the wake in the database before acting.
+      const { client } = await cardAndClient(cardId);
+      client.scheduleSleep(cardId, until);
+      return parked;
     } catch (err) {
       console.warn(`[session:${cardId}] app command /sleep failed:`, err instanceof Error ? err.message : err);
       const msg = err instanceof Error ? err.message : String(err);
