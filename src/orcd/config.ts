@@ -29,6 +29,8 @@ export interface OrcdConfig {
   defaultThinkingLevel?: string;
   defaultCwd?: string;
   ringBufferSize: number;
+  /** Runs the scheduled maintainer jobs on this node. See OrchestrelConfig.maintainers. */
+  maintainers: boolean;
   providers: Record<string, ProviderConfig>;
 }
 
@@ -75,6 +77,7 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
     ...(cfg.defaultThinkingLevel ? { defaultThinkingLevel: cfg.defaultThinkingLevel } : {}),
     defaultCwd: cfg.defaultCwd,
     ringBufferSize: cfg.ringBufferSize,
+    maintainers: cfg.maintainers ?? false,
     providers,
   };
 }

@@ -17,6 +17,11 @@ defaultThinkingLevel: high # optional (off|low|medium|high|adaptive); used when 
 defaultCwd: ~/Code # where new cards default their working directory
 ringBufferSize: 5000 # per-session event buffer; size to cover the max expected BE↔node outage
 
+# Scheduled maintainer jobs, owned by orcd: memory daily 02:00, memory merge weekly
+# Sunday 03:00, preferences daily 00:00. They write one database, so exactly ONE node
+# sets this — the box that owns orchestrel.db. Omitted or false = no maintainer here.
+# maintainers: true
+
 providers:
   # Pi provider routing for Anthropic models.
   # The provider id and modelID values must match models known to Pi's model registry.

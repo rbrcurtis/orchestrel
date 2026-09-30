@@ -1,4 +1,5 @@
 import { loadOrcdConfig } from './config';
+import { startMaintainerScheduler, stopMaintainerScheduler } from './maintainer-scheduler';
 import { OrcdServer } from './socket-server';
 
 async function main() {
@@ -14,6 +15,10 @@ async function main() {
     },
   );
   await server.start();
+  if (config.maintainers) {
+    startMaintainerScheduler();
+    console.log('[orcd] maintainer timers started (memory 02:00 daily + Sunday 03:00, preferences 00:00 daily)');
+  }
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) {
@@ -22,6 +27,7 @@ async function main() {
     }
     shuttingDown = true;
     console.log('[orcd] shutting down...');
+    stopMaintainerScheduler();
     await server.stop();
     process.exit(0);
   };

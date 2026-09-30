@@ -192,12 +192,6 @@ export function wsServerPlugin(): Plugin {
 
             console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
-            const { startMemoryMaintainer } = await import('../../lib/memory-maintainer/scheduler');
-            startMemoryMaintainer();
-
-            const { startPreferenceMaintainer } = await import('../../lib/preference-maintainer/scheduler');
-            startPreferenceMaintainer();
-
             const { startSleepScheduleCleanup } = await import('../services/sleep');
             startSleepScheduleCleanup();
 

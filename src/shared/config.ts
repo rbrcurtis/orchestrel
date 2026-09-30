@@ -82,6 +82,13 @@ export interface OrchestrelConfig {
   providers: Record<string, ProviderDef>;
   memory?: MemoryConfig;
   sleepResolver?: SleepResolverConfig;
+  /**
+   * This node runs orcd's scheduled maintainer jobs (memory daily + weekly merge,
+   * preferences daily). Set it on exactly one node — the box that owns
+   * orchestrel.db — because the jobs write one database. Absent = this node does
+   * not run them.
+   */
+  maintainers?: boolean;
 }
 
 /**
@@ -248,6 +255,7 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
     providers,
     ...(memory ? { memory } : {}),
     ...(sleepResolver ? { sleepResolver } : {}),
+    ...(raw.maintainers != null ? { maintainers: Boolean(raw.maintainers) } : {}),
   };
 }
 

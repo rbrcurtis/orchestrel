@@ -2,8 +2,6 @@ import type { Server as HttpServer } from 'http';
 import type { Router as ExpressRouter, Request, Response, NextFunction } from 'express';
 import { Server as IoServer } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from '../shared/ws-protocol';
-import { startMemoryMaintainer } from '../lib/memory-maintainer/scheduler';
-import { startPreferenceMaintainer } from '../lib/preference-maintainer/scheduler';
 import { startupMark } from './startup-timing';
 
 // Production-mode backend init, used by server.js when NODE_ENV !== 'development'.
@@ -143,9 +141,6 @@ export async function initBackend(): Promise<{
 
   console.log(`[orcd] ${nodes.length} node client(s) initialized`);
   startupMark('all nodes synced');
-
-  startMemoryMaintainer();
-  startPreferenceMaintainer();
 
   const { startSleepScheduleCleanup } = await import('./services/sleep');
   startSleepScheduleCleanup();
