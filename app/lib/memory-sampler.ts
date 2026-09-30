@@ -87,8 +87,23 @@ function pointerState(): string {
 // sampler line so a failure that lasts a second is still visible afterwards.
 const clientErrors: string[] = [];
 
-function noteError(kind: string, detail: string): void {
-  const msg = `${kind} ${detail}`.replace(/\s+/g, ' ').slice(0, 200);
+// The stack matters more than the message here. React reports "Maximum update depth
+// exceeded" with the component stack attached, which names the loop; the message alone
+// only says that one exists.
+function describeError(detail: unknown): string {
+  if (detail instanceof Error) {
+    const frames = (detail.stack ?? '')
+      .split('\n')
+      .slice(0, 7)
+      .map((line) => line.trim())
+      .join(' <- ');
+    return `${detail.message} :: ${frames}`;
+  }
+  return String(detail);
+}
+
+function noteError(kind: string, detail: unknown): void {
+  const msg = `${kind} ${describeError(detail)}`.replace(/\s+/g, ' ').slice(0, 700);
   clientErrors.push(msg);
   if (clientErrors.length > 4) clientErrors.shift();
   report(`client-error ${msg} ${uiState()}`);
@@ -96,7 +111,7 @@ function noteError(kind: string, detail: string): void {
 
 function errorState(): string {
   if (clientErrors.length === 0) return 'err=0';
-  return `err=${clientErrors.length}:${clientErrors[clientErrors.length - 1]}`;
+  return `err=${clientErrors.length}:${clientErrors[clientErrors.length - 1].slice(0, 140)}`;
 }
 
 // A page that stops updating while its timers keep running has lost frames, not work.
@@ -204,10 +219,8 @@ if (canReport) {
     true,
   );
 
-  window.addEventListener('error', (e) => noteError('error', e.message || String(e)));
-  window.addEventListener('unhandledrejection', (e) =>
-    noteError('reject', String((e as PromiseRejectionEvent).reason)),
-  );
+  window.addEventListener('error', (e) => noteError('error', e.error ?? e.message));
+  window.addEventListener('unhandledrejection', (e) => noteError('reject', (e as PromiseRejectionEvent).reason));
 }
 
 function report(line: string): void {
