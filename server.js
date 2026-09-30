@@ -52,8 +52,14 @@ if (DEVELOPMENT) {
   app.use(morgan('tiny'));
 
   // @ts-expect-error .ts extension needed at runtime for tsx loader
+  const { startupMark } = await import('./src/server/startup-timing.ts');
+  startupMark('production branch entered');
+
+  // @ts-expect-error .ts extension needed at runtime for tsx loader
   const { initBackend } = await import('./src/server/init.ts');
+  startupMark('backend graph imported');
   const { restRouter, attachSocketIo } = await initBackend();
+  startupMark('initBackend returned');
 
   app.use(restRouter);
 

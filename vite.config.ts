@@ -77,6 +77,10 @@ function pwaLogPlugin(): Plugin {
 
 export default defineConfig(({ isSsrBuild }) => ({
   build: {
+    // The production service now starts BEFORE the build runs, so the bundle it is
+    // serving must survive the build. Vite's default emptyOutDir deletes build/client
+    // first, which would 404 index.html and every hashed asset mid-build.
+    emptyOutDir: false,
     rollupOptions: isSsrBuild
       ? {
           input: './server/app.ts',
