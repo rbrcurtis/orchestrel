@@ -165,7 +165,10 @@ export class CardsController extends Controller {
         archiveOthers: body.archiveOthers,
         pendingInitialFiles: body.pendingInitialFiles,
       });
-      const started = body.initialPrompt !== undefined ? await submitCardPrompt(card.id, body.initialPrompt, undefined, identity) : card;
+      const started =
+        body.initialPrompt !== undefined
+          ? await submitCardPrompt(card.id, body.initialPrompt, undefined, identity)
+          : card;
       // An initial prompt of only app commands (e.g. /delete) removes the card
       // it was supposed to start — nothing left to return.
       if (!started) throw httpError(422, 'invalid_initial_prompt', 'initialPrompt cannot be an app command');

@@ -56,7 +56,11 @@ export function listHumanAuthors(path: string): Array<{ userId: number; email: s
   return [...byId].map(([userId, email]) => ({ userId, email }));
 }
 
-export function buildExcerpt(path: string, maxTokens: number, opts?: { humanOnly?: boolean; userId?: number }): Excerpt {
+export function buildExcerpt(
+  path: string,
+  maxTokens: number,
+  opts?: { humanOnly?: boolean; userId?: number },
+): Excerpt {
   let sessionId = '';
   let cwd = '';
   let startedAt = '';
@@ -93,7 +97,11 @@ export function buildExcerpt(path: string, maxTokens: number, opts?: { humanOnly
     // and corrections live in what the person typed; system prompts and other
     // people's prompts must never feed one user's preference memory.
     if (opts?.humanOnly) {
-      if (role === 'user' && pendingAuthor?.kind === 'human' && (opts.userId == null || pendingAuthor.userId === opts.userId)) {
+      if (
+        role === 'user' &&
+        pendingAuthor?.kind === 'human' &&
+        (opts.userId == null || pendingAuthor.userId === opts.userId)
+      ) {
         parts.push(redact(`USER: ${contentText(content)}`));
       }
       pendingAuthor = null;
@@ -102,7 +110,9 @@ export function buildExcerpt(path: string, maxTokens: number, opts?: { humanOnly
 
     if (role === 'user') {
       if (pendingAuthor) {
-        parts.push(redact(`AUTHOR: kind=${pendingAuthor.kind} userId=${pendingAuthor.userId} email=${pendingAuthor.email}`));
+        parts.push(
+          redact(`AUTHOR: kind=${pendingAuthor.kind} userId=${pendingAuthor.userId} email=${pendingAuthor.email}`),
+        );
         pendingAuthor = null;
       }
       parts.push(redact(`USER: ${contentText(content)}`));

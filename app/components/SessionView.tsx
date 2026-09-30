@@ -252,7 +252,11 @@ export const SessionView = observer(function SessionView({
     // /sleep, /delete) never prompt, so only real prompts wait for the echo.
     const { text, action } = parseAppCommands(message);
     const prompt = action !== 'delete' && action !== 'sleep' && (text.trim().length > 0 || (files?.length ?? 0) > 0);
-    pendingBaseline.current = { echoSeq: sessionStore.getUserEchoSeq(cardId), cardUpdatedAt: card?.updatedAt ?? null, prompt };
+    pendingBaseline.current = {
+      echoSeq: sessionStore.getUserEchoSeq(cardId),
+      cardUpdatedAt: card?.updatedAt ?? null,
+      prompt,
+    };
     setSendPending(true);
     try {
       await sessionStore.sendMessage(cardId, message, files);
@@ -773,7 +777,11 @@ function PromptInput({
             <div className="flex shrink-0 flex-col items-center justify-end gap-1.5">
               <ContextGauge percent={contextPercent} compacted={compacted} onCompact={onCompact} />
               <Button type="submit" disabled={disabled} className="size-[50px] p-0 sm:size-[34px]">
-                {sendPending ? <Loader2 className="size-5 sm:size-4 animate-spin" /> : <Send className="size-5 sm:size-4" />}
+                {sendPending ? (
+                  <Loader2 className="size-5 sm:size-4 animate-spin" />
+                ) : (
+                  <Send className="size-5 sm:size-4" />
+                )}
               </Button>
             </div>
           </div>

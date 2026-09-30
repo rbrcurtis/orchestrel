@@ -73,10 +73,25 @@ describe('buildExcerpt', () => {
   it('emits an AUTHOR line before the user block it annotates', () => {
     const lines = [
       { type: 'session', id: 's2', timestamp: '2026-08-31T00:00:00Z', cwd: '/repo' },
-      { type: 'custom', id: 'au1', customType: 'orc.author', data: { userId: 3, email: 'ryan@example.com', kind: 'human' } },
-      { type: 'message', id: 'uh', timestamp: '2026-08-31T00:00:01Z', message: { role: 'user', content: [{ type: 'text', text: 'use concise bullets' }] } },
+      {
+        type: 'custom',
+        id: 'au1',
+        customType: 'orc.author',
+        data: { userId: 3, email: 'ryan@example.com', kind: 'human' },
+      },
+      {
+        type: 'message',
+        id: 'uh',
+        timestamp: '2026-08-31T00:00:01Z',
+        message: { role: 'user', content: [{ type: 'text', text: 'use concise bullets' }] },
+      },
       { type: 'custom', id: 'au2', customType: 'orc.author', data: { userId: 0, email: 'system', kind: 'system' } },
-      { type: 'message', id: 'us', timestamp: '2026-08-31T00:00:02Z', message: { role: 'user', content: [{ type: 'text', text: 'continue' }] } },
+      {
+        type: 'message',
+        id: 'us',
+        timestamp: '2026-08-31T00:00:02Z',
+        message: { role: 'user', content: [{ type: 'text', text: 'continue' }] },
+      },
     ];
     const ex = buildExcerpt(writeFixture('author.jsonl', lines), 1000);
     const human = ex.text.indexOf('AUTHOR: kind=human userId=3 email=ryan@example.com');

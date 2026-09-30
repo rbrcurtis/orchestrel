@@ -59,10 +59,7 @@ export interface CreatePiRuntimeSessionOpts {
 
 export interface PiRuntimeSession {
   id: string;
-  prompt(
-    text: string,
-    opts?: { streamingBehavior?: 'steer' | 'followUp'; author?: OrcdAuthor },
-  ): Promise<void>;
+  prompt(text: string, opts?: { streamingBehavior?: 'steer' | 'followUp'; author?: OrcdAuthor }): Promise<void>;
   /** True while a Pi run is active, including a run started by a background-subagent notification. */
   isStreaming(): boolean;
   /** Resolve once Pi has no active run. */

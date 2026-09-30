@@ -84,9 +84,8 @@ export function sweepSessions(memory: MemoryConfig, opts?: SweepOptions): SweepR
         result.droppedWindow += 1;
         continue;
       }
-      const seen = db
-        .prepare(`SELECT mtime_ms, size FROM ${watermarkTable} WHERE path = ?`)
-        .get(path) as { mtime_ms: number; size: number } | undefined;
+      const seen = db.prepare(`SELECT mtime_ms, size FROM ${watermarkTable} WHERE path = ?`).get(path) as
+        { mtime_ms: number; size: number } | undefined;
       if (seen && seen.mtime_ms === st.mtimeMs && seen.size === st.size) continue;
 
       const header = readHeader(path);

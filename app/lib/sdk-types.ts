@@ -55,13 +55,7 @@ export type StreamEvent =
 
 export interface SdkSystemMessage {
   type: 'system';
-  subtype:
-    | 'init'
-    | 'compact_boundary'
-    | 'bgc_started'
-    | 'bgc_failed'
-    | 'compact_started'
-    | 'compact_done';
+  subtype: 'init' | 'compact_boundary' | 'bgc_started' | 'bgc_failed' | 'compact_started' | 'compact_done';
   session_id?: string;
   model?: string;
   source?: string;
