@@ -833,6 +833,7 @@ describe('syncNode', () => {
         sessions: [],
       })),
       markActive: vi.fn(),
+      trackCard: vi.fn(),
       create: vi.fn(async () => 'sess-new'),
     };
 
@@ -909,6 +910,7 @@ describe('syncNode', () => {
         sessions: [],
       })),
       markActive: vi.fn(),
+      trackCard: vi.fn(),
       create: vi.fn(async () => 'sess-new'),
     };
 

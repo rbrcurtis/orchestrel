@@ -1,5 +1,5 @@
 import { createConnection, type Socket } from 'net';
-import type { OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import { SYSTEM_AUTHOR, type OrcdAction, type OrcdMessage } from '../shared/orcd-protocol';
 import type { FileRef } from '../shared/ws-protocol';
 
 export interface OrcdClientOpts {
@@ -16,6 +16,11 @@ type MessageHandler = (msg: OrcdMessage) => void | Promise<void>;
  * Manages connection, reconnection, and message dispatch.
  */
 export class OrcdClient {
+  /** Nudges a card whose transcript just absorbed a splice, so the pi process
+   *  picks the task back up instead of the card stalling after compaction. */
+  static readonly BGC_CONTINUE_PROMPT =
+    'The system compacted your conversation history just now. Continue the task you were working on.';
+
   private socket: Socket | null = null;
   private buf = '';
   private connected = false;
@@ -53,6 +58,11 @@ export class OrcdClient {
    *  them — an already-active session must stay active after compaction. */
   private compactActivated = new Set<string>();
 
+  /** Sessions this BE has a card for. A splice landing in such a transcript needs
+   *  a continue prompt; splices in card-less sessions (warmed job sessions, etc.)
+   *  must not spawn a turn. */
+  private cardSessions = new Set<string>();
+
   /** Callback invoked when OrcdClient reconnects (orcd restarted) */
   private reconnectCallback: (() => void) | null = null;
 
@@ -67,6 +77,18 @@ export class OrcdClient {
    */
   onReconnect(cb: () => void): void {
     this.reconnectCallback = cb;
+  }
+
+  /** Remember that a card is bound to this session, so a BGC splice landing in its
+   *  transcript sends the continue prompt. Idempotent — re-creating the same
+   *  session for the same card (resume path) re-tracks harmlessly. */
+  trackCard(sessionId: string): void {
+    this.cardSessions.add(sessionId);
+  }
+
+  /** Forget a card's binding to this session (the card's session was closed out). */
+  untrackCard(sessionId: string): void {
+    this.cardSessions.delete(sessionId);
   }
 
   /**
@@ -326,6 +348,7 @@ export class OrcdClient {
   close(sessionId: string): void {
     this.send({ action: 'close', sessionId });
     this.activeSessions.delete(sessionId);
+    this.cardSessions.delete(sessionId);
   }
 
   /**
@@ -537,6 +560,7 @@ export class OrcdClient {
     // Track session lifecycle — only on actual exit, not on result
     if (msg.type === 'session_exit') {
       this.activeSessions.delete(msg.sessionId);
+      this.cardSessions.delete(msg.sessionId);
     }
 
     // A foreground `/compact` runs session.compact() OUTSIDE a run loop, so orcd
@@ -570,12 +594,27 @@ export class OrcdClient {
         ) {
           this.activeSessions.delete(msg.sessionId);
         }
+        // compact_boundary means a compaction splice just landed in this transcript.
+        // The pi process needs a nudge to pick the task back up, or the card stalls
+        // after compaction. A prompt sent mid-run is held by orcd until the splice
+        // lands, so it is safe to send here regardless of run state. Manual
+        // /compact ends with compact_done, not compact_boundary, so this only ever
+        // fires for background compaction.
+        if (ev.subtype === 'compact_boundary' && this.cardSessions.has(msg.sessionId)) {
+          this.message(msg.sessionId, OrcdClient.BGC_CONTINUE_PROMPT, undefined, SYSTEM_AUTHOR);
+        }
       }
     }
 
     // On CC session fork, also track the new id so isActive()/subscribe() work
     if (msg.type === 'session_id_update' && this.activeSessions.has(msg.sessionId)) {
       this.activeSessions.add(msg.newSessionId);
+    }
+    // A forked card session must keep its card binding on the new id, or the next
+    // splice lands in a session the nudge no longer recognizes.
+    if (msg.type === 'session_id_update' && this.cardSessions.has(msg.sessionId)) {
+      this.cardSessions.delete(msg.sessionId);
+      this.cardSessions.add(msg.newSessionId);
     }
 
     this.dispatchChain = this.dispatchChain

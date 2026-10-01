@@ -226,6 +226,86 @@ describe('OrcdClient dispatch ordering', () => {
     expect(client.isActive('sess-run')).toBe(true);
   });
 
+  it('nudges a card session to continue when a splice lands in its transcript', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void; send: (a: unknown) => void };
+    const sent: unknown[] = [];
+    internals.send = (a: unknown) => sent.push(a);
+
+    client.trackCard('sess-c');
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'bgc_started' },
+    });
+    // bgc_started is the announcement, not the splice — no prompt yet.
+    expect(sent).toHaveLength(0);
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_boundary' },
+    });
+    expect(sent).toEqual([
+      expect.objectContaining({
+        action: 'message',
+        sessionId: 'sess-c',
+        prompt: 'The system compacted your conversation history just now. Continue the task you were working on.',
+        author: { userId: 0, email: 'system', kind: 'system' },
+      }),
+    ]);
+  });
+
+  it('does not nudge when the spliced session has no card', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void; send: (a: unknown) => void };
+    const sent: unknown[] = [];
+    internals.send = (a: unknown) => sent.push(a);
+
+    internals.dispatch({ type: 'session_created', sessionId: 'sess-warm' });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-warm',
+      event: { type: 'system', subtype: 'compact_boundary' },
+    });
+    expect(sent).toHaveLength(0);
+  });
+
+  it('does not nudge on a manual /compact finish (compact_done, not compact_boundary)', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void; send: (a: unknown) => void };
+    const sent: unknown[] = [];
+    internals.send = (a: unknown) => sent.push(a);
+
+    client.trackCard('sess-c');
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_started' },
+    });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_done' },
+    });
+    expect(sent).toHaveLength(0);
+  });
+
+  it('stops nudging a card session once it exits', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void; send: (a: unknown) => void };
+    const sent: unknown[] = [];
+    internals.send = (a: unknown) => sent.push(a);
+
+    client.trackCard('sess-c');
+    internals.dispatch({ type: 'session_exit', sessionId: 'sess-c', state: 'completed' });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_boundary' },
+    });
+    expect(sent).toHaveLength(0);
+  });
+
   it('constructs with host/port/token options', () => {
     const client = new OrcdClient({ host: '10.0.0.1', port: 7420, token: 'tok', name: 'gpubox' });
     expect(client.nodeName).toBe('gpubox');

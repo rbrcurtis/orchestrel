@@ -423,6 +423,7 @@ export async function syncNode(client: OrcdClient, ctx: SyncContext, bus: Messag
   for (const card of liveCards) {
     const sessionId = card.sessionId as string;
     client.markActive(sessionId);
+    client.trackCard(sessionId);
     trackSession(card.id, sessionId);
     console.log(`[reconcile] re-seeded tracking for card ${card.id} session ${sessionId.slice(0, 8)}`);
   }
@@ -854,6 +855,7 @@ async function startCardSession(client: OrcdClient, card: Card, bus: MessageBus 
 
     card.sessionId = sessionId;
     card.contextWindow = window;
+    client.trackCard(sessionId);
     if (pending.length > 0) card.pendingInitialFiles = [];
     // The card description is the first prompt sent. Follow-up prompts increment
     // promptsSent in the ws message handler; this covers the initial start.
