@@ -27,13 +27,41 @@ export class OrcdServer {
   // Wake timers for parked cards. Session lifecycle work, so it belongs here: a timer per
   // backend would fire the same wake once per backend running against the same board.
   private sleeps = new SleepScheduler();
-  private compacting = new Set<string>(); // session IDs currently compacting
+  // Session ID → in-flight BGC promise. Keeping the promise (not just a flag) lets a
+  // prompt arriving mid-compact join it and hold until the splice has landed.
+  private compacting = new Map<string, Promise<void>>();
   private pendingApply = new Map<string, import('@earendil-works/pi-coding-agent').CompactionResult>();
   // Context size at which a BGC attempt found nothing to compact. `context_usage`
   // fires on every streaming delta, so without this a failing attempt retries
   // hundreds of times per second while the context stays over threshold (severe on
   // small-window models). A new size means the branch changed and a retry is due.
   private bgcNoopTokens = new Map<string, number>();
+  // Prompts gated on an in-flight BGC. A rehydrated compact must not drop its
+  // session from the store while a held prompt is about to start a turn on it.
+  private heldPrompts = new Map<string, number>();
+
+  /**
+   * Queue `dispatch` behind the session's in-flight compaction: it runs once the
+   * splice has landed (or the attempt failed), so the turn's first request sees
+   * the post-compaction context. The hold is counted so the rehydrated-compact
+   * cleanup can't remove the store entry mid-handoff.
+   */
+  private holdPrompt(session: OrcdSession, dispatch: () => void): void {
+    const sid = session.id;
+    const gate = this.compacting.get(sid);
+    if (!gate) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] gate settled before hold; dispatching now`);
+      dispatch();
+      return;
+    }
+    this.heldPrompts.set(sid, (this.heldPrompts.get(sid) ?? 0) + 1);
+    void gate.then(() => {
+      const left = (this.heldPrompts.get(sid) ?? 1) - 1;
+      if (left <= 0) this.heldPrompts.delete(sid);
+      else this.heldPrompts.set(sid, left);
+      dispatch();
+    });
+  }
 
   constructor(
     private opts: OrcdListenConfig,
@@ -280,30 +308,41 @@ export class OrcdServer {
         existing.sendMessage(action.prompt, action.effort, action.author).finally(() => {
           console.log(`[orcd] session ${existing.id.slice(0, 8)} follow-up exited (state=${existing.state})`);
         });
-      // Self-heal a stale runtime: a card's provider/model may have changed
-      // while this session stayed resident (the UI can't hot-swap it alone).
-      // Switch before prompting so the turn runs the newly selected model;
-      // if the switch is unsupported, log and continue on the old model.
-      if (existing.model !== action.model || existing.provider !== action.provider) {
-        const cfg = this.providers[action.provider];
-        if (cfg) {
-          existing
-            .setModel(action.provider, action.model, cfg)
-            .then(runPrompt)
-            .catch((err: unknown) => {
-              console.error(
-                `[orcd:${existing.id.slice(0, 8)}] set_model on resume failed:`,
-                err instanceof Error ? err.message : String(err),
-              );
-              runPrompt();
-            });
-          console.log(`[orcd:${existing.id.slice(0, 8)}] reusing resident session with model switch`);
-          return;
+      const launch = (): void => {
+        // Self-heal a stale runtime: a card's provider/model may have changed
+        // while this session stayed resident (the UI can't hot-swap it alone).
+        // Switch before prompting so the turn runs the newly selected model;
+        // if the switch is unsupported, log and continue on the old model.
+        if (existing.model !== action.model || existing.provider !== action.provider) {
+          const cfg = this.providers[action.provider];
+          if (cfg) {
+            existing
+              .setModel(action.provider, action.model, cfg)
+              .then(runPrompt)
+              .catch((err: unknown) => {
+                console.error(
+                  `[orcd:${existing.id.slice(0, 8)}] set_model on resume failed:`,
+                  err instanceof Error ? err.message : String(err),
+                );
+                runPrompt();
+              });
+            console.log(`[orcd:${existing.id.slice(0, 8)}] reusing resident session with model switch`);
+            return;
+          }
+          console.error(`[orcd:${existing.id.slice(0, 8)}] set_model on resume: unknown provider ${action.provider}`);
         }
-        console.error(`[orcd:${existing.id.slice(0, 8)}] set_model on resume: unknown provider ${action.provider}`);
+        runPrompt();
+      };
+      const inFlight = this.compacting.get(existing.id);
+      if (inFlight) {
+        this.holdPrompt(existing, launch);
       }
-      runPrompt();
-      console.log(`[orcd] reusing resident session ${existing.id.slice(0, 8)}`);
+      console.log(
+        inFlight
+          ? `[orcd:${existing.id.slice(0, 8)}:bgc] prompt held until in-flight compaction settles`
+          : `[orcd] reusing resident session ${existing.id.slice(0, 8)}`,
+      );
+      if (!inFlight) launch();
       return;
     }
 
@@ -431,19 +470,26 @@ export class OrcdServer {
     // the only compactor, so a run must not start over the threshold — it would
     // walk into the model's window mid-run and every request from there would be
     // rejected. The session is idle here, so this splice lands immediately.
-    if (session.needsCompaction()) {
-      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] over threshold on dispatch; compacting first`);
-      void this.maybeStartBgc(session).then(() => {
-        session.sendMessage(action.prompt, action.effort, action.author).finally(() => {
-          console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
-        });
+    const send = (): void => {
+      void session.sendMessage(action.prompt, action.effort, action.author).finally(() => {
+        console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
       });
+    };
+    const dispatch = (): void => {
+      if (session.needsCompaction()) {
+        console.log(`[orcd:${session.id.slice(0, 8)}:bgc] over threshold on dispatch; compacting first`);
+        void this.maybeStartBgc(session).then(send);
+        return;
+      }
+      send();
+    };
+    const inFlight = this.compacting.get(session.id);
+    if (inFlight) {
+      this.holdPrompt(session, dispatch);
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] prompt held until in-flight compaction settles`);
       return;
     }
-
-    session.sendMessage(action.prompt, action.effort, action.author).finally(() => {
-      console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
-    });
+    dispatch();
   }
 
   private handleSetEffort(action: OrcdAction & { action: 'set_effort' }): void {
@@ -556,7 +602,11 @@ export class OrcdServer {
     }
     const run = this.maybeStartBgc(session);
     void run.finally(() => {
-      if (hydrated) this.store.remove(session.id);
+      // A prompt gated on this compaction is about to start a turn — never drop a
+      // session that still has held prompts, and never one that stopped being idle.
+      if (hydrated && session.isIdle() && !(this.heldPrompts.get(session.id) ?? 0)) {
+        this.store.remove(session.id);
+      }
     });
   }
 
@@ -654,13 +704,32 @@ export class OrcdServer {
    * session is idle, splice the cut now; otherwise defer the splice to the next
    * run-end (onBeforeExit) — never mutate the agent message array mid-run.
    */
-  private async maybeStartBgc(session: OrcdSession): Promise<void> {
+  /**
+   * Start a background compaction, or join the one already in flight for this
+   * session. The returned promise settles when the attempt is done (splice
+   * applied, deferred to run-end, or failed), so callers can hold a prompt
+   * until a mid-flight compact is safe to dispatch on.
+   */
+  private maybeStartBgc(session: OrcdSession): Promise<void> {
     const sid = session.id;
-    if (this.compacting.has(sid) || this.pendingApply.has(sid)) {
-      console.log(`[orcd:${sid.slice(0, 8)}:bgc] already in flight or pending, ignoring`);
-      return;
+    const inFlight = this.compacting.get(sid);
+    if (inFlight) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] already in flight; joining`);
+      return inFlight;
     }
-    this.compacting.add(sid);
+    if (this.pendingApply.has(sid)) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] splice pending apply, ignoring`);
+      return Promise.resolve();
+    }
+    const run = this.compact(session);
+    this.compacting.set(sid, run);
+    void run.finally(() => this.compacting.delete(sid));
+    return run;
+  }
+
+  /** The BGC attempt itself. Guarding/in-flight tracking lives in maybeStartBgc. */
+  private async compact(session: OrcdSession): Promise<void> {
+    const sid = session.id;
     // Cancellation is not wired yet; summarization is short-lived.
     const signal = new AbortController().signal;
     // Only an attempt that announced itself needs a terminal event: the UI holds its
@@ -708,8 +777,6 @@ export class OrcdServer {
       // re-hit on every streaming delta until the context changes.
       this.bgcNoopTokens.set(sid, session.lastContextTokens);
       this.failBgc(session, announced, err instanceof Error ? err.message : String(err));
-    } finally {
-      this.compacting.delete(sid);
     }
   }
 

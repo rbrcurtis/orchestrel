@@ -434,4 +434,117 @@ describe('OrcdServer background compaction', () => {
     expect(prepSpy).toHaveBeenCalled();
     expect(sendSpy).toHaveBeenCalledWith('go', undefined, undefined);
   });
+
+  it('holds a follow-up prompt until an in-flight compaction settles', async () => {
+    const server = createServer();
+    const client = createClient();
+    const session = bgcSession('bgc-hold');
+    session.summarizeThreshold = 0;
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 7, details: undefined };
+    let release!: (r: typeof result) => void;
+    const inFlight = new Promise<typeof result>((res) => {
+      release = res;
+    });
+    const prepSpy = vi
+      .spyOn(session, 'prepareBgCompaction')
+      .mockImplementation(async (_f, _s, onStart) => {
+        onStart?.();
+        return inFlight;
+      });
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    const bgc = server['maybeStartBgc'](session);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(prepSpy).toHaveBeenCalledTimes(1);
+
+    server['handleAction'](client as never, { action: 'message', sessionId: session.id, prompt: 'go' });
+    await new Promise((r) => setTimeout(r, 0));
+    // The splice has not landed yet — the prompt must wait, not run pre-compact.
+    expect(sendSpy).not.toHaveBeenCalled();
+
+    release(result);
+    await bgc;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sendSpy).toHaveBeenCalledWith('go', undefined, undefined);
+  });
+
+  it('holds a resumed prompt on a resident session until an in-flight compaction settles', async () => {
+    const server = createServer();
+    const client = createClient();
+    const session = bgcSession('bgc-hold-create');
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 7, details: undefined };
+    let release!: (r: typeof result) => void;
+    const inFlight = new Promise<typeof result>((res) => {
+      release = res;
+    });
+    vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async () => inFlight);
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    const bgc = server['maybeStartBgc'](session);
+    await new Promise((r) => setTimeout(r, 0));
+
+    server['handleAction'](client as never, {
+      action: 'create',
+      prompt: 'go',
+      cwd: '/tmp',
+      provider: 'test',
+      model: 'm',
+      sessionId: session.id,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sendSpy).not.toHaveBeenCalled();
+
+    release(result);
+    await bgc;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sendSpy).toHaveBeenCalledWith('go', undefined, undefined);
+  });
+
+  it('keeps a rehydrated session resident while a held prompt waits on its compaction', async () => {
+    const server = createServer();
+    const client = createClient();
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined };
+    let release!: (r: typeof result) => void;
+    const inFlight = new Promise<typeof result>((res) => {
+      release = res;
+    });
+    const prepSpy = vi.spyOn(OrcdSession.prototype, 'prepareBgCompaction').mockImplementation(async () => inFlight);
+    const spies: ReturnType<typeof vi.spyOn>[] = [prepSpy];
+    try {
+      server['handleAction'](client as never, {
+        action: 'compact',
+        sessionId: 'bgc-hydrate',
+        cwd: '/tmp',
+        provider: 'test',
+        model: 'm',
+      } as CompactAction);
+      await new Promise((r) => setTimeout(r, 0));
+      const session = server.store.get('bgc-hydrate');
+      expect(session).toBeDefined();
+      spies.push(vi.spyOn(session!, 'applyBgCompaction').mockReturnValue(true));
+      spies.push(vi.spyOn(session!, 'isIdle').mockReturnValue(true));
+      const sendSpy = vi.spyOn(session!, 'sendMessage').mockResolvedValue();
+      spies.push(sendSpy);
+
+      server['handleAction'](client as never, { action: 'message', sessionId: 'bgc-hydrate', prompt: 'go' });
+      await new Promise((r) => setTimeout(r, 0));
+      release(result);
+      await new Promise((r) => setTimeout(r, 0));
+
+      // The compaction settled and the held prompt dispatched — the entry must
+      // still be in the store for the turn and everything after it.
+      expect(server.store.has('bgc-hydrate')).toBe(true);
+      expect(sendSpy).toHaveBeenCalledWith('go', undefined, undefined);
+    } finally {
+      for (const s of spies) s.mockRestore();
+    }
+  });
 });
