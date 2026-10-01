@@ -158,26 +158,32 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
 
         if (sys.subtype === 'bgc_started' || sys.subtype === 'compact_started') {
           bgcMap.set(msg.sessionId, cardId);
-          // A foreground `/compact` runs no assistant turn, so message_start never
-          // fires — move the card to running here so it shows "turn started" while
-          // the compaction runs.
-          if (sys.subtype === 'compact_started') await handleTurnStart(cardId);
+          // A manual compact (button or /compact) runs no assistant turn, so
+          // message_start never fires — move the card to running here so it shows
+          // "turn started" while the compaction runs. No-op for an auto mid-run
+          // BGC: the card is already running.
+          await handleTurnStart(cardId);
         }
 
         // A failed BGC is terminal too, but it is not a compaction: leave the card's
-        // context size and column alone, just stop routing its late events.
+        // context size alone, just stop routing its late events. If a manual compact
+        // drove the card to running, bring it back the way a finished turn would.
         if (sys.subtype === 'bgc_failed') {
           bgcMap.delete(msg.sessionId);
           console.log(`[oc:${cardId}] bgc_failed: ${String(sys.message ?? 'no reason given')}`);
+          await settleCompactCard(cardId, msg.sessionId);
         }
 
         if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
             card.contextTokens = 1;
-            // `/compact` emits no turn_complete/session_exit, so return the card
-            // to review here the same way a finished turn would.
-            if (sys.subtype === 'compact_done' && card.column === 'running') card.column = 'review';
+            // A compaction emits no turn_complete/session_exit, so return the card
+            // to review here the same way a finished turn would — unless a live
+            // agent run still owns the session (a mid-run BGC), in which case
+            // turn_complete/session_exit settles the card.
+            if (card.column === 'running' && !(await clientForCard(card))?.isActive(card.sessionId ?? ''))
+              card.column = 'review';
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
             console.log(`[oc:${cardId}] ${sys.subtype}: reset contextTokens to 1`);
@@ -270,6 +276,25 @@ async function handleTurnStart(cardId: number): Promise<void> {
     await repo.save(card);
     console.log(`[oc:${cardId}] agent turn started → running (was ${from})`);
   }
+}
+
+/**
+ * Settle a card whose only activity was a manual compaction: if it is sitting in
+ * running and the session is no longer active, the compaction emitted no
+ * turn_complete/session_exit to move it, so park it in review now.
+ */
+// oxlint-disable orchestrel/log-before-early-return -- high-frequency path: most
+// bgc_failed events arrive mid-run with the card already settled elsewhere.
+async function settleCompactCard(cardId: number, sessionId: string): Promise<void> {
+  const repo = AppDataSource.getRepository(Card);
+  const card = await repo.findOneBy({ id: cardId });
+  if (!card || card.column !== 'running') return;
+  if ((await clientForCard(card))?.isActive(card.sessionId ?? sessionId)) return;
+  // oxlint-enable orchestrel/log-before-early-return
+  card.column = 'review';
+  card.updatedAt = new Date().toISOString();
+  await repo.save(card);
+  console.log(`[oc:${cardId}] compact finished → review`);
 }
 
 async function handleTurnComplete(

@@ -549,13 +549,25 @@ export class OrcdClient {
     if (msg.type === 'stream_event') {
       const ev = msg.event as { type?: string; subtype?: string } | undefined;
       if (ev?.type === 'system') {
-        if (ev.subtype === 'compact_started' && !this.activeSessions.has(msg.sessionId)) {
+        // A manual compact (button or /compact) runs outside a run loop on an idle
+        // session, so orcd emits no session_created/session_exit for it — isActive()
+        // would report the session inactive for the whole compaction. Activating the
+        // compaction window keeps auto-start and agent:status from yanking the card
+        // out of running mid-compact. A mid-run BGC's session is already active, so
+        // this only ever flips an idle session.
+        if (
+          (ev.subtype === 'compact_started' || ev.subtype === 'bgc_started') &&
+          !this.activeSessions.has(msg.sessionId)
+        ) {
           this.activeSessions.add(msg.sessionId);
           this.compactActivated.add(msg.sessionId);
         }
-        // Only evict if THIS compaction is what marked the session active. A
-        // /compact on a genuinely-running session must stay active afterward.
-        if (ev.subtype === 'compact_done' && this.compactActivated.delete(msg.sessionId)) {
+        // Only evict if THIS compaction is what marked the session active. A compact
+        // on a genuinely-running session must stay active afterward.
+        if (
+          (ev.subtype === 'compact_done' || ev.subtype === 'compact_boundary' || ev.subtype === 'bgc_failed') &&
+          this.compactActivated.delete(msg.sessionId)
+        ) {
           this.activeSessions.delete(msg.sessionId);
         }
       }
