@@ -71,8 +71,11 @@ export function Card({ id, title, color, sleepUntil, sleepPrompt, priority, onCl
             aria-pressed={priority}
             title={priority ? 'Unstar — deprioritize' : 'Star — show first'}
             disabled={priorityPending}
-            className={`shrink-0 flex sm:invisible sm:group-hover:visible items-center px-1 -my-2 rounded-r text-muted-foreground/60 hover:text-neon-gold hover:bg-neon-gold/10 active:bg-neon-gold/20 ${
-              priority ? 'text-neon-gold sm:visible' : ''
+            style={color ? ({ '--star-color': color } as React.CSSProperties) : undefined}
+            className={`shrink-0 flex sm:invisible sm:group-hover:visible items-center pl-1 pr-0 -my-2 rounded-r ${
+              priority
+                ? `sm:visible ${color ? 'text-(--star-color)' : 'text-foreground'}`
+                : `text-muted-foreground/60 ${color ? 'hover:text-(--star-color)' : 'hover:text-foreground'}`
             }`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
@@ -85,11 +88,11 @@ export function Card({ id, title, color, sleepUntil, sleepPrompt, priority, onCl
                 .finally(() => setPriorityPending(false));
             }}
           >
-            <Star className={`size-3.5 ${priority ? 'fill-current' : ''}`} />
+            <Star className={`size-3.5 ${priority ? 'fill-current' : 'hover:fill-current'}`} />
           </button>
           <button
             type="button"
-            className="shrink-0 flex sm:invisible sm:group-hover:visible items-center px-1 -my-2 -mr-3 rounded-r text-muted-foreground/60 hover:text-neon-magenta hover:bg-neon-magenta/10 active:bg-neon-magenta/20"
+            className="shrink-0 flex sm:invisible sm:group-hover:visible items-center pl-1 pr-0 -my-2 rounded-r text-muted-foreground/60 hover:text-neon-magenta hover:bg-neon-magenta/10 active:bg-neon-magenta/20"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();

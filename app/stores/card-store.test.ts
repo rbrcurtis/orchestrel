@@ -128,3 +128,36 @@ describe('CardStore.createChatCard', () => {
     expect(store.cards.get(501)?.title).toBe('New Card');
   });
 });
+
+describe('CardStore.cardsByColumn', () => {
+  function seededRunning(): CardStore {
+    const store = new CardStore();
+    store.cards.set(1, makeCard({ id: 1, column: 'running', position: 0 }));
+    store.cards.set(2, makeCard({ id: 2, column: 'running', position: 1, priority: true }));
+    return store;
+  }
+
+  it('orders running by position ASC with starred cards pinned to the front', () => {
+    const store = seededRunning();
+    store.cards.set(3, makeCard({ id: 3, column: 'running', position: 2 }));
+    store.cards.set(4, makeCard({ id: 4, column: 'running', position: 3, priority: true }));
+    expect(store.cardsByColumn('running').map((c) => c.id)).toEqual([2, 4, 1, 3]);
+  });
+
+  it('orders other sections by updatedAt ASC with starred cards pinned to the front', () => {
+    const store = new CardStore();
+    store.cards.set(1, makeCard({ id: 1, column: 'review', updatedAt: '2026-05-07T01:00:00Z' }));
+    store.cards.set(2, makeCard({ id: 2, column: 'review', priority: true, updatedAt: '2026-05-07T03:00:00Z' }));
+    store.cards.set(3, makeCard({ id: 3, column: 'review', updatedAt: '2026-05-07T02:00:00Z' }));
+    store.cards.set(4, makeCard({ id: 4, column: 'review', priority: true, updatedAt: '2026-05-07T00:00:00Z' }));
+    expect(store.cardsByColumn('review').map((c) => c.id)).toEqual([4, 2, 1, 3]);
+  });
+
+  it('orders archive by updatedAt ASC just like other columns', () => {
+    const store = new CardStore();
+    store.cards.set(1, makeCard({ id: 1, column: 'archive', updatedAt: '2026-05-07T02:00:00Z' }));
+    store.cards.set(2, makeCard({ id: 2, column: 'archive', priority: true, updatedAt: '2026-05-07T01:00:00Z' }));
+    store.cards.set(3, makeCard({ id: 3, column: 'archive', updatedAt: '2026-05-07T03:00:00Z' }));
+    expect(store.cardsByColumn('archive').map((c) => c.id)).toEqual([2, 1, 3]);
+  });
+});

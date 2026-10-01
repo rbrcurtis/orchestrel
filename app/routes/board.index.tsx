@@ -120,7 +120,7 @@ const ActiveBoard = observer(function ActiveBoard() {
   const [mounted] = useState(true);
 
   // Backlog is lazy-paged (not part of the board subscribe) — page it in here,
-  // 50 at a time, mirroring the archive route. Cards are ordered position ASC on
+  // 50 at a time, mirroring the archive route. Cards are ordered updatedAt ASC on
   // both the server (pageCards) and the client (cardsByColumn), so each page is
   // contiguous with what's already shown and "Load more" appends the next slice.
   const [backlogTotal, setBacklogTotal] = useState(0);
@@ -129,13 +129,13 @@ const ActiveBoard = observer(function ActiveBoard() {
 
   function loadBacklogPage() {
     if (backlogLoading) return;
-    // Derive the cursor from the LAST backlog card already loaded (max position,
+    // Derive the cursor from the LAST backlog card already loaded (max updatedAt,
     // id as tiebreak) rather than tracking a page number — the store can be
     // pre-filled from persistence or live-merged cards, so a fixed cursor would
     // re-fetch loaded pages. The tail self-heals against whatever is in the store.
-    let tail: { id: number; position: number } | undefined;
+    let tail: { id: number; updatedAt: string } | undefined;
     for (const c of cardStore.cardsByColumn('backlog')) {
-      if (!tail || c.position > tail.position || (c.position === tail.position && c.id > tail.id)) {
+      if (!tail || c.updatedAt > tail.updatedAt || (c.updatedAt === tail.updatedAt && c.id > tail.id)) {
         tail = c;
       }
     }

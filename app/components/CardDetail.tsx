@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
-import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, Copy, Check, GitBranch, Star } from 'lucide-react';
 import { useCardStore, useProjectStore, useSessionStore, useConfigStore } from '~/stores/context';
 import { DEFAULT_NEW_CARD_TITLE } from '~/stores/card-store';
 import type { ConfigStore } from '~/stores/config-store';
@@ -675,6 +675,7 @@ export const CardDetail = observer(function CardDetail({
           ) : (
             <span className="text-sm font-medium truncate flex-1">{card.title}</span>
           )}
+          <StarCardButton cardId={card.id} priority={!!card.priority} color={cardProject?.color} />
           {card.sessionId && <CopyResumeButton sessionId={card.sessionId} cardId={card.id} />}
           <CopyPathButton
             worktreeBranch={card.worktreeBranch}
@@ -1054,7 +1055,7 @@ function CopyPathButton({
       onClick={handleCopy}
       disabled={!path}
       title={tooltip}
-      className="flex items-center shrink-0 hover:opacity-70 transition-opacity disabled:opacity-30 disabled:cursor-default"
+      className="flex h-7 w-7 items-center justify-center p-0 shrink-0 hover:opacity-70 transition-opacity disabled:opacity-30 disabled:cursor-default"
       style={worktreeBranch && color ? { color, filter: `drop-shadow(0 0 4px ${color})` } : undefined}
     >
       {copied ? (
@@ -1063,6 +1064,40 @@ function CopyPathButton({
         <GitBranch className={cn('size-3.5', !worktreeBranch && 'text-dim')} />
       )}
     </button>
+  );
+}
+
+function StarCardButton({ cardId, priority, color }: { cardId: number; priority: boolean; color?: string }) {
+  const cards = useCardStore();
+  const [pending, setPending] = useState(false);
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 w-7 p-0 shrink-0"
+      aria-label={priority ? 'Unstar card' : 'Star card'}
+      aria-pressed={priority}
+      title={priority ? 'Unstar — deprioritize' : 'Star — show first'}
+      disabled={pending}
+      style={color ? ({ '--star-color': color } as React.CSSProperties) : undefined}
+      onClick={() => {
+        if (pending) return;
+        setPending(true);
+        cards
+          .updateCard({ id: cardId, priority: !priority })
+          .catch(() => {})
+          .finally(() => setPending(false));
+      }}
+    >
+      <Star
+        className={`size-3.5 ${
+          priority
+            ? `fill-current ${color ? 'text-(--star-color)' : 'text-foreground'}`
+            : `text-muted-foreground/60 hover:fill-current ${color ? 'hover:text-(--star-color)' : 'hover:text-foreground'}`
+        }`}
+      />
+    </Button>
   );
 }
 

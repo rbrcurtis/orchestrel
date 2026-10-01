@@ -37,8 +37,12 @@ export class CardStore {
 
   cardsByColumn(col: string): Card[] {
     const items = Array.from(this.cards.values()).filter((c) => c.column === col);
-    if (col === 'archive') return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return items.sort((a, b) => a.position - b.position);
+    // Running keeps the manual position order (drag reorder); every other
+    // section orders by updatedAt ASC — oldest-updated first. Starred cards
+    // pin to the front of their section (stable sort).
+    const base = (a: Card, b: Card) =>
+      col === 'running' ? a.position - b.position : a.updatedAt.localeCompare(b.updatedAt);
+    return items.sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0) || base(a, b));
   }
 
   get cardsByCreatedDesc(): Card[] {

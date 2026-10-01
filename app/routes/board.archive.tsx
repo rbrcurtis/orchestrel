@@ -63,8 +63,8 @@ const ArchiveBoard = observer(function ArchiveBoard() {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  // Derive the cursor from the OLDEST archive card already in the store (matching
-  // the server's updatedAt DESC, id DESC order) rather than tracking a page cursor.
+  // Derive the cursor from the NEWEST archive card already in the store (matching
+  // the server's updatedAt ASC, id ASC order) rather than tracking a page cursor.
   // The store can be pre-filled from IndexedDB persistence or live-merged cards, so
   // a fixed page-1 cursor would re-fetch already-loaded pages; the tail self-heals.
   function loadNextPage() {
@@ -72,7 +72,7 @@ const ArchiveBoard = observer(function ArchiveBoard() {
     const loaded = cardStore.cardsByColumn('archive');
     let tail: { id: number; updatedAt: string } | undefined;
     for (const c of loaded) {
-      if (!tail || c.updatedAt < tail.updatedAt || (c.updatedAt === tail.updatedAt && c.id < tail.id)) {
+      if (!tail || c.updatedAt > tail.updatedAt || (c.updatedAt === tail.updatedAt && c.id > tail.id)) {
         tail = c;
       }
     }
