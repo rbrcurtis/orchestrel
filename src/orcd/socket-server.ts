@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from 'net';
-import type { CapabilitiesMessage, OrcdAction, OrcdMessage } from '../shared/orcd-protocol';
+import { SYSTEM_AUTHOR, type CapabilitiesMessage, type OrcdAction, type OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
 import type { ProviderConfig } from './config';
 import { fileStager } from './file-staging';
@@ -700,6 +700,18 @@ export class OrcdServer {
   private readonly BGC_KEEP_FRACTION = 0.3;
 
   /**
+   * System prompt that resumes a turn whose last run ended 'errored'. Sent only
+   * right after a BGC splice: the compaction is what makes the retry viable for
+   * the common case (context overflow), and without it an errored card sits in
+   * 'running' forever — the BE never re-prompts on its own.
+   */
+  private static readonly BGC_CONTINUE_PROMPT =
+    '[AUTOMATED MESSAGE FROM THE ORCHESTREL HARNESS - NOT FROM THE USER. This is not a new request.] ' +
+    'Your last turn ended with an error before it finished, and the conversation has since been ' +
+    'compacted to make room. Continue the task from where you left off; do not redo work that is ' +
+    'already done.';
+
+  /**
    * Background compactor. Summarize the oldest ~70% off-band (parallel-safe). If the
    * session is idle, splice the cut now; otherwise defer the splice to the next
    * run-end (onBeforeExit) — never mutate the agent message array mid-run.
@@ -803,7 +815,36 @@ export class OrcdServer {
       return false;
     }
     console.log(`[orcd:${session.id.slice(0, 8)}:bgc] applied (tokensBefore=${result.tokensBefore})`);
+    this.maybeContinueErrored(session);
     return true;
+  }
+
+  /**
+   * If the last run ended 'errored', the splice that just landed is the retry
+   * opportunity nobody will take: kick a system-authored continue turn. Deferred
+   * by a macrotask so a run-end splice (called from the onBeforeExit hook inside
+   * finalizeExit) still delivers the errored run's session_exit before the new
+   * run's epoch takes over.
+   */
+  private maybeContinueErrored(session: OrcdSession): void {
+    // oxlint-disable-next-line orchestrel/log-before-early-return -- quiet by design: splices after clean runs are the norm
+    if (session.state !== 'errored' || session.running) return;
+    const sid = session.id.slice(0, 8);
+    console.log(`[orcd:${sid}:bgc] last run errored; scheduling continue turn after compaction`);
+    setTimeout(() => {
+      // A human/BE prompt may have landed in the gap; the running check and the
+      // run()-level overlap guard both make that race a no-op here.
+      // oxlint-disable-next-line orchestrel/log-before-early-return -- the scheduling log above covers the entered path
+      if (session.state !== 'errored' || session.running) return;
+      session
+        .sendMessage(OrcdServer.BGC_CONTINUE_PROMPT, undefined, SYSTEM_AUTHOR)
+        .catch((err: unknown) =>
+          console.error(
+            `[orcd:${sid}] continue turn after errored compaction failed:`,
+            err instanceof Error ? err.message : String(err),
+          ),
+        );
+    }, 0);
   }
 
   // ── Session lifecycle hooks (called from handleCreate) ──────────────────

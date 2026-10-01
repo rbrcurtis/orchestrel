@@ -508,6 +508,46 @@ describe('OrcdServer background compaction', () => {
     expect(sendSpy).toHaveBeenCalledWith('go', undefined, undefined);
   });
 
+  it('continues the turn when the last run errored and the splice lands', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-continue');
+    session.state = 'errored';
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined };
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    await server['maybeStartBgc'](session);
+
+    // The splice is the retry opportunity: a system-authored continue turn follows.
+    await vi.waitFor(() =>
+      expect(sendSpy).toHaveBeenCalledWith(expect.stringContaining('ended with an error'), undefined,
+        expect.objectContaining({ kind: 'system' }),
+      ),
+    );
+  });
+
+  it('does not continue when the last run completed cleanly', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-no-continue');
+    session.state = 'completed';
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 9, details: undefined };
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+
+    await server['maybeStartBgc'](session);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
   it('keeps a rehydrated session resident while a held prompt waits on its compaction', async () => {
     const server = createServer();
     const client = createClient();
