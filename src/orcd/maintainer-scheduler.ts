@@ -13,8 +13,8 @@ import { runMerge } from '../lib/memory-maintainer/merge';
 import { runPreferences } from '../lib/preference-maintainer/maintain';
 import { loadConfig } from '../shared/config';
 
-const DAILY_HOUR = 2;
-const PREFERENCES_HOUR = 0;
+const DAILY_HOUR = 3;
+const PREFERENCES_HOUR = 4;
 const WEEKLY_HOUR = 3;
 const WEEKLY_DAY = 0; // Sunday
 const MAX_TIMEOUT = 2_147_483_647;

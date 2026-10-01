@@ -42,17 +42,17 @@ describe('startMaintainerScheduler', () => {
     expect(runPreferences).not.toHaveBeenCalled();
   });
 
-  it('runs the memory daily job at 02:00 and nothing else', async () => {
+  it('runs the memory daily job at 03:00 and nothing else', async () => {
     startMaintainerScheduler();
-    await vi.advanceTimersByTimeAsync(HOUR);
+    await vi.advanceTimersByTimeAsync(2 * HOUR);
     expect(runMaintain).toHaveBeenCalledTimes(1);
     expect(runMerge).not.toHaveBeenCalled();
     expect(runPreferences).not.toHaveBeenCalled();
   });
 
-  it('runs the preferences job at the next midnight', async () => {
+  it('runs the preferences job at the next 04:00', async () => {
     startMaintainerScheduler();
-    await vi.advanceTimersByTimeAsync(23 * HOUR);
+    await vi.advanceTimersByTimeAsync(3 * HOUR);
     expect(runPreferences).toHaveBeenCalledTimes(1);
     expect(runMaintain).toHaveBeenCalledTimes(1);
   });
@@ -67,7 +67,7 @@ describe('startMaintainerScheduler', () => {
   it('is idempotent: a second start does not double-schedule', async () => {
     startMaintainerScheduler();
     startMaintainerScheduler();
-    await vi.advanceTimersByTimeAsync(HOUR);
+    await vi.advanceTimersByTimeAsync(2 * HOUR);
     expect(runMaintain).toHaveBeenCalledTimes(1);
   });
 });
