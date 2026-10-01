@@ -17,6 +17,7 @@ function makeCard(overrides: Partial<Card> & { id: number }): Card {
     sessionId: null,
     worktreeBranch: null,
     sandbox: false,
+    priority: false,
     sourceBranch: null,
     model: 'sonnet',
     provider: 'anthropic',
@@ -66,6 +67,100 @@ describe('resolvePinnedCards', () => {
     ];
     const result = resolvePinnedCards(slots, cards);
     expect(result.get(1)).toBe(2); // newest updatedAt first
+  });
+
+  // ─── Starred (priority) ranking ───────────────────────────────────────────
+
+  it('starred review card beats unstarred review card regardless of updatedAt', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', priority: true, updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // starred first, despite newer updatedAt
+  });
+
+  it('starred running card beats unstarred running card regardless of updatedAt', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', priority: true, updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // starred first, despite older updatedAt
+  });
+
+  it('star does not override the review-before-running group order', () => {
+    const slots: SlotState[] = [{ type: 'empty' }, { type: 'pinned', projectId: 10 }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'running', priority: true, updatedAt: '2026-03-20T02:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(1); // unstarred review still beats starred running
+  });
+
+  it('starred cards tie-break by updatedAt within their group', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+      { type: 'pinned', projectId: 10 },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', priority: true, updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', priority: true, updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 3, projectId: 10, column: 'review', updatedAt: '2026-03-20T00:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(2); // starred, oldest first
+    expect(result.get(2)).toBe(1); // starred, second
+    expect(result.get(0)).toBe(3); // unstarred fills the hotseat
+  });
+
+  it('starred running cards distribute newest-first across "all" slots', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 'all' },
+      { type: 'pinned', projectId: 'all' },
+    ];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', priority: true, updatedAt: '2026-03-20T01:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'running', priority: true, updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 3, projectId: 30, column: 'running', updatedAt: '2026-03-20T03:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(1)).toBe(2); // starred, newest first
+    expect(result.get(2)).toBe(1); // starred, second
+    expect(result.get(0)).toBe(3); // unstarred fills the hotseat
+  });
+
+  it('sticking is unaffected by stars — a non-starred sticky card keeps its slot', () => {
+    const slots: SlotState[] = [
+      { type: 'empty' },
+      { type: 'pinned', projectId: 10 },
+      { type: 'pinned', projectId: 10 },
+    ];
+    // Slot 1 was showing unstarred card 2; starred card 1 enters the pool.
+    // Star reorders the pool, not stickiness.
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'review', priority: true, updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 10, column: 'review', updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const prev = new Map([[1, 2]]);
+    const result = resolvePinnedCards(slots, cards, prev);
+    expect(result.get(1)).toBe(2); // sticky — stays
+    expect(result.get(2)).toBe(1); // starred card fills the remaining slot
+  });
+
+  it('hotseat prefers a starred running card over an unstarred running card', () => {
+    const slots: SlotState[] = [{ type: 'empty' }];
+    const cards = [
+      makeCard({ id: 1, projectId: 10, column: 'running', updatedAt: '2026-03-20T02:00:00Z' }),
+      makeCard({ id: 2, projectId: 20, column: 'running', priority: true, updatedAt: '2026-03-20T01:00:00Z' }),
+    ];
+    const result = resolvePinnedCards(slots, cards);
+    expect(result.get(0)).toBe(2); // starred first
   });
 
   it('prefers review over running', () => {

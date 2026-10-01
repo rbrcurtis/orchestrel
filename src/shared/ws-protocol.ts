@@ -26,6 +26,9 @@ export const cardSchema = z.object({
   worktreeBranch: z.string().nullable(),
   sessionCwd: z.string().nullable().optional(),
   sandbox: sqliteBool,
+  // Starred cards jump ahead of unstarred cards within the review and running
+  // groups of the ferris wheel ranking (see app/lib/resolve-pin.ts).
+  priority: sqliteBool,
   sourceBranch: z.enum(['HEAD', 'main', 'dev']).nullable(),
   model: z.string(),
   provider: z.string(),
@@ -97,7 +100,7 @@ export const cardCreateSchema = z.object({
 });
 
 export const cardUpdateSchema = z
-  .object({ id: z.number(), position: z.number().optional() })
+  .object({ id: z.number(), position: z.number().optional(), priority: z.boolean().optional() })
   .merge(cardCreateSchema.partial());
 
 export const projectCreateSchema = z.object({

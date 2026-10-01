@@ -39,6 +39,7 @@ function makeCard(description: string): Card {
     sessionId: null,
     worktreeBranch: null,
     sandbox: false,
+    priority: false,
     sourceBranch: null,
     model: 'sonnet',
     provider: 'anthropic',

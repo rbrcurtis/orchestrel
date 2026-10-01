@@ -99,6 +99,7 @@ function makeSyncPayload(column: Column): SyncPayload {
         sessionId: 'sess-42',
         worktreeBranch: null,
         sandbox: false,
+        priority: false,
         sourceBranch: null,
         model: 'sonnet',
         provider: 'anthropic',

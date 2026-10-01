@@ -7,11 +7,21 @@ export type PinTarget = number | 'all';
 export type SlotState =
   { type: 'pinned'; projectId: PinTarget; cardId?: number } | { type: 'manual'; cardId: number } | { type: 'empty' };
 
-/** Rank eligible cards: review (oldest updatedAt) → running (newest updatedAt). */
+/**
+ * Rank eligible cards: review → running. Within each group, starred (priority)
+ * cards come first; ties fall back to updatedAt — oldest for review, newest
+ * for running. A review card always precedes a running card regardless of star.
+ */
 function rankCards(eligible: Card[]): Card[] {
-  const review = eligible.filter((c) => c.column === 'review').sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+  const starDelta = (a: Card, b: Card) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0);
 
-  const running = eligible.filter((c) => c.column === 'running').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const review = eligible
+    .filter((c) => c.column === 'review')
+    .sort((a, b) => starDelta(a, b) || a.updatedAt.localeCompare(b.updatedAt));
+
+  const running = eligible
+    .filter((c) => c.column === 'running')
+    .sort((a, b) => starDelta(a, b) || b.updatedAt.localeCompare(a.updatedAt));
 
   return [...review, ...running];
 }
@@ -40,8 +50,8 @@ function rankCards(eligible: Card[]): Card[] {
  * project is itself a filter).
  *
  * Priority per project:
- *   1. Review cards — oldest updatedAt first
- *   2. Running cards — newest updatedAt first
+ *   1. Review cards — starred first, then oldest updatedAt
+ *   2. Running cards — starred first, then newest updatedAt
  */
 export function resolvePinnedCards(
   slots: SlotState[],

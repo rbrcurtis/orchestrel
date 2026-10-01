@@ -61,6 +61,14 @@ export class Card extends BaseEntity {
   })
   sandbox!: boolean;
 
+  // Starred cards rank first within their ferris wheel group (review/running).
+  @Column({
+    type: 'integer',
+    default: 0,
+    transformer: { to: (v: boolean) => (v ? 1 : 0), from: (v: number | boolean) => !!v },
+  })
+  priority!: boolean;
+
   @Column({ name: 'source_branch', type: 'text', nullable: true })
   sourceBranch!: string | null;
 

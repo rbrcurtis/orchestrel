@@ -210,6 +210,7 @@ export class CardStore {
     column?: Column;
     position?: number;
     projectId?: number | null;
+    priority?: boolean;
     provider?: string;
     model?: string;
     summarizeThreshold?: number;

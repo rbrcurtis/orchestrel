@@ -119,6 +119,14 @@ export async function initDatabase(): Promise<void> {
       );
     }
     try {
+      await runner.query(`ALTER TABLE cards ADD COLUMN priority INTEGER NOT NULL DEFAULT 0`);
+    } catch (err) {
+      console.log(
+        `[db:migrate] cards.priority add skipped (likely already exists):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    try {
       await runner.query(`ALTER TABLE cards ADD COLUMN session_cwd TEXT`);
     } catch (err) {
       console.log(

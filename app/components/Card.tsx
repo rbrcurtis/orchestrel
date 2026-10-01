@@ -1,6 +1,6 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { X } from 'lucide-react';
+import { Star, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import {
@@ -22,6 +22,8 @@ interface CardProps {
   sleepUntil?: number | null;
   /** Prompt the waker sends when that time arrives. */
   sleepPrompt?: string | null;
+  /** Starred cards jump to the front of their ferris wheel group. */
+  priority?: boolean;
   onClick?: (id: number) => void;
 }
 
@@ -33,10 +35,11 @@ function sleepLabel(until: number): string {
   return `asleep until ${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
 }
 
-export function Card({ id, title, color, sleepUntil, sleepPrompt, onClick }: CardProps) {
+export function Card({ id, title, color, sleepUntil, sleepPrompt, priority, onClick }: CardProps) {
   const [open, setOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [archivePending, setArchivePending] = useState(false);
+  const [priorityPending, setPriorityPending] = useState(false);
   const archiveRef = useRef<HTMLButtonElement>(null);
   const cards = useCardStore();
 
@@ -62,6 +65,28 @@ export function Card({ id, title, color, sleepUntil, sleepPrompt, onClick }: Car
       >
         <div className="flex items-center gap-1">
           <p className="text-sm text-foreground truncate flex-1 min-w-0 self-center">{title}</p>
+          <button
+            type="button"
+            aria-label={priority ? 'Unstar card' : 'Star card'}
+            aria-pressed={priority}
+            title={priority ? 'Unstar — deprioritize' : 'Star — show first'}
+            disabled={priorityPending}
+            className={`shrink-0 flex sm:invisible sm:group-hover:visible items-center px-1 -my-2 rounded-r text-muted-foreground/60 hover:text-neon-gold hover:bg-neon-gold/10 active:bg-neon-gold/20 ${
+              priority ? 'text-neon-gold sm:visible' : ''
+            }`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (priorityPending) return;
+              setPriorityPending(true);
+              cards
+                .updateCard({ id, priority: !priority })
+                .catch(() => {})
+                .finally(() => setPriorityPending(false));
+            }}
+          >
+            <Star className={`size-3.5 ${priority ? 'fill-current' : ''}`} />
+          </button>
           <button
             type="button"
             className="shrink-0 flex sm:invisible sm:group-hover:visible items-center px-1 -my-2 -mr-3 rounded-r text-muted-foreground/60 hover:text-neon-magenta hover:bg-neon-magenta/10 active:bg-neon-magenta/20"
