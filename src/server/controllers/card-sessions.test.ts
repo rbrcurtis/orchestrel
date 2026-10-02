@@ -238,7 +238,7 @@ describe('orcd message router', () => {
     });
   });
 
-  it('preserves errored session_exit status', async () => {
+  it('moves an errored session_exit card to review, preserving the errored status', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
@@ -252,7 +252,8 @@ describe('orcd message router', () => {
       state: 'errored',
     });
 
-    expect(mockCards[0].column).toBe('running');
+    expect(mockCards[0].column).toBe('review');
+    expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith({
       sessionId: 'sess-abc',
       status: 'errored',

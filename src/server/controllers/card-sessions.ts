@@ -271,23 +271,28 @@ async function handleSessionExit(
   const hadPendingAsyncAfterTurn = pendingAsyncAfterTurnComplete.get(sessionId) === true;
   pendingAsyncAfterTurnComplete.delete(sessionId);
 
-  if (card && status !== 'errored') {
-    if (card.column === 'running') {
-      card.column = 'review';
-      card.updatedAt = new Date().toISOString();
-      await repo.save(card);
-    } else if (
-      hadPendingAsyncAfterTurn &&
-      card.column !== 'archive' &&
-      card.column !== 'done' &&
-      card.column !== 'review'
-    ) {
-      // Background/async work that kept the session alive after the turn
-      // finished — surface the card in review so Ryan sees the new output.
-      card.column = 'review';
-      card.updatedAt = new Date().toISOString();
-      await repo.save(card);
-    }
+  // The session is gone, so nothing else will ever settle the card: park whatever is
+  // still running, whatever the run's outcome. An errored exit used to be exempt, which
+  // left the card in running with no session behind it until the next orcd reconnect
+  // reconciled it.
+  if (card && card.column === 'running') {
+    card.column = 'review';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
+  } else if (
+    card &&
+    status !== 'errored' &&
+    hadPendingAsyncAfterTurn &&
+    card.column !== 'archive' &&
+    card.column !== 'done' &&
+    card.column !== 'review'
+  ) {
+    // Background/async work that kept the session alive after the turn
+    // finished — surface the card in review so Ryan sees the new output. An errored
+    // session is left where it is: its failure is already on the session.
+    card.column = 'review';
+    card.updatedAt = new Date().toISOString();
+    await repo.save(card);
   }
 
   // A card moved to done/archive mid-turn kept its session alive to finish the
