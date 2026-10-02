@@ -46,12 +46,7 @@ function makeUuid(sessionId: string, idx: number): string {
   return `${sessionId}-pi-history-${idx}`;
 }
 
-function toHistoryMessage(
-  message: unknown,
-  sessionId: string,
-  idx: number,
-  backgroundCompaction: boolean,
-): unknown | undefined {
+function toHistoryMessage(message: unknown, sessionId: string, idx: number): unknown | undefined {
   if (!isRecord(message)) return undefined;
 
   const timestamp = getNumber(message.timestamp);
@@ -95,7 +90,6 @@ function toHistoryMessage(
       ...base,
       type: 'system',
       subtype: 'compact_boundary',
-      ...(backgroundCompaction ? { source: 'orchestrel-bgc' } : {}),
     };
   }
 
@@ -148,10 +142,6 @@ function getMessagesFromManager(
   if (!isRecord(ctx) || !Array.isArray(ctx.messages)) return [];
 
   const branch = manager.getBranch();
-  let backgroundCompaction = false;
-  for (const entry of branch) {
-    if (entry.type === 'compaction') backgroundCompaction = entry.fromHook === true;
-  }
   const replacements = collectDisplayPrompts(branch);
   const messages: unknown[] = [];
   const model = getContextModel(ctx);
@@ -174,7 +164,7 @@ function getMessagesFromManager(
       const displayText = originalPromptText(text, replacements);
       if (displayText !== text) displayMessage = { ...(message as Record<string, unknown>), content: displayText };
     }
-    const historyMessage = toHistoryMessage(displayMessage, sessionId, idx, backgroundCompaction);
+    const historyMessage = toHistoryMessage(displayMessage, sessionId, idx);
     if (historyMessage !== undefined) messages.push(historyMessage);
   }
 
@@ -239,12 +229,7 @@ export async function getPiSessionHistoryPage(
       const displayText = text ? originalPromptText(text, replacements) : undefined;
       const displayed =
         displayText !== undefined && displayText !== text ? { ...message, content: displayText } : message;
-      const mapped = toHistoryMessage(
-        displayed,
-        sessionId,
-        part,
-        entry.type === 'compaction' && entry.fromHook === true,
-      );
+      const mapped = toHistoryMessage(displayed, sessionId, part);
       if (isRecord(mapped)) records.push({ id, message: { ...mapped, uuid: id } });
     }
   }

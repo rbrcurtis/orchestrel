@@ -30,7 +30,7 @@ function startBlockingSubagent(store: SessionStore, cardId: number): void {
 }
 
 describe('SessionStore subagent lifecycle', () => {
-  it('does not emit second compact request while background compaction is in progress', async () => {
+  it('does not emit a second compact request while a compaction is in progress', async () => {
     const emit = vi.fn().mockResolvedValue(undefined);
     const store = new SessionStore();
     store.setWs({ emit } as unknown as WsClient);
@@ -38,7 +38,7 @@ describe('SessionStore subagent lifecycle', () => {
     await store.compactSession(1011);
     store.ingestSdkMessage(1011, {
       type: 'system',
-      subtype: 'bgc_started',
+      subtype: 'compact_started',
       timestamp: Date.now(),
     } as SdkMessage);
     await store.compactSession(1011);
@@ -47,34 +47,29 @@ describe('SessionStore subagent lifecycle', () => {
     expect(emit).toHaveBeenCalledWith('agent:compact', { cardId: 1011 });
     expect(store.getSession(1011)?.accumulator.conversation.at(-1)).toMatchObject({
       kind: 'compact',
-      label: 'Background compaction already in progress',
+      label: 'Compaction already in progress',
     });
   });
 
-  it('clears the in-progress flag when background compaction fails', () => {
+  it('clears the in-progress flag when the compaction completes', () => {
     const store = new SessionStore();
 
-    store.ingestSdkMessage(1011, { type: 'system', subtype: 'bgc_started', timestamp: Date.now() } as SdkMessage);
-    expect(store.getSession(1011)?.bgcInProgress).toBe(true);
+    store.ingestSdkMessage(1011, { type: 'system', subtype: 'compact_started', timestamp: Date.now() } as SdkMessage);
+    expect(store.getSession(1011)?.compactInProgress).toBe(true);
 
-    store.ingestSdkMessage(1011, {
-      type: 'system',
-      subtype: 'bgc_failed',
-      message: 'generation hit the token cap',
-      timestamp: Date.now(),
-    } as SdkMessage);
+    store.ingestSdkMessage(1011, { type: 'system', subtype: 'compact_done', timestamp: Date.now() } as SdkMessage);
 
-    expect(store.getSession(1011)?.bgcInProgress).toBe(false);
+    expect(store.getSession(1011)?.compactInProgress).toBe(false);
   });
 
-  it('shows blocked compact notice with timestamp when background compaction is already in progress', async () => {
+  it('shows blocked compact notice with timestamp when a compaction is already in progress', async () => {
     const emit = vi.fn().mockResolvedValue(undefined);
     const store = new SessionStore();
     store.setWs({ emit } as unknown as WsClient);
 
     store.ingestSdkMessage(1011, {
       type: 'system',
-      subtype: 'bgc_started',
+      subtype: 'compact_started',
       timestamp: Date.now(),
     } as SdkMessage);
     await store.compactSession(1011);
@@ -82,25 +77,24 @@ describe('SessionStore subagent lifecycle', () => {
     const last = store.getSession(1011)?.accumulator.conversation.at(-1);
     expect(last?.kind).toBe('compact');
     if (last?.kind === 'compact') {
-      expect(last.label).toBe('Background compaction already in progress');
+      expect(last.label).toBe('Compaction already in progress');
       expect(typeof last.timestamp).toBe('number');
     }
   });
 
-  it('allows compact again after background compaction is applied', async () => {
+  it('allows compact again after a compaction is applied', async () => {
     const emit = vi.fn().mockResolvedValue(undefined);
     const store = new SessionStore();
     store.setWs({ emit } as unknown as WsClient);
 
     store.ingestSdkMessage(1011, {
       type: 'system',
-      subtype: 'bgc_started',
+      subtype: 'compact_started',
       timestamp: Date.now(),
     } as SdkMessage);
     store.ingestSdkMessage(1011, {
       type: 'system',
-      subtype: 'compact_boundary',
-      source: 'orchestrel-bgc',
+      subtype: 'compact_done',
       timestamp: Date.now(),
     } as SdkMessage);
     await store.compactSession(1011);
@@ -109,7 +103,7 @@ describe('SessionStore subagent lifecycle', () => {
     expect(emit).toHaveBeenCalledWith('agent:compact', { cardId: 1011 });
   });
 
-  it('sets context tokens to sentinel 1 when background compaction is applied', () => {
+  it('sets context tokens to sentinel 1 when a compaction is applied', () => {
     const store = new SessionStore();
 
     store.handleAgentStatus({
@@ -125,7 +119,6 @@ describe('SessionStore subagent lifecycle', () => {
     store.ingestSdkMessage(1011, {
       type: 'system',
       subtype: 'compact_boundary',
-      source: 'orchestrel-bgc',
       timestamp: Date.now(),
     } as SdkMessage);
 
@@ -273,7 +266,6 @@ describe('SessionStore subagent lifecycle', () => {
     expect(store.getSession(1011)).toMatchObject({
       active: false,
       status: 'errored',
-      bgcInProgress: false,
     });
   });
 });

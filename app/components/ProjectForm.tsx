@@ -319,7 +319,7 @@ export default observer(function ProjectForm({ project, onDone }: ProjectFormPro
                 </Select>
               </div>
 
-              {/* Default Summarize — new cards in this project inherit this background-compaction threshold */}
+              {/* Default Summarize — new cards in this project inherit this compaction threshold */}
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Summarize</label>
                 <Select

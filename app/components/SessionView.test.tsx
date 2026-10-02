@@ -147,7 +147,6 @@ function setDefaultState(overrides?: { card?: Partial<Card>; session?: Record<st
     historyLoaded: true,
     contextTokens: 139030,
     contextWindow: 200000,
-    bgcInProgress: false,
     ...overrides?.session,
   });
 }

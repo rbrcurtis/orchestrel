@@ -488,7 +488,7 @@ describe('orcd message router', () => {
     expect(mockRepo.save).not.toHaveBeenCalled();
   });
 
-  it('does not reset context tokens when background compaction starts', async () => {
+  it('does not reset context tokens when compaction starts', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
@@ -498,7 +498,7 @@ describe('orcd message router', () => {
       type: 'stream_event',
       sessionId: 'sess-abc',
       eventIndex: 0,
-      event: { type: 'system', subtype: 'bgc_started', session_id: 'sess-abc' },
+      event: { type: 'system', subtype: 'compact_started', session_id: 'sess-abc' },
     });
 
     await new Promise((r) => setTimeout(r, 10));
@@ -506,7 +506,7 @@ describe('orcd message router', () => {
     expect(mockRepo.save).not.toHaveBeenCalled();
   });
 
-  it('moves a review card to running on bgc_started (manual compact) and back to review on compact_boundary', async () => {
+  it('moves a review card to running on compact_started and back to review on compact_done', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
@@ -520,7 +520,7 @@ describe('orcd message router', () => {
       type: 'stream_event',
       sessionId: 'sess-abc',
       eventIndex: 0,
-      event: { type: 'system', subtype: 'bgc_started', session_id: 'sess-abc' },
+      event: { type: 'system', subtype: 'compact_started', session_id: 'sess-abc' },
     });
     expect(mockCards[0].column).toBe('running');
 
@@ -528,7 +528,7 @@ describe('orcd message router', () => {
       type: 'stream_event',
       sessionId: 'sess-abc',
       eventIndex: 1,
-      event: { type: 'system', subtype: 'compact_boundary', session_id: 'sess-abc' },
+      event: { type: 'system', subtype: 'compact_done', session_id: 'sess-abc' },
     });
     expect(mockCards[0].column).toBe('review');
   });
@@ -538,8 +538,8 @@ describe('orcd message router', () => {
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
     mockCards[0].column = 'running';
-    // Mid-run BGC: the agent run owns the card, so the boundary must not settle
-    // it — turn_complete/session_exit do that.
+    // Automatic compaction mid-run: the agent run owns the card, so the boundary
+    // must not settle it — turn_complete/session_exit do that.
     mockGetClientByNode.mockReturnValue({ isActive: () => true });
 
     await handler!({
@@ -637,119 +637,6 @@ describe('orcd message router', () => {
 
     await new Promise((r) => setTimeout(r, 10));
     expect(sdkSpy).not.toHaveBeenCalled();
-  });
-
-  it('routes late compact_boundary after session_exit via bgcMap only', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
-    mockCards[0].contextTokens = 50000;
-
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 0,
-      event: { type: 'system', subtype: 'bgc_started', session_id: 'sess-abc' },
-    });
-
-    await handler!({
-      type: 'session_exit',
-      sessionId: 'sess-abc',
-      state: 'completed',
-    });
-
-    const sdkSpy = vi.fn();
-    bus.on('card:42:sdk', sdkSpy);
-
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 1,
-      event: { type: 'system', subtype: 'compact_boundary', session_id: 'sess-abc' },
-    });
-
-    expect(mockCards[0].contextTokens).toBe(1);
-    expect(mockRepo.save).toHaveBeenCalled();
-    expect(sdkSpy).toHaveBeenCalledWith({
-      type: 'system',
-      subtype: 'compact_boundary',
-      session_id: 'sess-abc',
-    });
-
-    sdkSpy.mockClear();
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 2,
-      event: { type: 'assistant', message: 'late hello' },
-    });
-
-    expect(sdkSpy).not.toHaveBeenCalled();
-  });
-
-  it('settles a compacted card to review when a manual BGC fails while the session is idle', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
-    mockCards[0].contextTokens = 50000;
-    mockGetClientByNode.mockReturnValue(undefined);
-
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 0,
-      event: { type: 'system', subtype: 'bgc_started', session_id: 'sess-abc' },
-    });
-    expect(mockCards[0].column).toBe('running');
-
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 1,
-      event: { type: 'system', subtype: 'bgc_failed', session_id: 'sess-abc', message: 'exploded' },
-    });
-    // Terminal for the compact: back to review, context size untouched.
-    expect(mockCards[0].column).toBe('review');
-    expect(mockCards[0].contextTokens).toBe(50000);
-  });
-
-  it('routes a bgc_failed event and leaves the card context size alone', async () => {
-    const { initOrcdRouter, trackSession } = await import('./card-sessions');
-    initOrcdRouter(mockClient as never, bus);
-    trackSession(42, 'sess-abc');
-    mockCards[0].contextTokens = 50000;
-    // Mid-run BGC failure: the session is still active, so the card stays
-    // running for the agent run that owns it.
-    mockGetClientByNode.mockReturnValue({ isActive: () => true });
-
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 0,
-      event: { type: 'system', subtype: 'bgc_started', session_id: 'sess-abc' },
-    });
-
-    const sdkSpy = vi.fn();
-    bus.on('card:42:sdk', sdkSpy);
-
-    await handler!({
-      type: 'stream_event',
-      sessionId: 'sess-abc',
-      eventIndex: 1,
-      event: {
-        type: 'system',
-        subtype: 'bgc_failed',
-        session_id: 'sess-abc',
-        message: 'generation hit the token cap',
-      },
-    });
-
-    // Terminal for the UI's in-progress state, but not a compaction: no context reset.
-    expect(sdkSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ subtype: 'bgc_failed', message: 'generation hit the token cap' }),
-    );
-    expect(mockCards[0].contextTokens).toBe(50000);
-    expect(mockRepo.save).not.toHaveBeenCalled();
   });
 });
 

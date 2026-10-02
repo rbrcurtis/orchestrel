@@ -34,8 +34,8 @@ function createRuntimeSession(events: unknown[] = [], id = 'session'): TestRunti
     isStreaming: vi.fn(() => false),
     waitForIdle: vi.fn(async () => undefined),
     dispose: vi.fn(async () => undefined),
-    prepareBgCompaction: vi.fn(async () => null),
-    applyBgCompaction: vi.fn(() => true),
+    setSummarizeThreshold: vi.fn(),
+    compact: vi.fn(async () => undefined),
     setEffort: vi.fn(async () => undefined),
     setModel: vi.fn(async () => undefined),
     getMessages: vi.fn(() => []),
@@ -128,6 +128,7 @@ describe('OrcdSession Pi runtime loop', () => {
       modelId: 'test-model',
       sessionId: 'session-prompt',
       effort: 'high',
+      summarizeThreshold: 0,
     });
     expect(runtime.prompt).toHaveBeenCalledWith('go', undefined);
   });

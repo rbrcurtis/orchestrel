@@ -52,7 +52,6 @@ export interface SessionState {
   historyLoaded: boolean;
   contextTokens: number;
   contextWindow: number;
-  bgcInProgress: boolean;
   compactInProgress: boolean;
 }
 
@@ -67,7 +66,6 @@ function defaultSession(): SessionState {
     historyLoaded: false,
     contextTokens: 0,
     contextWindow: 200_000,
-    bgcInProgress: false,
     compactInProgress: false,
   };
 }
@@ -592,16 +590,7 @@ export class SessionStore {
       }
 
       if (sdkMsg.type === 'system') {
-        if (sdkMsg.subtype === 'bgc_started') {
-          s.bgcInProgress = true;
-        }
-        // A failed BGC never splices, so it must clear the same state bgc_started set —
-        // otherwise the card shows a compaction that never finishes.
-        if (sdkMsg.subtype === 'bgc_failed') {
-          s.bgcInProgress = false;
-        }
         if (sdkMsg.subtype === 'compact_boundary') {
-          s.bgcInProgress = false;
           s.contextTokens = 1;
         }
         // A manual `/compact` runs no normal turn, so it emits no result/session_exit
@@ -621,12 +610,11 @@ export class SessionStore {
       if (sdkMsg.type === 'error') {
         s.active = false;
         s.status = 'errored';
-        s.bgcInProgress = false;
         s.compactInProgress = false;
       }
 
       if (sdkMsg.type === 'result') {
-        s.bgcInProgress = false;
+        s.compactInProgress = false;
       }
 
       s.accumulator.handleMessage(sdkMsg);
@@ -670,7 +658,6 @@ export class SessionStore {
       if (data.contextWindow > 0) s.contextWindow = data.contextWindow;
 
       if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {
-        s.bgcInProgress = false;
         s.compactInProgress = false;
         s.accumulator.clearSubagents();
         const stopInterval = this.stopIntervals.get(data.cardId);
@@ -697,7 +684,6 @@ export class SessionStore {
     runInAction(() => {
       const s = this.getOrCreate(cardId);
       s.active = false;
-      s.bgcInProgress = false;
       s.compactInProgress = false;
       if (s.status === 'running' || s.status === 'starting') {
         s.status = 'completed';
@@ -751,8 +737,8 @@ export class SessionStore {
 
   async compactSession(cardId: number): Promise<void> {
     const s = this.getOrCreate(cardId);
-    if (s.bgcInProgress) {
-      s.accumulator.addCompactMarker('Background compaction already in progress');
+    if (s.compactInProgress) {
+      s.accumulator.addCompactMarker('Compaction already in progress');
       return;
     }
     await this.ws().emit('agent:compact', { cardId });

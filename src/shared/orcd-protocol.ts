@@ -36,7 +36,7 @@ export interface CreateAction {
   effort?: string; // 'adaptive' | 'high' | 'medium' | 'low' | 'disabled'
   sessionId?: string; // Resume existing session
   contextWindow?: number;
-  summarizeThreshold?: number; // 0-1, fraction of context window to trigger compaction
+  summarizeThreshold?: number; // 0-1, fraction of the context window a session may fill before Pi compacts
   author?: OrcdAuthor;
   requestId?: string;
 }

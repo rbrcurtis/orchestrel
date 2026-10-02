@@ -43,47 +43,31 @@ function toolStop(): SdkMessage {
 }
 
 describe('MessageAccumulator compaction markers', () => {
-  it('surfaces BGC start messages as compact markers', () => {
-    const acc = new MessageAccumulator();
-    const timestamp = Date.UTC(2026, 3, 27, 12, 0, 0);
-
-    acc.handleMessage({
-      type: 'system',
-      subtype: 'bgc_started',
-      timestamp,
-    } as SdkMessage);
-
-    expect(acc.conversation).toEqual([{ kind: 'compact', label: 'Background compaction started', timestamp }]);
-  });
-
-  it('surfaces a failed BGC as its own terminal marker with the reason', () => {
-    const acc = new MessageAccumulator();
-    const timestamp = Date.UTC(2026, 3, 27, 12, 2, 0);
-
-    acc.handleMessage({
-      type: 'system',
-      subtype: 'bgc_failed',
-      message: 'generation hit the token cap',
-      timestamp,
-    } as SdkMessage);
-
-    expect(acc.conversation).toEqual([
-      { kind: 'compact', label: 'Background compaction failed: generation hit the token cap', timestamp },
-    ]);
-  });
-
-  it('surfaces BGC applied messages as compact markers', () => {
+  it('marks a compaction boundary with no source label', () => {
     const acc = new MessageAccumulator();
     const timestamp = Date.UTC(2026, 3, 27, 12, 1, 0);
 
     acc.handleMessage({
       type: 'system',
       subtype: 'compact_boundary',
-      source: 'orchestrel-bgc',
       timestamp,
     } as SdkMessage);
 
-    expect(acc.conversation).toEqual([{ kind: 'compact', label: 'Background compaction applied', timestamp }]);
+    expect(acc.conversation).toEqual([{ kind: 'compact', timestamp }]);
+  });
+
+  it('marks a manual compaction start and completion', () => {
+    const acc = new MessageAccumulator();
+    const start = Date.UTC(2026, 3, 27, 12, 2, 0);
+    const done = Date.UTC(2026, 3, 27, 12, 3, 0);
+
+    acc.handleMessage({ type: 'system', subtype: 'compact_started', timestamp: start } as SdkMessage);
+    acc.handleMessage({ type: 'system', subtype: 'compact_done', timestamp: done } as SdkMessage);
+
+    expect(acc.conversation).toEqual([
+      { kind: 'compact', label: 'Context compacting', timestamp: start },
+      { kind: 'compact', label: 'Context compacted', timestamp: done },
+    ]);
   });
 });
 
