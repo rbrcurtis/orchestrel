@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from 'net';
-import { type CapabilitiesMessage, type OrcdAction, type OrcdMessage } from '../shared/orcd-protocol';
+import { SYSTEM_AUTHOR, type CapabilitiesMessage, type OrcdAction, type OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
 import type { ProviderConfig } from './config';
 import { fileStager } from './file-staging';
@@ -27,6 +27,41 @@ export class OrcdServer {
   // Wake timers for parked cards. Session lifecycle work, so it belongs here: a timer per
   // backend would fire the same wake once per backend running against the same board.
   private sleeps = new SleepScheduler();
+  // Session ID → in-flight BGC promise. Keeping the promise (not just a flag) lets a
+  // prompt arriving mid-compact join it and hold until the splice has landed.
+  private compacting = new Map<string, Promise<void>>();
+  private pendingApply = new Map<string, import('@earendil-works/pi-coding-agent').CompactionResult>();
+  // Context size at which a BGC attempt found nothing to compact. `context_usage`
+  // fires on every streaming delta, so without this a failing attempt retries
+  // hundreds of times per second while the context stays over threshold (severe on
+  // small-window models). A new size means the branch changed and a retry is due.
+  private bgcNoopTokens = new Map<string, number>();
+  // Prompts gated on an in-flight BGC. A rehydrated compact must not drop its
+  // session from the store while a held prompt is about to start a turn on it.
+  private heldPrompts = new Map<string, number>();
+
+  /**
+   * Queue `dispatch` behind the session's in-flight compaction: it runs once the
+   * splice has landed (or the attempt failed), so the turn's first request sees
+   * the post-compaction context. The hold is counted so the rehydrated-compact
+   * cleanup can't remove the store entry mid-handoff.
+   */
+  private holdPrompt(session: OrcdSession, dispatch: () => void): void {
+    const sid = session.id;
+    const gate = this.compacting.get(sid);
+    if (!gate) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] gate settled before hold; dispatching now`);
+      dispatch();
+      return;
+    }
+    this.heldPrompts.set(sid, (this.heldPrompts.get(sid) ?? 0) + 1);
+    void gate.then(() => {
+      const left = (this.heldPrompts.get(sid) ?? 1) - 1;
+      if (left <= 0) this.heldPrompts.delete(sid);
+      else this.heldPrompts.set(sid, left);
+      dispatch();
+    });
+  }
 
   constructor(
     private opts: OrcdListenConfig,
@@ -298,8 +333,16 @@ export class OrcdServer {
         }
         runPrompt();
       };
-      console.log(`[orcd] reusing resident session ${existing.id.slice(0, 8)}`);
-      launch();
+      const inFlight = this.compacting.get(existing.id);
+      if (inFlight) {
+        this.holdPrompt(existing, launch);
+      }
+      console.log(
+        inFlight
+          ? `[orcd:${existing.id.slice(0, 8)}:bgc] prompt held until in-flight compaction settles`
+          : `[orcd] reusing resident session ${existing.id.slice(0, 8)}`,
+      );
+      if (!inFlight) launch();
       return;
     }
 
@@ -324,6 +367,7 @@ export class OrcdServer {
     });
 
     this.store.add(session);
+    this.attachLifecycleHooks(session);
 
     // Auto-subscribe the creating client
     const cb: SessionEventCallback = (msg) => this.send(client, msg);
@@ -378,6 +422,7 @@ export class OrcdServer {
     });
 
     this.store.add(session);
+    this.attachLifecycleHooks(session);
 
     const cb: SessionEventCallback = (msg) => this.send(client, msg);
     client.subscriptions.set(session.id, cb);
@@ -407,13 +452,11 @@ export class OrcdServer {
 
     // `/compact` (and other Pi TUI slash commands) are not interpreted on the
     // headless SDK path — without this they reach the model as literal prompt
-    // text. Pi's own compaction aborts the in-flight turn first, exactly as it
-    // does at the prompt in an interactive session.
+    // text. Both this command and the UI context wheel drive the background
+    // compactor; Pi's own compactor is off for these sessions (see pi-runtime).
     if (isCompactCommand(action.prompt)) {
-      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → manual compaction`);
-      void session.compact().catch((err: unknown) => {
-        console.error(`[orcd:${session.id.slice(0, 8)}] /compact failed:`, err instanceof Error ? err.message : err);
-      });
+      console.log(`[orcd:${session.id.slice(0, 8)}] /compact command detected → background compaction`);
+      void this.maybeStartBgc(session);
       return;
     }
 
@@ -423,12 +466,30 @@ export class OrcdServer {
       return;
     }
 
-    // Pi owns compaction now, and both of its triggers (post-run and pre-prompt) act
-    // before a turn's first request — so a run cannot start over the window, and orcd
-    // has nothing to gate or hold here.
-    void session.sendMessage(action.prompt, action.effort, action.author).finally(() => {
-      console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
-    });
+    // Pi's compactor used to be the within-run safety net. With it disabled BGC is
+    // the only compactor, so a run must not start over the threshold — it would
+    // walk into the model's window mid-run and every request from there would be
+    // rejected. The session is idle here, so this splice lands immediately.
+    const send = (): void => {
+      void session.sendMessage(action.prompt, action.effort, action.author).finally(() => {
+        console.log(`[orcd] session ${session.id.slice(0, 8)} follow-up exited (state=${session.state})`);
+      });
+    };
+    const dispatch = (): void => {
+      if (session.needsCompaction()) {
+        console.log(`[orcd:${session.id.slice(0, 8)}:bgc] over threshold on dispatch; compacting first`);
+        void this.maybeStartBgc(session).then(send);
+        return;
+      }
+      send();
+    };
+    const inFlight = this.compacting.get(session.id);
+    if (inFlight) {
+      this.holdPrompt(session, dispatch);
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] prompt held until in-flight compaction settles`);
+      return;
+    }
+    dispatch();
   }
 
   private handleSetEffort(action: OrcdAction & { action: 'set_effort' }): void {
@@ -508,6 +569,7 @@ export class OrcdServer {
       return;
     }
     this.store.remove(action.sessionId);
+    this.bgcNoopTokens.delete(action.sessionId);
     session.dispose().catch((err: unknown) => {
       console.error(`[orcd] close error for session ${action.sessionId.slice(0, 8)}:`, err);
     });
@@ -530,26 +592,22 @@ export class OrcdServer {
       });
       session.state = 'completed';
       this.store.add(session);
-      console.log(`[orcd:${session.id.slice(0, 8)}] rehydrated inactive session for manual compact`);
+      this.attachLifecycleHooks(session);
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] rehydrated inactive session for manual compact`);
     }
     if (!client.subscriptions.has(session.id)) {
       const cb: SessionEventCallback = (msg) => this.send(client, msg);
       client.subscriptions.set(session.id, cb);
       session.subscribe(cb);
     }
-    const target = session;
-    void target
-      .compact()
-      .catch((err: unknown) => {
-        console.error(
-          `[orcd:${target.id.slice(0, 8)}] manual compact failed:`,
-          err instanceof Error ? err.message : String(err),
-        );
-      })
-      .finally(() => {
-        // A rehydrated session exists only to run this compaction; drop it once idle.
-        if (hydrated && target.isIdle()) this.store.remove(target.id);
-      });
+    const run = this.maybeStartBgc(session);
+    void run.finally(() => {
+      // A prompt gated on this compaction is about to start a turn — never drop a
+      // session that still has held prompts, and never one that stopped being idle.
+      if (hydrated && session.isIdle() && !(this.heldPrompts.get(session.id) ?? 0)) {
+        this.store.remove(session.id);
+      }
+    });
   }
 
   // ── Worktree / path actions ────────────────────────────────────────────────
@@ -635,5 +693,201 @@ export class OrcdServer {
       console.error(`[orcd] get_history error:`, err);
       this.send(client, { type: 'history', requestId: action.requestId, messages: [] });
     }
+  }
+
+  // ── Background compaction ───────────────────────────────────────────────
+
+  private readonly BGC_KEEP_FRACTION = 0.3;
+
+  /**
+   * System prompt that resumes a turn whose last run ended 'errored'. Sent only
+   * right after a BGC splice: the compaction is what makes the retry viable for
+   * the common case (context overflow), and without it an errored card sits in
+   * 'running' forever — the BE never re-prompts on its own.
+   */
+  private static readonly BGC_CONTINUE_PROMPT =
+    '[AUTOMATED MESSAGE FROM THE ORCHESTREL HARNESS - NOT FROM THE USER. This is not a new request.] ' +
+    'Your last turn ended with an error before it finished, and the conversation has since been ' +
+    'compacted to make room. Continue the task from where you left off; do not redo work that is ' +
+    'already done.';
+
+  /**
+   * Background compactor. Summarize the oldest ~70% off-band (parallel-safe). If the
+   * session is idle, splice the cut now; otherwise defer the splice to the next
+   * run-end (onBeforeExit) — never mutate the agent message array mid-run.
+   */
+  /**
+   * Start a background compaction, or join the one already in flight for this
+   * session. The returned promise settles when the attempt is done (splice
+   * applied, deferred to run-end, or failed), so callers can hold a prompt
+   * until a mid-flight compact is safe to dispatch on.
+   */
+  private maybeStartBgc(session: OrcdSession): Promise<void> {
+    const sid = session.id;
+    const inFlight = this.compacting.get(sid);
+    if (inFlight) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] already in flight; joining`);
+      return inFlight;
+    }
+    if (this.pendingApply.has(sid)) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] splice pending apply, ignoring`);
+      return Promise.resolve();
+    }
+    const run = this.compact(session);
+    this.compacting.set(sid, run);
+    void run.finally(() => this.compacting.delete(sid));
+    return run;
+  }
+
+  /** The BGC attempt itself. Guarding/in-flight tracking lives in maybeStartBgc. */
+  private async compact(session: OrcdSession): Promise<void> {
+    const sid = session.id;
+    // Cancellation is not wired yet; summarization is short-lived.
+    const signal = new AbortController().signal;
+    // Only an attempt that announced itself needs a terminal event: the UI holds its
+    // "compacting" state from bgc_started until compact_boundary.
+    let announced = false;
+    try {
+      const tokens = session.lastContextTokens;
+      // Announce the job only once a compactable range is confirmed, so a failed
+      // prepare never emits a "Background compaction started" line.
+      let result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => {
+        announced = true;
+        session.emitBgcStarted();
+      });
+      if (!result) {
+        this.bgcNoopTokens.set(sid, tokens);
+        console.log(
+          `[orcd:${sid.slice(0, 8)}:bgc] nothing to compact (tokens=${tokens}); suppressing retries at this size`,
+        );
+        return;
+      }
+      this.bgcNoopTokens.delete(sid);
+      // Log the summary size every time: the summarizer is asked to stay under a token
+      // budget, so the journal is where a summary that is creeping back up shows itself.
+      const size = `chars=${result.summary.length} ~${Math.round(result.summary.length / 4)}t`;
+      if (!session.isIdle()) {
+        this.pendingApply.set(sid, result);
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready (${size}); deferring splice to run-end`);
+        return;
+      }
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready (${size}); applying now`);
+      if (!this.applyBgcResult(session, result)) {
+        // A compaction that landed while we summarized moved the boundary past our
+        // cut, so the splice was refused. Re-derive it from the new boundary once; a
+        // second refusal means the branch is churning — hold this size and let the
+        // next threshold hit (or prompt) try again.
+        result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal);
+        if (!result || !this.applyBgcResult(session, result)) {
+          this.bgcNoopTokens.set(sid, session.lastContextTokens);
+          this.failBgc(session, announced, 'the compaction boundary moved while the summary was generated');
+        }
+      }
+    } catch (err) {
+      console.error(`[orcd:${sid.slice(0, 8)}:bgc] failed:`, err instanceof Error ? err.message : String(err));
+      // Hold the failing size too: a summarizer that errors would otherwise be
+      // re-hit on every streaming delta until the context changes.
+      this.bgcNoopTokens.set(sid, session.lastContextTokens);
+      this.failBgc(session, announced, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /**
+   * Close out an announced BGC attempt that produced no splice. Silently leaving it open is
+   * what makes a failed compaction look like a running one in the UI.
+   */
+  private failBgc(session: OrcdSession, announced: boolean, reason: string): void {
+    if (announced) {
+      console.log(`[orcd:${session.id.slice(0, 8)}:bgc] failed: ${reason}`);
+      session.emitBgcFailed(reason);
+    }
+  }
+
+  /** Splice a prepared compaction; false when a newer compaction already moved its cut. */
+  private applyBgcResult(
+    session: OrcdSession,
+    result: import('@earendil-works/pi-coding-agent').CompactionResult,
+  ): boolean {
+    if (!session.applyBgCompaction(result)) {
+      console.log(
+        `[orcd:${session.id.slice(0, 8)}:bgc] stale cut (a compaction landed after we prepared); re-deriving`,
+      );
+      return false;
+    }
+    console.log(`[orcd:${session.id.slice(0, 8)}:bgc] applied (tokensBefore=${result.tokensBefore})`);
+    this.maybeContinueErrored(session);
+    return true;
+  }
+
+  /**
+   * If the last run ended 'errored', the splice that just landed is the retry
+   * opportunity nobody will take: kick a system-authored continue turn. Deferred
+   * by a macrotask so a run-end splice (called from the onBeforeExit hook inside
+   * finalizeExit) still delivers the errored run's session_exit before the new
+   * run's epoch takes over.
+   */
+  private maybeContinueErrored(session: OrcdSession): void {
+    // oxlint-disable-next-line orchestrel/log-before-early-return -- quiet by design: splices after clean runs are the norm
+    if (session.state !== 'errored' || !session.isIdle()) return;
+    const sid = session.id.slice(0, 8);
+    console.log(`[orcd:${sid}:bgc] last run errored; scheduling continue turn after compaction`);
+    setTimeout(() => {
+      // A human/BE prompt may have landed in the gap; the running check and the
+      // run()-level overlap guard both make that race a no-op here.
+      // oxlint-disable-next-line orchestrel/log-before-early-return -- the scheduling log above covers the entered path
+      if (session.state !== 'errored' || !session.isIdle()) return;
+      session
+        .sendMessage(OrcdServer.BGC_CONTINUE_PROMPT, undefined, SYSTEM_AUTHOR)
+        .catch((err: unknown) =>
+          console.error(
+            `[orcd:${sid}] continue turn after errored compaction failed:`,
+            err instanceof Error ? err.message : String(err),
+          ),
+        );
+    }, 0);
+  }
+
+  // ── Session lifecycle hooks (called from handleCreate) ──────────────────
+
+  private attachLifecycleHooks(session: OrcdSession): void {
+    const sid = session.id;
+
+    // onBeforeExit hooks are persistent (fire on every run-end), so register the
+    // deferred-splice apply once per session and make it one-shot via pendingApply.
+    session.onBeforeExit(async () => {
+      // A new run starts from a fresh turn, so let the next threshold hit try again.
+      this.bgcNoopTokens.delete(sid);
+      const pending = this.pendingApply.get(sid);
+      this.pendingApply.delete(sid);
+      // No pending splice, or the pending one was refused because a compaction landed
+      // after we prepared it — either way re-derive one from the boundary this run
+      // just left. BGC is the only compactor now, so no run may end above the
+      // threshold without a splice: otherwise the next turn starts past the window.
+      if (!pending || !this.applyBgcResult(session, pending)) {
+        if (session.needsCompaction()) {
+          console.log(`[orcd:${sid.slice(0, 8)}:bgc] over threshold at run end; compacting`);
+          await this.maybeStartBgc(session);
+        }
+      }
+    });
+
+    const hook: SessionEventCallback = (msg) => {
+      if (msg.type === 'context_usage') {
+        if (
+          session.summarizeThreshold > 0 &&
+          msg.contextWindow > 0 &&
+          !this.compacting.has(sid) &&
+          !this.pendingApply.has(sid) &&
+          this.bgcNoopTokens.get(sid) !== msg.contextTokens &&
+          msg.contextTokens / msg.contextWindow >= session.summarizeThreshold
+        ) {
+          const pct = ((msg.contextTokens / msg.contextWindow) * 100).toFixed(0);
+          console.log(`[orcd:${sid.slice(0, 8)}:bgc] threshold hit (${pct}%), starting`);
+          void this.maybeStartBgc(session);
+        }
+      }
+    };
+
+    session.subscribe(hook);
   }
 }

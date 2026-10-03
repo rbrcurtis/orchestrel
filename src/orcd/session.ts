@@ -5,6 +5,7 @@ import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload, mapSubagentExecEve
 import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
 import { hasEnabledScheduledJobs } from '../shared/scheduled-jobs';
 import { RingBuffer } from './ring-buffer';
+import type { CompactionResult } from '@earendil-works/pi-coding-agent';
 import type { ProviderConfig } from './config';
 import type { SessionState } from './types';
 import type {
@@ -52,6 +53,7 @@ export class OrcdSession {
 
   private readonly asyncTasks = new AsyncTaskTracker();
   private readonly lastSubagentProgress = new Map<string, string>();
+  private readonly beforeExitHooks: Array<() => Promise<void>> = [];
   private readonly asyncTaskPollMs: number;
   private readonly scheduledJobPollMs: number;
 
@@ -107,6 +109,14 @@ export class OrcdSession {
     // Scheduled jobs wait minutes-to-hours; poll the store file slowly.
     this.scheduledJobPollMs = opts.scheduledJobPollMsForTesting ?? 15_000;
     this.cancelGraceMs = opts.cancelGraceMsForTesting ?? 4000;
+  }
+
+  onBeforeExit(cb: () => Promise<void>): void {
+    this.beforeExitHooks.push(cb);
+  }
+
+  private async runBeforeExitHooks(): Promise<void> {
+    for (const cb of this.beforeExitHooks) await cb();
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
@@ -219,7 +229,6 @@ export class OrcdSession {
       effort,
       provider: this.providerConfig,
       providers: this.providers,
-      summarizeThreshold: this.summarizeThreshold,
     });
     this.piSession = session;
 
@@ -242,9 +251,9 @@ export class OrcdSession {
   private resolveContextWindow(): number | undefined {
     // orcd's own config is the live source of truth for a model's window on this
     // node; the BE-passed value can be a stale card.contextWindow (persisted
-    // before the model's window changed, e.g. fable 200k → 1M). A stale window
-    // misstates how full the context is, and that percentage is what a human reads
-    // as "nearly full". Prefer config, fall back to the BE value only if config lacks it.
+    // before the model's window changed, e.g. fable 200k → 1M). Trusting the
+    // stale card value made BGC divide by 200k for a 1M model and fire at ~90%
+    // mid-turn. Prefer config, fall back to the BE value only if config lacks it.
     const fromConfig = this.providerConfig?.models[this.model]?.contextWindow;
     if (fromConfig && fromConfig > 0) return fromConfig;
     return this.contextWindow && this.contextWindow > 0 ? this.contextWindow : undefined;
@@ -260,14 +269,17 @@ export class OrcdSession {
 
   private emitMappedPiEvent(event: unknown): void {
     if (this.isRecord(event) && event.type === 'compaction_start') {
-      // A manual `/compact` is a distinct, foreground compaction: the UI shows its own
-      // marker pair and returns the session to idle on done. Pi's automatic compaction
-      // (threshold/overflow) runs between turns inside a live run, so it only needs the
-      // boundary marker that follows it to reset the context gauge.
+      // A manual `/compact` (reason 'manual') is a distinct, foreground full
+      // compaction — NOT the background compactor. Keep its lifecycle separate so
+      // the UI labels it correctly and flips the session back to idle when done.
       if (event.reason === 'manual') this.emitCompactStarted();
+      else this.emitBgcStarted();
       return;
     }
     if (this.isRecord(event) && event.type === 'compaction_end') {
+      // Manual `/compact` finished → terminal compact_done (UI returns to idle).
+      // Otherwise it's Pi's own auto-compaction (the ~92% safety net) — surface a
+      // compact_boundary so the UI context wheel resets even when BGC didn't drive it.
       if (event.reason === 'manual') this.emitCompactDone();
       else this.emitCompactBoundary();
       return;
@@ -515,6 +527,7 @@ export class OrcdSession {
     if (epoch !== this.runEpoch || this.exitFinalized) return;
     this.exitFinalized = true;
     this.running = false;
+    await this.runBeforeExitHooks();
     const exitMsg: SessionExitMessage = {
       type: 'session_exit',
       sessionId: this.id,
@@ -589,23 +602,7 @@ export class OrcdSession {
 
   setSummarizeThreshold(threshold: number): void {
     this.summarizeThreshold = threshold;
-    this.piSession?.setSummarizeThreshold(threshold);
     console.log(`[orcd:${this.id.slice(0, 8)}] summarize threshold → ${threshold}`);
-  }
-
-  /** Run Pi's own compaction now (foreground `/compact`). Pi aborts the turn first. */
-  async compact(): Promise<void> {
-    const session = await this.getOrCreatePiSession(undefined);
-    // This runs outside a run loop, so nothing else is mapping Pi's
-    // compaction_start/compaction_end events onto the UI markers.
-    const unsubscribe = session.subscribe((event) => {
-      if (this.state !== 'stopped') this.emitMappedPiEvent(event);
-    });
-    try {
-      await session.compact();
-    } finally {
-      unsubscribe();
-    }
   }
 
   /**
@@ -650,9 +647,41 @@ export class OrcdSession {
     return this.disposePromise;
   }
 
-  /** True when no turn is currently streaming. */
+  /** True when no turn is currently streaming — safe to splice a compaction. */
   isIdle(): boolean {
     return !this.running;
+  }
+
+  /** True when the live context is at or past this session's summarize threshold. */
+  needsCompaction(): boolean {
+    // lastContextWindow is the window that came with lastContextTokens, so the two
+    // describe the same turn; resolveContextWindow covers a session that has not
+    // reported usage yet.
+    const window = this.lastContextWindow || this.resolveContextWindow();
+    if (this.summarizeThreshold <= 0 || !window || window <= 0) return false;
+    return this.lastContextTokens / window >= this.summarizeThreshold;
+  }
+
+  /** Run an out-of-band BGC summary. Parallel-safe; null = nothing to compact. */
+  async prepareBgCompaction(
+    keepFraction: number,
+    signal: AbortSignal,
+    onStart?: () => void,
+  ): Promise<CompactionResult | null> {
+    const session = await this.getOrCreatePiSession(undefined);
+    return session.prepareBgCompaction(keepFraction, this.lastContextTokens, signal, onStart);
+  }
+
+  /** Splice a prepared BGC compaction into the session tree. Call only when idle. */
+  applyBgCompaction(result: CompactionResult): boolean {
+    if (!this.piSession) return false;
+    const applied = this.piSession.applyBgCompaction(result);
+    if (!applied) return false;
+    this.emitCompactBoundary();
+    // The next usage event carries the post-splice count. Until it arrives the old
+    // count still looks over-threshold and would re-trigger a summary.
+    this.lastContextTokens = 0;
+    return true;
   }
 
   /**
@@ -663,10 +692,26 @@ export class OrcdSession {
     this.emitSyntheticSystemEvent('compact_boundary');
   }
 
-  /** Foreground full-compaction (`/compact`) lifecycle, so the UI shows a
-   *  "Compacting" marker and returns the session to idle on done. Idempotent: an
-   *  active-run subscription maps Pi's own manual compaction events, and a
-   *  rehydrated session calls Pi's compact() directly. */
+  emitBgcStarted(): void {
+    this.emitSyntheticSystemEvent('bgc_started');
+  }
+
+  /**
+   * Terminal marker for a BGC attempt that announced itself and then produced no splice
+   * (summarization failed, or the prepared cut was superseded). Downstream holds a
+   * "compacting" state from bgc_started until compact_boundary, so a failure needs its own
+   * event or the card looks like it is still compacting, forever.
+   */
+  emitBgcFailed(reason: string): void {
+    this.emitSyntheticSystemEvent('bgc_failed', 'orchestrel-bgc', reason);
+  }
+
+  /** Foreground full-compaction (`/compact`) lifecycle — distinct from BGC so the
+   *  UI shows a "Compacting" marker and returns the session to idle on done.
+   *  Idempotent: runFullCompaction emits these explicitly (a manual `/compact`
+   *  runs session.compact() outside a run(), so no Pi event subscription is
+   *  attached to map compaction_start/end), but an active-run subscription may
+   *  ALSO map Pi's manual compaction events — dedup so the UI sees one pair. */
   emitCompactStarted(): void {
     if (this.fullCompacting) return;
     this.fullCompacting = true;
@@ -706,15 +751,15 @@ export class OrcdSession {
   }
 
   private emitSyntheticSystemEvent(
-    subtype: 'compact_boundary' | 'compact_started' | 'compact_done',
-    source?: string,
+    subtype: 'compact_boundary' | 'bgc_started' | 'bgc_failed' | 'compact_started' | 'compact_done',
+    source = 'orchestrel-bgc',
     message?: string,
   ): void {
     const event = {
       type: 'system',
       subtype,
       session_id: this.id,
-      ...(source ? { source } : {}),
+      source,
       timestamp: Date.now(),
       ...(message ? { message } : {}),
     };

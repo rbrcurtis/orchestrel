@@ -16,9 +16,9 @@ type MessageHandler = (msg: OrcdMessage) => void | Promise<void>;
  * Manages connection, reconnection, and message dispatch.
  */
 export class OrcdClient {
-  /** Nudges a card whose transcript was just manually compacted, so the pi process
+  /** Nudges a card whose transcript just absorbed a splice, so the pi process
    *  picks the task back up instead of the card stalling after compaction. */
-  static readonly COMPACT_CONTINUE_PROMPT =
+  static readonly BGC_CONTINUE_PROMPT =
     'The system compacted your conversation history just now. Continue the task you were working on.';
 
   private socket: Socket | null = null;
@@ -79,7 +79,7 @@ export class OrcdClient {
     this.reconnectCallback = cb;
   }
 
-  /** Remember that a card is bound to this session, so a manual compaction landing in its
+  /** Remember that a card is bound to this session, so a BGC splice landing in its
    *  transcript sends the continue prompt. Idempotent — re-creating the same
    *  session for the same card (resume path) re-tracks harmlessly. */
   trackCard(sessionId: string): void {
@@ -372,7 +372,7 @@ export class OrcdClient {
     this.send({ action: 'set_effort', sessionId, effort });
   }
 
-  /** Update the compaction threshold for a resident session. */
+  /** Update the automatic background-compaction threshold for a resident session. */
   setSummarizeThreshold(sessionId: string, summarizeThreshold: number): void {
     this.send({ action: 'set_summarize_threshold', sessionId, summarizeThreshold });
   }
@@ -573,25 +573,35 @@ export class OrcdClient {
     if (msg.type === 'stream_event') {
       const ev = msg.event as { type?: string; subtype?: string } | undefined;
       if (ev?.type === 'system') {
-        if (ev.subtype === 'compact_started' && !this.activeSessions.has(msg.sessionId)) {
+        // A manual compact (button or /compact) runs outside a run loop on an idle
+        // session, so orcd emits no session_created/session_exit for it — isActive()
+        // would report the session inactive for the whole compaction. Activating the
+        // compaction window keeps auto-start and agent:status from yanking the card
+        // out of running mid-compact. A mid-run BGC's session is already active, so
+        // this only ever flips an idle session.
+        if (
+          (ev.subtype === 'compact_started' || ev.subtype === 'bgc_started') &&
+          !this.activeSessions.has(msg.sessionId)
+        ) {
           this.activeSessions.add(msg.sessionId);
           this.compactActivated.add(msg.sessionId);
         }
         // Only evict if THIS compaction is what marked the session active. A compact
         // on a genuinely-running session must stay active afterward.
         if (
-          (ev.subtype === 'compact_done' || ev.subtype === 'compact_boundary') &&
+          (ev.subtype === 'compact_done' || ev.subtype === 'compact_boundary' || ev.subtype === 'bgc_failed') &&
           this.compactActivated.delete(msg.sessionId)
         ) {
           this.activeSessions.delete(msg.sessionId);
         }
-        // A manual compaction emits no turn_complete, so the pi process needs a nudge
-        // to pick the task back up or the card sits idle in running until a human
-        // prompts it. Pi's own automatic compaction needs no nudge: threshold
-        // compaction runs at turn end (the turn settles the card normally) and
-        // overflow compaction resumes the interrupted turn itself.
-        if (ev.subtype === 'compact_done' && this.cardSessions.has(msg.sessionId)) {
-          this.message(msg.sessionId, OrcdClient.COMPACT_CONTINUE_PROMPT, undefined, SYSTEM_AUTHOR);
+        // compact_boundary means a compaction splice just landed in this transcript.
+        // The pi process needs a nudge to pick the task back up, or the card stalls
+        // after compaction. A prompt sent mid-run is held by orcd until the splice
+        // lands, so it is safe to send here regardless of run state. Manual
+        // /compact ends with compact_done, not compact_boundary, so this only ever
+        // fires for background compaction.
+        if (ev.subtype === 'compact_boundary' && this.cardSessions.has(msg.sessionId)) {
+          this.message(msg.sessionId, OrcdClient.BGC_CONTINUE_PROMPT, undefined, SYSTEM_AUTHOR);
         }
       }
     }
@@ -600,8 +610,8 @@ export class OrcdClient {
     if (msg.type === 'session_id_update' && this.activeSessions.has(msg.sessionId)) {
       this.activeSessions.add(msg.newSessionId);
     }
-    // A forked card session must keep its card binding on the new id, or a later
-    // manual compaction's nudge no longer recognizes the session.
+    // A forked card session must keep its card binding on the new id, or the next
+    // splice lands in a session the nudge no longer recognizes.
     if (msg.type === 'session_id_update' && this.cardSessions.has(msg.sessionId)) {
       this.cardSessions.delete(msg.sessionId);
       this.cardSessions.add(msg.newSessionId);

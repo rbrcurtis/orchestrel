@@ -205,7 +205,18 @@ export class MessageAccumulator {
           });
         } else if (msg.subtype === 'compact_boundary') {
           this.finalizeBlocks();
-          this.conversation.push({ kind: 'compact', timestamp: msg.timestamp });
+          const label = msg.source === 'orchestrel-bgc' ? 'Background compaction applied' : undefined;
+          this.conversation.push({ kind: 'compact', label, timestamp: msg.timestamp });
+        } else if (msg.subtype === 'bgc_started') {
+          this.finalizeBlocks();
+          this.conversation.push({ kind: 'compact', label: 'Background compaction started', timestamp: msg.timestamp });
+        } else if (msg.subtype === 'bgc_failed') {
+          this.finalizeBlocks();
+          this.conversation.push({
+            kind: 'compact',
+            label: msg.message ? `Background compaction failed: ${msg.message}` : 'Background compaction failed',
+            timestamp: msg.timestamp,
+          });
         } else if (msg.subtype === 'compact_started') {
           this.finalizeBlocks();
           this.conversation.push({ kind: 'compact', label: 'Context compacting', timestamp: msg.timestamp });
@@ -307,7 +318,22 @@ export class MessageAccumulator {
         } else if (msg.subtype === 'compact_boundary') {
           const timestamp = normalizeTimestamp(msg.timestamp);
           this.finalizePendingHistoryTurn(timestamp);
-          this.conversation.push({ kind: 'compact', timestamp });
+          const label = msg.source === 'orchestrel-bgc' ? 'Background compaction applied' : undefined;
+          this.conversation.push({ kind: 'compact', label, timestamp });
+        } else if (msg.subtype === 'bgc_started') {
+          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.conversation.push({
+            kind: 'compact',
+            label: 'Background compaction started',
+            timestamp: normalizeTimestamp(msg.timestamp),
+          });
+        } else if (msg.subtype === 'bgc_failed') {
+          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.conversation.push({
+            kind: 'compact',
+            label: msg.message ? `Background compaction failed: ${msg.message}` : 'Background compaction failed',
+            timestamp: normalizeTimestamp(msg.timestamp),
+          });
         } else if (msg.subtype === 'compact_started') {
           this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
           this.conversation.push({

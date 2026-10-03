@@ -1,10 +1,21 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StoreProvider } from '~/stores/context';
 import { RootStore } from '~/stores/root-store';
 import ChatLayout from './chat';
+
+const stores: RootStore[] = [];
+
+// The store opens a real socket.io connection with endless reconnection, so a test's
+// client outlives the test. Left alone, those retries keep logging `[ws] connect error`
+// under later tests and one can land after the file finishes, which closes the worker
+// with a pending console RPC (EnvironmentTeardownError) and a non-zero suite exit.
+afterEach(() => {
+  for (const store of stores) store.ws.dispose();
+  stores.length = 0;
+});
 
 beforeEach(() => {
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -21,6 +32,7 @@ beforeEach(() => {
 
 function renderChatLayout() {
   const store = new RootStore();
+  stores.push(store);
   store.subscribe = vi.fn();
 
   render(

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { TranscriptSync } from './transcript-sync';
 import type { ReplayDecision, TranscriptCursor, TranscriptEvent, TranscriptState } from '../shared/transcript-sync';
 import {
+  DEFAULT_COMPACTION_SETTINGS,
   DefaultResourceLoader,
   ModelRegistry,
   ModelRuntime,
@@ -10,11 +11,14 @@ import {
   SettingsManager,
   createAgentSession,
   createEventBus,
+  findCutPoint,
+  generateSummary,
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
 import type {
   AgentSession,
   AgentSessionEvent,
+  CompactionResult,
   ProviderConfig as ProviderConfigInput,
 } from '@earendil-works/pi-coding-agent';
 import type { AnthropicMessagesCompat, Api, Model } from '@earendil-works/pi-ai';
@@ -51,8 +55,6 @@ export interface CreatePiRuntimeSessionOpts {
   provider?: RuntimeProvider;
   /** All orcd providers, so a live setModel can register the target provider in this session's registry. */
   providers?: Record<string, RuntimeProvider>;
-  /** Card threshold (0-1) mapped onto Pi's compaction reserve; 0 leaves compaction off. */
-  summarizeThreshold?: number;
 }
 
 export interface PiRuntimeSession {
@@ -65,10 +67,19 @@ export interface PiRuntimeSession {
   subscribe(cb: (event: unknown) => void): () => void;
   abort(): Promise<void>;
   dispose(): Promise<void>;
-  /** Re-point Pi's compaction reserve at a new card threshold. */
-  setSummarizeThreshold(threshold: number): void;
-  /** Run Pi's own compaction now (foreground `/compact`); it aborts the current turn first. */
-  compact(): Promise<void>;
+  /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
+  prepareBgCompaction(
+    keepFraction: number,
+    currentTokens: number,
+    signal: AbortSignal,
+    onStart?: () => void,
+  ): Promise<CompactionResult | null>;
+  /**
+   * Splice a prepared compaction into the session tree and rebuild context. Call
+   * only when idle. False = the prepared cut is stale (a newer compaction already
+   * moved the boundary past it) and nothing was spliced.
+   */
+  applyBgCompaction(result: CompactionResult): boolean;
   setEffort(effort: string): Promise<void>;
   /** Switch provider/model on the live Pi session (same conversation; Pi appends a model_change entry). */
   setModel(provider: string, model: string): Promise<void>;
@@ -100,42 +111,56 @@ export function isAdaptiveEffort(effort: string | undefined): boolean {
 }
 
 /**
- * Kept tail for a compaction. Pi's default is pinned here because the tail is the point of the
- * design: a fixed count cannot grow with the model's window, so a session moving from a 1M-token
- * model to a 240k one can never arrive with a tail that no longer fits.
+ * One entry of Pi's session branch. Compaction entries carry the boundary the live
+ * context starts at; message entries are the only ones a summary can be built from.
  */
-export const COMPACTION_KEEP_RECENT_TOKENS = 20_000;
-
-/** Floor for the derived reserve, so a threshold near 1.0 still leaves the summarizer room. */
-const MIN_COMPACTION_RESERVE_TOKENS = 8_192;
+type BranchEntry = {
+  type: string;
+  id: string;
+  message?: unknown;
+  summary?: string;
+  firstKeptEntryId?: string;
+};
 
 /**
- * Map a card's summarize threshold (0-1) onto Pi's compaction reserve. Pi compacts when
- * contextTokens > contextWindow - reserveTokens, so reserve = window * (1 - threshold) puts the
- * trigger exactly at window * threshold — the threshold keeps meaning the fraction of the window
- * a session may fill before it is compacted. Clamped so the reserve never reaches the window
- * (which would trigger at zero) and never falls below the floor.
+ * Locate the live context's start: the newest compaction's kept entry. Everything
+ * before it is already summarized, so summarizing it again overflows the model's
+ * window (a 1M-token model gets ~3M tokens after a handful of compactions) and the
+ * splice never lands. Pi's own prepareCompaction starts at the same boundary.
  */
-export function compactionReserveTokens(contextWindow: number, threshold: number): number {
-  const floor = Math.min(MIN_COMPACTION_RESERVE_TOKENS, Math.floor(contextWindow / 2));
-  const reserve = Math.floor(contextWindow * (1 - threshold));
-  return Math.min(Math.max(reserve, floor), Math.max(contextWindow - floor, floor));
+function compactionBoundary(entries: BranchEntry[]): { index: number; previousSummary: string | undefined } {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].type !== 'compaction') continue;
+    const keptIdx = entries.findIndex((e) => e.id === entries[i].firstKeptEntryId);
+    return { index: keptIdx >= 0 ? keptIdx : i + 1, previousSummary: entries[i].summary };
+  }
+  return { index: 0, previousSummary: undefined };
 }
 
-/** Point Pi's compaction at the session's threshold. Threshold 0 leaves compaction off. */
-function applyCompactionSettings(
-  settingsManager: SettingsManager,
-  model: Model<Api>,
-  summarizeThreshold: number,
-): void {
-  settingsManager.applyOverrides({
-    compaction: {
-      enabled: summarizeThreshold > 0,
-      reserveTokens: compactionReserveTokens(model.contextWindow ?? 0, summarizeThreshold),
-      keepRecentTokens: COMPACTION_KEEP_RECENT_TOKENS,
-    },
-  });
+/**
+ * Reserve for a summarization call. Pi caps the response at
+ * min(floor(0.8 * reserveTokens), model.maxTokens) and refuses a summary that hits that cap
+ * (a partial summary must not become a checkpoint). Pi's default reserve caps it at 13,107
+ * tokens, which a long session outgrows — once the iterative summary passes the cap every
+ * future compaction fails, so scale the reserve to the model's own output limit instead.
+ */
+function summaryReserveTokens(model: { maxTokens: number }): number {
+  return model.maxTokens > 0 ? Math.ceil(model.maxTokens / 0.8) : DEFAULT_COMPACTION_SETTINGS.reserveTokens;
 }
+
+/**
+ * Ceiling asked of the summarizer, in tokens. Each pass merges the previous summary and adds
+ * new history, so the summary grows monotonically unless it is held down; pi's own prompt only
+ * says "keep each section concise", which let one session's summaries climb from 10k to 72k
+ * characters before they stopped fitting the output cap. 8,000 tokens leaves roughly an order
+ * of magnitude of headroom under a 64,000-token cap, and only the summarized span (not the
+ * kept tail) is compressed to that size.
+ */
+const BGC_SUMMARY_TOKEN_BUDGET = 8000;
+const BGC_SUMMARY_INSTRUCTIONS =
+  `Keep the entire summary under ${BGC_SUMMARY_TOKEN_BUDGET} tokens. Collapse older items to one terse line ` +
+  'each, and drop detail that the code, the file paths or the git history already record. Never re-explain ' +
+  'something a previous section already states; compress the oldest material hardest.';
 
 function canSetThinkingLevel(session: AgentSession): session is AgentSession & {
   setThinkingLevel(level: PiThinkingLevel): void;
@@ -293,12 +318,11 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       : SessionManager.create(opts.cwd, undefined, { id: requestedSessionId });
   }
 
-  // Pi owns compaction: the card's threshold becomes its reserve, so it compacts at
-  // window * threshold and keeps COMPACTION_KEEP_RECENT_TOKENS verbatim. Both of Pi's
-  // triggers (post-run and pre-prompt) act between turns, never mid-turn.
-  let summarizeThreshold = opts.summarizeThreshold ?? 0;
+  // orcd owns compaction (see maybeStartBgc). Pi's threshold and overflow
+  // compactor would race the background compactor and can splice a cut the other
+  // has already superseded, so turn it off and leave BGC as the only compactor.
   const settingsManager = SettingsManager.create(opts.cwd, agentDir);
-  applyCompactionSettings(settingsManager, activeModel, summarizeThreshold);
+  settingsManager.applyOverrides({ compaction: { enabled: false } });
 
   const result = await createAgentSession({
     cwd: opts.cwd,
@@ -397,15 +421,75 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       }
     },
 
-    setSummarizeThreshold(threshold) {
-      summarizeThreshold = threshold;
-      applyCompactionSettings(settingsManager, activeModel, threshold);
-      const reserve = compactionReserveTokens(activeModel.contextWindow ?? 0, threshold);
-      console.log(`[orcd] compaction threshold → ${threshold} (reserve=${reserve})`);
+    async prepareBgCompaction(keepFraction, currentTokens, signal, onStart) {
+      const sm = session.sessionManager as unknown as { getBranch(): BranchEntry[] };
+      const entries = sm.getBranch();
+      const boundary = compactionBoundary(entries);
+      const boundaryStart = boundary.index;
+      const previousSummary = boundary.previousSummary;
+      const keepRecentTokens =
+        currentTokens > 0 ? Math.floor(currentTokens * keepFraction) : DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
+      const cut = findCutPoint(entries as never, boundaryStart, entries.length, keepRecentTokens);
+      const firstKeptIdx = cut.firstKeptEntryIndex;
+      if (firstKeptIdx <= boundaryStart) return null;
+      const toSummarize = entries
+        .slice(boundaryStart, firstKeptIdx)
+        .filter((e) => e.type === 'message' && e.message !== undefined)
+        .map((e) => e.message);
+      if (toSummarize.length === 0) return null;
+      // A compactable range exists. Only now is a UI "started" marker truthful —
+      // a null return means nothing to compact and must not be announced.
+      onStart?.();
+      const auth = await modelRegistry.getApiKeyAndHeaders(activeModel);
+      const apiKey = 'apiKey' in auth ? (auth as { apiKey?: string }).apiKey : undefined;
+      const headers = 'headers' in auth ? (auth as { headers?: Record<string, string> }).headers : undefined;
+      const agent = (session as unknown as { agent: { streamFn?: unknown } }).agent;
+      const summary = await generateSummary(
+        toSummarize as never,
+        activeModel,
+        summaryReserveTokens(activeModel),
+        apiKey,
+        headers,
+        signal,
+        // Bound the summary: without a budget it grows with the session until it no longer
+        // fits the output cap, and then every compaction fails (see BGC_SUMMARY_TOKEN_BUDGET).
+        BGC_SUMMARY_INSTRUCTIONS,
+        // Merge the previous summary so a BGC never drops the history it already compacted.
+        previousSummary,
+        // Summarizing is mechanical restatement of history, so thinking only delays
+        // the splice and eats output budget. BGC never thinks, whatever the session's
+        // thinking level is (a background job must not inherit a per-turn setting).
+        'off',
+        agent.streamFn as never,
+      );
+      return { summary, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
     },
 
-    async compact() {
-      await session.compact();
+    applyBgCompaction(result) {
+      const sm = session.sessionManager as unknown as {
+        getBranch(): BranchEntry[];
+        appendCompaction(
+          summary: string,
+          firstKeptEntryId: string,
+          tokensBefore: number,
+          details: unknown,
+          fromHook: boolean,
+        ): string;
+      };
+      const entries = sm.getBranch();
+      const boundaryStart = compactionBoundary(entries).index;
+      const firstKeptIdx = entries.findIndex((e) => e.id === result.firstKeptEntryId);
+      // A compaction that landed while we were summarizing moved the boundary past
+      // our cut. Splicing it would re-include entries that are already summarized
+      // and grow the live context (one stale splice took a session from ~178k to
+      // 230k tokens, past its 240k window). Refuse; the caller re-prepares.
+      if (firstKeptIdx <= boundaryStart) return false;
+      sm.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true);
+      // Pi 0.87 made SessionManager canonical for provider context: assigning
+      // agent.state.messages no longer replaces future request history, so rebuild
+      // through the manager instead.
+      session.refreshContext();
+      return true;
     },
 
     async setEffort(effort) {
@@ -445,9 +529,6 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       baseModel = modelForThinkingMode(next as Model<Api>, false);
       activeModel = modelForThinkingMode(baseModel, adaptive);
       await agentSession.setModel(activeModel);
-      // The reserve is a fraction of the window, so a switch to a model with a different
-      // window must re-derive it or the trigger point silently moves with the old one.
-      applyCompactionSettings(settingsManager, activeModel, summarizeThreshold);
       console.log(`[orcd] session model → ${provider}/${model}`);
     },
 

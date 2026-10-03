@@ -149,6 +149,42 @@ describe('OrcdClient dispatch ordering', () => {
     expect(client.isActive('sess-c')).toBe(false);
   });
 
+  it('marks a manual BGC compact (button or /compact) active for its duration', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void };
+
+    expect(client.isActive('sess-c')).toBe(false);
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'bgc_started' },
+    });
+    expect(client.isActive('sess-c')).toBe(true);
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_boundary' },
+    });
+    expect(client.isActive('sess-c')).toBe(false);
+  });
+
+  it('evicts an activated BGC compact session on bgc_failed', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as { dispatch: (m: unknown) => void };
+
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'bgc_started' },
+    });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'bgc_failed' },
+    });
+    expect(client.isActive('sess-c')).toBe(false);
+  });
+
   it('leaves a genuinely-active session active after /compact completes', () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as { dispatch: (m: unknown) => void };
@@ -170,13 +206,18 @@ describe('OrcdClient dispatch ordering', () => {
     expect(client.isActive('sess-live')).toBe(true);
   });
 
-  it('leaves a running session active when an automatic compaction lands', () => {
+  it('leaves a mid-run session active after a BGC boundary', () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as { dispatch: (m: unknown) => void };
 
     internals.dispatch({ type: 'session_created', sessionId: 'sess-run' });
-    // An automatic compaction emits only the boundary, and a session that was
-    // already active was never compact-activated, so it must stay active.
+    // bgc_started on an active session must not flag it compact-activated, so the
+    // boundary must not evict the running session.
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-run',
+      event: { type: 'system', subtype: 'bgc_started' },
+    });
     internals.dispatch({
       type: 'stream_event',
       sessionId: 'sess-run',
@@ -185,7 +226,7 @@ describe('OrcdClient dispatch ordering', () => {
     expect(client.isActive('sess-run')).toBe(true);
   });
 
-  it('nudges a card session to continue when a manual compaction completes', () => {
+  it('nudges a card session to continue when a splice lands in its transcript', () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as { dispatch: (m: unknown) => void; send: (a: unknown) => void };
     const sent: unknown[] = [];
@@ -195,14 +236,14 @@ describe('OrcdClient dispatch ordering', () => {
     internals.dispatch({
       type: 'stream_event',
       sessionId: 'sess-c',
-      event: { type: 'system', subtype: 'compact_started' },
+      event: { type: 'system', subtype: 'bgc_started' },
     });
-    // compact_started is the announcement, not the splice — no prompt yet.
+    // bgc_started is the announcement, not the splice — no prompt yet.
     expect(sent).toHaveLength(0);
     internals.dispatch({
       type: 'stream_event',
       sessionId: 'sess-c',
-      event: { type: 'system', subtype: 'compact_done' },
+      event: { type: 'system', subtype: 'compact_boundary' },
     });
     expect(sent).toEqual([
       expect.objectContaining({
@@ -214,7 +255,7 @@ describe('OrcdClient dispatch ordering', () => {
     ]);
   });
 
-  it('does not nudge a session that has no card', () => {
+  it('does not nudge when the spliced session has no card', () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as { dispatch: (m: unknown) => void; send: (a: unknown) => void };
     const sent: unknown[] = [];
@@ -224,12 +265,12 @@ describe('OrcdClient dispatch ordering', () => {
     internals.dispatch({
       type: 'stream_event',
       sessionId: 'sess-warm',
-      event: { type: 'system', subtype: 'compact_done' },
+      event: { type: 'system', subtype: 'compact_boundary' },
     });
     expect(sent).toHaveLength(0);
   });
 
-  it('does not nudge on an automatic compaction boundary', () => {
+  it('does not nudge on a manual /compact finish (compact_done, not compact_boundary)', () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as { dispatch: (m: unknown) => void; send: (a: unknown) => void };
     const sent: unknown[] = [];
@@ -239,7 +280,12 @@ describe('OrcdClient dispatch ordering', () => {
     internals.dispatch({
       type: 'stream_event',
       sessionId: 'sess-c',
-      event: { type: 'system', subtype: 'compact_boundary' },
+      event: { type: 'system', subtype: 'compact_started' },
+    });
+    internals.dispatch({
+      type: 'stream_event',
+      sessionId: 'sess-c',
+      event: { type: 'system', subtype: 'compact_done' },
     });
     expect(sent).toHaveLength(0);
   });
@@ -255,7 +301,7 @@ describe('OrcdClient dispatch ordering', () => {
     internals.dispatch({
       type: 'stream_event',
       sessionId: 'sess-c',
-      event: { type: 'system', subtype: 'compact_done' },
+      event: { type: 'system', subtype: 'compact_boundary' },
     });
     expect(sent).toHaveLength(0);
   });

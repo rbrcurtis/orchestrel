@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { StoreProvider } from '~/stores/context';
 import { RootStore } from '~/stores/root-store';
 import { CardDetail, NewCardDetail } from './CardDetail';
@@ -65,12 +65,24 @@ function providerConfig() {
   };
 }
 
+const stores: RootStore[] = [];
+
+// The store opens a real socket.io connection with endless reconnection, so a test's
+// client outlives the test. Left alone, those retries keep logging `[ws] connect error`
+// under later tests and one can land after the file finishes, which closes the worker
+// with a pending console RPC (EnvironmentTeardownError) and a non-zero suite exit.
+afterEach(() => {
+  for (const store of stores) store.ws.dispose();
+  stores.length = 0;
+});
+
 function renderNewCardDetail(opts?: {
   initialProjectId?: number;
   projectFilter?: ProjectFilter;
   projects?: Project[];
 }) {
   const store = new RootStore();
+  stores.push(store);
   store.projects.hydrate(opts?.projects ?? [makeProject(42, 'Orchestrel')]);
   store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);
   store.cards.createCard = vi.fn(async (data) => makeCard(data.description ?? ''));
@@ -94,6 +106,7 @@ function renderNewCardDetail(opts?: {
 
 function renderCardDetail() {
   const store = new RootStore();
+  stores.push(store);
   store.projects.hydrate([makeProject(42, 'Orchestrel')]);
   store.cards.hydrate([makeCard('saved description')]);
   store.config.hydrateNodes([{ name: 'local', connected: true, providers: providerConfig() }]);

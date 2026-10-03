@@ -135,31 +135,13 @@ describe('createPiRuntimeSession', () => {
     expect(mockBindExtensions).toHaveBeenCalledOnce();
   });
 
-  it('applies the card threshold as Pi compaction reserve and pins the kept tail', async () => {
-    mockFind.mockReturnValueOnce({ provider: 'deepseek', id: 'deepseek-flash', contextWindow: 1_000_000 });
-    const { createPiRuntimeSession } = await import('../pi-runtime');
-
-    await createPiRuntimeSession({
-      cwd: '/repo',
-      providerId: 'deepseek',
-      modelId: 'deepseek-flash',
-      summarizeThreshold: 0.2,
-    });
-
-    expect(mockSettingsManagerCreate).toHaveBeenCalledWith('/repo', '/home/ryan/.pi/agent');
-    expect(mockApplyOverrides).toHaveBeenCalledWith({
-      compaction: { enabled: true, reserveTokens: 800_000, keepRecentTokens: 20_000 },
-    });
-  });
-
-  it('leaves Pi compaction off for a card with no threshold', async () => {
+  it('turns Pi compaction off so orcd background compaction is the only compactor', async () => {
     const { createPiRuntimeSession } = await import('../pi-runtime');
 
     await createPiRuntimeSession({ cwd: '/repo', providerId: 'anthropic', modelId: 'm' });
 
-    expect(mockApplyOverrides).toHaveBeenCalledWith({
-      compaction: { enabled: false, reserveTokens: expect.any(Number), keepRecentTokens: 20_000 },
-    });
+    expect(mockSettingsManagerCreate).toHaveBeenCalledWith('/repo', '/home/ryan/.pi/agent');
+    expect(mockApplyOverrides).toHaveBeenCalledWith({ compaction: { enabled: false } });
   });
 
   it('gives each session an isolated policy loader and cleans legacy agent files without creating .pi', async () => {
@@ -692,22 +674,5 @@ describe('createPiRuntimeSession', () => {
 
     await expect(session.setModel('claude', 'sonnet')).rejects.toThrow(/does not support live switching/);
     expect(mockSessionSetModel).not.toHaveBeenCalled();
-  });
-});
-
-describe('compactionReserveTokens', () => {
-  it('puts the trigger at window * threshold', async () => {
-    const { compactionReserveTokens } = await import('../pi-runtime');
-
-    expect(compactionReserveTokens(1_000_000, 0.2)).toBe(800_000);
-    expect(compactionReserveTokens(240_000, 0.2)).toBe(192_000);
-    expect(compactionReserveTokens(240_000, 0.5)).toBe(120_000);
-  });
-
-  it('floors the reserve so a threshold near the whole window still leaves summarization room', async () => {
-    const { compactionReserveTokens } = await import('../pi-runtime');
-
-    expect(compactionReserveTokens(240_000, 1)).toBe(8_192);
-    expect(compactionReserveTokens(240_000, 0)).toBe(231_808);
   });
 });

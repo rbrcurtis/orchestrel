@@ -70,6 +70,7 @@ export const SessionView = observer(function SessionView({
   const contextTokens = session?.contextTokens ?? card?.contextTokens ?? 0;
   const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
   const subagents = session?.accumulator.subagents ?? new Map();
+  const bgcInProgress = session?.bgcInProgress ?? false;
   const compactInProgress = session?.compactInProgress ?? false;
 
   const isStopping = sessionStore.stoppingCards.has(cardId);
@@ -473,7 +474,7 @@ export const SessionView = observer(function SessionView({
         onStop={handleStop}
         onCompact={
           !!sessionId || sessionActive
-            ? compactInProgress
+            ? bgcInProgress || compactInProgress
               ? undefined
               : () => sessionStore.compactSession(cardId)
             : undefined
