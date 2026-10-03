@@ -67,9 +67,12 @@ export interface PiRuntimeSession {
   subscribe(cb: (event: unknown) => void): () => void;
   abort(): Promise<void>;
   dispose(): Promise<void>;
-  /** Generate a BGC summary out-of-band (parallel-safe; does not mutate the session). null = nothing to compact. */
+  /**
+   * Generate a BGC summary out-of-band (parallel-safe; does not mutate the session).
+   * `currentTokens` is the pre-compaction size the caller measured; it is recorded on the
+   * result as tokensBefore. null = nothing to compact.
+   */
   prepareBgCompaction(
-    keepFraction: number,
     currentTokens: number,
     signal: AbortSignal,
     onStart?: () => void,
@@ -147,6 +150,15 @@ function compactionBoundary(entries: BranchEntry[]): { index: number; previousSu
 function summaryReserveTokens(model: { maxTokens: number }): number {
   return model.maxTokens > 0 ? Math.ceil(model.maxTokens / 0.8) : DEFAULT_COMPACTION_SETTINGS.reserveTokens;
 }
+
+/**
+ * Tail kept after a BGC splice, in tokens. Fixed at the same 20,000 Pi's own compactor
+ * keeps, deliberately NOT a fraction of the live context: a fraction grows with the
+ * session, so what survives a compaction tracks whatever the session happens to be
+ * (30% of a 240k-token session is 72k live tokens, three and a half times this), and a
+ * session that moves to a smaller window can arrive with a tail that no longer fits.
+ */
+const BGC_KEEP_RECENT_TOKENS = 20_000;
 
 /**
  * Ceiling asked of the summarizer, in tokens. Each pass merges the previous summary and adds
@@ -421,15 +433,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       }
     },
 
-    async prepareBgCompaction(keepFraction, currentTokens, signal, onStart) {
+    async prepareBgCompaction(currentTokens, signal, onStart) {
       const sm = session.sessionManager as unknown as { getBranch(): BranchEntry[] };
       const entries = sm.getBranch();
       const boundary = compactionBoundary(entries);
       const boundaryStart = boundary.index;
       const previousSummary = boundary.previousSummary;
-      const keepRecentTokens =
-        currentTokens > 0 ? Math.floor(currentTokens * keepFraction) : DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
-      const cut = findCutPoint(entries as never, boundaryStart, entries.length, keepRecentTokens);
+      const cut = findCutPoint(entries as never, boundaryStart, entries.length, BGC_KEEP_RECENT_TOKENS);
       const firstKeptIdx = cut.firstKeptEntryIndex;
       if (firstKeptIdx <= boundaryStart) return null;
       const toSummarize = entries

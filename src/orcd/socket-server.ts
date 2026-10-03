@@ -697,8 +697,6 @@ export class OrcdServer {
 
   // ── Background compaction ───────────────────────────────────────────────
 
-  private readonly BGC_KEEP_FRACTION = 0.3;
-
   /**
    * System prompt that resumes a turn whose last run ended 'errored'. Sent only
    * right after a BGC splice: the compaction is what makes the retry viable for
@@ -712,15 +710,14 @@ export class OrcdServer {
     'already done.';
 
   /**
-   * Background compactor. Summarize the oldest ~70% off-band (parallel-safe). If the
-   * session is idle, splice the cut now; otherwise defer the splice to the next
-   * run-end (onBeforeExit) — never mutate the agent message array mid-run.
-   */
-  /**
    * Start a background compaction, or join the one already in flight for this
    * session. The returned promise settles when the attempt is done (splice
    * applied, deferred to run-end, or failed), so callers can hold a prompt
    * until a mid-flight compact is safe to dispatch on.
+   *
+   * Summarizing runs off-band and is parallel-safe; the splice waits for idle and
+   * is deferred to the next run-end (onBeforeExit) otherwise — the agent message
+   * array is never mutated mid-run.
    */
   private maybeStartBgc(session: OrcdSession): Promise<void> {
     const sid = session.id;
@@ -751,7 +748,7 @@ export class OrcdServer {
       const tokens = session.lastContextTokens;
       // Announce the job only once a compactable range is confirmed, so a failed
       // prepare never emits a "Background compaction started" line.
-      let result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal, () => {
+      let result = await session.prepareBgCompaction(signal, () => {
         announced = true;
         session.emitBgcStarted();
       });
@@ -777,7 +774,7 @@ export class OrcdServer {
         // cut, so the splice was refused. Re-derive it from the new boundary once; a
         // second refusal means the branch is churning — hold this size and let the
         // next threshold hit (or prompt) try again.
-        result = await session.prepareBgCompaction(this.BGC_KEEP_FRACTION, signal);
+        result = await session.prepareBgCompaction(signal);
         if (!result || !this.applyBgcResult(session, result)) {
           this.bgcNoopTokens.set(sid, session.lastContextTokens);
           this.failBgc(session, announced, 'the compaction boundary moved while the summary was generated');

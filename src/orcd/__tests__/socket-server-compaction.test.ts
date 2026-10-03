@@ -285,7 +285,7 @@ describe('OrcdServer background compaction', () => {
     const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     await server['maybeStartBgc'](session);
-    expect(prepSpy).toHaveBeenCalledWith(0.3, expect.any(Object), expect.any(Function));
+    expect(prepSpy).toHaveBeenCalledWith(expect.any(Object), expect.any(Function));
     expect(applySpy).toHaveBeenCalledWith(result);
   });
 
@@ -367,7 +367,7 @@ describe('OrcdServer background compaction', () => {
     const cb: SessionEventCallback = (m) => client.socket.write(JSON.stringify(m));
     client.subscriptions.set(session.id, cb);
     session.subscribe(cb);
-    vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async (_f, _s, onStart) => {
+    vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async (_signal, onStart) => {
       onStart?.();
       return { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 1, details: undefined } as never;
     });
@@ -389,7 +389,7 @@ describe('OrcdServer background compaction', () => {
     server['attachLifecycleHooks'](session);
     const emitted: string[] = [];
     session.subscribe((m) => emitted.push(JSON.stringify(m)));
-    vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async (_f, _s, onStart) => {
+    vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async (_signal, onStart) => {
       onStart?.();
       throw new Error('Summarization failed: generation hit the token cap');
     });
@@ -447,12 +447,10 @@ describe('OrcdServer background compaction', () => {
     const inFlight = new Promise<typeof result>((res) => {
       release = res;
     });
-    const prepSpy = vi
-      .spyOn(session, 'prepareBgCompaction')
-      .mockImplementation(async (_f, _s, onStart) => {
-        onStart?.();
-        return inFlight;
-      });
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockImplementation(async (_signal, onStart) => {
+      onStart?.();
+      return inFlight;
+    });
     vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
@@ -524,7 +522,9 @@ describe('OrcdServer background compaction', () => {
 
     // The splice is the retry opportunity: a system-authored continue turn follows.
     await vi.waitFor(() =>
-      expect(sendSpy).toHaveBeenCalledWith(expect.stringContaining('ended with an error'), undefined,
+      expect(sendSpy).toHaveBeenCalledWith(
+        expect.stringContaining('ended with an error'),
+        undefined,
         expect.objectContaining({ kind: 'system' }),
       ),
     );
@@ -559,13 +559,16 @@ describe('OrcdServer background compaction', () => {
     const prepSpy = vi.spyOn(OrcdSession.prototype, 'prepareBgCompaction').mockImplementation(async () => inFlight);
     const spies: ReturnType<typeof vi.spyOn>[] = [prepSpy];
     try {
-      server['handleAction'](client as never, {
-        action: 'compact',
-        sessionId: 'bgc-hydrate',
-        cwd: '/tmp',
-        provider: 'test',
-        model: 'm',
-      } as CompactAction);
+      server['handleAction'](
+        client as never,
+        {
+          action: 'compact',
+          sessionId: 'bgc-hydrate',
+          cwd: '/tmp',
+          provider: 'test',
+          model: 'm',
+        } as CompactAction,
+      );
       await new Promise((r) => setTimeout(r, 0));
       const session = server.store.get('bgc-hydrate');
       expect(session).toBeDefined();

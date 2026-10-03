@@ -63,7 +63,7 @@ describe('pi-runtime BGC', () => {
     getBranch.mockReturnValue([{ type: 'message', id: 'e0', message: { role: 'user' } }]);
     findCutPoint.mockReturnValue({ firstKeptEntryIndex: 0, turnStartIndex: -1, isSplitTurn: false });
     const s = await makeSession();
-    const r = await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
+    const r = await s.prepareBgCompaction(100_000, new AbortController().signal);
     expect(r).toBeNull();
     expect(generateSummary).not.toHaveBeenCalled();
   });
@@ -76,9 +76,9 @@ describe('pi-runtime BGC', () => {
     findCutPoint.mockReturnValue({ firstKeptEntryIndex: 1, turnStartIndex: -1, isSplitTurn: false });
     generateSummary.mockResolvedValue('S');
     const s = await makeSession();
-    const r = await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
+    const r = await s.prepareBgCompaction(100_000, new AbortController().signal);
     expect(r).toEqual({ summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 100_000, details: undefined });
-    expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 50_000);
+    expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 20_000);
     expect(generateSummary.mock.calls[0][0]).toEqual([{ role: 'user', content: 'old' }]);
   });
 
@@ -94,11 +94,11 @@ describe('pi-runtime BGC', () => {
     findCutPoint.mockReturnValue({ firstKeptEntryIndex: 4, turnStartIndex: -1, isSplitTurn: false });
     generateSummary.mockResolvedValue('S');
     const s = await makeSession();
-    const r = await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
+    const r = await s.prepareBgCompaction(100_000, new AbortController().signal);
     // Regression: the cut must start at the previous compaction's boundary. Starting at 0
     // re-feeds already-summarized messages ('ancient'), which overflows the summarizer
     // window and makes every BGC attempt fail.
-    expect(findCutPoint).toHaveBeenCalledWith(entries, 2, 5, 50_000);
+    expect(findCutPoint).toHaveBeenCalledWith(entries, 2, 5, 20_000);
     expect(generateSummary.mock.calls[0][0]).toEqual([
       { role: 'user', content: 'kept' },
       { role: 'user', content: 'old half' },
@@ -109,18 +109,24 @@ describe('pi-runtime BGC', () => {
     expect(r?.firstKeptEntryId).toBe('e3');
   });
 
-  it('falls back to default keepRecentTokens when currentTokens is 0 (cold session)', async () => {
-    getBranch.mockReturnValue([
-      { type: 'message', id: 'e0', message: { role: 'user', content: 'old' } },
-      { type: 'message', id: 'e1', message: { role: 'assistant', content: 'keep' } },
-    ]);
-    findCutPoint.mockReturnValue({ firstKeptEntryIndex: 1, turnStartIndex: -1, isSplitTurn: false });
-    generateSummary.mockResolvedValue('S');
-    const s = await makeSession();
-    await s.prepareBgCompaction(0.5, 0, new AbortController().signal);
-    expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 20_000); // DEFAULT_COMPACTION_SETTINGS.keepRecentTokens
+  it('keeps the standard fixed tail whatever the live context size is', async () => {
+    for (const tokens of [0, 100_000, 800_000]) {
+      findCutPoint.mockReset();
+      generateSummary.mockReset();
+      getBranch.mockReturnValue([
+        { type: 'message', id: 'e0', message: { role: 'user', content: 'old' } },
+        { type: 'message', id: 'e1', message: { role: 'assistant', content: 'keep' } },
+      ]);
+      findCutPoint.mockReturnValue({ firstKeptEntryIndex: 1, turnStartIndex: -1, isSplitTurn: false });
+      generateSummary.mockResolvedValue('S');
+      const s = await makeSession();
+      await s.prepareBgCompaction(tokens, new AbortController().signal);
+      // 20,000 tokens, the same tail Pi's own compactor keeps — never a fraction of the
+      // live context, which would leave 240k tokens behind on a large session.
+      expect(findCutPoint).toHaveBeenCalledWith(expect.anything(), 0, 2, 20_000);
+    }
     // No maxTokens on the model -> pi's default reserve, and therefore pi's 13,107-token cap.
-    expect(generateSummary.mock.calls[0][2]).toBe(16_384);
+    expect(generateSummary.mock.calls.at(-1)?.[2]).toBe(16_384);
   });
 
   it('gives the summarizer the model output budget instead of pi default reserve', async () => {
@@ -134,7 +140,7 @@ describe('pi-runtime BGC', () => {
     findCutPoint.mockReturnValue({ firstKeptEntryIndex: 1, turnStartIndex: -1, isSplitTurn: false });
     generateSummary.mockResolvedValue('S');
     const s = await makeSession();
-    await s.prepareBgCompaction(0.5, 100_000, new AbortController().signal);
+    await s.prepareBgCompaction(100_000, new AbortController().signal);
     // Pi caps the reply at floor(0.8 * reserveTokens), so 80,000 makes the cap the model's 64,000.
     expect(generateSummary.mock.calls[0][2]).toBe(80_000);
     // And the summary is given a hard ceiling: the pass otherwise grows until it hits the cap.
