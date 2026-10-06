@@ -28,6 +28,10 @@ export interface OrcdConfig {
   defaultModel: string;
   defaultThinkingLevel?: string;
   defaultCwd?: string;
+  /** User whose preference file sessions without a human author get (an email). */
+  defaultUser?: string;
+  /** Directory holding one preference file per user (<email>.md). */
+  preferencesDir?: string;
   ringBufferSize: number;
   /** Runs the scheduled maintainer jobs on this node. See OrchestrelConfig.maintainers. */
   maintainers: boolean;
@@ -76,6 +80,8 @@ function toOrcdShape(cfg: OrchestrelConfig): OrcdConfig {
     defaultModel: cfg.defaultModel,
     ...(cfg.defaultThinkingLevel ? { defaultThinkingLevel: cfg.defaultThinkingLevel } : {}),
     defaultCwd: cfg.defaultCwd,
+    ...(cfg.defaultUser ? { defaultUser: cfg.defaultUser } : {}),
+    ...(cfg.memory?.preferences?.dir ? { preferencesDir: cfg.memory.preferences.dir } : {}),
     ringBufferSize: cfg.ringBufferSize,
     maintainers: cfg.maintainers ?? false,
     providers,

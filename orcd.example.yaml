@@ -16,6 +16,8 @@ defaultModel: sonnet
 defaultThinkingLevel: high # optional (off|low|medium|high|adaptive); used when a project sets "Default"
 defaultCwd: ~/Code # where new cards default their working directory
 ringBufferSize: 5000 # per-session event buffer; size to cover the max expected BE↔node outage
+# defaultUser: someone@example.com # whose preference file (data/preferences/<email>.md) sessions
+# without a human author get (auto-start, sleep wake, warm); human sessions use the acting user's
 
 # Scheduled maintainer jobs, owned by orcd: memory daily 02:00, memory merge weekly
 # Sunday 03:00, preferences daily 00:00. They write one database, so exactly ONE node
@@ -143,9 +145,7 @@ memory:
       apiUrl: https://memory.trackable.io
       apiKey: ${TRACKABLE_MEMORY_API_KEY}
       project: trackable
-  preferences: # canonical per-user preference memories (preference maintainer); omit to disable
-    apiUrl: https://memory.trackable.io
-    apiKey: ${TRACKABLE_MEMORY_API_KEY}
-    project: preferences
+  preferences: # per-user preference files (preference maintainer); omit to disable
+    # dir: data/preferences # one file per user: <dir>/<email>.md
     stalenessDays: 30 # drop a preference not re-observed within this many days
-    maxTokens: 2000 # hard size budget for the canonical body (enforced post-run)
+    maxTokens: 2000 # hard size budget for the file body (enforced post-run)

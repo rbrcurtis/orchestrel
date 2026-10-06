@@ -1,6 +1,7 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
 import { randomUUID } from 'node:crypto';
 import { TranscriptSync } from './transcript-sync';
+import { prefsSummarySection } from './preferences';
 import type { ReplayDecision, TranscriptCursor, TranscriptEvent, TranscriptState } from '../shared/transcript-sync';
 import {
   DEFAULT_COMPACTION_SETTINGS,
@@ -55,6 +56,8 @@ export interface CreatePiRuntimeSessionOpts {
   provider?: RuntimeProvider;
   /** All orcd providers, so a live setModel can register the target provider in this session's registry. */
   providers?: Record<string, RuntimeProvider>;
+  /** The acting user's preference file body, re-appended to every BGC summary. */
+  prefs?: string;
 }
 
 export interface PiRuntimeSession {
@@ -454,7 +457,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       const apiKey = 'apiKey' in auth ? (auth as { apiKey?: string }).apiKey : undefined;
       const headers = 'headers' in auth ? (auth as { headers?: Record<string, string> }).headers : undefined;
       const agent = (session as unknown as { agent: { streamFn?: unknown } }).agent;
-      const summary = await generateSummary(
+      const base = await generateSummary(
         toSummarize as never,
         activeModel,
         summaryReserveTokens(activeModel),
@@ -472,6 +475,10 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         'off',
         agent.streamFn as never,
       );
+      // Re-embed the user's preferences: once the first prompt scrolls past the
+      // kept tail the session would forget them. Riding the summary also carries
+      // them into every later compaction via previousSummary.
+      const summary = opts.prefs ? `${base}${prefsSummarySection(opts.prefs)}` : base;
       return { summary, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
     },
 

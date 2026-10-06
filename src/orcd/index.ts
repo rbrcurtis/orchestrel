@@ -6,7 +6,14 @@ async function main() {
   console.log('[orcd] starting...');
   const config = await loadOrcdConfig();
   const server = new OrcdServer(
-    { listen: config.listen, authToken: config.authToken, name: config.name, ringBufferSize: config.ringBufferSize },
+    {
+      listen: config.listen,
+      authToken: config.authToken,
+      name: config.name,
+      ringBufferSize: config.ringBufferSize,
+      ...(config.defaultUser ? { defaultUser: config.defaultUser } : {}),
+      ...(config.preferencesDir ? { preferencesDir: config.preferencesDir } : {}),
+    },
     config.providers,
     {
       provider: config.defaultProvider,

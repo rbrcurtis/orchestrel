@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from 'net';
-import { SYSTEM_AUTHOR, type CapabilitiesMessage, type OrcdAction, type OrcdMessage } from '../shared/orcd-protocol';
+import { SYSTEM_AUTHOR, type CapabilitiesMessage, type OrcdAction, type OrcdAuthor, type OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
 import type { ProviderConfig } from './config';
 import { fileStager } from './file-staging';
@@ -9,10 +9,15 @@ export interface OrcdListenConfig {
   authToken: string;
   name: string;
   ringBufferSize?: number;
+  /** User whose preference file sessions without a human author get. */
+  defaultUser?: string;
+  /** Directory holding one preference file per user (<email>.md). */
+  preferencesDir?: string;
 }
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
 import { SleepScheduler } from './sleep-scheduler';
+import { DEFAULT_PREFERENCES_DIR, loadUserPrefs, resolvePrefEmail } from './preferences';
 
 interface ClientState {
   socket: Socket;
@@ -295,6 +300,13 @@ export class OrcdServer {
     this.send(client, this.buildCapabilities(action.requestId));
   }
 
+  /** The acting user's preference file body, or undefined to inject nothing.
+   * Sessions without a human author (auto-start, sleep wake) get the node default. */
+  private prefsFor(author?: OrcdAuthor): string | undefined {
+    const email = resolvePrefEmail(author, this.opts.defaultUser);
+    return email ? loadUserPrefs(email, this.opts.preferencesDir ?? DEFAULT_PREFERENCES_DIR) : undefined;
+  }
+
   private handleCreate(client: ClientState, action: OrcdAction & { action: 'create' }): void {
     const existing = action.sessionId ? this.store.get(action.sessionId) : undefined;
     if (existing) {
@@ -364,6 +376,7 @@ export class OrcdServer {
       summarizeThreshold: action.summarizeThreshold,
       bufferSize: this.opts.ringBufferSize,
       onFork: (oldId, newId) => this.store.alias(oldId, newId),
+      prefs: this.prefsFor(action.author),
     });
 
     this.store.add(session);
@@ -409,6 +422,8 @@ export class OrcdServer {
       return;
     }
 
+    // Warm carries no author (scheduled jobs, no human in front of it) — the
+    // node default's prefs, so a resumed session re-arms with the same prefs.
     const session = new OrcdSession({
       cwd: action.cwd,
       model: action.model,
@@ -419,6 +434,7 @@ export class OrcdServer {
       contextWindow: action.contextWindow,
       summarizeThreshold: action.summarizeThreshold,
       onFork: (oldId, newId) => this.store.alias(oldId, newId),
+      prefs: this.prefsFor(undefined),
     });
 
     this.store.add(session);
@@ -589,6 +605,7 @@ export class OrcdServer {
         contextWindow: action.contextWindow,
         summarizeThreshold: action.summarizeThreshold,
         bufferSize: this.opts.ringBufferSize,
+        prefs: this.prefsFor(undefined),
       });
       session.state = 'completed';
       this.store.add(session);
