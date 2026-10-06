@@ -75,3 +75,22 @@ export async function loadMemory(server: MemoryServer, id: string): Promise<Memo
   const data = await request<{ data: unknown[] }>(server, 'GET', `/api/v1/memories/load?${qs}`);
   return (data.data[0] as MemoryHit | undefined) ?? null;
 }
+
+/** Pluggable memory backend for the consolidation loop. The knowledge
+ * maintainer uses a memory server; the preference maintainer backs the same
+ * ops with one local file per user. */
+export interface MemoryOps {
+  search(query: string, limit?: number): Promise<MemoryHit[]>;
+  read(id: string): Promise<MemoryHit | null>;
+  store(params: { title: string; text: string; tags?: string[] }): Promise<{ id: string }>;
+  update(params: { id: string; title?: string; text: string }): Promise<{ success: boolean }>;
+}
+
+export function serverOps(server: MemoryServer): MemoryOps {
+  return {
+    search: (query, limit) => searchMemories(server, query, limit),
+    read: (id) => loadMemory(server, id),
+    store: (params) => storeMemory(server, params),
+    update: (params) => updateMemory(server, params),
+  };
+}

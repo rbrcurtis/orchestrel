@@ -8,15 +8,14 @@ import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-cod
 import type { ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
 import type { OrchestrelConfig, ProviderDef } from '../../shared/config';
 import { SECRETS_PATTERN, type Excerpt } from './excerpt';
-import { loadMemory, searchMemories, storeMemory, updateMemory } from './memory-api';
-import type { MemoryServer, StagedOp } from './memory-api';
+import type { MemoryOps, StagedOp } from './memory-api';
 import { SYSTEM_PROMPT } from './prompts';
 
 const ANONYMOUS_API_KEY = 'anonymous';
 
 export interface ConsolidateOpts {
   excerpt: Excerpt;
-  server: MemoryServer;
+  ops: MemoryOps;
   runtime: ModelRuntime;
   model: Model<Api>;
   maxTurns: number;
@@ -113,7 +112,7 @@ const tools: Tool[] = [
 ];
 
 export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
-  const { excerpt, server, runtime, model, maxTurns, mode } = opts;
+  const { excerpt, ops: mem, runtime, model, maxTurns, mode } = opts;
   const ops: StagedOp[] = [];
   const readIds = new Set<string>();
   const messages: Message[] = [
@@ -141,7 +140,7 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
     }
     if (calls.length === 0) break;
     for (const call of calls) {
-      const result = await runTool(call, server, mode, ops, readIds);
+      const result = await runTool(call, mem, mode, ops, readIds);
       messages.push(result);
     }
   }
@@ -151,7 +150,7 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
 
 async function runTool(
   call: ToolCall,
-  server: MemoryServer,
+  mem: MemoryOps,
   mode: 'stage' | 'write',
   ops: StagedOp[],
   readIds: Set<string>,
@@ -161,12 +160,12 @@ async function runTool(
     const text = (s: string): string => (SECRETS_PATTERN.test(s) ? '[redacted]' : s);
     switch (call.name) {
       case 'search_memory': {
-        const hits = await searchMemories(server, String(args.query), Number(args.limit ?? 10));
+        const hits = await mem.search(String(args.query), Number(args.limit ?? 10));
         return toolResult(call, JSON.stringify(hits.map((h) => ({ id: h.id, title: h.title, score: h.score }))));
       }
       case 'read_memory': {
         const id = String(args.id);
-        const existing = await loadMemory(server, id);
+        const existing = await mem.read(id);
         if (!existing) return toolResult(call, `memory ${id} not found`, true);
         readIds.add(id);
         return toolResult(call, `${existing.title}\n\n${existing.text}`);
@@ -181,7 +180,7 @@ async function runTool(
           ...(Array.isArray(args.tags) ? { tags: args.tags.map(String) } : {}),
         });
         if (mode === 'write') {
-          const { id } = await storeMemory(server, { title, text: body });
+          const { id } = await mem.store({ title, text: body });
           return toolResult(call, JSON.stringify({ id }));
         }
         return toolResult(call, 'recorded (stage mode)');
@@ -198,7 +197,7 @@ async function runTool(
         const body = text(String(args.text));
         ops.push({ op: 'update', id, text: body, ...(args.title ? { title: String(args.title) } : {}) });
         if (mode === 'write') {
-          const { success } = await updateMemory(server, {
+          const { success } = await mem.update({
             id,
             text: body,
             ...(args.title ? { title: String(args.title) } : {}),

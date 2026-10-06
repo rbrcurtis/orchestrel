@@ -126,34 +126,46 @@ memory:
       apiKey: "k"
       project: trackable
   preferences:
-    apiUrl: https://memory.trackable.io
-    apiKey: "\${TRACKABLE_MEMORY_API_KEY}"
-    project: preferences
+    dir: data/preferences
     stalenessDays: 14
     maxTokens: 2000
 `;
 
-  it('parses the canonical preferences project and resolves its env apiKey', () => {
-    const cfg = parseConfig(WITH_PREFS, { TRACKABLE_MEMORY_API_KEY: 'pref-key' });
+  it('parses the per-user preference file config', () => {
+    const cfg = parseConfig(WITH_PREFS, {});
     expect(cfg.memory?.preferences).toEqual({
-      apiUrl: 'https://memory.trackable.io',
-      apiKey: 'pref-key',
-      project: 'preferences',
+      dir: 'data/preferences',
       stalenessDays: 14,
       maxTokens: 2000,
     });
   });
 
-  it('omits stalenessDays when absent so the maintainer default applies', () => {
-    const cfg = parseConfig(WITH_PREFS.replace('    stalenessDays: 14\n', ''), { TRACKABLE_MEMORY_API_KEY: 'k' });
+  it('omits dir and stalenessDays when absent so the maintainer defaults apply', () => {
+    const cfg = parseConfig(
+      WITH_PREFS.replace('    dir: data/preferences\n', '').replace('    stalenessDays: 14\n', ''),
+      {},
+    );
+    expect(cfg.memory?.preferences?.dir).toBeUndefined();
     expect(cfg.memory?.preferences?.stalenessDays).toBeUndefined();
   });
 
-  it('throws when the preferences entry lacks apiUrl or project', () => {
-    const bad = WITH_PREFS.replace(
-      '    apiUrl: https://memory.trackable.io\n    apiKey: "${TRACKABLE_MEMORY_API_KEY}"\n    project: preferences\n',
-      '    apiKey: "k"\n',
+  it('omits preferences when the section is absent so preference learning is disabled', () => {
+    const cfg = parseConfig(WITH_PREFS.replace(/  preferences:\n(?:    .+\n)*/, ''), {});
+    expect(cfg.memory?.preferences).toBeUndefined();
+  });
+});
+
+describe('defaultUser config', () => {
+  it('parses defaultUser as the fallback preference-file user', () => {
+    const cfg = parseConfig(
+      `providers:\n  max:\n    models:\n      a: { modelID: m }\ndefaultUser: wednesday@gmail.com\n`,
+      {},
     );
-    expect(() => parseConfig(bad, {})).toThrow('memory.preferences');
+    expect(cfg.defaultUser).toBe('wednesday@gmail.com');
+  });
+
+  it('leaves defaultUser undefined when unset', () => {
+    const cfg = parseConfig(`providers:\n  max:\n    models:\n      a: { modelID: m }\n`, {});
+    expect(cfg.defaultUser).toBeUndefined();
   });
 });

@@ -9,6 +9,7 @@ import { finishRun, getDb, insertRun, recentActiveRun } from './db';
 import { appendStaging, readStagingFile } from './staging';
 import type { StagingEntry } from './staging';
 import type { MemoryServer, StagedOp } from './memory-api';
+import { serverOps } from './memory-api';
 import { buildMergePrompt } from './prompts';
 
 export interface MergeSummary {
@@ -94,7 +95,7 @@ export async function runMerge(cfg: OrchestrelConfig): Promise<MergeSummary | nu
       );
       const ops = await consolidate({
         excerpt: { sessionId: `merge-${group.key}`, cwd: '', startedAt: '', text: prompt, tokenEstimate: 0 },
-        server,
+        ops: serverOps(server),
         runtime,
         model,
         maxTurns: memory.maxTurns,

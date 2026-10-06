@@ -4,6 +4,7 @@
  * consistently-failing file is not retried forever. */
 import type { OrchestrelConfig } from '../../shared/config';
 import { buildModel, consolidate } from './consolidate';
+import { serverOps } from './memory-api';
 import { buildExcerpt } from './excerpt';
 import { finishRun, getDb, insertRun, recentActiveRun, upsertWatermark } from './db';
 import { appendStaging } from './staging';
@@ -84,7 +85,7 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
           const excerpt = buildExcerpt(file.path, memory.excerptTokens);
           const ops = await consolidate({
             excerpt,
-            server,
+            ops: serverOps(server),
             runtime,
             model,
             maxTurns: memory.maxTurns,

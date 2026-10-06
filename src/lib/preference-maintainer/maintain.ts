@@ -1,9 +1,10 @@
 /* Preference maintainer: separate from the knowledge memory maintainer. Where
  * the knowledge maintainer STAGES knowledge ops as JSON for review, this one
- * WRITES to one canonical preference memory per user (title `Preferences:
- * <email>`) in the shared preference project. It runs the same tool loop as the
- * knowledge consolidator, but with the preference prompt and the node's default
- * provider/model/thinking level from orcd.yaml.
+ * WRITES to one local preference file per user (data/preferences/<email>.md —
+ * the email is the id everywhere, so a user's prefs apply across every project
+ * and memory server). It runs the same tool loop as the knowledge consolidator,
+ * but with the preference prompt, a file-backed MemoryOps backend, and the
+ * node's default provider/model/thinking level from orcd.yaml.
  *
  * Every run also dumps a local before/after trail under TRAIL_DIR so a human can
  * review what changed without reading the memory server. Errors in one user
@@ -12,15 +13,15 @@
  * maintainer). */
 import type { Api, Model, ThinkingLevel } from '@earendil-works/pi-ai';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
-import type Database from 'better-sqlite3';
-import type { MemoryPreferencesConfig, OrchestrelConfig } from '../../shared/config';
+import type { OrchestrelConfig } from '../../shared/config';
 import { buildModel, consolidate } from '../memory-maintainer/consolidate';
 import { finishRun, getDb, insertRun, recentActiveRun, upsertWatermark } from '../memory-maintainer/db';
 import { buildExcerpt, listHumanAuthors } from '../memory-maintainer/excerpt';
-import { updateMemory, type MemoryHit, type MemoryServer } from '../memory-maintainer/memory-api';
+import type { MemoryHit, MemoryOps } from '../memory-maintainer/memory-api';
 import { sweepSessions, type SessionFile } from '../memory-maintainer/sweep';
 import { sendTelegramAlert } from '../memory-maintainer/telegram';
 import { findCanonical } from './canonical';
+import { DEFAULT_PREF_DIR, fileOps } from './pref-files';
 import { buildPreferencePrompt, canonicalTitle } from './prompt';
 import { TRAIL_DIR, writeTrail } from './trail';
 
@@ -56,7 +57,7 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
 
   const started = Date.now();
   const prefCfg = memory.preferences;
-  const server = resolvePreferenceServer(db, prefCfg);
+  const prefDir = prefCfg.dir ?? DEFAULT_PREF_DIR;
   const stalenessDays = prefCfg.stalenessDays ?? 30;
   const maxTokens = prefCfg.maxTokens ?? 2000;
   const today = new Date().toISOString().slice(0, 10);
@@ -93,7 +94,8 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
             continue;
           }
           const title = canonicalTitle(email);
-          const before = await findCanonical(server, title);
+          const memOps = fileOps(email, prefDir);
+          const before = await findCanonical(memOps, title);
           const ops = await consolidate({
             excerpt: {
               sessionId: `user-${userId}`,
@@ -102,7 +104,7 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
               text,
               tokenEstimate: Math.ceil(text.length / 4),
             },
-            server,
+            ops: memOps,
             runtime,
             model,
             maxTurns: memory.maxTurns,
@@ -110,10 +112,10 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
             systemPrompt: buildPreferencePrompt({ email, title, today, stalenessDays, maxTokens, existing: before }),
             ...(reasoning ? { reasoning } : {}),
           });
-          let after = await findCanonical(server, title);
+          let after = await findCanonical(memOps, title);
           let budget: string | undefined;
           if (after && estTokens(after.text) > maxTokens) {
-            const enforced = await enforceBudget(server, runtime, model, reasoning, after, maxTokens);
+            const enforced = await enforceBudget(memOps, runtime, model, reasoning, after, maxTokens);
             if (enforced.note) {
               after = enforced.hit;
               budget = enforced.note;
@@ -157,25 +159,6 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
     finishRun(db, runId, 'failed', JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
     throw err;
   }
-}
-
-/**
- * Resolve the canonical preference memory server. Project rows still carry the
- * legacy per-project memory url/key, while the service env does not carry
- * TRACKABLE_MEMORY_API_KEY, so a row with a key wins over the orcd.yaml
- * default. The project slug stays the preferences slug from config.
- */
-export function resolvePreferenceServer(db: Database.Database, prefs: MemoryPreferencesConfig): MemoryServer {
-  const row = db
-    .prepare(
-      `SELECT memory_base_url, memory_api_key FROM projects
-       WHERE memory_api_key IS NOT NULL AND memory_api_key <> '' ORDER BY id LIMIT 1`,
-    )
-    .get() as { memory_base_url: string | null; memory_api_key: string } | undefined;
-  if (row?.memory_api_key) {
-    return { apiUrl: row.memory_base_url || prefs.apiUrl, apiKey: row.memory_api_key, project: prefs.project };
-  }
-  return { apiUrl: prefs.apiUrl, apiKey: prefs.apiKey, project: prefs.project };
 }
 
 /** Rough token estimate (4 chars/token), good enough for budgeting. */
@@ -240,7 +223,7 @@ async function condenseBody(
  * when the body changed.
  */
 async function enforceBudget(
-  server: MemoryServer,
+  ops: MemoryOps,
   runtime: ModelRuntime,
   model: Model<Api>,
   reasoning: ThinkingLevel | undefined,
@@ -255,12 +238,12 @@ async function enforceBudget(
     console.error('[preference-maintainer] condense failed, falling back to prune:', err);
   }
   if (candidate) {
-    await updateMemory(server, { id: hit.id, text: candidate });
+    await ops.update({ id: hit.id, text: candidate });
     return { hit: { ...hit, text: candidate }, note: `budget: condensed to ${estTokens(candidate)} tokens` };
   }
   const pruned = pruneToBudget(hit.text, maxTokens);
   if (pruned !== hit.text && estTokens(pruned) <= maxTokens) {
-    await updateMemory(server, { id: hit.id, text: pruned });
+    await ops.update({ id: hit.id, text: pruned });
     return { hit: { ...hit, text: pruned }, note: `budget: pruned to ${estTokens(pruned)} tokens` };
   }
   if (estTokens(hit.text) > maxTokens) {

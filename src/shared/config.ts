@@ -40,18 +40,17 @@ export interface MemoryProjectConfig {
 }
 
 /**
- * Canonical per-user preference project. Preference memories are personal and
- * cross-project: one project holds every user's canonical preference memory,
- * distinguished by title (`Preferences: <email>`). Absent = preference
- * learning is disabled.
+ * Per-user preference files. Preferences are personal and cross-project:
+ * the maintainer writes one file per user (data/preferences/<email>.md by
+ * default) so a user's preferences apply to every project on the node.
+ * Absent = preference learning is disabled.
  */
 export interface MemoryPreferencesConfig {
-  apiUrl: string;
-  apiKey: string;
-  project: string;
+  /** Directory holding one preference file per user. Defaults to data/preferences. */
+  dir?: string;
   /** Days after which a preference not re-observed is dropped by the updater. Defaults to 30. */
   stalenessDays?: number;
-  /** Hard token budget for the canonical body. Enforced post-run. Defaults to 2000. */
+  /** Hard token budget for the file body. Enforced post-run. Defaults to 2000. */
   maxTokens?: number;
 }
 
@@ -78,6 +77,9 @@ export interface OrchestrelConfig {
   defaultModel: string;
   defaultThinkingLevel?: string;
   defaultCwd?: string;
+  /** User whose preference file sessions without a human author (auto-start, sleep
+   * wake, warm) get. An email, matching data/preferences/<email>.md. */
+  defaultUser?: string;
   ringBufferSize: number;
   providers: Record<string, ProviderDef>;
   memory?: MemoryConfig;
@@ -197,13 +199,8 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
     const rawPrefs = m.preferences;
     if (rawPrefs && typeof rawPrefs === 'object') {
       const p = rawPrefs as Record<string, unknown>;
-      if (!p.apiUrl || !p.project) {
-        throw new Error('config: memory.preferences requires apiUrl and project');
-      }
       preferences = {
-        apiUrl: resolveEnvVars(String(p.apiUrl), env),
-        apiKey: resolveEnvVars(String(p.apiKey ?? ''), env),
-        project: resolveEnvVars(String(p.project), env),
+        ...(p.dir != null ? { dir: String(p.dir) } : {}),
         ...(p.stalenessDays != null ? { stalenessDays: Number(p.stalenessDays) } : {}),
         ...(p.maxTokens != null ? { maxTokens: Number(p.maxTokens) } : {}),
       };
@@ -251,6 +248,7 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
     defaultModel: String(raw.defaultModel ?? 'claude-sonnet-4-6'),
     defaultThinkingLevel: raw.defaultThinkingLevel != null ? String(raw.defaultThinkingLevel) : undefined,
     defaultCwd: raw.defaultCwd != null ? String(raw.defaultCwd) : undefined,
+    defaultUser: raw.defaultUser != null ? String(raw.defaultUser) : undefined,
     ringBufferSize: Number(raw.ringBufferSize ?? 5000),
     providers,
     ...(memory ? { memory } : {}),

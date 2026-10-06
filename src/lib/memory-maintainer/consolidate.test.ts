@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Api, AssistantMessage, Model, ToolCall } from '@earendil-works/pi-ai';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { MemoryServer } from './memory-api';
+import { serverOps } from './memory-api';
 import { consolidate } from './consolidate';
 
 const SERVER: MemoryServer = { apiUrl: 'http://mem.test', apiKey: 'k', project: 'trackable' };
@@ -74,7 +75,7 @@ describe('consolidate', () => {
 
     const ops = await consolidate({
       excerpt: { sessionId: 's1', cwd: '/x', startedAt: '', text: 'session text', tokenEstimate: 5 },
-      server: SERVER,
+      ops: serverOps(SERVER),
       runtime,
       model: MODEL,
       maxTurns: 10,
@@ -103,7 +104,7 @@ describe('consolidate', () => {
     );
     const ops = await consolidate({
       excerpt: { sessionId: 's1', cwd: '/x', startedAt: '', text: 't', tokenEstimate: 1 },
-      server: SERVER,
+      ops: serverOps(SERVER),
       runtime: { completeSimple: complete } as unknown as ModelRuntime,
       model: MODEL,
       maxTurns: 10,
@@ -118,7 +119,7 @@ describe('consolidate', () => {
     await expect(
       consolidate({
         excerpt: { sessionId: 's1', cwd: '/x', startedAt: '', text: 't', tokenEstimate: 1 },
-        server: SERVER,
+        ops: serverOps(SERVER),
         runtime,
         model: MODEL,
         maxTurns: 10,
