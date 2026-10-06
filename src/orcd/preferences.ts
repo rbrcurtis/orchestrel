@@ -1,10 +1,11 @@
 /* User preference injection. The backend already tags every session start with
  * who acted (OrcdAuthor); orcd resolves that user's local preference file
  * (data/preferences/<email>.md, maintained by the preference maintainer) and
- * injects it into the first prompt, then re-embeds it in each background
- * compaction summary so it survives the 20k-tail cut. Sessions without a human
- * author (auto-start, sleep wake, warm rehydration) fall back to the node's
- * defaultUser from orcd.yaml. */
+ * hands it to Pi as an appended system-prompt section. The system prompt is
+ * carried on every request and survives compaction, so a new session and every
+ * later turn — including after BGC — see the same working preferences. Sessions
+ * without a human author (auto-start, sleep wake, warm rehydration) fall back to
+ * the node's defaultUser from orcd.yaml. */
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { OrcdAuthor } from '../shared/orcd-protocol';
@@ -33,14 +34,9 @@ export function loadUserPrefs(email: string, dir: string): string | undefined {
   return text.trim() || undefined;
 }
 
-/** Prepend the user's preferences to the session's first prompt. */
-export function withUserPrefs(prompt: string, prefs: string): string {
-  return `User preferences for this person (apply for the entire session):\n${prefs}\n\n${prompt}`;
-}
-
-/** Re-append preferences to a BGC summary: once the first prompt scrolls past
- * the 20k tail the session would otherwise forget them. Riding the summary also
- * carries them into every subsequent compaction via previousSummary. */
-export function prefsSummarySection(prefs: string): string {
-  return `\n\n## User preferences (standing; keep applying these)\n${prefs}`;
+/** The system-prompt section carrying the user's preferences. Appended to Pi's
+ * base prompt, never to a user message: a preference is a standing instruction
+ * for the whole session, not turn content. */
+export function prefsSystemBlock(prefs: string): string {
+  return `## User preferences (persistent; apply for the entire session)\n${prefs}`;
 }

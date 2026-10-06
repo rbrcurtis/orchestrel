@@ -1,7 +1,7 @@
 /* oxlint-disable orchestrel/log-before-early-return -- pure SDK boundary wrapper returns mapped values/no-op fallbacks without session context */
 import { randomUUID } from 'node:crypto';
 import { TranscriptSync } from './transcript-sync';
-import { prefsSummarySection } from './preferences';
+import { prefsSystemBlock } from './preferences';
 import type { ReplayDecision, TranscriptCursor, TranscriptEvent, TranscriptState } from '../shared/transcript-sync';
 import {
   DEFAULT_COMPACTION_SETTINGS,
@@ -309,10 +309,16 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     },
   );
   const eventBus = createEventBus();
+  const prefsBlock = opts.prefs ? prefsSystemBlock(opts.prefs) : undefined;
   const resourceLoader = new DefaultResourceLoader({
     cwd: opts.cwd,
     agentDir,
     eventBus,
+    // The acting user's preferences ride the system prompt: present on every
+    // request of this session, so they survive compaction and never pollute the
+    // message transcript the way a prepended user prompt would. The override (not
+    // appendSystemPrompt) is used because that option's entries are file paths.
+    ...(prefsBlock ? { appendSystemPromptOverride: (base: string[]) => [...base, prefsBlock] } : {}),
     extensionFactories: [
       createOrchestrelSubagentPolicyExtension(policy, {
         onDecision: ({ agentType, decision }) => {
@@ -475,11 +481,7 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         'off',
         agent.streamFn as never,
       );
-      // Re-embed the user's preferences: once the first prompt scrolls past the
-      // kept tail the session would forget them. Riding the summary also carries
-      // them into every later compaction via previousSummary.
-      const summary = opts.prefs ? `${base}${prefsSummarySection(opts.prefs)}` : base;
-      return { summary, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
+      return { summary: base, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
     },
 
     applyBgCompaction(result) {

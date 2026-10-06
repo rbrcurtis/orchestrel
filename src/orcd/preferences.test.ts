@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { loadUserPrefs, prefsSummarySection, resolvePrefEmail, withUserPrefs } from './preferences';
+import { loadUserPrefs, prefsSystemBlock, resolvePrefEmail } from './preferences';
 
 const HUMAN = { userId: 1, email: 'wednesday@gmail.com', kind: 'human' as const };
 const SYSTEM = { userId: 0, email: 'system', kind: 'system' as const };
@@ -35,18 +35,14 @@ describe('loadUserPrefs', () => {
   });
 });
 
-describe('injection blocks', () => {
+describe('prefsSystemBlock', () => {
   const PREFS = 'terse answers (seen: 2026-10-06)';
 
-  it('prepends the prefs before the prompt', () => {
-    const out = withUserPrefs('fix the bug', PREFS);
-    expect(out.startsWith('User preferences')).toBe(true);
-    expect(out.indexOf(PREFS)).toBeLessThan(out.lastIndexOf('fix the bug'));
-  });
-
-  it('appends a labeled section to a BGC summary', () => {
-    const out = `history...\n${prefsSummarySection(PREFS)}`;
-    expect(out).toContain('## User preferences');
-    expect(out.endsWith(PREFS)).toBe(true);
+  it('labels the prefs as a persistent system-prompt section', () => {
+    const block = prefsSystemBlock(PREFS);
+    expect(block.startsWith('## User preferences')).toBe(true);
+    expect(block).toContain(PREFS);
+    // The prefs are instruction-shaped, never message content.
+    expect(block).not.toContain('fix the bug');
   });
 });

@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 import { AsyncTaskTracker, extractSubagentCompletions, extractSubagentLaunches } from './async-task-tracker';
 import { getContextUsageFromPiEvent, mapPiEventToOrcdPayload, mapSubagentExecEvent } from './pi-events';
 import { createPiRuntimeSession, type PiRuntimeSession } from './pi-runtime';
-import { withUserPrefs } from './preferences';
 import { hasEnabledScheduledJobs } from '../shared/scheduled-jobs';
 import { RingBuffer } from './ring-buffer';
 import type { CompactionResult } from '@earendil-works/pi-coding-agent';
@@ -57,11 +56,9 @@ export class OrcdSession {
   private readonly beforeExitHooks: Array<() => Promise<void>> = [];
   private readonly asyncTaskPollMs: number;
   private readonly scheduledJobPollMs: number;
-  /** The acting user's preference file body, injected into the first prompt and
-   * re-embedded in each background compaction summary. */
+  /** The acting user's preference file body. Handed to Pi as an appended
+   * system-prompt section, so it holds for the whole session. */
   private readonly prefs: string | undefined;
-  /** Set once the prefs block has been injected into a prompt. */
-  private prefsInjected = false;
 
   private piSession: PiRuntimeSession | null = null;
   private disposePromise: Promise<void> | null = null;
@@ -111,7 +108,6 @@ export class OrcdSession {
     this.providerConfig = opts.providerConfig;
     this.providers = opts.providers;
     this.prefs = opts.prefs;
-    this.prefsInjected = !opts.prefs;
     this.buffer = new RingBuffer(opts.bufferSize ?? 1000);
     this.onFork = opts.onFork;
     this.asyncTaskPollMs = opts.asyncTaskPollMsForTesting ?? 1000;
@@ -416,21 +412,12 @@ export class OrcdSession {
       // would persist an empty user message and Anthropic rejects requests with
       // cache_control on empty text blocks, so resume without running a turn.
       if (opts.prompt.trim()) {
-        // First real turn: hand the model the acting user's preferences once. The
-        // block lives in the transcript so the model sees it in-context; BGC keeps
-        // it alive across compactions (pi-runtime re-appends it to each summary).
-        let prompt = opts.prompt;
-        if (this.prefs && !this.prefsInjected) {
-          prompt = withUserPrefs(prompt, this.prefs);
-          this.prefsInjected = true;
-          log('injected user preferences');
-        }
         const promptOpts = opts.resume
           ? { streamingBehavior: 'followUp' as const, author: opts.author }
           : opts.author
             ? { author: opts.author }
             : undefined;
-        await session.prompt(prompt, promptOpts);
+        await session.prompt(opts.prompt, promptOpts);
       } else {
         log('empty prompt; session resumed without running a turn');
       }
