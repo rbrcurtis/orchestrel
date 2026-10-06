@@ -26,7 +26,7 @@ function assistant(
       totalTokens: 2,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
-    stopReason: stop === 'stop' ? 'stop' : 'toolUse',
+    stopReason: stop as AssistantMessage['stopReason'],
     timestamp: 1,
   };
 }
@@ -111,5 +111,19 @@ describe('consolidate', () => {
     });
     expect(ops).toEqual([]);
     vi.unstubAllGlobals();
+  });
+
+  it('throws on a provider error (stopReason error, empty content) instead of recording zero ops', async () => {
+    const runtime = { completeSimple: vi.fn().mockResolvedValue(assistant([], 'error')) } as unknown as ModelRuntime;
+    await expect(
+      consolidate({
+        excerpt: { sessionId: 's1', cwd: '/x', startedAt: '', text: 't', tokenEstimate: 1 },
+        server: SERVER,
+        runtime,
+        model: MODEL,
+        maxTurns: 10,
+        mode: 'stage',
+      }),
+    ).rejects.toThrow('model error');
   });
 });

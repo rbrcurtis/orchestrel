@@ -132,6 +132,13 @@ export async function consolidate(opts: ConsolidateOpts): Promise<StagedOp[]> {
     );
     messages.push(msg);
     const calls = msg.content.filter((b): b is ToolCall => b.type === 'toolCall');
+    // A failing provider (dead upstream, HTTP 5xx) surfaces as stopReason 'error'
+    // with empty content — identical to "nothing to record" without this check,
+    // which would advance the watermark and lose the session with zero ops
+    // (the 2026-10-01 silent no-op run).
+    if (msg.stopReason === 'error' || (calls.length === 0 && msg.content.length === 0)) {
+      throw new Error(`model error: stopReason=${String(msg.stopReason)}, blocks=${msg.content.length}`);
+    }
     if (calls.length === 0) break;
     for (const call of calls) {
       const result = await runTool(call, server, mode, ops, readIds);
