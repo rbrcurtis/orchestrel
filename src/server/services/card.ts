@@ -286,16 +286,18 @@ class CardService {
 
   async pageCards(column: Column, cursor?: number, limit = PAGE_SIZE, visible?: number[] | 'all'): Promise<PageResult> {
     // Order matches the client's column sort so paged slices stay contiguous with
-    // what the UI renders: running is position ASC (manual drag order), every
-    // other section is updatedAt ASC (oldest-updated first). id is a tiebreaker
-    // so the total order is stable across calls — without it, cards sharing a
-    // sort key (e.g. bulk-archived at one timestamp) can reorder between
-    // queries, making the id cursor land at a different index and
-    // skip/duplicate a page.
+    // what the UI renders: running is position ASC (manual drag order), archive
+    // is updatedAt DESC (newest-updated first), every other section is updatedAt
+    // ASC (oldest-updated first). id is a tiebreaker so the total order is stable
+    // across calls — without it, cards sharing a sort key (e.g. bulk-archived at
+    // one timestamp) can reorder between queries, making the id cursor land at a
+    // different index and skip/duplicate a page.
     const order =
       column === 'running'
         ? { position: 'ASC' as const, id: 'ASC' as const }
-        : { updatedAt: 'ASC' as const, id: 'ASC' as const };
+        : column === 'archive'
+          ? { updatedAt: 'DESC' as const, id: 'DESC' as const }
+          : { updatedAt: 'ASC' as const, id: 'ASC' as const };
     const found = await Card.find({
       where: { column },
       order,

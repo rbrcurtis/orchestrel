@@ -37,11 +37,16 @@ export class CardStore {
 
   cardsByColumn(col: string): Card[] {
     const items = Array.from(this.cards.values()).filter((c) => c.column === col);
-    // Running keeps the manual position order (drag reorder); every other
-    // section orders by updatedAt ASC — oldest-updated first. Starred cards
-    // pin to the front of their section (stable sort).
+    // Running keeps the manual position order (drag reorder); archive orders
+    // by updatedAt DESC (newest-updated first); every other section orders by
+    // updatedAt ASC — oldest-updated first. Starred cards pin to the front of
+    // their section (stable sort).
     const base = (a: Card, b: Card) =>
-      col === 'running' ? a.position - b.position : a.updatedAt.localeCompare(b.updatedAt);
+      col === 'running'
+        ? a.position - b.position
+        : col === 'archive'
+          ? b.updatedAt.localeCompare(a.updatedAt)
+          : a.updatedAt.localeCompare(b.updatedAt);
     return items.sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0) || base(a, b));
   }
 
