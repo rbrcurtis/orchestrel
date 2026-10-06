@@ -1,9 +1,17 @@
 import { describe, it, afterEach } from 'vitest';
-import { createConnection } from 'net';
+import { createConnection, createServer } from 'net';
 import { OrcdServer } from '../socket-server';
 
-function freePort() {
-  return 7400 + Math.floor(Math.random() * 500);
+// Ask the kernel for a genuinely free port (a random draw can hit the live orcd).
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const { port } = s.address() as { port: number };
+      s.close(() => resolve(port));
+    });
+  });
 }
 
 describe('OrcdServer TCP listener', () => {
@@ -14,7 +22,7 @@ describe('OrcdServer TCP listener', () => {
   });
 
   it('listens on host:port and accepts a TCP connection', async () => {
-    const port = freePort();
+    const port = await freePort();
     server = new OrcdServer(
       { listen: { host: '127.0.0.1', port }, authToken: 'tok', name: 'local' },
       {
