@@ -40,13 +40,14 @@ export class CardStore {
     // Running keeps the manual position order (drag reorder); archive orders
     // by updatedAt DESC (newest-updated first); every other section orders by
     // updatedAt ASC — oldest-updated first. Starred cards pin to the front of
-    // their section (stable sort).
+    // their section (stable sort) — except archive, where stars have no effect.
     const base = (a: Card, b: Card) =>
       col === 'running'
         ? a.position - b.position
         : col === 'archive'
           ? b.updatedAt.localeCompare(a.updatedAt)
           : a.updatedAt.localeCompare(b.updatedAt);
+    if (col === 'archive') return items.sort(base);
     return items.sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0) || base(a, b));
   }
 

@@ -153,11 +153,11 @@ describe('CardStore.cardsByColumn', () => {
     expect(store.cardsByColumn('review').map((c) => c.id)).toEqual([4, 2, 1, 3]);
   });
 
-  it('orders archive by updatedAt DESC with starred cards pinned to the front', () => {
+  it('orders archive by updatedAt DESC, ignoring stars', () => {
     const store = new CardStore();
     store.cards.set(1, makeCard({ id: 1, column: 'archive', updatedAt: '2026-05-07T02:00:00Z' }));
     store.cards.set(2, makeCard({ id: 2, column: 'archive', priority: true, updatedAt: '2026-05-07T01:00:00Z' }));
     store.cards.set(3, makeCard({ id: 3, column: 'archive', updatedAt: '2026-05-07T03:00:00Z' }));
-    expect(store.cardsByColumn('archive').map((c) => c.id)).toEqual([2, 3, 1]);
+    expect(store.cardsByColumn('archive').map((c) => c.id)).toEqual([3, 1, 2]);
   });
 });
