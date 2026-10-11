@@ -699,6 +699,16 @@ export class OrcdSession {
   }
 
   /**
+   * Marks that an errored run is being resumed by the automated BGC continue. The BE
+   * received session_exit for the errored run (which untracked the session and parked
+   * the card in review), so this tells it to re-track the session and move the card
+   * back to running.
+   */
+  emitAutoContinue(): void {
+    this.emitSyntheticSystemEvent('auto_continue');
+  }
+
+  /**
    * Terminal marker for a BGC attempt that announced itself and then produced no splice
    * (summarization failed, or the prepared cut was superseded). Downstream holds a
    * "compacting" state from bgc_started until compact_boundary, so a failure needs its own
@@ -753,7 +763,7 @@ export class OrcdSession {
   }
 
   private emitSyntheticSystemEvent(
-    subtype: 'compact_boundary' | 'bgc_started' | 'bgc_failed' | 'compact_started' | 'compact_done',
+    subtype: 'compact_boundary' | 'bgc_started' | 'bgc_failed' | 'compact_started' | 'compact_done' | 'auto_continue',
     source = 'orchestrel-bgc',
     message?: string,
   ): void {

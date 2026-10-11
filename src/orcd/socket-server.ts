@@ -850,6 +850,10 @@ export class OrcdServer {
       // run()-level overlap guard both make that race a no-op here.
       // oxlint-disable-next-line orchestrel/log-before-early-return -- the scheduling log above covers the entered path
       if (session.state !== 'errored' || !session.isIdle()) return;
+      // Tell the backend before the run starts: the errored run's session_exit
+      // untracked the session, so its early stream events would otherwise be
+      // dropped and the card would sit in review while the agent works.
+      session.emitAutoContinue();
       session
         .sendMessage(OrcdServer.BGC_CONTINUE_PROMPT, undefined, SYSTEM_AUTHOR)
         .catch((err: unknown) =>

@@ -553,6 +553,38 @@ describe('orcd message router', () => {
     expect(mockCards[0].column).toBe('running');
   });
 
+  it('re-tracks and moves a review card to running on auto_continue after session_exit untracked it', async () => {
+    const { initOrcdRouter, trackSession, untrackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+    untrackSession('sess-abc'); // the errored run's session_exit
+    mockCards[0].column = 'review';
+    mockGetClientByNode.mockReturnValue(undefined);
+
+    const sdkSpy = vi.fn();
+    bus.on('card:42:sdk', sdkSpy);
+
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'system', subtype: 'auto_continue', session_id: 'sess-abc' },
+    });
+
+    expect(mockCards[0].column).toBe('running');
+    expect(mockRepo.save).toHaveBeenCalled();
+    // The session is re-tracked, so the continue run's events route again.
+    const before = sdkSpy.mock.calls.length;
+    handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 1,
+      event: { type: 'message_start', message: { role: 'assistant' } },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sdkSpy.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it('sets context tokens to sentinel 1 when compaction is applied', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);

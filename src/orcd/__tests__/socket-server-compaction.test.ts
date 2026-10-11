@@ -517,6 +517,8 @@ describe('OrcdServer background compaction', () => {
     vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(true);
     const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+    const emitted: string[] = [];
+    session.subscribe((m) => emitted.push(JSON.stringify(m)));
 
     await server['maybeStartBgc'](session);
 
@@ -528,6 +530,9 @@ describe('OrcdServer background compaction', () => {
         expect.objectContaining({ kind: 'system' }),
       ),
     );
+    // The BE is told before the run starts, so it can re-track the session the
+    // errored run's session_exit untracked and move the card back to running.
+    expect(emitted.some((e) => e.includes('"subtype":"auto_continue"'))).toBe(true);
   });
 
   it('does not continue when the last run completed cleanly', async () => {

@@ -102,11 +102,22 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
       return;
     }
     let cardId = sessionCardMap.get(msg.sessionId);
+    let isAutoContinue = false;
     if (cardId == null && msg.type === 'stream_event') {
       const sdkEvent = msg.event as Record<string, unknown>;
-      cardId = routeBgcEvent(msg.sessionId, sdkEvent);
+      // The errored run's session_exit already untracked the session, and the
+      // compact_boundary just before it cleared bgcMap — find the card in the DB
+      // instead so the continue run's events (including message_start) route.
+      if (sdkEvent.type === 'system' && sdkEvent.subtype === 'auto_continue') {
+        isAutoContinue = true;
+      } else {
+        cardId = routeBgcEvent(msg.sessionId, sdkEvent);
+      }
     }
-    if (cardId == null && (msg.type === 'session_exit' || msg.type === 'turn_complete')) {
+    if (
+      cardId == null &&
+      (msg.type === 'session_exit' || msg.type === 'turn_complete' || isAutoContinue)
+    ) {
       const card = await repo().findOneBy({ sessionId: msg.sessionId });
       if (card) {
         cardId = card.id;
@@ -162,6 +173,15 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
           // message_start never fires — move the card to running here so it shows
           // "turn started" while the compaction runs. No-op for an auto mid-run
           // BGC: the card is already running.
+          await handleTurnStart(cardId);
+        }
+
+        // The automated BGC continue is resuming an errored run: the session was
+        // untracked by that run's session_exit, so re-tracking happened in the
+        // router fallback above — pull the card back to running like a user
+        // follow-up would.
+        if (sys.subtype === 'auto_continue') {
+          console.log(`[oc:${cardId}] auto_continue: moving card to running`);
           await handleTurnStart(cardId);
         }
 
