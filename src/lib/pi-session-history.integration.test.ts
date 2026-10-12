@@ -5,6 +5,7 @@ import { expect, it } from 'vitest';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { fauxAssistantMessage } from '@earendil-works/pi-ai/providers/faux';
 import { getPiSessionHistoryPage } from './pi-session-history';
+import type { TranscriptHistoryRecord } from '../shared/transcript-history';
 import { TRANSCRIPT_PAGE_SIZE } from '../shared/transcript-history';
 
 it('pages stable entry identities and rejects a changed prefix', async () => {
@@ -33,6 +34,54 @@ it('pages stable entry identities and rejects a changed prefix', async () => {
     expect(delta.reset).toBe(false);
     const stale = await getPiSessionHistoryPage(id, dir, { after: latest.after!, prefix: 'bad' });
     expect(stale.reset).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// A compacted session must page its FULL history: everything the compaction
+// summarized stays browsable above the compact marker, not just the kept tail.
+it('pages pre-compaction entries from the full branch', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'history-compact-'));
+  try {
+    const manager = SessionManager.create(dir);
+    manager.appendMessage({ role: 'user', content: 'archived-0', timestamp: 0 });
+    manager.appendMessage(fauxAssistantMessage('archived-answer-0'));
+    for (let i = 1; i < 50; i++) {
+      manager.appendMessage({ role: 'user', content: `archived-${i}`, timestamp: i });
+      manager.appendMessage(fauxAssistantMessage(`archived-answer-${i}`));
+    }
+    const keep = manager.appendMessage({ role: 'user', content: 'kept', timestamp: 100 });
+    manager.appendCompaction('summary of archived work', keep, 1000);
+    for (let i = 0; i < 50; i++) {
+      manager.appendMessage({ role: 'user', content: `after-${i}`, timestamp: 200 + i });
+      manager.appendMessage(fauxAssistantMessage(`after-answer-${i}`));
+    }
+    const id = manager.getSessionId();
+
+    const all: TranscriptHistoryRecord[] = [];
+    let page = await getPiSessionHistoryPage(id, dir, {});
+    expect(page.reset).toBe(false);
+    while (true) {
+      all.push(...page.records);
+      if (!page.hasOlder || !page.before) break;
+      page = await getPiSessionHistoryPage(id, dir, { before: page.before, revision: page.revision });
+      expect(page.reset).toBe(false);
+    }
+
+    const joined = all.map((r) => JSON.stringify(r.message)).join('|');
+    // Every pre-compaction message is served — not just the kept tail.
+    for (let i = 0; i < 50; i++) {
+      expect(joined).toContain(`archived-${i}`);
+      expect(joined).toContain(`archived-answer-${i}`);
+    }
+    // The compaction renders as its marker; the tail after it is intact.
+    expect(joined).toContain('compact_boundary');
+    expect(joined).toContain('after-answer-49');
+    // Far more than the kept tail (kept + marker + 100 tail = 102) — we walked
+    // the full branch, not buildContextEntries().
+    expect(all.length).toBeGreaterThan(150);
+    expect(page.hasOlder).toBe(false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

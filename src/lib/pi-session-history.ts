@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createReadStream, statSync } from 'node:fs';
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { TranscriptHistoryPage, TranscriptHistoryRequest } from '../shared/transcript-history';
 import { TRANSCRIPT_PAGE_SIZE } from '../shared/transcript-history';
@@ -44,6 +45,100 @@ function getHistoryContentBlocks(content: unknown): Array<Record<string, unknown
 function makeUuid(sessionId: string, idx: number): string {
   if (idx < 0) return `${sessionId}-pi-history-init`;
   return `${sessionId}-pi-history-${idx}`;
+}
+
+// Identity of a window: the record ids that compose it. Session files are
+// append-only, so a fixed id run means a fixed window. Hashing ids instead of
+// stringify-ing record content keeps this O(n) on tiny strings — the old
+// content hash made deep paging on large sessions unreadably slow.
+function windowPrefix(records: TranscriptHistoryPage['records'], count: number): string {
+  return createHash('sha256')
+    .update(records.slice(0, count).map((r) => r.id).join('\n'))
+    .digest('hex');
+}
+
+async function fileRevision(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  await new Promise<void>((resolve, reject) => {
+    createReadStream(path)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('end', () => resolve())
+      .on('error', reject);
+  });
+  return hash.digest('hex');
+}
+
+// Page-building cache. The reader re-parses and re-maps the WHOLE session on
+// every page request; on the 80MB Fanless session (15.9k lines, 113
+// compactions) that measured ~2.6 s per page. The mapped records are a pure
+// function of the file bytes, so validate by mtime+size and skip the build on
+// a hit. A running session appends, which changes mtime and just rebuilds.
+// Two entries is the point: scrolling pages one session; a second monster
+// session trades it out. Bigger files aren't cached at all — an unbounded
+// record list in RAM is worse than a slow page.
+interface CachedRecords {
+  mtimeMs: number;
+  size: number;
+  revision: string;
+  records: TranscriptHistoryPage['records'];
+}
+const recordCache = new Map<string, CachedRecords>();
+const MAX_CACHED_RECORD_FILES = 2;
+const MAX_CACHED_RECORD_FILE_BYTES = 200 * 1024 * 1024;
+
+// Session id → file path. SessionManager.list(cwd) scans the whole session dir
+// (227 files / 240MB in /home/ryan/plans measured 1.6-1.8 s per call) and the
+// reader used to pay that on every page request. A session id maps to exactly
+// one immutable file, so resolve once and reuse; a vanished file (cleanup) just
+// re-lists and yields the empty-page path.
+const pathCache = new Map<string, string>();
+
+async function buildRecords(
+  path: string,
+  sessionId: string,
+  manager: { getBranch(): SessionEntry[] },
+  sessionEntryToContextMessages: (entry: SessionEntry) => unknown[],
+): Promise<Pick<CachedRecords, 'revision' | 'records'>> {
+  // The FULL active branch, not buildContextEntries(): that projection omits
+  // everything the latest compaction summarized, which would make pre-compaction
+  // history unpaged-able. Archived entries map identically, and each compaction
+  // entry renders as its compact marker, so the transcript reads end to end.
+  const entries = manager.getBranch();
+  const records: TranscriptHistoryPage['records'] = [];
+  const revision = await fileRevision(path);
+  const modelChange = [...entries].reverse().find((e) => e.type === 'model_change');
+  const model = modelChange ? getString(modelChange.modelId) : undefined;
+  if (model)
+    records.push({
+      id: `${sessionId}:init`,
+      message: {
+        type: 'system',
+        subtype: 'init',
+        model,
+        session_id: sessionId,
+      },
+    });
+  const replacements = collectDisplayPrompts(entries);
+  for (const entry of entries) {
+    const messages = sessionEntryToContextMessages(entry);
+    for (const [part, message] of messages.entries()) {
+      const id = `${entry.id}:${part}`;
+      const text = messageText(message);
+      const displayText = text ? originalPromptText(text, replacements) : undefined;
+      const displayed =
+        displayText !== undefined && displayText !== text && isRecord(message)
+          ? { ...message, content: displayText }
+          : message;
+      const mapped = toHistoryMessage(
+        displayed,
+        sessionId,
+        part,
+        entry.type === 'compaction' && entry.fromHook === true,
+      );
+      if (isRecord(mapped)) records.push({ id, message: { ...mapped, uuid: id } });
+    }
+  }
+  return { revision, records };
 }
 
 function toHistoryMessage(
@@ -197,7 +292,21 @@ export async function getPiSessionHistoryPage(
   request: TranscriptHistoryRequest,
 ): Promise<TranscriptHistoryPage> {
   const { SessionManager, sessionEntryToContextMessages } = await import('@earendil-works/pi-coding-agent');
-  const paths = getSessionPaths(await SessionManager.list(cwd), sessionId);
+  let paths: string[];
+  const pathKey = `${cwd}:${sessionId}`;
+  const cachedPath = pathCache.get(pathKey);
+  if (cachedPath) {
+    try {
+      statSync(cachedPath);
+      paths = [cachedPath];
+    } catch {
+      pathCache.delete(pathKey); // file cleaned up — resolve again
+      paths = [];
+    }
+  } else {
+    paths = getSessionPaths(await SessionManager.list(cwd), sessionId);
+    if (paths.length === 1) pathCache.set(pathKey, paths[0]);
+  }
   if (paths.length === 0) {
     // The session file is gone — an old card whose session was cleaned up. That is
     // permanent, so answer with an empty page. An error here makes the client fall
@@ -215,54 +324,45 @@ export async function getPiSessionHistoryPage(
     };
   }
   if (paths.length > 1) throw new Error(`Expected one history source for ${sessionId}, found ${paths.length}`);
-  const manager = SessionManager.open(paths[0], undefined, cwd);
-  const entries = manager.buildContextEntries();
-  const records: TranscriptHistoryPage['records'] = [];
-  const ctx = manager.buildSessionContext();
-  const model = getContextModel(ctx as unknown as Record<string, unknown>);
-  if (model)
-    records.push({
-      id: `${sessionId}:init`,
-      message: {
-        type: 'system',
-        subtype: 'init',
-        model,
-        session_id: sessionId,
-      },
-    });
-  const replacements = collectDisplayPrompts(manager.getBranch());
-  for (const entry of entries) {
-    const messages = sessionEntryToContextMessages(entry);
-    for (const [part, message] of messages.entries()) {
-      const id = `${entry.id}:${part}`;
-      const text = messageText(message);
-      const displayText = text ? originalPromptText(text, replacements) : undefined;
-      const displayed =
-        displayText !== undefined && displayText !== text ? { ...message, content: displayText } : message;
-      const mapped = toHistoryMessage(
-        displayed,
-        sessionId,
-        part,
-        entry.type === 'compaction' && entry.fromHook === true,
-      );
-      if (isRecord(mapped)) records.push({ id, message: { ...mapped, uuid: id } });
+  const path = paths[0];
+  const stat = statSync(path);
+  let cached = recordCache.get(path);
+  let records: TranscriptHistoryPage['records'];
+  let revision: string;
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    // LRU refresh.
+    recordCache.delete(path);
+    recordCache.set(path, cached);
+    ({ records, revision } = cached);
+  } else {
+    const manager = SessionManager.open(path, undefined, cwd);
+    const built = await buildRecords(path, sessionId, manager, sessionEntryToContextMessages);
+    ({ records, revision } = built);
+    if (stat.size <= MAX_CACHED_RECORD_FILE_BYTES) {
+      if (recordCache.size >= MAX_CACHED_RECORD_FILES) {
+        const oldest = recordCache.keys().next().value;
+        if (oldest !== undefined) recordCache.delete(oldest);
+      }
+      recordCache.set(path, { mtimeMs: stat.mtimeMs, size: stat.size, ...built });
     }
   }
-  const revision = createHash('sha256').update(JSON.stringify(records)).digest('hex');
+  // Cursors are stable: the file is append-only, so a page anchored on a record
+  // id that still exists is valid no matter how much has been appended since.
+  // Only a missing cursor (rewind/branch change) warrants a reset — a revision
+  // mismatch here would wedge running sessions: every older-page request resets,
+  // the client discards the reset, and the same cursor retries forever.
   let start = 0;
   let end = records.length;
   let reset = false;
   if (request.before) {
     const i = records.findIndex((record) => record.id === request.before);
-    if (request.revision !== revision || i < 0) reset = true;
+    if (i < 0) reset = true;
     else end = i;
   }
   if (request.after) {
     const i = records.findIndex((record) => record.id === request.after);
-    const prefix = createHash('sha256')
-      .update(JSON.stringify(records.slice(0, i + 1)))
-      .digest('hex');
-    if (i < 0 || (request.anchorOnly ? request.revision !== revision : request.prefix !== prefix)) reset = true;
+    const prefix = windowPrefix(records, i + 1);
+    if (i < 0 || (request.prefix != null && request.prefix !== prefix)) reset = true;
     else start = i + 1;
   }
   if (reset) {
@@ -295,9 +395,7 @@ export async function getPiSessionHistoryPage(
     records: page,
     before: page[0]?.id ?? null,
     after: page.at(-1)?.id ?? null,
-    prefix: createHash('sha256')
-      .update(JSON.stringify(records.slice(0, end)))
-      .digest('hex'),
+    prefix: windowPrefix(records, end),
     hasOlder: start > 0,
     hasNewer: end < records.length,
     reset,
