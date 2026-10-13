@@ -67,7 +67,12 @@ export function buildCliHome(userDataDir: string, _nodeBin: string, _kppBundle: 
 
 // Source-vs-dest divergence check; missing dest counts as divergent. Size is
 // compared first so an unchanged multi-hundred-MB node binary is never
-// byte-compared, and mtime catches content changes between copies.
+// byte-compared, and mtime catches content changes between copies. A copy
+// pinned via utimes can still land 1ms off the source mtime after rename on
+// some filesystems, so an equal-size dest within 1ms is treated as unchanged
+// (a real rewrite shifts mtime by far more). The tolerance is bounded: it only
+// applies when sizes already match, so a genuine same-size content change
+// (different mtime) is still caught.
 async function stale(dest: string, src: string): Promise<boolean> {
   let d
   try {
@@ -76,7 +81,8 @@ async function stale(dest: string, src: string): Promise<boolean> {
     return true
   }
   const s = await stat(src)
-  return d.size !== s.size || Math.floor(d.mtimeMs) !== Math.floor(s.mtimeMs)
+  if (d.size !== s.size) return true
+  return Math.abs(d.mtimeMs - s.mtimeMs) > 1
 }
 
 async function copyIfStale(dest: string, src: string): Promise<boolean> {

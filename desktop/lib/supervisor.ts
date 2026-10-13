@@ -76,6 +76,21 @@ export class Supervisor {
     await this.waitHealthy()
   }
 
+  /**
+   * Reset the rate window and respawn once for a service that gave up.
+   * Called from the crash window's Restart button — the only place the
+   * given-up state is cleared, so restart is a deliberate user action, not
+   * part of the crash loop.
+   */
+  async restart(id: string): Promise<void> {
+    if (this.stopping) return
+    const def = this.spawned.find((s) => s.id === id)
+    if (!def) return
+    this.exitTimes.set(id, [])
+    this.givenUp.delete(id)
+    this.spawnDef(def)
+  }
+
   async stop(): Promise<void> {
     this.stopping = true
     const live = this.spawned.filter((s) => !s.exited)

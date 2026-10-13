@@ -4,6 +4,12 @@
 // to port 0 and a shared randomUUID authToken cross-referenced between the
 // node daemon, the backend registry, and bootstrap.json. bootstrap.json
 // presence is the idempotency gate — a second call never rewrites anything.
+//
+// The DB base tables (projects/cards) are provisioned separately by the
+// Electron main process in a short-lived child of the bundled node — the
+// backend runs its base-table migrations with synchronize:false, so the
+// tables must exist before the backend boots. The schema itself lives in
+// out/provision-db.cjs (produced by build-bundles.mjs).
 import { randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { mkdir, stat } from 'node:fs/promises'

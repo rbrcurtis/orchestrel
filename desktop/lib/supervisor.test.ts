@@ -179,6 +179,37 @@ test('gives up after MAX_RESPAWNS rapid exits and emits crash with log tail', as
   await sup.stop()
 })
 
+test('restart(id) resets the rate window and respawns once', async () => {
+  const health = await healthServer(true)
+  const d = defs(base, ['backend'])
+  const captured: FakeProc[] = []
+  const sup = new Supervisor({
+    logDir: join(base, 'logs'),
+    healthUrl: health.url,
+    spawn: () => {
+      const p = makeFakeProc('backend')
+      captured.push(p)
+      return fake(p)
+    }
+  })
+  const crash = vi.fn()
+  sup.on('crash', crash)
+  await sup.start(d)
+  // give up: initial spawn + MAX_RESPAWNS respawns, then the 6th exit reports
+  for (let i = 0; i <= MAX_RESPAWNS; i++) captured[i]!.emit('exit', 1, null)
+  expect(captured).toHaveLength(1 + MAX_RESPAWNS)
+  expect(crash).toHaveBeenCalledTimes(1)
+  // restart resets the window and spawns exactly once
+  await sup.restart('backend')
+  expect(captured).toHaveLength(2 + MAX_RESPAWNS)
+  // the rate window is reset: one fast exit now respawns instead of crashing
+  captured[captured.length - 1]!.emit('exit', 1, null)
+  await vi.waitFor(() => expect(captured).toHaveLength(3 + MAX_RESPAWNS))
+  expect(crash).toHaveBeenCalledTimes(1) // still just the original give-up
+  await health.close()
+  await sup.stop()
+})
+
 test('stop() kills all children and drains stdio', async () => {
   const health = await healthServer(true)
   const d = defs(base, ['kpp', 'orcd', 'backend'])

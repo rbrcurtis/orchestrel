@@ -5,7 +5,9 @@
   "main": "dist/main.cjs",
   "scripts": {
     "bundles": "node build-bundles.mjs",
-    "dev": "npm run bundles && ORCHESTREL_NODE=$(pwd)/node electron .",
+    "build:main": "node build-main.mjs",
+    "start": "npm run build:main && electron .",
+    "dev": "npm run bundles && npm run build:main && electron .",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },

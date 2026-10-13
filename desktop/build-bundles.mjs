@@ -154,7 +154,13 @@ if (process.env.SKIP_SQLITE_PREBUILD === '1') {
   installSqlitePrebuild()
 }
 
-// 6. SPA assets.
+// 6. DB provisioner — the main process runs this in a child of the bundled
+// node before the backend boots (the backend's migrations assume the base
+// tables exist; it never creates them itself).
+copyFileSync(join(here, 'provision-db.cjs'), join(OUT_DIR, 'provision-db.cjs'))
+console.log('copied provision-db.cjs -> out/')
+
+// 7. SPA assets.
 rmSync(join(OUT_DIR, 'client'), { recursive: true, force: true })
 cpSync(SPA_SRC, join(OUT_DIR, 'client'), { recursive: true })
 console.log(`copied ${SPA_SRC} -> ${join(OUT_DIR, 'client')}`)
