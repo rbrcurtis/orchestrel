@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
-    "bundles": "echo bundles: noop (Task 4)",
+    "bundles": "node build-bundles.mjs",
     "dev": "npm run bundles && ORCHESTREL_NODE=$(pwd)/node electron .",
     "test": "vitest run",
     "typecheck": "tsc -b"

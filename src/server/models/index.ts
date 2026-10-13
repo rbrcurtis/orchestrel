@@ -47,6 +47,7 @@ const TOKEN_TO_HEX: Record<string, string> = {
  */
 export async function seedLocalUser(ds: DataSource): Promise<void> {
   const count = (await ds.query('SELECT COUNT(*) AS n FROM users')) as Array<{ n: number }>;
+  // oxlint-disable-next-line orchestrel/log-before-early-return -- idempotency guard: no-op on a populated table
   if (count[0].n > 0) return;
   await ds.query(
     `INSERT INTO users (email, role, created_at) VALUES (?, ?, ?)`,

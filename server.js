@@ -5,6 +5,8 @@ import morgan from 'morgan';
 
 const DEVELOPMENT = process.env.NODE_ENV === 'development';
 const PORT = Number.parseInt(process.env.PORT || (DEVELOPMENT ? '6195' : '6194'));
+// Desktop bundles point the SPA at the bundled asset dir; hosted stays default.
+const CLIENT_DIR = process.env.CLIENT_DIR ?? 'build/client';
 
 const app = express();
 const httpServer = createHttpServer(app);
@@ -63,17 +65,17 @@ if (DEVELOPMENT) {
 
   app.use(restRouter);
 
-  app.use('/assets', express.static('build/client/assets', { immutable: true, maxAge: '1y' }));
+  app.use('/assets', express.static(`${CLIENT_DIR}/assets`, { immutable: true, maxAge: '1y' }));
   // The service worker must never be served from the HTTP cache: a stale sw.js
   // keeps an obsolete cache name alive.
   app.use('/sw.js', (_req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile('sw.js', { root: 'build/client' });
+    res.sendFile('sw.js', { root: CLIENT_DIR });
   });
-  app.use(express.static('build/client', { maxAge: '1h' }));
+  app.use(express.static(CLIENT_DIR, { maxAge: '1h' }));
 
   app.get('/{*path}', (_req, res) => {
-    res.sendFile('index.html', { root: 'build/client' });
+    res.sendFile('index.html', { root: CLIENT_DIR });
   });
 
   pendingAttachSocketIo = attachSocketIo;
