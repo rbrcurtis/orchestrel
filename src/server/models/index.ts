@@ -38,6 +38,22 @@ const TOKEN_TO_HEX: Record<string, string> = {
   'neon-sky': '#00c8ff',
 };
 
+/**
+ * Seed the desktop app's single local user. Desktop installs run the backend
+ * unattended with no CF Access / Apache identity, so the UI needs a row to
+ * sign in as. Guarded on the table being empty so hosted deployments
+ * (already-populated users table) are untouched. Exported for the model tests
+ * to exercise without standing up the full DataSource.
+ */
+export async function seedLocalUser(ds: DataSource): Promise<void> {
+  const count = (await ds.query('SELECT COUNT(*) AS n FROM users')) as Array<{ n: number }>;
+  if (count[0].n > 0) return;
+  await ds.query(
+    `INSERT INTO users (email, role, created_at) VALUES (?, ?, ?)`,
+    ['local@orchestrel.local', 'admin', new Date().toISOString()],
+  );
+}
+
 export async function initDatabase(): Promise<void> {
   if (!AppDataSource.isInitialized) {
     await AppDataSource.initialize();
@@ -176,6 +192,7 @@ export async function initDatabase(): Promise<void> {
     }
     await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
     await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
+    await seedLocalUser(AppDataSource);
     await runner.query(`UPDATE cards SET pending_initial_files = '[]' WHERE pending_initial_files IS NULL`);
     const duplicateSessions = (await runner.query(`
       SELECT session_id, GROUP_CONCAT(id) AS card_ids
