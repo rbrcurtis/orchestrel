@@ -63,9 +63,16 @@ const SPA_SRC = join(root, 'build', 'client')
 //    alias `tsoa` onto it — same decorators, minus the codegen surface.
 // Both aliases are inlined by esbuild, so they need no runtime copy.
 const APP_ROOT_PATH_SHIM = join(here, 'shims', 'app-root-path-shim.mjs')
+// Alias to an ABSOLUTE path, not a bare specifier: esbuild resolves alias
+// targets relative to the *consuming* file, so 'tsoa' -> '@tsoa/runtime'
+// only happened to work by walking up from server.js to the repo root's
+// node_modules. Pin it to the root's node_modules explicitly.
+const TSOA_RUNTIME = join(root, 'node_modules', '@tsoa', 'runtime')
+if (!existsSync(join(TSOA_RUNTIME, 'package.json')))
+  fail(`@tsoa/runtime not found at ${TSOA_RUNTIME} — run \`bun install\` in the repo root first.`)
 const SERVER_ALIASES = {
   'app-root-path': APP_ROOT_PATH_SHIM,
-  tsoa: '@tsoa/runtime',
+  tsoa: TSOA_RUNTIME,
 }
 
 const EXTERNALS = {
@@ -175,20 +182,23 @@ async function installNodeRuntime() {
     if (!res.ok) fail(`node download failed: HTTP ${res.status} for ${url}`)
     const buf = Buffer.from(await res.arrayBuffer())
     writeFileSync(tarball, buf)
-    // Verify against the official SHASUMS256.txt for this dist tag.
-    const sumRes = await fetch(`https://nodejs.org/dist/${NODE_VERSION}/SHASUMS256.txt`)
-    if (sumRes.ok) {
-      const text = await sumRes.text()
-      const line = text.split('\n').find((l) => l.includes(name))
-      const want = line?.trim().split(/\s+/)[0]
-      if (!want) fail(`no SHASUMS256 entry for ${name}`)
-      const got = sha256Hex(buf)
-      if (want !== got) fail(`node tarball sha256 mismatch: expected ${want}, got ${got}`)
-    }
-    // The tarball unpacks to a single top-level dir (node-<ver>-<plat>-<arch>/) whose
-    // layout is bin/, lib/, include/, share/. We want it as <out>/node/, so extract
-    // into a staging dir and rename the top-level dir to node.
-    const stage = join(tmp, 'extract')
+    // Verify against the official SHASUMS256.txt for this dist tag. Fail closed:
+    // a verification we cannot complete (SHASUMS fetch fails, no matching
+    // entry) is as bad as a mismatch — never ship an unverified tarball.
+    const sumUrl = `https://nodejs.org/dist/${NODE_VERSION}/SHASUMS256.txt`
+    const sumRes = await fetch(sumUrl)
+    if (!sumRes.ok) fail(`SHASUMS fetch failed: HTTP ${sumRes.status} for ${sumUrl} — cannot verify the node tarball, refusing to install an unverified download`)
+    const sumText = await sumRes.text()
+    const sumLine = sumText.split('\n').find((l) => l.includes(name))
+    const want = sumLine?.trim().split(/\s+/)[0]
+    if (!want) fail(`no SHASUMS256 entry for ${name} in ${sumUrl} — refusing to install an unverified download`)
+    const got = sha256Hex(buf)
+    if (want !== got) fail(`node tarball sha256 mismatch: expected ${want}, got ${got}`)
+    // Stage the extract UNDER OUT_DIR, not in os.tmpdir(): /tmp can live on a
+    // different filesystem (tmpfs on this host), and renameSync cannot move
+    // the extracted dir across devices (EXDEV). Same-device staging makes the
+    // final rename atomic and cross-device-proof.
+    const stage = join(OUT_DIR, '.node-extract-tmp')
     mkdirSync(stage, { recursive: true })
     run('tar', ['-xJ', '-f', tarball, '-C', stage])
     const topDir = readdirSync(stage)[0]
@@ -209,6 +219,9 @@ async function installNodeRuntime() {
     }
     console.log(`node ${NODE_VERSION} -> ${nodeDir} (binary ${flatBin})`)
   } finally {
+    // Staging leftovers on partial failure (a hash-mismatch abort happens
+    // before the final rename) and the tarball, which may still be tens of MB.
+    rmSync(join(OUT_DIR, '.node-extract-tmp'), { recursive: true, force: true })
     rmSync(tmp, { recursive: true, force: true })
   }
 }

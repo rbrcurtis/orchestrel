@@ -100,6 +100,14 @@ test('build-bundles produces all five outputs', () => {
 test('server.bundle.mjs boots with CLIENT_DIR pointing at out/client', async () => {
   if (!existsSync(join(OUT, 'server.bundle.mjs'))) build(OUT)
 
+  // Boot with the BUNDLED node, not the host node: the shipped better-sqlite3
+  // .node is prebuilt for the pinned v22 runtime (NODE_MODULE_VERSION 127),
+  // and the host node here is v24 (ABI 137), so a host-node boot dies with
+  // ERR_DLOPEN_FAILED. The bundled runtime is the shipping target anyway.
+  const bundledNode = join(OUT, 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+  if (!existsSync(bundledNode))
+    throw new Error(`bundled node runtime missing at ${bundledNode} — run without SKIP_NODE_DOWNLOAD first (node desktop/build-bundles.mjs)`)
+
   // free port
   const net = await import('node:net')
   const port = await new Promise((resolve, reject) => {
@@ -125,7 +133,7 @@ test('server.bundle.mjs boots with CLIENT_DIR pointing at out/client', async () 
     stdio: ['pipe', 'inherit', 'inherit'],
   })
 
-  const child = spawn(process.execPath, [join(OUT, 'server.bundle.mjs')], {
+  const child = spawn(bundledNode, [join(OUT, 'server.bundle.mjs')], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
