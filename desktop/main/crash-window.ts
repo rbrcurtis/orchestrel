@@ -41,8 +41,11 @@ function crashPage(id: string, tail: string): string {
 }
 
 export function openCrashWindow(id: string, tail: string, h: CrashHandlers): BrowserWindow {
-  // One invoke handler per window lifetime; removed on close so windows can
-  // never stack handlers.
+  // removeHandler before handle: two services can give up while a crash
+  // window is still open; re-registering the same channel without removal
+  // throws ERR_IPC_MAIN_ALREADY_HANDLE and crashes the main process. Handler
+  // is removed on close too, so windows can never stack handlers.
+  ipcMain.removeHandler(CHANNEL)
   ipcMain.handle(CHANNEL, async (_e: IpcMainInvokeEvent, action: string) => {
     switch (action) {
       case 'restart':

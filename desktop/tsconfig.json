@@ -11,5 +11,5 @@
     "composite": true,
     "outDir": "dist"
   },
-  "include": ["lib", "main"]
+  "include": ["lib", "main", "types", "provision-db.test.ts"]
 }

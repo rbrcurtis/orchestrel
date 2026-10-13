@@ -154,6 +154,11 @@ async function boot(): Promise<void> {
   const { changed } = await installShim(home, {
     nodeBin,
     kppBundle: join(out, 'kpp.bundle.mjs'),
+    // kpp.bundle.mjs declares better-sqlite3 external and resolves it (plus
+    // the bindings/file-uri-to-path/process loader peers) from
+    // cliHome/node_modules — without this copy, the closed-app CLI dies with
+    // ERR_MODULE_NOT_FOUND.
+    sqliteModulesRoot: join(out, 'node_modules'),
     binPath: home.binPath,
     homeDir: app.getPath('home'),
   })

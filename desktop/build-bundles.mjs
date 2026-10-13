@@ -156,9 +156,15 @@ if (process.env.SKIP_SQLITE_PREBUILD === '1') {
 
 // 6. DB provisioner — the main process runs this in a child of the bundled
 // node before the backend boots (the backend's migrations assume the base
-// tables exist; it never creates them itself).
-copyFileSync(join(here, 'provision-db.cjs'), join(OUT_DIR, 'provision-db.cjs'))
-console.log('copied provision-db.cjs -> out/')
+// tables exist; it never creates them itself). The provisioner requires its
+// DDL from provision-dll-bundle.cjs (generated from lib/provision-dll.ts by
+// build-main.mjs); ship both.
+for (const f of ['provision-db.cjs', 'provision-dll-bundle.cjs']) {
+  const src = f === 'provision-dll-bundle.cjs' ? join(here, 'dist', f) : join(here, f)
+  if (!existsSync(src)) fail(`${f} missing at ${src} — run \`node build-main.mjs\` first.`)
+  copyFileSync(src, join(OUT_DIR, f))
+  console.log(`copied ${f} -> out/`)
+}
 
 // 7. SPA assets.
 rmSync(join(OUT_DIR, 'client'), { recursive: true, force: true })
