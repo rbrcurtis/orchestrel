@@ -17,6 +17,8 @@ export const app: {
   quit(): void
   getPath(_name: string): string
   showAboutPanel(): void
+  isPackaged: boolean
+  relaunch(): void
   name: string
   getVersion(): string
 } = {
@@ -28,6 +30,8 @@ export const app: {
   quit: () => {},
   getPath: () => '/nonexistent',
   showAboutPanel: () => {},
+  isPackaged: false,
+  relaunch: () => {},
   name: 'Orchestrel',
   getVersion: () => '0.0.0',
 }

@@ -21,7 +21,6 @@ import {
   shell,
 } from 'electron'
 import { spawn as cpSpawn } from 'node:child_process'
-import { appendFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { platform } from 'node:os'
 import { readBootstrap, type BootstrapData } from '../lib/bootstrap'
@@ -29,6 +28,8 @@ import { seedUserData } from '../lib/seed'
 import { buildCliHome, installShim } from '../lib/shim'
 import { Supervisor, type ServiceDef } from '../lib/supervisor'
 import { openCrashWindow } from './crash-window'
+import { logLine } from './log'
+import { checkForUpdatesNow, initUpdater, setUpdaterWindow } from './updater'
 import { createMainWindow } from './window'
 
 const NODE_FLAT = platform() === 'win32' ? 'node.exe' : 'node'
@@ -91,14 +92,6 @@ export function serviceDefsFromBootstrap(
 
 function logDir(): string {
   return join(app.getPath('userData'), 'logs')
-}
-
-async function logLine(svc: string, ...parts: unknown[]): Promise<void> {
-  try {
-    await appendFile(join(logDir(), 'main.log'), `${new Date().toISOString()} [${svc}] ${parts.join(' ')}\n`)
-  } catch {
-    // logging must never take the app down
-  }
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -191,6 +184,10 @@ async function boot(): Promise<void> {
   await logLine('boot', 'services healthy')
 
   mainWindow = createMainWindow(seeded.backendPort)
+  setUpdaterWindow(mainWindow.win)
+  // Updater starts after the window exists so the boot-time check has a
+  // window to attach its modal dialog to. It is no-op-safe in dev.
+  initUpdater()
 
   ipcMain.on('open-logs-folder', () => {
     void shell.openPath(logDir())
@@ -215,10 +212,8 @@ function buildMenu(): void {
   const help: Electron.MenuItemConstructorOptions[] = [
     { label: 'Open logs folder', click: () => void shell.openPath(logDir()) },
     {
-      // Task 7 wires the real updater; the menu shape is fixed now, the
-      // action is a logged no-op until then.
       label: 'Check for updates now',
-      click: () => void logLine('updates', 'check for updates now (placeholder, Task 7)'),
+      click: () => checkForUpdatesNow(),
     },
     {
       label: 'About',
