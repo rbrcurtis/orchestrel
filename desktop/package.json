@@ -2,6 +2,7 @@
   "name": "orchestrel-desktop",
   "version": "1.0.0",
   "private": true,
+  "homepage": "https://github.com/rbrcurtis/orchestrel",
   "main": "dist/main.cjs",
   "scripts": {
     "bundles": "node build-bundles.mjs",
@@ -9,7 +10,10 @@
     "start": "npm run build:main && electron .",
     "dev": "npm run bundles && npm run build:main && electron .",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "build:linux": "node build-bundles.mjs && node build-main.mjs && electron-builder --config electron-builder-linux.yml --publish never",
+    "build:mac": "node build-bundles.mjs --platform mac-arm64 && node build-main.mjs && electron-builder --config electron-builder-mac.yml --publish never",
+    "build:win": "node build-bundles.mjs --platform win-x64 && node build-main.mjs && electron-builder --config electron-builder-win.yml --publish never"
   },
   "devDependencies": {
     "better-sqlite3": "^12.6.2",

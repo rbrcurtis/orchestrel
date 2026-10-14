@@ -7,7 +7,7 @@
 // with the log tail. start() resolves only once healthUrl answers successfully
 // (any status < 500 counts: the SPA index may 404 during development; a
 // connection refusal means not ready).
-import { appendFile, mkdirSync, readFileSync } from 'node:fs'
+import { appendFile, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn as cpSpawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -36,6 +36,13 @@ export interface Spawned extends ServiceDef {
 export interface SupervisorOptions {
   logDir: string
   healthUrl: string
+  // Path to a small file holding this instance's child PIDs (one per line).
+  // The app writes it while services run and a fresh launch uses it to reap
+  // orphans left by a previous instance that was hard-killed (SIGKILL/SIGTERM
+  // to the electron main tears the JS down before supervisor.stop() can run —
+  // Electron handles those signals at the native layer, so no JS exit handler
+  // fires). Optional: omitted → no pid file, no sweep.
+  pidFile?: string
   // Real seam: production runs childProcess.spawn; overriding it changes
   // environments (electron app dir vs test fixtures) and enables crash
   // simulation, which production also exercises.
@@ -49,6 +56,7 @@ export interface SupervisorOptions {
 export class Supervisor {
   private readonly logDir: string
   private readonly healthUrl: string
+  private readonly pidFile: string | undefined
   private readonly spawnFn: (
     command: string,
     args: string[],
@@ -63,8 +71,34 @@ export class Supervisor {
   constructor(opts: SupervisorOptions) {
     this.logDir = opts.logDir
     this.healthUrl = opts.healthUrl
+    this.pidFile = opts.pidFile
     this.spawnFn = opts.spawn ?? ((c, a, o) => cpSpawn(c, a, { env: o.env, cwd: o.cwd, stdio: 'pipe' }))
     mkdirSync(this.logDir, { recursive: true })
+  }
+
+  // Reap any service children a PREVIOUS instance of this app left behind by
+  // hard-killing it. Reads the pid file, SIGKILLs any PID that is still alive.
+  // Called on startup, BEFORE start(), so a relaunch after a crash cleans the
+  // slate. Returns the number of PIDs it signaled.
+  sweepOrphans(): number {
+    if (!this.pidFile) return 0
+    let raw: string
+    try {
+      raw = readFileSync(this.pidFile, 'utf8')
+    } catch {
+      return 0 // no pid file → nothing to sweep
+    }
+    let killed = 0
+    for (const line of raw.split('\n')) {
+      const pid = Number(line.trim())
+      if (!Number.isInteger(pid) || pid <= 0) continue
+      try { process.kill(pid, 0) } catch { continue } // not alive
+      try { process.kill(pid, 'SIGKILL'); killed++ } catch { /* raced away */ }
+    }
+    if (killed > 0) {
+      try { rmSync(this.pidFile, { force: true }) } catch { /* best effort */ }
+    }
+    return killed
   }
 
   on(event: 'crash', cb: (svc: ServiceDef, logTail: string, gaveUp: boolean) => void): void {
@@ -100,8 +134,20 @@ export class Supervisor {
     for (let i = 0; i < STOP_GRACE_MS / 50 && live.some((s) => !s.exited); i++) {
       await sleep(50)
     }
-    for (const s of live) {
-      if (!s.exited) s.proc.kill('SIGKILL')
+    this.killAll()
+    this.clearPidFile()
+  }
+
+  // Synchronous SIGKILL sweep of every live child. The final escalation in
+  // stop(). (An abrupt SIGTERM/SIGKILL to the electron main bypasses this —
+  // JS signal/exit handlers do not run for it — which is exactly why the
+  // pidFile + sweepOrphans() path exists: the NEXT launch reaps what this
+  // one couldn't.)
+  killAll(): void {
+    for (const s of this.spawned) {
+      if (!s.exited) {
+        try { s.proc.kill('SIGKILL') } catch { /* already gone */ }
+      }
     }
   }
 
@@ -109,10 +155,26 @@ export class Supervisor {
     return join(this.logDir, `${def.id}.log`)
   }
 
+  // Persist the live child PIDs so the next launch can sweep them if this
+  // instance dies without a graceful stop(). Rewritten on every spawn so it
+  // reflects the current set (respawns get new PIDs).
+  private writePidFile(): void {
+    if (!this.pidFile) return
+    const pids = this.spawned.map((s) => s.proc.pid).filter((p): p is number => p !== undefined)
+    try { writeFileSync(this.pidFile, pids.join('\n') + '\n') } catch { /* best effort */ }
+  }
+
+  // Clear the pid file on a clean stop() so a normal relaunch finds nothing.
+  private clearPidFile(): void {
+    if (!this.pidFile) return
+    try { rmSync(this.pidFile, { force: true }) } catch { /* best effort */ }
+  }
+
   private spawnDef(def: ServiceDef): void {
     const proc = this.spawnFn(def.command, def.args, { env: def.env, cwd: def.cwd })
     const s: Spawned = { ...def, proc, exited: false }
     this.spawned.push(s)
+    if (s.proc.pid !== undefined) this.writePidFile()
     // append both streams to the log and drain them so pipes never backpressure
     for (const stream of [proc.stdout, proc.stderr]) {
       stream.on('data', (chunk: Buffer) => {

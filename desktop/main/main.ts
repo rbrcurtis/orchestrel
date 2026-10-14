@@ -8,7 +8,7 @@
 //
 // The 'electron' import resolves to an empty stub under vitest
 // (vitest.config.ts) so main.test.ts can collect the two pure functions below
-// (outDirFor, serviceDefsFromBootstrap) without the electron runtime — the
+// (resolveOutDir, serviceDefsFromBootstrap) without the electron runtime — the
 // module-scope boot side effects (requestSingleInstanceLock, whenReady) would
 // crash a bare Node test runner. esbuild keeps the real electron external
 // (build-main.mjs), so production is unaffected.
@@ -21,6 +21,7 @@ import {
   shell,
 } from 'electron'
 import { spawn as cpSpawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { platform } from 'node:os'
 import { readBootstrap, type BootstrapData } from '../lib/bootstrap'
@@ -35,8 +36,22 @@ import { createMainWindow } from './window'
 const NODE_FLAT = platform() === 'win32' ? 'node.exe' : 'node'
 
 // Where the three service bundles + bundled node runtime live. One function
-// on purpose: Task 8 swaps the packaged branch for asar-unpacked resolution
-// in this single spot. The bundle sits in dist/ (a sibling of out/).
+// for both forms: in dev the module sits in dist/ (a sibling of out/);
+// packaged, the bundles are in the asar and the EXEC-able parts
+// (out/node/**, the .node addon) are auto-unpacked beside it under
+// app.asar.unpacked/ — you cannot spawn out/node/node or load
+// better_sqlite3.node from inside a packed asar (ENOTDIR / wrong-ABI).
+//
+// Two packaging traps, both hit in practice:
+//  (1) Electron 44 does NOT set ELECTRON_IS_ASAR in this AppImage context —
+//      a runtime probe showed it undefined even though the app was packed.
+//      So the packaged branch keys on app.isPackaged (canonical), OR'd with
+//      the env var so the unit test can drive it with a mock alone.
+//  (2) app.getAppPath() still returns .../app.asar when packed, and
+//      __dirname inside it points at the asar copy of main/ — resolving
+//      out/ from there yields .../app.asar/out, which spawn rejects. The
+//      packaged branch must address .../app.asar.unpacked/out instead.
+//
 // __dirname is defined in the CJS bundle; under vitest (ESM transform) it is
 // undefined, so fall back to a computed path from process.cwd() — the tests
 // always run with cwd=desktop/ (npm run test), making that identical to the
@@ -44,9 +59,21 @@ const NODE_FLAT = platform() === 'win32' ? 'node.exe' : 'node'
 const LOCAL_DIRNAME: string =
   typeof __dirname !== 'undefined' ? __dirname : join(process.cwd(), 'main')
 
-export function outDirFor(): string {
-  if (process.env.ELECTRON_IS_ASAR === '1')
-    return join(process.resourcesPath, 'app.asar.unpacked', 'out')
+export function resolveOutDir(): string {
+  // Packaged signal: Electron 44 does NOT set ELECTRON_IS_ASAR in this app's
+  // AppImage context (verified by runtime probe — it was undefined), so the
+  // env var alone is unreliable. app.isPackaged is the canonical flag and is
+  // true for any electron-builder output. We OR it with the env var so the
+  // unit test (which mocks only the env + resourcesPath, not app.isPackaged)
+  // still drives the packaged branch.
+  const packaged = process.env.ELECTRON_IS_ASAR === '1' || app.isPackaged
+  if (packaged) {
+    const rp = process.resourcesPath
+    const base = rp !== undefined ? rp : dirname(LOCAL_DIRNAME)
+    const unpacked = join(base, 'app.asar.unpacked', 'out')
+    if (existsSync(unpacked)) return unpacked
+    return join(base, 'app.asar', 'out')
+  }
   return join(dirname(LOCAL_DIRNAME), 'out')
 }
 
@@ -114,9 +141,8 @@ app.on('second-instance', () => {
 
 async function boot(): Promise<void> {
   const userData = app.getPath('userData')
-  const out = outDirFor()
+  const out = resolveOutDir()
   const nodeBin = join(out, 'node', NODE_FLAT)
-
   const seeded = await seedUserData(userData)
   await logLine('boot', `seeded=${seeded.seeded} backendPort=${seeded.backendPort}`)
 
@@ -158,14 +184,22 @@ async function boot(): Promise<void> {
   await logLine('boot', `shim changed=${changed} bin=${home.binPath}`)
 
   const healthUrl = `http://127.0.0.1:${seeded.backendPort}/`
+  const pidFile = join(userData, 'service-pids.txt')
   const sup = new Supervisor({
     logDir: logDir(),
     healthUrl,
+    pidFile,
     // The default spawn is childProcess.spawn; spelled out at the call site
     // because the supervisor keeps its own append-to-log piping around it.
     spawn: (c, a, o) => cpSpawn(c, a, { env: o.env, cwd: o.cwd, stdio: 'pipe' }),
   })
   supervisor = sup
+
+  // Reap service children left orphaned by a previous instance that was
+  // hard-killed (SIGTERM/SIGKILL never lets supervisor.stop() run). Must run
+  // BEFORE we spawn our own, or we'd sweep nothing / sweep the wrong thing.
+  const swept = sup.sweepOrphans()
+  if (swept > 0) await logLine('boot', `swept ${swept} orphaned service pid(s) from a prior hard-killed instance`)
 
   sup.on('crash', (svc, tail, gaveUp) => {
     if (!gaveUp) return
@@ -265,3 +299,15 @@ app.on('window-all-closed', () => {
   // supervisor.stop().
   if (platform() !== 'darwin') app.quit()
 })
+
+// Orphan protection is layered, because Electron does NOT run JS signal /
+// exit handlers for SIGTERM/SIGKILL (it handles them at the native layer —
+// verified empirically: no JS 'exit' fires when the main is killed).
+//   1. Graceful quit (window close / menu quit) → before-quit → stop(). Works.
+//   2. Hard kill (SIGTERM/SIGKILL to the app) → orphans the three node
+//      services. Those children can't be reaped in-process, so the NEXT launch
+//      reaps them: the supervisor records its child PIDs to a file, and
+//      sweepOrphans() (called at the top of boot) SIGKILLs any PID from a
+//      previous, un-cleanly-stopped instance that is still alive.
+// Net effect: a kill -9 never leaves the backend port or a service hanging
+// once the app is launched again (the normal recovery path).

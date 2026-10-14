@@ -14,7 +14,13 @@
 //
 // Env: OUT_DIR (output dir, default desktop/out), KPP_REPO (fallback: the
 // pinned local checkout), SKIP_NODE_DOWNLOAD=1, SKIP_SQLITE_PREBUILD=1
-// (tests run offline). Flag: --force re-downloads the Node runtime.
+// (tests run offline). Flags: --force re-downloads the Node runtime;
+// --platform linux-x64|linux-arm64|mac-arm64|win-x64 (default: host) selects
+// the Node tarball + better-sqlite3 prebuild for a non-host TARGET — that is
+// the extent of cross-platform support here: electron-builder owns everything
+// else, and a cross-target bundle is verified only insofar as the downloaded
+// runtime/prebuild can be integrity-checked (the sqlite load-validation is
+// skipped for foreign targets, since the host node cannot exec their binary).
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -37,6 +43,11 @@ import { fileURLToPath } from 'node:url'
 // Pinned: the Node runtime the desktop app ships. Latest LTS v22 as of
 // 2026-10-13 — bump here (one constant) when it moves.
 const NODE_VERSION = 'v22.23.3'
+
+function fail(msg) {
+  console.error(`build-bundles: ${msg}`)
+  process.exit(1)
+}
 // KPP is a pinned local dependency — the repos stay independent, one source
 // of truth, so the script bundles from the checkout (never a vendored copy).
 const KPP_REPO_DEFAULT = '/home/ryan/Code/kiro-pool-proxy'
@@ -46,6 +57,41 @@ const root = resolve(here, '..')
 const OUT_DIR = process.env.OUT_DIR ?? join(here, 'out')
 const KPP_REPO = process.env.KPP_REPO ?? KPP_REPO_DEFAULT
 const FORCE = process.argv.includes('--force')
+const PLATFORM_FLAG = flagValue('--platform')
+const TARGET = normalizeTarget(PLATFORM_FLAG, fail)
+// Cross-target builds skip the "does it load" check: a foreign .node/.exe
+// cannot be executed on this host, so validation would be a lie.
+const CROSS_TARGET = Boolean(PLATFORM_FLAG)
+
+function flagValue(name) {
+  const i = process.argv.indexOf(name)
+  return i >= 0 ? process.argv[i + 1] : undefined
+}
+
+// Target triple -> node dist tags + prebuild-install arch. nodejs.org names
+// its linux tarballs glibc-flavored with a bare arch (linux-x64), and the
+// prebuilt .node file's arch segment follows the same naming.
+function normalizeTarget(flag, fail) {
+  if (!flag) {
+    const plat = process.platform === 'win32' ? 'win' : process.platform
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+    return { nodePlat: plat, nodeArch: arch, prebuildArch: arch, nodeBin: plat === 'win' ? 'node.exe' : 'node' }
+  }
+  const [os, arch] = flag.split('-')
+  const map = {
+    'linux-x64': { nodePlat: 'linux', nodeArch: 'x64', prebuildArch: 'x64' },
+    'linux-arm64': { nodePlat: 'linux', nodeArch: 'arm64', prebuildArch: 'arm64' },
+    'mac-arm64': { nodePlat: 'darwin', nodeArch: 'arm64', prebuildArch: 'arm64' },
+    'win-x64': { nodePlat: 'win', nodeArch: 'x64', prebuildArch: 'x64' },
+  }
+  const t = map[flag]
+  if (!t) fail(`--platform must be one of ${Object.keys(map).join('|')}, got "${flag}"`)
+  // The bundled binary name follows the TARGET, not the host: a win-x64
+  // tarball extracts bin/node.exe even on a linux builder.
+  t.nodeBin = t.nodePlat === 'win' ? 'node.exe' : 'node'
+  return t
+}
+
 const SPA_SRC = join(root, 'build', 'client')
 
 // Non-inlined deps per bundle. better-sqlite3 is a native addon, loaded at
@@ -85,11 +131,6 @@ const ENTRIES = {
   'server.bundle.mjs': join(root, 'server.js'),
   'orcd.bundle.mjs': join(root, 'src', 'orcd', 'index.ts'),
   'kpp.bundle.mjs': join(KPP_REPO, 'src', 'cli.ts'),
-}
-
-function fail(msg) {
-  console.error(`build-bundles: ${msg}`)
-  process.exit(1)
 }
 
 function run(cmd, args, opts = {}) {
@@ -182,9 +223,7 @@ async function installNodeRuntime() {
     console.log(`node runtime present (${nodeBin})`)
     return
   }
-  const platTag = process.platform === 'win32' ? 'win' : process.platform
-  const archTag = process.arch === 'arm64' ? 'arm64' : 'x64'
-  const name = `node-${NODE_VERSION}-${platTag}-${archTag}.tar.xz`
+  const name = `node-${NODE_VERSION}-${TARGET.nodePlat}-${TARGET.nodeArch}.tar.xz`
   const url = `https://nodejs.org/dist/${NODE_VERSION}/${name}`
   console.log(`downloading node ${NODE_VERSION} (${name})...`)
   const tmp = mkdtempSync(join(tmpdir(), 'orc-node-'))
@@ -216,12 +255,11 @@ async function installNodeRuntime() {
     const topDir = readdirSync(stage)[0]
     rmSync(nodeDir, { recursive: true, force: true })
     renameSync(join(stage, topDir), nodeDir)
-    if (!existsSync(nodeBin)) fail(`node extraction produced no ${nodeBin}`)
     // The brief and Task 6's spawn recipe both address the binary as
-    // <out>/node/<binname> (i.e. out/node/node on posix), not out/node/bin/node.
-    // The tarball's real binary is bin/node, so add a hardlink at out/node/node
+    // <out>/node/<binname>, not the tarball's real bin/node (bin/node.exe on
+    // win); the flat name follows the target, not the host. Hardlink first
     // (fall back to a copy when hardlinks are unavailable, e.g. cross-device).
-    const flatBin = join(nodeDir, process.platform === 'win32' ? 'node.exe' : 'node')
+    const flatBin = join(nodeDir, TARGET.nodeBin)
     if (!existsSync(flatBin)) {
       try {
         linkSync(nodeBin, flatBin)
@@ -256,7 +294,7 @@ function installSqlitePrebuild() {
     // the wrong one when the host node differs from the shipped runtime (v22).
     // Force the pinned version so the .node always matches out/node.
     const nodeTarget = NODE_VERSION.slice(1) // v22.23.3 -> 22.23.3 (prebuild-install takes no leading v)
-    run(join(modSrc, '..', '.bin', 'prebuild-install'), ['-r', 'node', '--target', nodeTarget], { cwd: modSrc })
+    run(join(modSrc, '..', '.bin', 'prebuild-install'), ['-r', 'node', '--target', nodeTarget, `--arch=${TARGET.prebuildArch}`], { cwd: modSrc })
     const native = join(modSrc, 'build', 'Release', 'better_sqlite3.node')
     if (!existsSync(native)) fail(`prebuild-install produced no native binary (looked for ${native})`)
     // better-sqlite3 is not self-contained at runtime: its native loader goes
@@ -271,20 +309,27 @@ function installSqlitePrebuild() {
       if (entry === '.bin' || entry === '.modules' || entry === '.package-lock.json') continue
       cpSync(join(nmSrc, entry), join(nmDst, entry), { recursive: true })
     }
-    // Validate the native module loads. Prefer the bundled node runtime — that is
-    // the interpreter that will actually run the bundles at ship time; fall back
-    // to the host node only when the runtime wasn't downloaded (offline tests).
-    const nodeBin = join(OUT_DIR, 'node', process.platform === 'win32' ? 'node.exe' : 'node')
-    const runner = existsSync(nodeBin) ? nodeBin : process.execPath
-    const check = spawnSync(
-      runner,
-      ['-e', `require(${JSON.stringify(join(nmDst, 'better-sqlite3'))}); console.log('better-sqlite3 loads under', process.version)`],
-      { cwd: OUT_DIR },
-    )
-    if (check.status !== 0) {
-      fail(
-        `bundled better-sqlite3 fails to load under ${runner}:\n${check.stdout?.toString() ?? ''}${check.stderr?.toString() ?? ''}`,
+    // Validate the native module loads — but only when the downloaded runtime
+    // is executable on this host: a foreign target's node binary can't run
+    // here, and the host node would load the foreign .node with the wrong
+    // ABI/loader, so a "pass" would be meaningless. Host builds (and the
+    // SKIP_NODE_DOWNLOAD offline test path, where the prebuild matches the
+    // host node) always validate.
+    const nodeBin = join(OUT_DIR, 'node', TARGET.nodeBin)
+    if (!CROSS_TARGET) {
+      const runner = existsSync(nodeBin) ? nodeBin : process.execPath
+      const check = spawnSync(
+        runner,
+        ['-e', `require(${JSON.stringify(join(nmDst, 'better-sqlite3'))}); console.log('better-sqlite3 loads under', process.version)`],
+        { cwd: OUT_DIR },
       )
+      if (check.status !== 0) {
+        fail(
+          `bundled better-sqlite3 fails to load under ${runner}:\n${check.stdout?.toString() ?? ''}${check.stderr?.toString() ?? ''}`,
+        )
+      }
+    } else {
+      console.log(`cross-target (${TARGET.nodePlat}/${TARGET.nodeArch}): skipping better-sqlite3 load validation (foreign binary)`)
     }
     console.log(`better-sqlite3 ${version} -> ${join(nmDst, 'better-sqlite3')}`)
   } finally {

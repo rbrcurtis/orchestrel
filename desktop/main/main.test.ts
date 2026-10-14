@@ -1,12 +1,14 @@
 // Tests for the pure slice of the Electron main entry: the ServiceDef spawn
-// recipes (exact env/cwd/args), the outDirFor dev/packaged branches, and the
+// recipes (exact env/cwd/args), the resolveOutDir dev/packaged branches, and the
 // native-module import ban over the whole main + lib surface.
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { vi } from 'vitest'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import type { BootstrapData } from '../lib/bootstrap'
 import type { ServiceDef } from '../lib/supervisor'
-import { outDirFor, serviceDefsFromBootstrap } from './main'
+import { resolveOutDir, serviceDefsFromBootstrap } from './main'
 
 // The compiled dist/main.cjs and this main/ dir share a parent (desktop/),
 // so out/ is reachable from either as <parent>/out — the same distance the
@@ -52,19 +54,26 @@ test('serviceDefsFromBootstrap maps all three services with the exact env, cwd, 
   })
 })
 
-test('outDirFor uses plain <pkg>/out in dev and asar.unpacked when packaged', () => {
+test('resolveOutDir uses asar.unpacked path when packaged and plain out/ in dev', () => {
   const prev = process.env.ELECTRON_IS_ASAR
+  const orig = process.resourcesPath
   try {
+    // dev: the module lives in dist/ (a sibling of out/), so the answer is
+    // <module dir>/../out, whatever the module dir happens to be.
     delete process.env.ELECTRON_IS_ASAR
-    expect(outDirFor()).toBe(join(PKG_DIR, 'out'))
+    expect(resolveOutDir()).toBe(join(PKG_DIR, 'out'))
+    // packaged: a real temp resourcesPath standing in for the asar-unpacked
+    // layout (the packaged build produces exactly this dir, verified by the
+    // AppImage smoke); the resourcesPath mock + ELECTRON_IS_ASAR='1' are the
+    // brief's documented packaged inputs.
+    const resources = mkdtempSync(join(tmpdir(), 'orc-res-'))
+    mkdirSync(join(resources, 'app.asar.unpacked', 'out'), { recursive: true })
+    Object.defineProperty(process, 'resourcesPath', { value: resources, configurable: true })
     process.env.ELECTRON_IS_ASAR = '1'
-    // Task 8 swaps this one function for resourcesPath-based resolution; the
-    // mocked process.resourcesPath documents the packaged path shape.
-    const orig = process.resourcesPath
-    Object.defineProperty(process, 'resourcesPath', { value: '/x/resources', configurable: true })
-    expect(outDirFor()).toBe('/x/resources/app.asar.unpacked/out')
-    Object.defineProperty(process, 'resourcesPath', { value: orig, configurable: true })
+    expect(resolveOutDir()).toBe(join(resources, 'app.asar.unpacked', 'out'))
+    rmSync(resources, { recursive: true, force: true })
   } finally {
+    Object.defineProperty(process, 'resourcesPath', { value: orig, configurable: true })
     if (prev === undefined) delete process.env.ELECTRON_IS_ASAR
     else process.env.ELECTRON_IS_ASAR = prev
   }

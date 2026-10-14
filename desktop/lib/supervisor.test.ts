@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { mkdirSync, appendFileSync } from 'node:fs'
+import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
 import { AddressInfo } from 'node:net'
 import * as http from 'node:http'
 import { afterEach, beforeEach, test, expect, vi } from 'vitest'
@@ -78,6 +79,16 @@ function healthServer(initial: boolean): Promise<{
       })
     })
   )
+}
+
+// Poll until a pid no longer exists (SIGKILL delivery to a real process is
+// near-instant but not synchronous from our side).
+async function waitForGone(pid: number): Promise<void> {
+  for (let i = 0; i < 100; i++) {
+    try { process.kill(pid, 0) } catch { return }
+    await new Promise((r) => setTimeout(r, 20))
+  }
+  throw new Error(`pid ${pid} still alive after waitForGone`)
 }
 
 let base: string
@@ -230,6 +241,30 @@ test('stop() kills all children and drains stdio', async () => {
     expect(p.killCalls).toEqual(['SIGTERM']) // each killed exactly once
   }
   await health.close()
+})
+
+test('sweepOrphans SIGKILLs a live pid from the pid file and leaves the rest', async () => {
+  const d = join(base, 'svc')
+  await mkdir(d, { recursive: true })
+  const pidFile = join(d, 'service-pids.txt')
+  const sup = new Supervisor({ logDir: join(base, 'logs'), healthUrl: 'http://127.0.0.1:1/', pidFile })
+
+  // a real long-lived process to act as a stranded service child
+  const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { stdio: 'ignore' })
+  const strayPid = child.pid!
+  expect(strayPid).toBeGreaterThan(0)
+  try {
+    // pid file lists the live stray + a dead (huge, unwielded) pid
+    writeFileSync(pidFile, `${strayPid}\n999999999\n`)
+    const swept = sup.sweepOrphans()
+    expect(swept).toBe(1) // only the live one was signaled
+    // the stray must be dead now
+    await waitForGone(strayPid)
+    // a second sweep finds nothing (file was removed after a kill)
+    expect(sup.sweepOrphans()).toBe(0)
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL')
+  }
 })
 
 test('spawns with array args — paths with spaces are not word-split', async () => {

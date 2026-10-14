@@ -1,0 +1,40 @@
+# macOS target: dmg + zip, arm64 only (the app runs on `oni`, an Apple-Silicon
+# Mac; Intel builds would need the same pipeline with arch: x64 added).
+appId: com.rbrcurtis.orchestrel
+productName: Orchestrel
+directories:
+  # See the linux yml: output MUST not live in a dir files: matches.
+  output: release
+  buildResources: build-resources
+files:
+  - dist/**
+  - out/**
+  # Same exclusion as the linux yml: without it the collector's upward
+  # search drags the repo-root node_modules into the asar (~6GB).
+  - '!node_modules'
+asar:
+  # smartUnpack OFF — see the linux yml: ALL of out/ is exec'd by the bundled
+  # plain node, which cannot read a packed asar.
+  smartUnpack: false
+asarUnpack:
+  - out/**
+publish:
+  - provider: github
+    owner: rbrcurtis
+    repo: orchestrel
+mac:
+  category: public.app-category.developer-tools
+  arch:
+    - arm64
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+# Ad-hoc signing (identity: null + CSC_IDENTITY_AUTO_DISCOVERY=false at build
+# time). Caveats, documented in README: every new version breaks Gatekeeper
+# trust and the user must right-click -> Open once; a proper Developer ID
+# cert would remove that friction.
+identity: null
