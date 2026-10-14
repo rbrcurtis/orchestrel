@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "composite": true,
+    "outDir": "dist"
+  },
+  "include": ["lib", "main", "types"],
+  "exclude": [
+    // Imports the backend's TypeORM entities (outside this composite
+    // project's rootDir by design); vitest runs it, the root typecheck
+    // covers src/.
+    "provision-db.test.ts"
+  ]
+}

@@ -1,21 +1,30 @@
 {
   "name": "orchestrel-desktop",
+  "productName": "Orchestrel",
   "version": "1.0.0",
-  "description": "Desktop apps for Orchestrel.",
-  "main": "src/main.js",
   "private": true,
-  "author": "Ryan Curtis",
-  "license": "MIT",
+  "homepage": "https://github.com/rbrcurtis/orchestrel",
+  "main": "dist/main.cjs",
   "scripts": {
-    "start": "npm run start:orchestrel",
-    "start:orchestrel": "ORCHESTREL_TARGET=orchestrel electron .",
-    "start:orc-chat": "ORCHESTREL_TARGET=orc-chat electron .",
-    "build": "npm run build:orchestrel && npm run build:orc-chat",
-    "build:orchestrel": "electron-builder --config electron-builder.orchestrel.yml",
-    "build:orc-chat": "electron-builder --config electron-builder.orc-chat.yml"
+    "bundles": "node build-bundles.mjs",
+    "build:main": "node build-main.mjs",
+    "start": "npm run build:main && electron .",
+    "dev": "npm run bundles && npm run build:main && electron .",
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:linux": "node build-bundles.mjs && node build-main.mjs && electron-builder --config electron-builder-linux.yml --publish never",
+    "build:mac": "node build-bundles.mjs --platform mac-arm64 && node build-main.mjs && electron-builder --config electron-builder-mac.yml --publish never",
+    "build:win": "node build-bundles.mjs --platform win-x64 && node build-main.mjs && electron-builder --config electron-builder-win.yml --publish never"
   },
   "devDependencies": {
-    "electron": "^44.1.0",
-    "electron-builder": "^26.15.3"
+    "better-sqlite3": "^12.6.2",
+    "concurrently": "^9",
+    "electron": "^44",
+    "electron-builder": "^26",
+    "electron-updater": "^6",
+    "esbuild": "^0.25",
+    "typescript": "^5",
+    "vitest": "^3.2.7",
+    "yaml": "^2.9.1"
   }
 }

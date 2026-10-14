@@ -1,0 +1,59 @@
+# Linux target: AppImage + deb. Artifacts land in release/ as
+# Orchestrel-<version>[-<arch>].AppImage / orchestrel-desktop_<ver>_<arch>.deb,
+# plus latest-linux.yml / latest-linux-arm64.yml feeds (electron-updater 6's
+# linux channel names).
+appId: com.rbrcurtis.orchestrel
+productName: Orchestrel
+# `dist` is electron-builder's OUTPUT and ALSO the main-process bundle dir
+# that files: dist/** wants — a name collision. The output lands in
+# `release/` so the builder never packs its own previous artifacts into the
+# asar (without this, rebuilds swell the asar toward the 4.2GB cap; the
+# package-desktop.sh cleanup is a second line of defense only).
+directories:
+  output: release
+files:
+  - dist/**
+  - out/**
+  # The `!` line must exist: getMainFileMatchers auto-injects `!**/node_modules/**`
+  # only at a node_modules-ish pattern boundary, and an explicit `!node_modules`
+  # guarantees the repo-root node_modules (the builder's own dep tree, ~GBs of
+  # typescript/esbuild/etc.) can never sneak in via any resolution path — the
+  # app ships its own runtime deps under out/node_modules, period.
+  - '!node_modules'
+# The node binary must be exec-able and the .node addon load-able — both are
+# impossible from inside a packed asar, so they land in app.asar.unpacked/.
+# main.ts's resolveOutDir() addresses exactly that path (unit-tested).
+asar:
+  # smartUnpack OFF — the explicit asarUnpack below is the ONLY thing that
+  # leaves the asar, and it unpacks ALL of out/: every file there is either
+  # exec'd or require'd by the BUNDLED plain node (provision-db.cjs +
+  # provision-dll-bundle.cjs, the three service bundles, out/node/node, the
+  # better_sqlite3.node addon). Plain node cannot read a packed asar, so the
+  # entire runtime must be unpacked; only dist/ (the electron main bundle)
+  # and package.json stay packed.
+  smartUnpack: false
+asarUnpack:
+  - out/**
+# The publish block is what bakes app-update.yml into the build; electron-
+# updater reads it at runtime (owner/repo must match .git/config's origin).
+publish:
+  - provider: github
+    owner: rbrcurtis
+    repo: orchestrel
+# electron-builder 26's default (unset) AppImage toolset is the static
+# runtime, whose toolset (appimage-tools-runtime-20251108) fails to download
+# on this host; 0.0.0 is the FUSE2 path with a cached, working toolset.
+toolsets:
+  appimage: '0.0.0'
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+  category: Development
+  maintainer: rbrcurtis

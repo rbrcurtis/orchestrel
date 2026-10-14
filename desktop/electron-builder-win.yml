@@ -1,0 +1,31 @@
+# Windows target: NSIS installer. Artifact: "Orchestrel Setup <version>.exe"
+# plus latest.yml feed. Unpacked exe name is pinned to the app's productName.
+appId: com.rbrcurtis.orchestrel
+productName: Orchestrel
+directories:
+  # See the linux yml: output MUST not live in a dir files: matches.
+  output: release
+files:
+  - dist/**
+  - out/**
+  # Same exclusion as the linux yml: without it the collector's upward
+  # search drags the repo-root node_modules into the asar (~6GB).
+  - '!node_modules'
+asar:
+  # smartUnpack OFF — see the linux yml: ALL of out/ is exec'd by the bundled
+  # plain node, which cannot read a packed asar.
+  smartUnpack: false
+asarUnpack:
+  - out/**
+publish:
+  - provider: github
+    owner: rbrcurtis
+    repo: orchestrel
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

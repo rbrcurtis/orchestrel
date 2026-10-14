@@ -100,7 +100,8 @@ type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<strin
 
 /**
  * Resolve the acting identity from an HTTP request the same way the socket
- * middleware does (CF Access JWT, Apache user map, or LOCAL_ADMIN on loopback).
+ * middleware does (CF Access JWT, Apache user map, the seeded local user on
+ * desktop loopback, or LOCAL_ADMIN on hosted loopback).
  * Returns null when the request is not authenticated. Shared by the Socket.IO
  * auth middleware and the REST prompt controllers so a card prompt always knows
  * who sent it.
@@ -112,6 +113,16 @@ export async function resolveIdentity(req: IncomingMessage): Promise<import('../
     return null;
   }
   const { userService, LOCAL_ADMIN } = await import('../services/user');
+  if (auth.isLocal && process.env.ORCHESTREL_DESKTOP === '1') {
+    // Desktop: act as the seeded local user, not the synthetic LOCAL_ADMIN.
+    // Every desktop request is loopback, and a prompt authored by user id 0
+    // is invisible to the memory/preference maintainers (they group by real
+    // user ids), so the seeded row is the acting identity. ADMIN_EMAILS is
+    // set to this email by the desktop supervisor, keeping the row admin.
+    const { DESKTOP_LOCAL_USER } = await import('../../shared/desktop-user');
+    console.log(`[ws:auth] resolveIdentity: desktop loopback -> seeded local user ${DESKTOP_LOCAL_USER}`);
+    return userService.findOrCreate(DESKTOP_LOCAL_USER);
+  }
   return auth.isLocal || !auth.email ? LOCAL_ADMIN : await userService.findOrCreate(auth.email);
 }
 

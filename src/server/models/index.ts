@@ -6,6 +6,7 @@ import { Card, CardSubscriber } from './Card';
 import { Project, ProjectSubscriber } from './Project';
 import { User, ProjectUser } from './User';
 import { ApiIdempotency } from './ApiIdempotency';
+import { DESKTOP_LOCAL_USER } from '../../shared/desktop-user';
 
 const DB_DIR = join(process.cwd(), 'data');
 mkdirSync(DB_DIR, { recursive: true });
@@ -37,6 +38,28 @@ const TOKEN_TO_HEX: Record<string, string> = {
   'neon-crimson': '#dc143c',
   'neon-sky': '#00c8ff',
 };
+
+/**
+ * Seed the desktop app's single local user. Desktop installs run the backend
+ * unattended with no CF Access / Apache identity, so the UI needs a row to
+ * sign in as. Gated on ORCHESTREL_DESKTOP (set by the desktop supervisor)
+ * so hosted deployments — even fresh ones with an empty users table — never
+ * get the row. Exported for the model tests to exercise without standing up
+ * the full DataSource.
+ */
+export async function seedLocalUser(ds: DataSource): Promise<void> {
+  if (process.env.ORCHESTREL_DESKTOP !== '1') {
+    console.debug('[db] local-user seed skipped: backend is not running in desktop mode');
+    return;
+  }
+  const count = (await ds.query('SELECT COUNT(*) AS n FROM users')) as Array<{ n: number }>;
+  // oxlint-disable-next-line orchestrel/log-before-early-return -- idempotency guard: no-op on a populated table
+  if (count[0].n > 0) return;
+  await ds.query(
+    `INSERT INTO users (email, role, created_at) VALUES (?, ?, ?)`,
+    [DESKTOP_LOCAL_USER, 'admin', new Date().toISOString()],
+  );
+}
 
 export async function initDatabase(): Promise<void> {
   if (!AppDataSource.isInitialized) {
@@ -176,6 +199,7 @@ export async function initDatabase(): Promise<void> {
     }
     await runner.query(`UPDATE projects SET default_sandbox = 0 WHERE default_sandbox IS NULL`);
     await runner.query(`UPDATE cards SET sandbox = 0 WHERE sandbox IS NULL`);
+    await seedLocalUser(AppDataSource);
     await runner.query(`UPDATE cards SET pending_initial_files = '[]' WHERE pending_initial_files IS NULL`);
     const duplicateSessions = (await runner.query(`
       SELECT session_id, GROUP_CONCAT(id) AS card_ids
