@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeFileAtomic } from './atomic-write'
 
 export interface BootstrapData {
   backendPort: number
@@ -12,7 +13,7 @@ const FILE = 'bootstrap.json'
 
 export function writeBootstrap(dir: string, data: BootstrapData): void {
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, FILE), JSON.stringify(data, null, 2))
+  writeFileAtomic(join(dir, FILE), JSON.stringify(data, null, 2))
 }
 
 export function readBootstrap(dir: string): BootstrapData {

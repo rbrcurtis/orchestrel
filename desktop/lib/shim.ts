@@ -9,8 +9,9 @@
 // source changed (size+mtime compare) — repair semantics; a no-change run is
 // a zero-rewrite no-op. The bin script is rewritten atomically (temp +
 // rename) only when its content would change.
-import { copyFileSync, cpSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { chmod, mkdir, stat, unlink, utimes } from 'node:fs/promises'
+import { writeFileAtomic } from './atomic-write'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -158,9 +159,7 @@ async function writeIfChanged(path: string, content: string, mode?: number): Pro
     // missing → rewrite
   }
   await mkdir(join(path, '..'), { recursive: true })
-  const t = path + '.tmp'
-  writeFileSync(t, content)
-  renameSync(t, path)
+  writeFileAtomic(path, content)
   if (mode !== undefined) await chmod(path, mode)
   return true
 }
