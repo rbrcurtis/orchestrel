@@ -49,6 +49,7 @@ test('serviceDefsFromBootstrap maps all three services with the exact env, cwd, 
       HOST: '127.0.0.1',
       CLIENT_DIR: join(OUT, 'client'),
       ORC_NODES: join(USER_DATA, 'orc.yaml'),
+      ORCHESTREL_DESKTOP: '1',
     },
     cwd: USER_DATA,
   })

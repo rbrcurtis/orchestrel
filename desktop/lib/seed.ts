@@ -68,7 +68,12 @@ export async function seedUserData(userDataDir: string): Promise<SeedResult> {
     defaultModel: 'auto',
     defaultThinkingLevel: 'high',
     ringBufferSize: 5000,
-    maintainers: false,
+    // Desktop owns its single orchestrel.db, so it runs the maintainer jobs
+    // (empty projects map: no knowledge memory yet, preference learning on
+    // the seeded local user).
+    maintainers: true,
+    defaultUser: 'local@orchestrel.local',
+    memory: { provider: 'kiro', model: 'auto', projects: {}, preferences: {} },
     providers: {
       kiro: {
         label: 'Kiro',

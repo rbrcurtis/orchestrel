@@ -111,6 +111,7 @@ export function serviceDefsFromBootstrap(
         HOST: '127.0.0.1',
         CLIENT_DIR: join(outDir, 'client'),
         ORC_NODES: join(userData, 'orc.yaml'),
+        ORCHESTREL_DESKTOP: '1',
       },
       cwd: userData,
     },

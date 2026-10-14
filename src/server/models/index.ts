@@ -41,11 +41,16 @@ const TOKEN_TO_HEX: Record<string, string> = {
 /**
  * Seed the desktop app's single local user. Desktop installs run the backend
  * unattended with no CF Access / Apache identity, so the UI needs a row to
- * sign in as. Guarded on the table being empty so hosted deployments
- * (already-populated users table) are untouched. Exported for the model tests
- * to exercise without standing up the full DataSource.
+ * sign in as. Gated on ORCHESTREL_DESKTOP (set by the desktop supervisor)
+ * so hosted deployments — even fresh ones with an empty users table — never
+ * get the row. Exported for the model tests to exercise without standing up
+ * the full DataSource.
  */
 export async function seedLocalUser(ds: DataSource): Promise<void> {
+  if (process.env.ORCHESTREL_DESKTOP !== '1') {
+    console.debug('[db] local-user seed skipped: backend is not running in desktop mode');
+    return;
+  }
   const count = (await ds.query('SELECT COUNT(*) AS n FROM users')) as Array<{ n: number }>;
   // oxlint-disable-next-line orchestrel/log-before-early-return -- idempotency guard: no-op on a populated table
   if (count[0].n > 0) return;

@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { DataSource } from 'typeorm';
 import { Card, CardSubscriber } from './Card';
 import { Project, ProjectSubscriber } from './Project';
@@ -31,9 +31,27 @@ async function freshDb(): Promise<DataSource> {
 
 describe('seedLocalUser (called by initDatabase)', () => {
   const cleanups: Array<() => Promise<void>> = [];
+  const prevDesktop = process.env.ORCHESTREL_DESKTOP;
+
+  beforeAll(() => {
+    process.env.ORCHESTREL_DESKTOP = '1';
+  });
 
   afterAll(async () => {
+    if (prevDesktop === undefined) delete process.env.ORCHESTREL_DESKTOP;
+    else process.env.ORCHESTREL_DESKTOP = prevDesktop;
     for (const c of cleanups.splice(0)) await c();
+  });
+
+  it('never seeds when ORCHESTREL_DESKTOP is unset (fresh hosted DB)', async () => {
+    const ds = await freshDb();
+    cleanups.push(() => ds.destroy());
+
+    delete process.env.ORCHESTREL_DESKTOP;
+    await seedLocalUser(ds);
+    process.env.ORCHESTREL_DESKTOP = '1';
+
+    expect(await ds.getRepository(User).find()).toHaveLength(0);
   });
 
   it('seeds a local admin user when users table is empty', async () => {

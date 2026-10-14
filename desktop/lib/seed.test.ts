@@ -39,6 +39,8 @@ test('seeds all five artifacts and the three directories on first run', async ()
       defaultThinkingLevel: string
       ringBufferSize: number
       maintainers: boolean
+      defaultUser: string
+      memory: { provider: string; model: string; projects: Record<string, unknown>; preferences: Record<string, unknown> }
       providers: Record<string, { label: string; baseUrl: string; apiKey: string; models: Record<string, { modelID: string; label: string; contextWindow: number }> }>
     }
     const orc = parseYaml(readFileSync(join(dir, 'orc.yaml'), 'utf8')) as {
@@ -68,7 +70,13 @@ test('seeds all five artifacts and the three directories on first run', async ()
     // compiled-in default, silently desyncing desktop cards from the web app.
     expect(orcd.defaultThinkingLevel).toBe('high')
     expect(orcd.ringBufferSize).toBe(5000)
-    expect(orcd.maintainers).toBe(false)
+    // Desktop owns its only orchestrel.db → it runs the maintainer jobs, with
+    // the seeded local user as attribution target (preference learning).
+    expect(orcd.maintainers).toBe(true)
+    expect(orcd.defaultUser).toBe('local@orchestrel.local')
+    expect(orcd.memory.provider).toBe('kiro')
+    expect(orcd.memory.model).toBe('auto')
+    expect(orcd.memory.preferences).toEqual({})
     expect(orcd.providers.kiro.baseUrl).toBe(`http://127.0.0.1:${boot.kppPort}`)
     expect(orcd.providers.kiro.apiKey).toBe('local')
     expect(orcd.providers.kiro.models.auto).toEqual({ modelID: 'auto', label: 'Auto', contextWindow: 180000 })
