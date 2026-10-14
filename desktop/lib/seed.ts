@@ -66,6 +66,7 @@ export async function seedUserData(userDataDir: string): Promise<SeedResult> {
     name: 'local',
     defaultProvider: 'kiro',
     defaultModel: 'auto',
+    defaultThinkingLevel: 'high',
     ringBufferSize: 5000,
     maintainers: false,
     providers: {

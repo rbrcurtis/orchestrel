@@ -44,13 +44,13 @@ accounts **with the app closed**. The shim is repaired (re-copied) on every
 launch when the bundled node/bundle/addon changed.
 
 ```sh
-orchestrel login local      # device-code flow: prints a URL + user code
-orchestrel status           # pool accounts, health, usage, token expiry
-orchestrel logout local [email]
-orchestrel refresh [pool]   # force a token refresh
+orchestrel kiro login local      # device-code flow: prints a URL + user code
+orchestrel kiro status           # pool accounts, health, usage, token expiry
+orchestrel kiro logout local [email]
+orchestrel kiro refresh [pool]   # force a token refresh
 ```
 
-`login` prints
+`kiro login` prints
 
 ```
 Open this URL and authorize:
@@ -62,10 +62,10 @@ open the URL, authorize in the browser. `Ctrl-C` during the wait aborts
 **cleanly** — no half-written account is committed (verified: accounts.db
 row count is unchanged after an interrupted login). Token expiry: Kiro's
 tokens are short-lived; when AWS returns an expiry error the proxy surfaces it
-verbatim (no silent retry) and the account shows `EXPIRED` in `status` until
-`refresh` or `login` again.
+verbatim (no silent retry) and the account shows `EXPIRED` in `kiro status`
+until `kiro refresh` or `kiro login` again.
 
-## Releasing / packaging
+## Releasing
 
 `scripts/package-desktop.sh` (repo root) builds one platform and optionally
 creates the GitHub release:
@@ -114,9 +114,7 @@ Artifacts (in `desktop/release/`):
 - mac: `Orchestrel-X.dmg`, `Orchestrel-X.zip`, `latest-mac.yml`
 - win: `Orchestrel Setup X.exe`, `latest.yml`
 
-## Releasing / auto-update
-
-The app auto-updates from **GitHub Releases** of the public
+Installed apps auto-update from **GitHub Releases** of the public
 `rbrcurtis/orchestrel` repository (the repo this code ships from — verify
 against `.git/config` if it ever moves).
 
@@ -195,11 +193,11 @@ for any non-developer recipient.
    `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<backendPort>/`
    (port from `~/.config/orchestrel-desktop/bootstrap.json`). Expect `200`
    text/html. `logs/main.log` shows `services healthy`.
-2. **Shim** — `~/.local/bin/orchestrel status` prints the `local` pool (the
-   shim was repaired on launch).
-3. **Kiro login abort is clean** — `orchestrel login local` prints the device
-   URL + code; `Ctrl-C` leaves `orchestrel status` at 0 accounts (no
-   half-written row).
+2. **Shim** — `~/.local/bin/orchestrel kiro status` prints the `local` pool
+   (the shim was repaired on launch).
+3. **Kiro login abort is clean** — `orchestrel kiro login local` prints the
+   device URL + code; `Ctrl-C` leaves `orchestrel kiro status` at 0 accounts
+   (no half-written row).
 4. **No orphans after a hard kill** — `kill -9` the electron main; the three
    service children may briefly survive (Electron does not run JS signal /
    exit handlers for SIGKILL). **Relaunch**: boot logs `swept N orphaned
@@ -212,7 +210,7 @@ for any non-developer recipient.
    `/tmp/d/opt/Orchestrel/orchestrel-desktop --no-sandbox` under xvfb. Same
    userData → same `backendPort`, board 200.
 6. **Human-side (needs a real display + a real Kiro account):**
-   - complete a real `orchestrel login local` in a browser
+   - complete a real `orchestrel kiro login local` in a browser
    - run a Kiro-provider card end to end: board shows the stream, the card
      moves to `review` on session exit
    - quit + relaunch: the DB (`orchestrel.db`) and the Kiro accounts
@@ -224,13 +222,13 @@ for any non-developer recipient.
   per version)
 - board 200 via the window; `~/Library/Application Support/Orchestrel` is the
   userData
-- `~/.local/bin/orchestrel status` (mac path)
+- `~/.local/bin/orchestrel kiro status` (mac path)
 - real Kiro login + a Kiro card to review; quit/relaunch persistence
 
 ### Windows
 
 - run `Orchestrel Setup X.exe` (SmartScreen: More info → Run anyway)
-- `%LocalAppData%/orchestrel/orchestrel.cmd status`
+- `%LocalAppData%/orchestrel/orchestrel.cmd kiro status`
 - real Kiro login + a Kiro card to review; quit/relaunch persistence
 
 ## Update-feed ops

@@ -36,6 +36,7 @@ test('seeds all five artifacts and the three directories on first run', async ()
       name: string
       defaultProvider: string
       defaultModel: string
+      defaultThinkingLevel: string
       ringBufferSize: number
       maintainers: boolean
       providers: Record<string, { label: string; baseUrl: string; apiKey: string; models: Record<string, { modelID: string; label: string; contextWindow: number }> }>
@@ -63,6 +64,9 @@ test('seeds all five artifacts and the three directories on first run', async ()
     expect(orcd.name).toBe('local')
     expect(orcd.defaultProvider).toBe('kiro')
     expect(orcd.defaultModel).toBe('auto')
+    // The product default is high — without this key orcd falls back to its
+    // compiled-in default, silently desyncing desktop cards from the web app.
+    expect(orcd.defaultThinkingLevel).toBe('high')
     expect(orcd.ringBufferSize).toBe(5000)
     expect(orcd.maintainers).toBe(false)
     expect(orcd.providers.kiro.baseUrl).toBe(`http://127.0.0.1:${boot.kppPort}`)

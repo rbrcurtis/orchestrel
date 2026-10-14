@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Package one platform of the desktop app into desktop/dist/ (and optionally
-# a GitHub release). Single purpose; no subscripts.
+# Package one platform of the desktop app into desktop/release/ (and
+# optionally a GitHub release). Single purpose; no subscripts.
 #
 # Usage:
 #   scripts/package-desktop.sh --target linux|mac|win --version X.Y.Z [--release] [--publish]
@@ -83,7 +83,7 @@ ARTGLOB=""
 # win nsis exe, orchestrel-desktop_* for deb), so match both spellings.
 ARTS=()
 while IFS= read -r -d '' a; do ARTS+=("$a"); done < <(find "$DESK/release" \( -name "Orchestrel*$VERSION*" -o -name "Orchestrel Setup $VERSION*" -o -name "orchestrel-desktop_${VERSION}_*" \) -print0 | sort -z)
-if [ ${#ARTS[@]} -eq 0 ]; then echo "no artifacts found for version $VERSION in $DESK/dist" >&2; exit 1; fi
+if [ ${#ARTS[@]} -eq 0 ]; then echo "no artifacts found for version $VERSION in $DESK/release" >&2; exit 1; fi
 if [ "$RELEASE" = "1" ]; then
   [ -n "${GH_TOKEN:-}" ] || { echo "GH_TOKEN required for --release" >&2; exit 1; }
   GH_ARGS=()
