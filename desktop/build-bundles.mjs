@@ -218,11 +218,15 @@ console.log(`build-bundles: done -> ${OUT_DIR}`)
 
 async function installNodeRuntime() {
   const nodeDir = join(OUT_DIR, 'node')
-  const nodeBin = join(nodeDir, 'bin', 'node')
-  if (existsSync(nodeBin) && !FORCE) {
-    console.log(`node runtime present (${nodeBin})`)
+  // Cache check on the FLAT binary the spawn recipes address: the win tarball
+  // extracts node.exe at the root (no bin/), so checking bin/node would
+  // re-download on every Windows build.
+  const cachedBin = join(nodeDir, TARGET.nodeBin)
+  if (existsSync(cachedBin) && !FORCE) {
+    console.log(`node runtime present (${cachedBin})`)
     return
   }
+  const nodeBin = join(nodeDir, 'bin', 'node')
   const name = `node-${NODE_VERSION}-${TARGET.nodePlat}-${TARGET.nodeArch}.tar.xz`
   const url = `https://nodejs.org/dist/${NODE_VERSION}/${name}`
   console.log(`downloading node ${NODE_VERSION} (${name})...`)

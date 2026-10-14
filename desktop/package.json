@@ -1,5 +1,6 @@
 {
   "name": "orchestrel-desktop",
+  "productName": "Orchestrel",
   "version": "1.0.0",
   "private": true,
   "homepage": "https://github.com/rbrcurtis/orchestrel",

@@ -62,7 +62,7 @@ export class Supervisor {
     args: string[],
     opts: { env: Record<string, string>; cwd: string }
   ) => ChildProcessWithoutNullStreams
-  private readonly spawned: Spawned[] = []
+  private readonly live: Map<string, Spawned> = new Map()
   private readonly exitTimes = new Map<string, number[]>()
   private readonly givenUp = new Set<string>()
   private crashCbs: ((svc: ServiceDef, logTail: string, gaveUp: boolean) => void)[] = []
@@ -118,16 +118,16 @@ export class Supervisor {
    */
   async restart(id: string): Promise<void> {
     if (this.stopping) return
-    const def = this.spawned.find((s) => s.id === id)
-    if (!def) return
+    const s = this.live.get(id)
+    if (!s) return
     this.exitTimes.set(id, [])
     this.givenUp.delete(id)
-    this.spawnDef(def)
+    this.spawnDef(s)
   }
 
   async stop(): Promise<void> {
     this.stopping = true
-    const live = this.spawned.filter((s) => !s.exited)
+    const live = [...this.live.values()].filter((s) => !s.exited)
     for (const s of live) s.proc.kill('SIGTERM')
     // exit can fire synchronously on kill (fast stubs, SIGKILL), so poll the
     // supervisor-tracked exited flag rather than racing once() after the fact
@@ -144,7 +144,7 @@ export class Supervisor {
   // pidFile + sweepOrphans() path exists: the NEXT launch reaps what this
   // one couldn't.)
   killAll(): void {
-    for (const s of this.spawned) {
+    for (const s of this.live.values()) {
       if (!s.exited) {
         try { s.proc.kill('SIGKILL') } catch { /* already gone */ }
       }
@@ -160,7 +160,7 @@ export class Supervisor {
   // reflects the current set (respawns get new PIDs).
   private writePidFile(): void {
     if (!this.pidFile) return
-    const pids = this.spawned.map((s) => s.proc.pid).filter((p): p is number => p !== undefined)
+    const pids = [...this.live.values()].map((s) => s.proc.pid).filter((p): p is number => p !== undefined)
     try { writeFileSync(this.pidFile, pids.join('\n') + '\n') } catch { /* best effort */ }
   }
 
@@ -172,8 +172,10 @@ export class Supervisor {
 
   private spawnDef(def: ServiceDef): void {
     const proc = this.spawnFn(def.command, def.args, { env: def.env, cwd: def.cwd })
+    // One entry per service id, replaced on respawn: the map bounds itself at
+    // the service count instead of growing with every crash-loop iteration.
     const s: Spawned = { ...def, proc, exited: false }
-    this.spawned.push(s)
+    this.live.set(def.id, s)
     if (s.proc.pid !== undefined) this.writePidFile()
     // append both streams to the log and drain them so pipes never backpressure
     for (const stream of [proc.stdout, proc.stderr]) {

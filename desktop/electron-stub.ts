@@ -52,9 +52,11 @@ export const Menu: {
 export const dialog: {
   showErrorBox(_title: string, _content: string): void
   showMessageBox(_win: unknown, _opts: Record<string, string>): Promise<unknown>
+  showMessageBoxSync(_opts: Record<string, string>): number
 } = {
   showErrorBox: () => {},
   showMessageBox: () => Promise.resolve(undefined),
+  showMessageBoxSync: () => 0,
 }
 export const ipcMain: {
   on(_channel: string, _listener: (event: unknown, ...args: unknown[]) => void): void

@@ -11,7 +11,6 @@ productName: Orchestrel
 # package-desktop.sh cleanup is a second line of defense only).
 directories:
   output: release
-  buildResources: build-resources
 files:
   - dist/**
   - out/**

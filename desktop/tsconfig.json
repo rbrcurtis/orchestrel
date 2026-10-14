@@ -11,5 +11,11 @@
     "composite": true,
     "outDir": "dist"
   },
-  "include": ["lib", "main", "types", "provision-db.test.ts"]
+  "include": ["lib", "main", "types"],
+  "exclude": [
+    // Imports the backend's TypeORM entities (outside this composite
+    // project's rootDir by design); vitest runs it, the root typecheck
+    // covers src/.
+    "provision-db.test.ts"
+  ]
 }

@@ -50,9 +50,26 @@ test('serviceDefsFromBootstrap maps all three services with the exact env, cwd, 
       CLIENT_DIR: join(OUT, 'client'),
       ORC_NODES: join(USER_DATA, 'orc.yaml'),
       ORCHESTREL_DESKTOP: '1',
+      // Sole admin: keeps the seeded local user at role admin on desktop.
+      ADMIN_EMAILS: 'local@orchestrel.local',
     },
     cwd: USER_DATA,
   })
+})
+
+test('serviceDefsFromBootstrap merges baseEnv into every service without letting it override', () => {
+  const base = { HOME: '/home/u', USERPROFILE: '/home/u', PATH: '/usr/bin:/bin' }
+  const [kpp, orcd, backend] = serviceDefsFromBootstrap(BOOT, OUT, NODE_BIN, USER_DATA, base)
+  for (const def of [kpp, orcd, backend]) {
+    expect(def.env.HOME).toBe('/home/u')
+    expect(def.env.USERPROFILE).toBe('/home/u')
+    expect(def.env.PATH).toBe('/usr/bin:/bin')
+  }
+  // service-specific vars must survive the merge, and baseEnv must not be
+  // able to shadow them (service keys are spread after baseEnv)
+  expect(kpp.env.KPP_CONFIG).toBe(join(USER_DATA, 'kiro', 'config.json'))
+  expect(backend.env.PORT).toBe('41000')
+  expect(backend.env.ORCHESTREL_DESKTOP).toBe('1')
 })
 
 test('resolveOutDir uses asar.unpacked path when packaged and plain out/ in dev', () => {

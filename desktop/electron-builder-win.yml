@@ -5,7 +5,6 @@ productName: Orchestrel
 directories:
   # See the linux yml: output MUST not live in a dir files: matches.
   output: release
-  buildResources: build-resources
 files:
   - dist/**
   - out/**

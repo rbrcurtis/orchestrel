@@ -55,8 +55,8 @@ function targets(h: { homeDir: string }, posix: boolean) {
         binPath: join(h.homeDir, '.local', 'bin', 'orchestrel'),
       }
     : {
-        cliHome: join(h.homeDir, 'Local', 'AppData', 'orchestrel'),
-        binPath: join(h.homeDir, 'Local', 'AppData', 'orchestrel', 'orchestrel.cmd'),
+        cliHome: join(h.homeDir, 'AppData', 'Local', 'orchestrel'),
+        binPath: join(h.homeDir, 'AppData', 'Local', 'orchestrel', 'orchestrel.cmd'),
       }
 }
 

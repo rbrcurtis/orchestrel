@@ -6,6 +6,7 @@ import { Card, CardSubscriber } from './Card';
 import { Project, ProjectSubscriber } from './Project';
 import { User, ProjectUser } from './User';
 import { ApiIdempotency } from './ApiIdempotency';
+import { DESKTOP_LOCAL_USER } from '../../shared/desktop-user';
 
 const DB_DIR = join(process.cwd(), 'data');
 mkdirSync(DB_DIR, { recursive: true });
@@ -56,7 +57,7 @@ export async function seedLocalUser(ds: DataSource): Promise<void> {
   if (count[0].n > 0) return;
   await ds.query(
     `INSERT INTO users (email, role, created_at) VALUES (?, ?, ?)`,
-    ['local@orchestrel.local', 'admin', new Date().toISOString()],
+    [DESKTOP_LOCAL_USER, 'admin', new Date().toISOString()],
   );
 }
 

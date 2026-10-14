@@ -27,6 +27,7 @@ import { platform } from 'node:os'
 import { readBootstrap, type BootstrapData } from '../lib/bootstrap'
 import { seedUserData } from '../lib/seed'
 import { buildCliHome, installShim } from '../lib/shim'
+import { DESKTOP_LOCAL_USER } from '../lib/local-user'
 import { Supervisor, type ServiceDef } from '../lib/supervisor'
 import { openCrashWindow } from './crash-window'
 import { logLine } from './log'
@@ -78,28 +79,32 @@ export function resolveOutDir(): string {
 }
 
 // The exact spawn recipes for the three services. The env is the complete
-// environment: these children are self-contained node bundles that need no
-// ambient PATH (nodeBin is absolute) or user-exported variables, so nothing
-// leaks into them.
+// environment: the children are self-contained node bundles (nodeBin is
+// absolute, so they never search PATH for their interpreter), but the work
+// they do is not — orcd shells out to `git` (bare name, resolved via PATH)
+// and the agent's Bash tool inherits this env — so baseEnv carries HOME /
+// USERPROFILE / PATH from the app. Nothing else is exported into the
+// children.
 export function serviceDefsFromBootstrap(
   b: BootstrapData,
   outDir: string,
   nodeBin: string,
-  userData: string
+  userData: string,
+  baseEnv: Record<string, string> = {}
 ): ServiceDef[] {
   return [
     {
       id: 'kpp',
       command: nodeBin,
       args: [join(outDir, 'kpp.bundle.mjs'), 'serve'],
-      env: { KPP_CONFIG: join(userData, 'kiro', 'config.json') },
+      env: { ...baseEnv, KPP_CONFIG: join(userData, 'kiro', 'config.json') },
       cwd: outDir,
     },
     {
       id: 'orcd',
       command: nodeBin,
       args: [join(outDir, 'orcd.bundle.mjs')],
-      env: { ORC_CONFIG: join(userData, 'orcd.yaml') },
+      env: { ...baseEnv, ORC_CONFIG: join(userData, 'orcd.yaml') },
       cwd: userData,
     },
     {
@@ -107,11 +112,16 @@ export function serviceDefsFromBootstrap(
       command: nodeBin,
       args: [join(outDir, 'server.bundle.mjs')],
       env: {
+        ...baseEnv,
         PORT: String(b.backendPort),
         HOST: '127.0.0.1',
         CLIENT_DIR: join(outDir, 'client'),
         ORC_NODES: join(userData, 'orc.yaml'),
         ORCHESTREL_DESKTOP: '1',
+        // Sole admin: keeps the seeded local user (the loopback identity on
+        // desktop) at role admin when findOrCreate recomputes roles — a
+        // demoted local user would see zero projects.
+        ADMIN_EMAILS: DESKTOP_LOCAL_USER,
       },
       cwd: userData,
     },
@@ -123,8 +133,20 @@ function logDir(): string {
 }
 
 if (!app.requestSingleInstanceLock()) {
-  // Second launch: the first instance's second-instance handler surfaces its
-  // window; this one has nothing to do.
+  // Second launch: say so (the spec's error principle — every failure states
+  // the problem and the fix) and exit; the first instance's second-instance
+  // handler surfaces its window.
+  try {
+    dialog.showMessageBoxSync({
+      type: 'warning',
+      title: 'Orchestrel',
+      message: 'Orchestrel is already running',
+      detail: 'Close the other instance first.',
+    })
+  } catch {
+    // dialog unavailable (e.g. no display yet) — the exit is the outcome
+  }
+  void logLine('boot', 'second instance started while another Orchestrel holds the lock; exiting')
   app.quit()
   process.exit(0)
 }
@@ -144,6 +166,15 @@ async function boot(): Promise<void> {
   const userData = app.getPath('userData')
   const out = resolveOutDir()
   const nodeBin = join(out, 'node', NODE_FLAT)
+  // Carried into the provision child and every service env: orcd resolves
+  // `git` by bare name (PATH), git and the agent's shell tools want a HOME,
+  // and on Windows USERPROFILE replaces HOME. Everything else stays out of
+  // the children.
+  const baseEnv: Record<string, string> = {
+    HOME: app.getPath('home'),
+    USERPROFILE: app.getPath('home'),
+    PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+  }
   const seeded = await seedUserData(userData)
   await logLine('boot', `seeded=${seeded.seeded} backendPort=${seeded.backendPort}`)
 
@@ -158,7 +189,7 @@ async function boot(): Promise<void> {
     status: number | null
   }>((resolve) => {
     const c = cpSpawn(nodeBin, [join(out, 'provision-db.cjs'), join(userData, 'data', 'orchestrel.db')], {
-      env: { PATH: '/usr/bin:/bin' },
+      env: baseEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let so = ''
@@ -215,7 +246,7 @@ async function boot(): Promise<void> {
     })
   })
 
-  await sup.start(serviceDefsFromBootstrap(seeded, out, nodeBin, userData))
+  await sup.start(serviceDefsFromBootstrap(seeded, out, nodeBin, userData, baseEnv))
   await logLine('boot', 'services healthy')
 
   mainWindow = createMainWindow(seeded.backendPort)
@@ -230,7 +261,9 @@ async function boot(): Promise<void> {
 
   app.on('activate', () => {
     // macOS dock click: recreate only a window that never existed, not one
-    // the user deliberately closed.
+    // the user deliberately closed. The updater keeps its dialog target via
+    // setUpdaterWindow, so a recreated window must re-register there too or
+    // update prompts silently stop working after a close/reopen.
     if (
       !mainWindow ||
       mainWindow.win.isDestroyed() ||
@@ -238,6 +271,7 @@ async function boot(): Promise<void> {
     ) {
       const b = readBootstrap(userData)
       mainWindow = createMainWindow(b.backendPort)
+      setUpdaterWindow(mainWindow.win)
     }
   })
 }

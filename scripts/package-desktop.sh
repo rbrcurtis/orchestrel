@@ -42,7 +42,9 @@ DESK="$ROOT/desktop"
 rm -rf "$DESK/release" 2>/dev/null || true
 
 # One version number in desktop/package.json stamps the artifact names, the
-# electron-builder yml output, and the latest*.yml feed files.
+# electron-builder yml output, and the latest*.yml feed files. The file is
+# restored after the build so the script never leaves a dirty tree.
+PKG_JSON_ORIG=$(cat "$DESK/package.json")
 node -e '
 const fs = require("fs");
 const p = process.argv[1], v = process.argv[2];
@@ -63,7 +65,7 @@ PLATFORM_CASE=""
 case "$TARGET" in
   linux)
     PLATFORM_CASE=""
-    echo "NOTE: --target linux packages BOTH x64 and arm64; the embedded node/sqlite runtime in out/ is built for the HOST arch, so smoke-test the x64 artifact on an x64 box and arm64 on an arm64 box (or re-run bundles with --platform linux-arm64 to swap the runtime)."
+    echo "NOTE: --target linux packages the HOST arch only (electron-builder's default when no arch is set); the embedded node/sqlite runtime in out/ is built for the host arch, so build on (or cross-build out/ with --platform for) the arch you ship."
     ;;
   mac) PLATFORM_CASE="mac-arm64" ;;
   win) PLATFORM_CASE="win-x64" ;;
@@ -77,6 +79,11 @@ fi
 
 ARTGLOB=""
 (cd "$DESK" && npx electron-builder --config "electron-builder-$TARGET.yml" --publish never)
+
+# Give the tracked package.json back its committed version now that the
+# builder has read it, so the script never leaves a dirty tree after a
+# successful build (a build that died earlier keeps the stamp for inspection).
+printf '%s\n' "$PKG_JSON_ORIG" > "$DESK/package.json"
 
 # Collect the artifacts electron-builder emitted for this version. Artifact
 # names differ per format (Orchestrel-* for AppImage/dmg, *Setup* for the

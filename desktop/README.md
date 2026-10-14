@@ -114,16 +114,21 @@ Artifacts (in `desktop/release/`):
 - mac: `Orchestrel-X.dmg`, `Orchestrel-X.zip`, `latest-mac.yml`
 - win: `Orchestrel Setup X.exe`, `latest.yml`
 
+Icon: none is bundled yet (the default Electron icon ships). Drop
+`icon.icns` / `icon.png` / `icon.ico` into `desktop/buildResources/` (the
+electron-builder default) and rebuild to change it.
+
 Installed apps auto-update from **GitHub Releases** of the public
 `rbrcurtis/orchestrel` repository (the repo this code ships from — verify
 against `.git/config` if it ever moves).
 
 - `electron-builder` (configured in the three ymls) publishes a release per
   tag; the release's assets must carry the platform channel files the
-  updater requests, which electron-updater 6 derives as
-  `latest.yml` (win32), `latest-linux.yml` (linux x64), `latest-mac.yml`
-  (darwin). `main/updater.ts:updateFeedPath` mirrors that derivation and the
-  unit tests pin it.
+  updater requests, which electron-updater 6 derives as `latest.yml` (win32),
+  `latest-linux.yml` (linux x64), `latest-mac.yml` (darwin).
+  (Verified against electron-updater 6.8.9: `Provider.getChannelFilePrefix()`
+  yields `-linux` — no arch suffix on x64 — `-mac`, or ``. The packaged build
+  fetches these from electron-builder's baked-in publish config.)
 - At boot (and every 4 h) `autoUpdater.checkForUpdates()` fetches the feed;
   `autoDownload = true` downloads the artifact on offer; `autoInstallOnAppQuit
   = true` applies the pending update on the next quit. A modal
@@ -191,7 +196,7 @@ for any non-developer recipient.
 
 1. **Launches + board 200** — `xvfb-run -a <AppImage> --no-sandbox`, then
    `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<backendPort>/`
-   (port from `~/.config/orchestrel-desktop/bootstrap.json`). Expect `200`
+   (port from `~/.config/Orchestrel/bootstrap.json`). Expect `200`
    text/html. `logs/main.log` shows `services healthy`.
 2. **Shim** — `~/.local/bin/orchestrel kiro status` prints the `local` pool
    (the shim was repaired on launch).

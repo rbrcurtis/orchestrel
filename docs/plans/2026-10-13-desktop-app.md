@@ -10,6 +10,27 @@
 
 **Spec:** `docs/specs/2026-10-13-desktop-app-design.md`
 
+> **Post-plan amendments (implementation diverged, deliberately):**
+> - Task 4's local-user seed is gated on `ORCHESTREL_DESKTOP=1` (set by the
+>   desktop supervisor), not on table emptiness — a fresh *hosted* deploy must
+>   not get the row.
+> - The seeded `orcd.yaml` ships `maintainers: true` with
+>   `defaultUser: local@orchestrel.local` and an empty projects map, so the
+>   preference maintainer learns from the local user's prompts (session sweep
+>   still runs from the pi agent dir; knowledge memory stays off until
+>   projects are added to the map).
+> - The loopback identity on desktop IS the seeded user: `resolveIdentity`
+>   returns `local@orchestrel.local` when `ORCHESTREL_DESKTOP=1` (backend env
+>   carries `ADMIN_EMAILS=local@orchestrel.local`), because prompts authored
+>   by the synthetic `LOCAL_ADMIN` (id 0) are invisible to the preference
+>   maintainer.
+> - The pi agent dir remains the user's global `~/.pi/agent` rather than a
+>   copy under userData (the spec says everything lives under userData). That
+>   is what makes the operator's prompts/skills/extensions available to the
+>   bundled orcd and gives the session sweep real sessions — the trade-off is
+>   open in the PR review; if decided otherwise, point the orcd child at a
+>   userData dir via `PI_CODING_AGENT_DIR`.
+
 ## Global Constraints
 
 - Kiro is the only provider in v1; no Anthropic/Claude Max, no remote orcd nodes, no wizards, no in-app auth UI.

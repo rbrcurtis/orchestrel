@@ -28,17 +28,6 @@ export function shouldCheck(lastCheckAtMs: number | null, now: number, intervalM
   return now - lastCheckAtMs >= intervalMs
 }
 
-// The channel-file name electron-updater fetches for the default "latest"
-// channel. Verified against electron-updater 6.8.9 (live run fetched
-// "GET /latest-linux.yml"): getChannelFilePrefix() yields "-linux" (no arch
-// suffix on x64), "-mac", or "" (win32) — out/providers/Provider.js +
-// util.getChannelFilename(channel) => `${ch}.yml`. Matches the plan's naming.
-export function updateFeedPath(_version: string, platformArch: string): string {
-  if (platformArch.startsWith('linux')) return 'latest-linux.yml'
-  if (platformArch.startsWith('darwin')) return 'latest-mac.yml'
-  return 'latest.yml'
-}
-
 function githubFeed() {
   // Defaults baked in as the fallback; env overrides are an ops seam (dev
   // machines may point elsewhere), read at call time.

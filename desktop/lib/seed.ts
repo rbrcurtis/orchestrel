@@ -17,6 +17,7 @@ import * as net from 'node:net'
 import { join } from 'node:path'
 import { stringify as dumpYaml } from 'yaml'
 import { writeBootstrap, readBootstrap, type BootstrapData } from './bootstrap'
+import { DESKTOP_LOCAL_USER } from './local-user'
 
 export interface SeedPorts {
   backendPort: number
@@ -72,7 +73,7 @@ export async function seedUserData(userDataDir: string): Promise<SeedResult> {
     // (empty projects map: no knowledge memory yet, preference learning on
     // the seeded local user).
     maintainers: true,
-    defaultUser: 'local@orchestrel.local',
+    defaultUser: DESKTOP_LOCAL_USER,
     memory: { provider: 'kiro', model: 'auto', projects: {}, preferences: {} },
     providers: {
       kiro: {

@@ -81,7 +81,7 @@ export function buildCliHome(userDataDir: string, _nodeBin: string, _kppBundle: 
   const win = isWin()
   const node = nodeNameFor(win ? 'win32' : 'linux')
   const cliHome = win
-    ? join(homeDir, 'Local', 'AppData', 'orchestrel')
+    ? join(homeDir, 'AppData', 'Local', 'orchestrel')
     : join(homeDir, '.local', 'share', 'orchestrel')
   const binPath = win
     ? join(cliHome, 'orchestrel.cmd')
