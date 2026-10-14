@@ -24,12 +24,11 @@
 >   carries `ADMIN_EMAILS=local@orchestrel.local`), because prompts authored
 >   by the synthetic `LOCAL_ADMIN` (id 0) are invisible to the preference
 >   maintainer.
-> - The pi agent dir remains the user's global `~/.pi/agent` rather than a
->   copy under userData (the spec says everything lives under userData). That
->   is what makes the operator's prompts/skills/extensions available to the
->   bundled orcd and gives the session sweep real sessions — the trade-off is
->   open in the PR review; if decided otherwise, point the orcd child at a
->   userData dir via `PI_CODING_AGENT_DIR`.
+> - The pi agent dir is the user's global `~/.pi/agent` rather than a copy
+>   under userData (DECIDED 2026-10-14: keep it global). That gives the
+>   bundled orcd the operator's prompts/skills/extensions and gives the
+>   session sweep real sessions. If a private copy is ever wanted, point the
+>   orcd child at a userData dir via `PI_CODING_AGENT_DIR`.
 
 ## Global Constraints
 

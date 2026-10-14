@@ -25,8 +25,10 @@ infrastructure.
 The Electron main process is a thin supervisor. On launch it:
 
 1. Resolves the `userData` dir and seeds first-run defaults: `orcd.yaml`, KPP
-   `config.json` + Kiro accounts dir, DB parent dir, pi agent dir defaults
-   (skills/prompts so orcd slash commands work out of the box).
+   `config.json` + Kiro accounts dir, DB parent dir. (Pi agent dir: decided
+   2026-10-14 to SHARE the operator's global `~/.pi/agent` rather than seed a
+   copy — orcd slash commands work out of the box because the real prompts/
+   skills are present.)
 2. Picks free ports and writes a `bootstrap.json` (ports + auth token) into
    `userData`.
 3. Spawns, in order, each on a **bundled plain Node binary**
@@ -94,7 +96,9 @@ platform/arch.
   only new first-use step is `orchestrel kiro login` from a terminal — linked
   from the kiro-provider error and documented in README/help.
 - Single local user: the `users` table gets one seeded row. No auth.
-- Everything under `userData`: DB, `orcd.yaml`, Kiro state, logs, pi agent dir.
+- Everything under `userData`: DB, `orcd.yaml`, Kiro state, logs. (Pi agent
+  dir: decided 2026-10-14 to keep the operator's global `~/.pi/agent` — a
+  seeded copy would shadow the operator's real prompts/skills/extensions.)
   Projects are local paths; worktree/multi-repo flows work unchanged.
 - Logs: each child's stdout/stderr to rotating files under `userData/logs/`.
   Menu item "Open logs folder"; the crash window links the relevant file.
