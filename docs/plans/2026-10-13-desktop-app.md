@@ -35,7 +35,7 @@
 - Kiro is the only provider in v1; no Anthropic/Claude Max, no remote orcd nodes, no wizards, no in-app auth UI.
 - All three service bundles run on **plain Node** (bundled `resources/node`), never Electron's Node ABI. The Electron main process must therefore **never import `better-sqlite3`** (or any native module) — DB seeding happens in the backend, not in main.
 - No `any` (TS strict). No dependency injection; services read env/files directly. Comments are decision records only.
-- All per-user state under `app.getPath('userData')` — nothing in `~/.config/kiro-auth` or the user's `~/.orc`.
+- All per-user state under `app.getPath('userData')` — nothing in `~/.config/kiro-auth` or the user's `~/.orc`. Exception, decided 2026-10-14: the pi agent dir stays the operator's global `~/.pi/agent` (shared with the bundled orcd; see Amendment below).
 - Kiro auth is CLI-only: `orchestrel kiro <login|status|logout|refresh>`; the shim is installed to `~/.local/bin` idempotently and repaired on every launch.
 - One version number in `desktop/package.json`; it stamps the GitHub Release and `latest*.yml` feed.
 - Bash scripts: `set -ex`, single-purpose.

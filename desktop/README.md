@@ -18,8 +18,10 @@ npm run dev          # = bundles (node runtime + sqlite prebuild + SPA) + main b
    pinned Node runtime into `out/node/` + the plain-node `better-sqlite3`
    prebuild into `out/node_modules/` + copy the SPA to `out/client/`. Pass
    `--platform linux-x64|linux-arm64|mac-arm64|win-x64` to build the embedded
-   runtime for a NON-HOST target (a mac build on `oni` fetches darwin/arm64
-   node; a win build fetches the node.exe tarball + the win prebuild). The
+   runtime for a NON-HOST target (a win build fetches the node.exe tarball +
+   the win prebuild) — but only the embedded runtime follows the flag: the
+   final electron-builder artifact is always the host arch (see Packaging
+   below). The
    bundles themselves are platform-independent JS; only the embedded runtime
    and the native addon vary.
 2. `node build-main.mjs` — bundle `main/*.ts` → `dist/main.cjs` + preloads +
@@ -82,10 +84,12 @@ Flow: stamp `desktop/package.json` version → `bun run build` (SPA) →
 - `--release` defaults to a **draft**; add `--publish` to make it public
   (public is what makes the auto-update feed live to other machines). Requires
   `GH_TOKEN` in the environment.
-- `--target linux` builds BOTH x64 and arm64. The embedded node/sqlite runtime
-  is built for the **host** arch by default, so smoke-test the x64 artifact on
-  an x64 box; to also get a correct arm64 embedded runtime, re-run
-  `build-bundles.mjs --platform linux-arm64` before packaging.
+- `--target linux` packages the **host arch only** (electron-builder with no
+  explicit `arch` builds for `process.arch`). The embedded node/sqlite runtime
+  under `out/` must match — it does, since `build-bundles.mjs --platform
+  <target>` defaults to the host too. For arm64, build + package on an arm64
+  box (or in CI); a cross-built arm64 artifact would carry the wrong embedded
+  runtime.
 - `--target mac` builds arm64 only (see "macOS build on oni" below).
 - `--target win` builds an NSIS x64 installer.
 

@@ -28,7 +28,8 @@ test('seeds all five artifacts and the three directories on first run', async ()
       expect(Number.isInteger(p)).toBe(true)
       expect(p).toBeGreaterThan(0)
     }
-    expect(res.authToken).toBe(res.authToken)
+    // token is random and present (cross-checked against orcd.yaml above)
+  expect(res.authToken).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
 
     const orcd = parseYaml(readFileSync(join(dir, 'orcd.yaml'), 'utf8')) as {
       listen: { host: string; port: number }
