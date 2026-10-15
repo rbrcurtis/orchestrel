@@ -1,8 +1,8 @@
 # Orchestrel Desktop
 
 Self-contained Electron app: seeds a private userData, bundles and supervises
-the three services (kpp, orcd, backend) as child node processes, and opens the
-Board window on the backend's health URL.
+the two services (orcd, backend) as child node processes, and opens the Board
+window on the backend's health URL.
 
 ## Building & running (dev loop)
 
@@ -14,7 +14,7 @@ npm run dev          # = bundles (node runtime + sqlite prebuild + SPA) + main b
 `npm run dev` (and the `build:*` scripts) orchestrate the whole chain from
 `desktop/`:
 
-1. `node build-bundles.mjs` — esbuild the three service bundles + download the
+1. `node build-bundles.mjs` — esbuild the two service bundles + download the
    pinned Node runtime into `out/node/` + the plain-node `better-sqlite3`
    prebuild into `out/node_modules/` + copy the SPA to `out/client/`. Pass
    `--platform linux-x64|linux-arm64|mac-arm64|win-x64` to build the embedded
@@ -34,38 +34,17 @@ Frontend changes: the SPA is rebuilt by `bun run build` at the repo root
 (which `build-bundles` requires to have run). Re-run `npm run dev` after a SPA
 or bundle change; main-process TS changes HMR-less (re-run the script).
 
-Tests: `npm run test` (vitest — supervisor, seed, shim, build+boot smoke,
+Tests: `npm run test` (vitest — supervisor, seed, build+boot smoke,
 main mappings, updater logic, resolveOutDir). `npm run typecheck` (tsc -b).
 
-## Kiro CLI (login / status / logout / refresh)
+## Model providers
 
-The desktop app installs a stable `~/.local/bin/orchestrel` shim (Windows:
-`%LocalAppData%/orchestrel/orchestrel.cmd`) that runs the bundled node +
-`kpp.bundle.mjs` against the app's Kiro config, so you can manage Kiro
-accounts **with the app closed**. The shim is repaired (re-copied) on every
-launch when the bundled node/bundle/addon changed.
-
-```sh
-orchestrel kiro login local      # device-code flow: prints a URL + user code
-orchestrel kiro status           # pool accounts, health, usage, token expiry
-orchestrel kiro logout local [email]
-orchestrel kiro refresh [pool]   # force a token refresh
-```
-
-`kiro login` prints
-
-```
-Open this URL and authorize:
-  https://trackable.awsapps.com/start/#/device?user_code=XXXX-XXXX
-Code: XXXX-XXXX
-```
-
-open the URL, authorize in the browser. `Ctrl-C` during the wait aborts
-**cleanly** — no half-written account is committed (verified: accounts.db
-row count is unchanged after an interrupted login). Token expiry: Kiro's
-tokens are short-lived; when AWS returns an expiry error the proxy surfaces it
-verbatim (no silent retry) and the account shows `EXPIRED` in `kiro status`
-until `kiro refresh` or `kiro login` again.
+The app ships **no** provider proxy: `orcd.yaml` is seeded with
+`providers: {}`, so nothing runs between the board and whatever supplies
+models. The `kiro` names left in the seeded config (`defaultProvider`,
+`defaultModel`, `memory.provider`) are placeholders until a provider entry is
+added. To point the node at a provider, edit
+`<userData>/orcd.yaml` and restart the app.
 
 ## Releasing
 
@@ -202,28 +181,20 @@ for any non-developer recipient.
    `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<backendPort>/`
    (port from `~/.config/Orchestrel/bootstrap.json`). Expect `200`
    text/html. `logs/main.log` shows `services healthy`.
-2. **Shim** — `~/.local/bin/orchestrel kiro status` prints the `local` pool
-   (the shim was repaired on launch).
-3. **Kiro login abort is clean** — `orchestrel kiro login local` prints the
-   device URL + code; `Ctrl-C` leaves `orchestrel kiro status` at 0 accounts
-   (no half-written row).
-4. **No orphans after a hard kill** — `kill -9` the electron main; the three
+2. **No orphans after a hard kill** — `kill -9` the electron main; the
    service children may briefly survive (Electron does not run JS signal /
    exit handlers for SIGKILL). **Relaunch**: boot logs `swept N orphaned
    service pid(s)` and the port is freed — the pid-file sweep reaps them.
    Graceful quit (close the window / menu Quit) → `before-quit` →
-   `supervisor.stop()` kills all three with no orphans and clears the pid
-   file.
-5. **`.deb` variant boots** — `dpkg -i orchestrel-desktop_X_amd64.deb` (needs
+   `supervisor.stop()` kills both with no orphans and clears the pid file.
+3. **`.deb` variant boots** — `dpkg -i orchestrel-desktop_X_amd64.deb` (needs
    root) OR extract (`dpkg-deb -x <deb> /tmp/d`) and run
    `/tmp/d/opt/Orchestrel/orchestrel-desktop --no-sandbox` under xvfb. Same
    userData → same `backendPort`, board 200.
-6. **Human-side (needs a real display + a real Kiro account):**
-   - complete a real `orchestrel kiro login local` in a browser
-   - run a Kiro-provider card end to end: board shows the stream, the card
-     moves to `review` on session exit
-   - quit + relaunch: the DB (`orchestrel.db`) and the Kiro accounts
-     (`kiro/accounts.db`) persist
+4. **Human-side (needs a real display):**
+   - add a provider to `<userData>/orcd.yaml` and run a card end to end: the
+     board shows the stream, the card moves to `review` on session exit
+   - quit + relaunch: the DB (`orchestrel.db`) persists
 
 ### macOS (on `oni`)
 
@@ -231,14 +202,12 @@ for any non-developer recipient.
   per version)
 - board 200 via the window; `~/Library/Application Support/Orchestrel` is the
   userData
-- `~/.local/bin/orchestrel kiro status` (mac path)
-- real Kiro login + a Kiro card to review; quit/relaunch persistence
+- a card run against a configured provider; quit/relaunch persistence
 
 ### Windows
 
 - run `Orchestrel Setup X.exe` (SmartScreen: More info → Run anyway)
-- `%LocalAppData%/orchestrel/orchestrel.cmd kiro status`
-- real Kiro login + a Kiro card to review; quit/relaunch persistence
+- a card run against a configured provider; quit/relaunch persistence
 
 ## Update-feed ops
 

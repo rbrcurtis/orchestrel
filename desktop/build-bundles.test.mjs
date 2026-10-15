@@ -68,7 +68,6 @@ const TEST_OUT = join(import.meta.dirname, '.test-out')
 
 const BUNDLE_ENV = {
   ...process.env,
-  KPP_REPO: '/home/ryan/Code/kiro-pool-proxy',
   SKIP_NODE_DOWNLOAD: '1',
   SKIP_SQLITE_PREBUILD: '1',
 }
@@ -88,10 +87,10 @@ function build(outDir) {
   execFileSync(process.execPath, [SCRIPT], { stdio: 'inherit', env: { ...BUNDLE_ENV, OUT_DIR: outDir } })
 }
 
-test('build-bundles produces all five outputs', () => {
+test('build-bundles produces all four outputs', () => {
   rmSync(TEST_OUT, { recursive: true, force: true })
   build(TEST_OUT)
-  for (const f of ['server.bundle.mjs', 'orcd.bundle.mjs', 'kpp.bundle.mjs']) {
+  for (const f of ['server.bundle.mjs', 'orcd.bundle.mjs']) {
     expect(statSync(join(TEST_OUT, f)).size, f).toBeGreaterThan(0)
   }
   expect(existsSync(join(TEST_OUT, 'client', 'index.html'))).toBe(true)

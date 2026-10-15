@@ -7,7 +7,7 @@ import { readBootstrap, writeBootstrap, type BootstrapData } from './bootstrap'
 
 test('writeBootstrap/readBootstrap roundtrip', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'boot-'))
-  const data: BootstrapData = { backendPort: 6194, kppPort: 8193, orcdPort: 4444, authToken: 'sekrit' }
+  const data: BootstrapData = { backendPort: 6194, orcdPort: 4444, authToken: 'sekrit' }
   writeBootstrap(dir, data)
   expect(readBootstrap(dir)).toEqual(data)
   // Written through the tmp+rename path: a crash mid-write leaves the reader
