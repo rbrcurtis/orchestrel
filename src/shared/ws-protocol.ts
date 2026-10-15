@@ -191,6 +191,26 @@ export interface NodeInfo {
   defaults?: { provider: string; model: string; thinkingLevel?: string };
 }
 
+/**
+ * A node's raw provider definitions, as written in its config file. Values keep
+ * `${ENV_VAR}` templates unresolved: the parsed config substitutes them, and
+ * writing that resolved shape back would turn a template into a plaintext key.
+ * Admin-only — it carries API keys.
+ */
+export interface NodeProviderConfig {
+  nodeName: string;
+  configPath: string;
+  providers: Record<string, Record<string, unknown>>;
+  defaultProvider: string;
+  defaultModel: string;
+}
+
+/** A node's answer to a provider reachability probe (no provider-specific calls). */
+export interface ProviderTestResult {
+  ok: boolean;
+  detail: string;
+}
+
 /** Sync payload pushed after subscribe */
 export interface SyncPayload {
   cards: Card[];
@@ -256,6 +276,23 @@ export interface ClientToServerEvents {
     data: { cardId: number; provider: string; model: string },
     ack: (res: AckResponse) => void,
   ) => void;
+
+  // Node provider config. Admin-only: reading it exposes provider API keys, and
+  // writing it rewrites the config file a node boots from.
+  'providers:get': (data: { nodeName: string }, ack: (res: AckResponse<NodeProviderConfig>) => void) => void;
+  'providers:save': (
+    data: {
+      nodeName: string;
+      providers: Record<string, Record<string, unknown>>;
+      defaultProvider: string;
+      defaultModel: string;
+    },
+    ack: (res: AckResponse) => void,
+  ) => void;
+  'providers:test': (
+    data: { nodeName: string; baseUrl: string },
+    ack: (res: AckResponse<ProviderTestResult>) => void,
+  ) => void;
 }
 
 /** Server → Client push events */
@@ -267,6 +304,8 @@ export interface ServerToClientEvents {
   'project:deleted': (data: { id: number }) => void;
   'session:message': (data: { cardId: number; message: unknown }) => void;
   'agent:status': (data: AgentStatus) => void;
+  /** Nodes re-advertised their capabilities (a provider save, or a reconnect). */
+  'nodes:updated': (data: NodeInfo[]) => void;
 }
 
 /** Server-side socket.data shape */

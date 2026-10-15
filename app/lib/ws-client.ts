@@ -31,6 +31,7 @@ export class WsClient {
     onProjectDeleted: (data: { id: number }) => void;
     onSessionMessage: (data: { cardId: number; message: unknown }) => void;
     onAgentStatus: (data: import('../../src/shared/ws-protocol').AgentStatus) => void;
+    onNodesUpdated: (data: import('../../src/shared/ws-protocol').NodeInfo[]) => void;
   }) {
     this.socket = io({
       withCredentials: true,
@@ -49,6 +50,7 @@ export class WsClient {
     this.socket.on('project:deleted', handlers.onProjectDeleted);
     this.socket.on('session:message', handlers.onSessionMessage);
     this.socket.on('agent:status', handlers.onAgentStatus);
+    this.socket.on('nodes:updated', handlers.onNodesUpdated);
 
     this.socket.on('connect', () => {
       const wasConnectedBefore = this.hasConnectedOnce;

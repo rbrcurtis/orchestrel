@@ -315,7 +315,7 @@ describe('OrcdClient dispatch ordering', () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as {
       socket: { writable: boolean };
-      send: (a: { requestId?: string }) => void;
+      send: (a: { action: string; requestId?: string }) => void;
       dispatch: (m: unknown) => void;
     };
     internals.socket = { writable: true };
@@ -345,7 +345,7 @@ describe('OrcdClient dispatch ordering', () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
     const internals = client as unknown as {
       socket: { writable: boolean };
-      send: (a: { requestId?: string }) => void;
+      send: (a: { action: string; requestId?: string }) => void;
       dispatch: (m: unknown) => void;
     };
     internals.socket = { writable: true };
@@ -367,5 +367,90 @@ describe('OrcdClient dispatch ordering', () => {
     const caps = await client.sayHello();
     expect(caps.providers[0].id).toBe('anthropic');
     expect(client.capabilities?.name).toBe('local');
+  });
+});
+
+describe('OrcdClient provider config', () => {
+  function stubReply(reply: Record<string, unknown>) {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const internals = client as unknown as {
+      socket: { writable: boolean };
+      send: (a: { action: string; requestId?: string }) => void;
+      dispatch: (m: unknown) => void;
+    };
+    internals.socket = { writable: true };
+    const sent: Array<{ action: string; requestId?: string; [k: string]: unknown }> = [];
+    internals.send = (a) => {
+      sent.push(a);
+      internals.dispatch({ ...reply, requestId: a.requestId });
+    };
+    return { client, sent };
+  }
+
+  it('reads the raw provider definitions the node owns', async () => {
+    const { client, sent } = stubReply({
+      type: 'providers',
+      configPath: '/home/u/.config/Orchestrel/orcd.yaml',
+      providers: { anthropic: { label: 'Anthropic', apiKey: '${ANTHROPIC_API_KEY}' } },
+      defaultProvider: 'anthropic',
+      defaultModel: 'sonnet',
+    });
+
+    await expect(client.getProviders()).resolves.toEqual({
+      configPath: '/home/u/.config/Orchestrel/orcd.yaml',
+      providers: { anthropic: { label: 'Anthropic', apiKey: '${ANTHROPIC_API_KEY}' } },
+      defaultProvider: 'anthropic',
+      defaultModel: 'sonnet',
+    });
+    expect(sent[0]!.action).toBe('providers_get');
+  });
+
+  it('forwards a save and caches the capabilities that come back', async () => {
+    const { client, sent } = stubReply({
+      type: 'capabilities',
+      name: 'local',
+      providers: [{ id: 'openai', label: 'OpenAI', models: [{ alias: 'gpt5', label: 'GPT-5', contextWindow: 400000 }] }],
+      defaults: { provider: 'openai', model: 'gpt5' },
+    });
+
+    await client.saveProviders({
+      providers: { openai: { label: 'OpenAI' } },
+      defaultProvider: 'openai',
+      defaultModel: 'gpt5',
+    });
+
+    expect(sent[0]).toMatchObject({
+      action: 'providers_save',
+      defaultProvider: 'openai',
+      defaultModel: 'gpt5',
+      providers: { openai: { label: 'OpenAI' } },
+    });
+    // The cached capabilities are what every context window and default in the
+    // backend is derived from, so a save has to refresh them.
+    expect(client.capabilities?.providers[0]?.id).toBe('openai');
+  });
+
+  it('rejects with the node’s validation message', async () => {
+    const { client } = stubReply({ type: 'error', sessionId: '', error: 'Provider "x" needs a baseUrl.' });
+
+    await expect(
+      client.saveProviders({ providers: { x: {} }, defaultProvider: 'x', defaultModel: 'm' }),
+    ).rejects.toThrow('Provider "x" needs a baseUrl.');
+  });
+
+  it('reports a reachability probe result without caching anything', async () => {
+    const { client, sent } = stubReply({
+      type: 'provider_test',
+      baseUrl: 'http://127.0.0.1:3457',
+      ok: false,
+      detail: 'Nothing answered at http://127.0.0.1:3457',
+    });
+
+    await expect(client.testProvider('http://127.0.0.1:3457')).resolves.toEqual({
+      ok: false,
+      detail: 'Nothing answered at http://127.0.0.1:3457',
+    });
+    expect(sent[0]).toMatchObject({ action: 'provider_test', baseUrl: 'http://127.0.0.1:3457' });
+    expect(client.capabilities).toBeNull();
   });
 });

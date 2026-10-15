@@ -142,6 +142,29 @@ export interface CapabilitiesAction {
   requestId?: string;
 }
 
+/** Raw provider definitions for one node's config file (unresolved templates). */
+export interface ProviderConfigPayload {
+  providers: Record<string, Record<string, unknown>>;
+  defaultProvider: string;
+  defaultModel: string;
+}
+
+export interface GetProvidersAction {
+  action: 'providers_get';
+  requestId?: string;
+}
+
+export interface SaveProvidersAction extends ProviderConfigPayload {
+  action: 'providers_save';
+  requestId?: string;
+}
+
+export interface TestProviderAction {
+  action: 'provider_test';
+  requestId?: string;
+  baseUrl: string;
+}
+
 export interface WorktreePrepareAction {
   action: 'worktree_prepare';
   requestId?: string;
@@ -228,6 +251,9 @@ export type OrcdAction =
   | CompactAction
   | HelloAction
   | CapabilitiesAction
+  | GetProvidersAction
+  | SaveProvidersAction
+  | TestProviderAction
   | WorktreePrepareAction
   | WorktreeRemoveAction
   | PathValidateAction
@@ -324,6 +350,21 @@ export interface CapabilitiesMessage {
   defaults: { provider: string; model: string; thinkingLevel?: string };
 }
 
+/** Fields the settings UI edits. `configPath` is where a save will land. */
+export interface ProvidersMessage extends ProviderConfigPayload {
+  type: 'providers';
+  requestId?: string;
+  configPath: string;
+}
+
+export interface ProviderTestMessage {
+  type: 'provider_test';
+  requestId?: string;
+  baseUrl: string;
+  ok: boolean;
+  detail: string;
+}
+
 export interface WorktreeReadyMessage {
   type: 'worktree_ready';
   requestId?: string;
@@ -404,6 +445,8 @@ export type OrcdMessage =
   | SessionIdUpdateMessage
   | SessionListMessage
   | CapabilitiesMessage
+  | ProvidersMessage
+  | ProviderTestMessage
   | WorktreeReadyMessage
   | OkMessage
   | PathValidatedMessage

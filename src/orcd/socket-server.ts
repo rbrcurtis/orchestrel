@@ -1,6 +1,7 @@
 import { createServer, type Server, type Socket } from 'net';
 import { SYSTEM_AUTHOR, type CapabilitiesMessage, type OrcdAction, type OrcdAuthor, type OrcdMessage } from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
+import { readProviderFile, saveProviderFile, testProviderEndpoint } from './provider-config';
 import type { ProviderConfig } from './config';
 import { fileStager } from './file-staging';
 
@@ -200,6 +201,22 @@ export class OrcdServer {
       case 'capabilities':
         this.send(client, this.buildCapabilities(action.requestId));
         break;
+      case 'providers_get': {
+        try {
+          const snap = readProviderFile();
+          this.send(client, { type: 'providers', requestId: action.requestId, ...snap });
+        } catch (err) {
+          console.warn('[orcd] providers_get failed:', err instanceof Error ? err.message : String(err));
+          this.sendError(client, action.requestId, err);
+        }
+        break;
+      }
+      case 'providers_save':
+        this.handleProvidersSave(client, action);
+        break;
+      case 'provider_test':
+        void this.handleProviderTest(client, action);
+        break;
       case 'worktree_prepare':
         this.handleWorktreePrepare(client, action);
         break;
@@ -272,6 +289,47 @@ export class OrcdServer {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  /**
+   * Replace this node's providers with an edited set. The file is written first
+   * and the in-memory providers are swapped as a whole object, so a session
+   * already running keeps the provider config it started with while new sessions
+   * pick up the edit.
+   */
+  private handleProvidersSave(client: ClientState, action: OrcdAction & { action: 'providers_save' }): void {
+    try {
+      const saved = saveProviderFile({
+        providers: action.providers,
+        defaultProvider: action.defaultProvider,
+        defaultModel: action.defaultModel,
+      });
+      this.providers = saved.config.providers;
+      this.defaults = {
+        provider: saved.config.defaultProvider,
+        model: saved.config.defaultModel,
+        ...(saved.config.defaultThinkingLevel ? { thinkingLevel: saved.config.defaultThinkingLevel } : {}),
+      };
+      console.log(`[orcd] providers saved to ${saved.configPath} (${Object.keys(saved.config.providers).length} provider(s))`);
+      this.send(client, this.buildCapabilities(action.requestId));
+    } catch (err) {
+      console.warn('[orcd] providers_save rejected:', err instanceof Error ? err.message : String(err));
+      this.sendError(client, action.requestId, err);
+    }
+  }
+
+  private async handleProviderTest(client: ClientState, action: OrcdAction & { action: 'provider_test' }): Promise<void> {
+    const result = await testProviderEndpoint(action.baseUrl);
+    this.send(client, { type: 'provider_test', requestId: action.requestId, baseUrl: action.baseUrl, ...result });
+  }
+
+  private sendError(client: ClientState, requestId: string | undefined, err: unknown): void {
+    this.send(client, {
+      type: 'error',
+      sessionId: '',
+      requestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   private buildCapabilities(requestId?: string): CapabilitiesMessage {

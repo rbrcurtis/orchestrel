@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover
 import { Checkbox } from '~/components/ui/checkbox';
 import { ResizeHandle, useResizablePanel } from '~/components/ResizeHandle';
 import { CardDetail, NewCardDetail } from '~/components/CardDetail';
-import SettingsProjectsModal from '~/routes/settings.projects';
+import SettingsModal from '~/components/settings/SettingsModal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select';
 import { useStore, useCardStore, useProjectStore } from '~/stores/context';
 import { dispatchTypeFocus, isTypeFocusKey, isTypingContext } from '~/lib/type-focus';
@@ -646,7 +646,7 @@ const BoardLayout = observer(function BoardLayout() {
         </div>
       </div>
 
-      {activeModal === 'settings' && <SettingsProjectsModal onClose={() => setActiveModal(null)} />}
+      {activeModal === 'settings' && <SettingsModal onClose={() => setActiveModal(null)} />}
     </div>
   );
 });

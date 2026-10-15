@@ -18,6 +18,7 @@ import {
   handleProjectMkdir,
 } from './handlers/projects';
 import { handleSessionLoad, handleHistoryPage, handleTranscriptSnapshot } from './handlers/sessions';
+import { handleProvidersGet, handleProvidersSave, handleProvidersTest } from './handlers/providers';
 import { handleAgentSend, handleAgentCompact, handleAgentStop, handleAgentStatus } from './handlers/agents';
 import type { Card, Column, Project } from '../../shared/ws-protocol';
 
@@ -123,6 +124,11 @@ export function registerSocketEvents(socket: AppSocket, io: AppServer): void {
   socket.on('project:delete', (data, cb) => void handleProjectDelete(data, cb));
   socket.on('project:browse', (data, cb) => void handleProjectBrowse(data, cb));
   socket.on('project:mkdir', (data, cb) => void handleProjectMkdir(data, cb));
+
+  // ── Node provider config (admin) ─────────────────────────────────────────
+  socket.on('providers:get', (data, cb) => void handleProvidersGet(socket, data, cb));
+  socket.on('providers:save', (data, cb) => void handleProvidersSave(socket, io, data, cb));
+  socket.on('providers:test', (data, cb) => void handleProvidersTest(socket, data, cb));
 
   // ── Agent ────────────────────────────────────────────────────────────────
   socket.on('agent:send', (data, cb) => void handleAgentSend(data, cb, socket));

@@ -224,6 +224,47 @@ export class OrcdClient {
   }
 
   /**
+   * Read the node's raw provider definitions. The node owns its config file, so
+   * the backend never needs to know where that file lives.
+   */
+  async getProviders(): Promise<{
+    configPath: string;
+    providers: Record<string, Record<string, unknown>>;
+    defaultProvider: string;
+    defaultModel: string;
+  }> {
+    const msg = await this.request({ action: 'providers_get' } as OrcdAction);
+    if (msg.type !== 'providers') throw new Error('expected providers reply');
+    return {
+      configPath: msg.configPath,
+      providers: msg.providers,
+      defaultProvider: msg.defaultProvider,
+      defaultModel: msg.defaultModel,
+    };
+  }
+
+  /**
+   * Replace the node's providers. The node validates and writes its own config
+   * file, then answers with fresh capabilities, which replace the cached ones —
+   * every context window and default the backend derives comes from that cache.
+   */
+  async saveProviders(input: {
+    providers: Record<string, Record<string, unknown>>;
+    defaultProvider: string;
+    defaultModel: string;
+  }): Promise<void> {
+    const msg = await this.request({ action: 'providers_save', ...input } as OrcdAction);
+    if (msg.type !== 'capabilities') throw new Error('expected capabilities reply to providers_save');
+    this.capabilities = msg;
+  }
+
+  async testProvider(baseUrl: string): Promise<{ ok: boolean; detail: string }> {
+    const msg = await this.request({ action: 'provider_test', baseUrl } as OrcdAction);
+    if (msg.type !== 'provider_test') throw new Error('expected provider_test reply');
+    return { ok: msg.ok, detail: msg.detail };
+  }
+
+  /**
    * Create a new session. Returns the session ID assigned by orcd.
    */
   async create(opts: {

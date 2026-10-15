@@ -25,3 +25,6 @@ export function useProjectStore() {
 export function useSessionStore() {
   return useStore().sessions;
 }
+export function useProviderConfig() {
+  return useStore().providerConfig;
+}

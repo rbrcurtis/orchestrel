@@ -3,6 +3,7 @@ import { WsClient } from '../lib/ws-client';
 import { CardStore } from './card-store';
 import { ConfigStore } from './config-store';
 import { ProjectStore } from './project-store';
+import { ProviderConfigStore } from './provider-config-store';
 import { SessionStore } from './session-store';
 import { isProjectHidden, readProjectFilter } from '../lib/project-filter';
 import type { Card, Column, SyncPayload, User } from '../../src/shared/ws-protocol';
@@ -32,6 +33,7 @@ export class RootStore {
   readonly config: ConfigStore;
   readonly projects: ProjectStore;
   readonly sessions: SessionStore;
+  readonly providerConfig: ProviderConfigStore;
   readonly ws: WsClient;
   private boardSyncVersion = 0;
   private syncingBoard = false;
@@ -42,6 +44,7 @@ export class RootStore {
     this.config = new ConfigStore();
     this.projects = new ProjectStore();
     this.sessions = new SessionStore();
+    this.providerConfig = new ProviderConfigStore();
 
     this.ws = new WsClient({
       onSync: (data) => applySync(this, data),
@@ -63,6 +66,7 @@ export class RootStore {
       onProjectDeleted: (data) => this.projects.handleDeleted(data.id),
       onSessionMessage: (data) => this.sessions.ingestSdkMessage(data.cardId, data.message),
       onAgentStatus: (data) => this.sessions.handleAgentStatus(data),
+      onNodesUpdated: (nodes) => this.config.hydrateNodes(nodes),
     });
 
     makeAutoObservable<this, 'boardSyncVersion' | 'syncingBoard' | 'pendingCardEvents'>(this, {
@@ -71,6 +75,7 @@ export class RootStore {
       config: false,
       projects: false,
       sessions: false,
+      providerConfig: false,
       boardSyncVersion: false,
       syncingBoard: false,
       pendingCardEvents: false,
@@ -78,6 +83,7 @@ export class RootStore {
 
     this.cards.setWs(this.ws);
     this.projects.setWs(this.ws);
+    this.providerConfig.setWs(this.ws);
     this.sessions.setWs(this.ws);
 
     // A card that leaves running and review stops streaming. The card store sees every
