@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -29,7 +29,7 @@ test('seeds all five artifacts and the three directories on first run', async ()
       expect(p).toBeGreaterThan(0)
     }
     // token is random and present (cross-checked against orcd.yaml above)
-  expect(res.authToken).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    expect(res.authToken).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
 
     const orcd = parseYaml(readFileSync(join(dir, 'orcd.yaml'), 'utf8')) as {
       listen: { host: string; port: number }
@@ -95,6 +95,11 @@ test('seeds all five artifacts and the three directories on first run', async ()
     await stat(join(dir, 'data'))
     await stat(join(dir, 'logs'))
     await stat(join(dir, 'kiro'))
+
+    // every artifact went through the atomic tmp+rename write, so no staging
+    // file is left behind for a later boot (or a human) to trip over
+    const leftovers = (await readdir(dir, { recursive: true })).filter((f) => String(f).endsWith('.tmp'))
+    expect(leftovers).toEqual([])
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

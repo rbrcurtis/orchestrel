@@ -11,12 +11,12 @@
 // tables must exist before the backend boots. The schema itself lives in
 // out/provision-db.cjs (produced by build-bundles.mjs).
 import { randomUUID } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
 import { mkdir, stat } from 'node:fs/promises'
 import * as net from 'node:net'
 import { join } from 'node:path'
 import { stringify as dumpYaml } from 'yaml'
 import { writeBootstrap, readBootstrap, type BootstrapData } from './bootstrap'
+import { writeFileAtomic } from './atomic-write'
 import { DESKTOP_LOCAL_USER } from './local-user'
 
 export interface SeedPorts {
@@ -109,12 +109,14 @@ export async function seedUserData(userDataDir: string): Promise<SeedResult> {
   }
 
   // The data/ dir is the backend's cwd-relative DB dir, so the supervisor runs
-  // the backend with cwd=userData; write kiro config last is irrelevant, but
-  // every artifact is written before bootstrap.json so the gate only flips
-  // after the full seed succeeds.
-  writeFileSync(join(userDataDir, 'orcd.yaml'), orcdYaml)
-  writeFileSync(join(userDataDir, 'orc.yaml'), orcYaml)
-  writeFileSync(join(userDataDir, 'kiro', 'config.json'), JSON.stringify(kiroConfig, null, 2))
+  // the backend with cwd=userData. Every artifact is written before
+  // bootstrap.json so the gate only flips after the full seed succeeds, and
+  // each write is atomic so a crash can never leave a half-written config —
+  // a truncated bootstrap.json would otherwise be unparseable, which reads as
+  // "not seeded" and silently re-seeds with new ports and a new token.
+  writeFileAtomic(join(userDataDir, 'orcd.yaml'), orcdYaml)
+  writeFileAtomic(join(userDataDir, 'orc.yaml'), orcYaml)
+  writeFileAtomic(join(userDataDir, 'kiro', 'config.json'), JSON.stringify(kiroConfig, null, 2))
 
   const data: BootstrapData = { backendPort, kppPort, orcdPort, authToken }
   writeBootstrap(userDataDir, data)
