@@ -187,6 +187,29 @@ const BoardLayout = observer(function BoardLayout() {
     };
   }, []);
 
+  // /sleep sent from a presented card's prompt: release the slot holding the
+  // card, same as Ctrl+A/Ctrl+D. The card parks in ready — the wheel never
+  // presents ready — so a manual slot would otherwise stay stuck on it.
+  useEffect(() => {
+    const onSlept = (e: Event) => {
+      const cardId = (e as CustomEvent<{ cardId: number }>).detail.cardId;
+      for (let i = 0; i < columnSlots.length; i++) {
+        const slot = columnSlots[i];
+        const displayed =
+          slot.type === 'manual'
+            ? slot.cardId
+            : (resolvedCards.get(i) ?? (slot.type === 'pinned' ? (slot.cardId ?? null) : null));
+        if (displayed !== cardId) continue;
+        if (i === 0) releaseHotseat();
+        else closeSlot(i);
+        break;
+      }
+      setFocusedCardId(null);
+    };
+    window.addEventListener('orchestrel:card-slept', onSlept);
+    return () => window.removeEventListener('orchestrel:card-slept', onSlept);
+  }); // intentionally no deps — closes over current state
+
   // Ferris wheel: when a slot presents a new card that's ready to prompt
   // (review), focus its prompt so it's stably selected while the wheel turns.
   // Running cards never grab focus — the user doesn't want to prompt those.

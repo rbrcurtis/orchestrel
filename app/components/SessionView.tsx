@@ -661,6 +661,12 @@ function PromptInput({
     updateText('');
     setFiles([]);
     onPromptSent?.();
+    // /sleep parks the card in ready — the ferris wheel never presents ready
+    // — so tell the board to release the slot holding this card, the same as
+    // Ctrl+A/Ctrl+D do for archive/done.
+    if (parseAppCommands(trimmed).action === 'sleep') {
+      window.dispatchEvent(new CustomEvent('orchestrel:card-slept', { detail: { cardId } }));
+    }
     // Blur AFTER send completes — send is near-instant (WebSocket) but
     // must finish before blur clears focus lock, so the card's column
     // update from the server triggers event-driven recalc cleanly.

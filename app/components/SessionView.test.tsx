@@ -302,6 +302,57 @@ describe('SessionView prompt submission', () => {
     expect(onPromptSent).not.toHaveBeenCalled();
   });
 
+  it('dispatches orchestrel:card-slept when /sleep is sent', async () => {
+    setDefaultState({
+      card: { sessionId: null },
+      session: undefined,
+    });
+    sessionStore.sendMessage.mockResolvedValue(undefined);
+    const onSlept = vi.fn();
+    window.addEventListener('orchestrel:card-slept', onSlept);
+
+    renderSessionView({ sessionId: null });
+
+    fireEvent.change(screen.getByPlaceholderText('Enter a prompt to start a session...'), {
+      target: { value: '/sleep 2 hours' },
+    });
+    fireEvent.keyDown(screen.getByPlaceholderText('Enter a prompt to start a session...'), {
+      key: 'Enter',
+    });
+
+    await waitFor(() => {
+      expect(sessionStore.sendMessage).toHaveBeenCalledWith(1011, '/sleep 2 hours', undefined);
+      expect(onSlept).toHaveBeenCalledTimes(1);
+    });
+    expect((onSlept.mock.calls[0][0] as CustomEvent).detail).toEqual({ cardId: 1011 });
+    window.removeEventListener('orchestrel:card-slept', onSlept);
+  });
+
+  it('does not dispatch orchestrel:card-slept for a plain prompt', async () => {
+    setDefaultState({
+      card: { sessionId: null },
+      session: undefined,
+    });
+    sessionStore.sendMessage.mockResolvedValue(undefined);
+    const onSlept = vi.fn();
+    window.addEventListener('orchestrel:card-slept', onSlept);
+
+    renderSessionView({ sessionId: null });
+
+    fireEvent.change(screen.getByPlaceholderText('Enter a prompt to start a session...'), {
+      target: { value: 'Run the ferris wheel' },
+    });
+    fireEvent.keyDown(screen.getByPlaceholderText('Enter a prompt to start a session...'), {
+      key: 'Enter',
+    });
+
+    await waitFor(() => {
+      expect(sessionStore.sendMessage).toHaveBeenCalledWith(1011, 'Run the ferris wheel', undefined);
+    });
+    expect(onSlept).not.toHaveBeenCalled();
+    window.removeEventListener('orchestrel:card-slept', onSlept);
+  });
+
   it('clears the prompt before the send promise resolves', async () => {
     setDefaultState({
       card: { sessionId: null },
