@@ -102,7 +102,7 @@ afterEach(() => {
 
 test('starts services in the order given and gates on the health url', async () => {
   const health = await healthServer(false)
-  const d = defs(base, ['kpp', 'orcd', 'backend'])
+  const d = defs(base, ['orcd', 'backend'])
   const order: string[] = []
   const sup = new Supervisor({
     logDir: join(base, 'logs'),
@@ -121,14 +121,14 @@ test('starts services in the order given and gates on the health url', async () 
   expect(raced).toBe(1) // start() must remain gated on healthUrl answering 200
   health.setReady(true)
   await p
-  expect(order).toEqual(['kpp', 'orcd', 'backend'])
+  expect(order).toEqual(['orcd', 'backend'])
   await health.close()
   await sup.stop()
 })
 
 test('respawns a crashed service within the rate window', async () => {
   const health = await healthServer(true)
-  const d = defs(base, ['kpp', 'orcd', 'backend'])
+  const d = defs(base, ['orcd', 'backend'])
   const spawned: string[] = []
   const current = new Map<string, FakeProc>()
   const sup = new Supervisor({
@@ -147,7 +147,7 @@ test('respawns a crashed service within the rate window', async () => {
   sup.on('crash', crash)
   current.get('orcd')!.emit('exit', 1, null)
   await vi.waitFor(() => expect(spawned.filter((i) => i === 'orcd')).toHaveLength(2))
-  expect(spawned.filter((i) => i !== 'orcd')).toEqual(['kpp', 'backend'])
+  expect(spawned.filter((i) => i !== 'orcd')).toEqual(['backend'])
   expect(crash).not.toHaveBeenCalled()
   await health.close()
   await sup.stop()
@@ -223,7 +223,7 @@ test('restart(id) resets the rate window and respawns once', async () => {
 
 test('stop() kills all children and drains stdio', async () => {
   const health = await healthServer(true)
-  const d = defs(base, ['kpp', 'orcd', 'backend'])
+  const d = defs(base, ['orcd', 'backend'])
   const procs: FakeProc[] = []
   const sup = new Supervisor({
     logDir: join(base, 'logs'),
@@ -235,7 +235,7 @@ test('stop() kills all children and drains stdio', async () => {
     }
   })
   await sup.start(d)
-  expect(procs).toHaveLength(3)
+  expect(procs).toHaveLength(2)
   await sup.stop()
   for (const p of procs) {
     expect(p.killCalls).toEqual(['SIGTERM']) // each killed exactly once

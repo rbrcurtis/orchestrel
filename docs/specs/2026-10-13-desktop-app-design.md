@@ -1,5 +1,9 @@
 # Orchestrel Self-Contained Desktop App — Design
 
+> **Superseded in part (2026-10-15):** KPP is no longer bundled, spawned, or
+> seeded, and the `orchestrel kiro` shim is removed. The app ships no provider
+> until one is configured in `<userData>/orcd.yaml`. See `desktop/README.md`.
+
 ## Summary
 
 Replace the thin Electron wrappers in `desktop/` (windows pointed at

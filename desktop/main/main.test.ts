@@ -21,18 +21,11 @@ const PKG_DIR = join(__dirname, '..')
 const OUT = '/tmp/orc out dir'
 const NODE_BIN = '/tmp/orc out dir/node/node'
 const USER_DATA = '/home/u/app data/Orchestrel'
-const BOOT: BootstrapData = { backendPort: 41000, kppPort: 42000, orcdPort: 43000, authToken: 'token' }
+const BOOT: BootstrapData = { backendPort: 41000, orcdPort: 43000, authToken: 'token' }
 
-test('serviceDefsFromBootstrap maps all three services with the exact env, cwd, args', () => {
-  const [kpp, orcd, backend] = serviceDefsFromBootstrap(BOOT, OUT, NODE_BIN, USER_DATA)
+test('serviceDefsFromBootstrap maps both services with the exact env, cwd, args', () => {
+  const [orcd, backend] = serviceDefsFromBootstrap(BOOT, OUT, NODE_BIN, USER_DATA)
 
-  expect(kpp).toEqual({
-    id: 'kpp',
-    command: NODE_BIN,
-    args: [join(OUT, 'kpp.bundle.mjs'), 'serve'],
-    env: { KPP_CONFIG: join(USER_DATA, 'kiro', 'config.json') },
-    cwd: OUT,
-  })
   expect(orcd).toEqual({
     id: 'orcd',
     command: NODE_BIN,
@@ -59,15 +52,15 @@ test('serviceDefsFromBootstrap maps all three services with the exact env, cwd, 
 
 test('serviceDefsFromBootstrap merges baseEnv into every service without letting it override', () => {
   const base = { HOME: '/home/u', USERPROFILE: '/home/u', PATH: '/usr/bin:/bin' }
-  const [kpp, orcd, backend] = serviceDefsFromBootstrap(BOOT, OUT, NODE_BIN, USER_DATA, base)
-  for (const def of [kpp, orcd, backend]) {
+  const [orcd, backend] = serviceDefsFromBootstrap(BOOT, OUT, NODE_BIN, USER_DATA, base)
+  for (const def of [orcd, backend]) {
     expect(def.env.HOME).toBe('/home/u')
     expect(def.env.USERPROFILE).toBe('/home/u')
     expect(def.env.PATH).toBe('/usr/bin:/bin')
   }
   // service-specific vars must survive the merge, and baseEnv must not be
   // able to shadow them (service keys are spread after baseEnv)
-  expect(kpp.env.KPP_CONFIG).toBe(join(USER_DATA, 'kiro', 'config.json'))
+  expect(orcd.env.ORC_CONFIG).toBe(join(USER_DATA, 'orcd.yaml'))
   expect(backend.env.PORT).toBe('41000')
   expect(backend.env.ORCHESTREL_DESKTOP).toBe('1')
 })

@@ -1,10 +1,10 @@
 // Electron entry for the self-contained desktop app. Thin imperative boot,
 // top to bottom: single-instance lock → seed userData → provision the DB base
-// tables (bundled-node child) → install CLI shim → start the Supervisor (kpp,
-// orcd, backend as child node processes) → open the main window on the
-// backend's health URL → wire the crash window → tear down on quit. This
-// module imports no native module: the whole native surface (better-sqlite3)
-// lives in the child processes under out/.
+// tables (bundled-node child) → start the Supervisor (orcd, backend as child
+// node processes) → open the main window on the backend's health URL → wire
+// the crash window → tear down on quit. This module imports no native module:
+// the whole native surface (better-sqlite3) lives in the child processes under
+// out/.
 //
 // The 'electron' import resolves to an empty stub under vitest
 // (vitest.config.ts) so main.test.ts can collect the two pure functions below
@@ -26,7 +26,6 @@ import { dirname, join } from 'node:path'
 import { platform } from 'node:os'
 import { readBootstrap, type BootstrapData } from '../lib/bootstrap'
 import { seedUserData } from '../lib/seed'
-import { buildCliHome, installShim } from '../lib/shim'
 import { DESKTOP_LOCAL_USER } from '../lib/local-user'
 import { Supervisor, type ServiceDef } from '../lib/supervisor'
 import { openCrashWindow } from './crash-window'
@@ -93,13 +92,6 @@ export function serviceDefsFromBootstrap(
   baseEnv: Record<string, string> = {}
 ): ServiceDef[] {
   return [
-    {
-      id: 'kpp',
-      command: nodeBin,
-      args: [join(outDir, 'kpp.bundle.mjs'), 'serve'],
-      env: { ...baseEnv, KPP_CONFIG: join(userData, 'kiro', 'config.json') },
-      cwd: outDir,
-    },
     {
       id: 'orcd',
       command: nodeBin,
@@ -200,20 +192,6 @@ async function boot(): Promise<void> {
   if (provStatus !== 0) {
     throw new Error(`DB provisioning failed (status ${provStatus}):\n${provOut}`)
   }
-
-  const home = buildCliHome(userData, nodeBin, join(out, 'kpp.bundle.mjs'), app.getPath('home'))
-  const { changed } = await installShim(home, {
-    nodeBin,
-    kppBundle: join(out, 'kpp.bundle.mjs'),
-    // kpp.bundle.mjs declares better-sqlite3 external and resolves it (plus
-    // the bindings/file-uri-to-path/process loader peers) from
-    // cliHome/node_modules — without this copy, the closed-app CLI dies with
-    // ERR_MODULE_NOT_FOUND.
-    sqliteModulesRoot: join(out, 'node_modules'),
-    binPath: home.binPath,
-    homeDir: app.getPath('home'),
-  })
-  await logLine('boot', `shim changed=${changed} bin=${home.binPath}`)
 
   const healthUrl = `http://127.0.0.1:${seeded.backendPort}/`
   const pidFile = join(userData, 'service-pids.txt')

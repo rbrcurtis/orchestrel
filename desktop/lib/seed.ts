@@ -1,9 +1,9 @@
 // Seeds the desktop app's per-user state tree on first run. Everything lives
-// under userData so installs are hermetic: orcd.yaml / orc.yaml / kiro
-// config.json / bootstrap.json are written once, with ports chosen by binding
-// to port 0 and a shared randomUUID authToken cross-referenced between the
-// node daemon, the backend registry, and bootstrap.json. bootstrap.json
-// presence is the idempotency gate — a second call never rewrites anything.
+// under userData so installs are hermetic: orcd.yaml / orc.yaml /
+// bootstrap.json are written once, with ports chosen by binding to port 0 and
+// a shared randomUUID authToken cross-referenced between the node daemon, the
+// backend registry, and bootstrap.json. bootstrap.json presence is the
+// idempotency gate — a second call never rewrites anything.
 //
 // The DB base tables (projects/cards) are provisioned separately by the
 // Electron main process in a short-lived child of the bundled node — the
@@ -21,7 +21,6 @@ import { DESKTOP_LOCAL_USER } from './local-user'
 
 export interface SeedPorts {
   backendPort: number
-  kppPort: number
   orcdPort: number
 }
 
@@ -54,12 +53,11 @@ export async function seedUserData(userDataDir: string): Promise<SeedResult> {
     // no bootstrap yet — fall through to a full seed
   }
 
-  const [backendPort, kppPort, orcdPort] = await pickFreePorts(3)
+  const [backendPort, orcdPort] = await pickFreePorts(2)
   const authToken = randomUUID()
 
   await mkdir(join(userDataDir, 'data'), { recursive: true })
   await mkdir(join(userDataDir, 'logs'), { recursive: true })
-  await mkdir(join(userDataDir, 'kiro'), { recursive: true })
 
   const orcdYaml = dumpYaml({
     listen: { host: '127.0.0.1', port: orcdPort },
@@ -75,39 +73,14 @@ export async function seedUserData(userDataDir: string): Promise<SeedResult> {
     maintainers: true,
     defaultUser: DESKTOP_LOCAL_USER,
     memory: { provider: 'kiro', model: 'auto', projects: {}, preferences: {} },
-    providers: {
-      kiro: {
-        label: 'Kiro',
-        baseUrl: `http://127.0.0.1:${kppPort}`,
-        apiKey: 'local',
-        models: {
-          auto: { modelID: 'auto', label: 'Auto', contextWindow: 180000 },
-        },
-      },
-    },
+    // Deliberately empty: the desktop app no longer bundles or runs a provider
+    // proxy (KPP), so there is nothing to point at. The 'kiro' names above are
+    // placeholders that whatever supplies models next must replace.
+    providers: {},
   })
   const orcYaml = dumpYaml({
     servers: [{ name: 'local', host: '127.0.0.1', port: orcdPort, authToken }],
   })
-  // Pool values mirror kiro-pool-proxy's config.json (real pool entries); the
-  // user logs in through KPP's device-code flow on first token fetch, so
-  // startUrl/profileArn are replaced per-machine by KPP's login screen.
-  const kiroConfig = {
-    pools: {
-      local: {
-        startUrl: 'https://trackable.awsapps.com/start',
-        profileArn: 'arn:aws:codewhisperer:us-east-1:547025169931:profile/WKEWWQMKGKVC',
-        oidcRegion: 'us-east-2',
-        serviceRegion: 'us-east-1',
-      },
-    },
-    dbPath: join(userDataDir, 'kiro', 'accounts.db'),
-    selectionStrategy: 'lowest-usage',
-    tokenExpiryBufferMs: 300000,
-    port: kppPort,
-    host: '127.0.0.1',
-  }
-
   // The data/ dir is the backend's cwd-relative DB dir, so the supervisor runs
   // the backend with cwd=userData. Every artifact is written before
   // bootstrap.json so the gate only flips after the full seed succeeds, and
@@ -116,9 +89,8 @@ export async function seedUserData(userDataDir: string): Promise<SeedResult> {
   // "not seeded" and silently re-seeds with new ports and a new token.
   writeFileAtomic(join(userDataDir, 'orcd.yaml'), orcdYaml)
   writeFileAtomic(join(userDataDir, 'orc.yaml'), orcYaml)
-  writeFileAtomic(join(userDataDir, 'kiro', 'config.json'), JSON.stringify(kiroConfig, null, 2))
 
-  const data: BootstrapData = { backendPort, kppPort, orcdPort, authToken }
+  const data: BootstrapData = { backendPort, orcdPort, authToken }
   writeBootstrap(userDataDir, data)
 
   return { seeded: true, ...data }

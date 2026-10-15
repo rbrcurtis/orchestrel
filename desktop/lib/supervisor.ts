@@ -1,4 +1,4 @@
-// Supervises the desktop app's service processes (kpp, orcd, backend) as a
+// Supervises the desktop app's service processes (orcd, backend) as a
 // pure Node module — no Electron imports — so it is unit-testable. Each
 // service def is spawned with array args and piped stdio (never a shell, so
 // paths with spaces arrive verbatim), stdout/stderr appended to
@@ -21,7 +21,7 @@ const STOP_GRACE_MS = 5_000
 const LOG_TAIL_LINES = 100
 
 export interface ServiceDef {
-  id: 'kpp' | 'orcd' | 'backend'
+  id: 'orcd' | 'backend'
   command: string
   args: string[]
   env: Record<string, string>

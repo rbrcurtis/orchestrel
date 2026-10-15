@@ -4,7 +4,6 @@ import { writeFileAtomic } from './atomic-write'
 
 export interface BootstrapData {
   backendPort: number
-  kppPort: number
   orcdPort: number
   authToken: string
 }

@@ -1,5 +1,10 @@
 # Self-Contained Desktop App Implementation Plan
 
+> **Superseded in part (2026-10-15):** the desktop app no longer bundles or
+> runs the Kiro pool proxy (KPP), and the `orchestrel kiro` CLI shim is gone.
+> The app now ships no provider at all — see `desktop/README.md`. Everything
+> below describing KPP bundling, the Kiro pool seed, and the shim is history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the thin `desktop/` Electron wrappers with a single self-contained app (Linux, macOS, Windows) that bundles the React client, backend, orcd, and its own Kiro proxy, auto-updating from GitHub Releases.

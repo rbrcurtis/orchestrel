@@ -1,9 +1,8 @@
 // Bundle build for the self-contained desktop app. Turns the existing TS
-// sources into three runnable plain-Node ESM bundles in <OUT_DIR> (default
+// sources into two runnable plain-Node ESM bundles in <OUT_DIR> (default
 // desktop/out):
 //   server.bundle.mjs  — the orc backend (entry ../server.js)
 //   orcd.bundle.mjs    — the node daemon (entry ../src/orcd/index.ts)
-//   kpp.bundle.mjs     — kiro-pool-proxy (entry <KPP_REPO>/src/cli.ts)
 // plus the bundled Node runtime (<OUT_DIR>/node/) and the prebuilt
 // better-sqlite3 module beside the bundles (<OUT_DIR>/node_modules/). The SPA
 // build (../build/client) is copied to <OUT_DIR>/client. The desktop app must
@@ -12,10 +11,9 @@
 // shipped in <OUT_DIR>/node_modules (better-sqlite3 + its loader deps) and
 // declared EXTERNALS (better-sqlite3 everywhere; the pi agent SDK for orcd).
 //
-// Env: OUT_DIR (output dir, default desktop/out), KPP_REPO (fallback: the
-// pinned local checkout), SKIP_NODE_DOWNLOAD=1, SKIP_SQLITE_PREBUILD=1
-// (tests run offline). Flags: --force re-downloads the Node runtime;
-// --platform linux-x64|linux-arm64|mac-arm64|win-x64 (default: host) selects
+// Env: OUT_DIR (output dir, default desktop/out), SKIP_NODE_DOWNLOAD=1,
+// SKIP_SQLITE_PREBUILD=1 (tests run offline). Flags: --force re-downloads the
+// Node runtime; --platform linux-x64|linux-arm64|mac-arm64|win-x64 (default: host) selects
 // the Node tarball + better-sqlite3 prebuild for a non-host TARGET — that is
 // the extent of cross-platform support here: electron-builder owns everything
 // else, and a cross-target bundle is verified only insofar as the downloaded
@@ -48,14 +46,10 @@ function fail(msg) {
   console.error(`build-bundles: ${msg}`)
   process.exit(1)
 }
-// KPP is a pinned local dependency — the repos stay independent, one source
-// of truth, so the script bundles from the checkout (never a vendored copy).
-const KPP_REPO_DEFAULT = '/home/ryan/Code/kiro-pool-proxy'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const OUT_DIR = process.env.OUT_DIR ?? join(here, 'out')
-const KPP_REPO = process.env.KPP_REPO ?? KPP_REPO_DEFAULT
 const FORCE = process.argv.includes('--force')
 const PLATFORM_FLAG = flagValue('--platform')
 const TARGET = normalizeTarget(PLATFORM_FLAG, fail)
@@ -124,13 +118,11 @@ const SERVER_ALIASES = {
 const EXTERNALS = {
   'server.bundle.mjs': ['better-sqlite3'],
   'orcd.bundle.mjs': [],
-  'kpp.bundle.mjs': ['better-sqlite3'],
 }
 
 const ENTRIES = {
   'server.bundle.mjs': join(root, 'server.js'),
   'orcd.bundle.mjs': join(root, 'src', 'orcd', 'index.ts'),
-  'kpp.bundle.mjs': join(KPP_REPO, 'src', 'cli.ts'),
 }
 
 function run(cmd, args, opts = {}) {
