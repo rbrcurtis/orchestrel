@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   blankForm,
+  capabilityIds,
   countModels,
   describeChanges,
+  diffCapabilities,
   formFromProvider,
   providerFromForm,
   validateForm,
@@ -132,5 +134,37 @@ describe('describeChanges', () => {
 describe('countModels', () => {
   it('counts model aliases across providers', () => {
     expect(countModels({ a: { models: { x: {}, y: {} } }, b: { models: { z: {} } } })).toBe(3);
+  });
+});
+
+describe('diffCapabilities', () => {
+  // The node advertises providers in the capability shape; the draft is raw YAML.
+  // Only ids and model aliases are comparable between them.
+  const live = {
+    ray: { id: 'ray', label: 'Ray', models: { coder: { alias: 'coder', label: 'Coder', contextWindow: 200000 } } },
+    okkanti: { id: 'okkanti', label: 'Okkanti', models: { fast: { label: 'Fast' }, deep: { label: 'Deep' } } },
+  };
+
+  it('reports a shared provider as unchanged even though the shapes differ', () => {
+    const draft = { ray: { label: 'Ray', baseUrl: 'https://x', models: { coder: { modelID: 'coder', contextWindow: 200000 } } } };
+    expect(diffCapabilities(live, draft)).toEqual({ added: [], removed: ['okkanti'], edited: [] });
+  });
+
+  it('separates added, edited and removed providers by id', () => {
+    const draft = {
+      ray: { models: { coder: {}, reasoner: {} } },
+      anthropic: { models: { sonnet: {} } },
+    };
+    expect(diffCapabilities(live, draft)).toEqual({ added: ['anthropic'], removed: ['okkanti'], edited: ['ray'] });
+  });
+
+  it('counts models across both shapes', () => {
+    expect(countModels(live)).toBe(3);
+    expect(countModels({ a: { models: { x: {}, y: {} } } })).toBe(2);
+    expect(countModels({ a: { label: 'no models yet' } })).toBe(0);
+  });
+
+  it('projects a provider to its alias list', () => {
+    expect(capabilityIds(live)).toEqual({ ray: ['coder'], okkanti: ['fast', 'deep'] });
   });
 });

@@ -140,28 +140,54 @@ export function validateForm(form: ProviderForm, otherIds: string[]): string[] {
   return problems;
 }
 
-export function countModels(providers: RawProviders): number {
-  return Object.values(providers).reduce(
-    (n, p) => n + Object.keys((p.models ?? {}) as Record<string, unknown>).length,
-    0,
-  );
+export function countModels(providers: Record<string, unknown>): number {
+  return Object.values(providers).reduce<number>((n, p) => n + Object.keys(modelsOf(p)).length, 0);
+}
+
+function modelsOf(provider: unknown): Record<string, unknown> {
+  const models = provider && typeof provider === 'object' ? (provider as { models?: unknown }).models : undefined;
+  return models && typeof models === 'object' ? (models as Record<string, unknown>) : {};
+}
+
+/**
+ * Only the part of a provider the board's model dropdown renders. A node's
+ * advertised capabilities and the raw file describe a provider differently, so
+ * the two can only be compared on their ids and model aliases.
+ */
+export function capabilityIds(providers: Record<string, unknown>): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(providers).map(([id, p]) => [id, Object.keys(modelsOf(p))]));
+}
+
+/** What the dropdown gains and loses between the node's advertised set and a draft. */
+export function diffCapabilities(
+  live: Record<string, unknown>,
+  draft: Record<string, unknown>,
+): { added: string[]; removed: string[]; edited: string[] } {
+  const before = capabilityIds(live);
+  const after = capabilityIds(draft);
+  return {
+    added: Object.keys(after).filter((id) => !before[id]),
+    removed: Object.keys(before).filter((id) => !after[id]),
+    edited: Object.keys(after).filter((id) => before[id] && before[id].join() !== after[id].join()),
+  };
+}
+
+function diffProviders(before: RawProviders, after: RawProviders): string[] {
+  const beforeIds = Object.keys(before);
+  const afterIds = Object.keys(after);
+  const parts: string[] = [];
+  const added = afterIds.filter((id) => !beforeIds.includes(id)).length;
+  const removed = beforeIds.filter((id) => !afterIds.includes(id)).length;
+  const edited = afterIds.filter((id) => before[id] && JSON.stringify(before[id]) !== JSON.stringify(after[id])).length;
+  if (added) parts.push(`+${added} provider${added > 1 ? 's' : ''}`);
+  if (removed) parts.push(`−${removed} provider${removed > 1 ? 's' : ''}`);
+  if (edited) parts.push(`~${edited} edited`);
+  return parts;
 }
 
 /** Footer summary of what a save would change. */
 export function describeChanges(saved: RawProviders, working: RawProviders): string {
-  const savedIds = Object.keys(saved);
-  const workingIds = Object.keys(working);
-  const added = workingIds.filter((id) => !savedIds.includes(id)).length;
-  const removed = savedIds.filter((id) => !workingIds.includes(id)).length;
-  const edited = workingIds.filter(
-    (id) => saved[id] && JSON.stringify(saved[id]) !== JSON.stringify(working[id]),
-  ).length;
-
-  const parts: string[] = [];
-  if (added) parts.push(`+${added} provider${added > 1 ? 's' : ''}`);
-  if (removed) parts.push(`−${removed} provider${removed > 1 ? 's' : ''}`);
-  if (edited) parts.push(`~${edited} edited`);
-  return parts.join(', ');
+  return diffProviders(saved, working).join(', ');
 }
 
 export const PRESETS: Preset[] = [

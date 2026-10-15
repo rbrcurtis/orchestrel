@@ -64,8 +64,16 @@ failure that actually happens (a local proxy is not running).
 
 `SettingsModal` is a holy-grail frame: header (title, node chip, unsaved state),
 left rail (Providers · Projects · Node · Storage), main pane, right aside, and a
-footer that owns save/discard. The aside renders the board's model dropdown from
-the draft, so the config → capabilities → UI chain is visible while editing.
+footer that owns save/discard.
+
+The aside shows **live capabilities vs the draft**: what the node currently
+advertises (read from the node, not from the draft — with a stale marker while a
+draft exists), and, only when dirty, what the board's dropdown gains and loses on
+save (`+ anthropic — new in the dropdown`). The two sides are compared on
+provider ids and model aliases only (`diffCapabilities`), because a node's
+capabilities and the raw file describe a provider differently. An earlier version
+of this pane re-rendered the draft as a pseudo-dropdown, which just repeated the
+main pane and mislabelled itself.
 
 Secrets stay server-side except for admins: reading raw provider defs (which
 include keys) requires role `admin`, and the password-style input only reveals
