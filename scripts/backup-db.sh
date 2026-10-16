@@ -2,7 +2,7 @@
 set -ex
 
 DB="/home/ryan/Code/orchestrel/data/orchestrel.db"
-BACKUP_DIR="/mnt/D/Sync/orchestra-backups"
+BACKUP_DIR="/mnt/E/Sync/orchestra-backups"
 MAX_AGE_DAYS=3
 
 # SQLite-safe backup using .backup command
