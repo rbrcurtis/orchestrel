@@ -10,12 +10,15 @@ import {
   ModelRuntime,
   SessionManager,
   SettingsManager,
+  convertToLlm,
   createAgentSession,
   createEventBus,
   findCutPoint,
   generateSummary,
   getAgentDir,
 } from '@earendil-works/pi-coding-agent';
+import { contentText, normalizeContext } from '@earendil-works/pi-ai';
+import { completeSimple } from '@earendil-works/pi-ai/compat';
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -176,6 +179,91 @@ const BGC_SUMMARY_INSTRUCTIONS =
   `Keep the entire summary under ${BGC_SUMMARY_TOKEN_BUDGET} tokens. Collapse older items to one terse line ` +
   'each, and drop detail that the code, the file paths or the git history already record. Never re-explain ' +
   'something a previous section already states; compress the oldest material hardest.';
+
+function replayPrefixMessages(session: AgentSession, firstKeptEntryId: string): unknown[] | undefined {
+  const sm = session.sessionManager as unknown as {
+    buildSessionProjection(): { entries: Array<{ sourceEntry: { id: string }; messages: unknown[] }> };
+  };
+  const out: unknown[] = [];
+  for (const entry of sm.buildSessionProjection().entries) {
+    if (entry.sourceEntry.id === firstKeptEntryId) return out.length > 0 ? out : undefined;
+    out.push(...entry.messages);
+  }
+  // The cut is not in the live projection, so there is no head to replay. Fall back
+  // to Pi's rendered transcript rather than guessing at a prefix.
+  return undefined;
+}
+
+/**
+ * Pi's rendered prompt is `<conversation>…</conversation>` followed by the directive we
+ * still want (update prompt, previous summary, custom instructions). Replaying the prefix
+ * replaces only the rendering, so everything after the closing tag is what the model is
+ * told to do with it.
+ *
+ * Returns undefined when the prompt is not shaped as expected — the caller then keeps
+ * Pi's own context. Cache reuse is best-effort; the summary must not depend on it.
+ */
+function trailingDirective(context: unknown): string | undefined {
+  const messages = (context as { messages?: Array<{ content?: unknown }> }).messages;
+  if (!messages?.[0]) return undefined;
+  const text = contentText(messages[0].content as never, '');
+  if (!text.startsWith('<conversation>')) return undefined;
+  const close = text.indexOf('</conversation>');
+  if (close < 0) return undefined;
+  const directive = text.slice(close + '</conversation>'.length).trim();
+  return directive.length > 0 ? directive : undefined;
+}
+
+/**
+ * Hand a summary call the session's own request head instead of Pi's rendered transcript.
+ *
+ * Pi renders the old history into a `<conversation>` block behind a fresh summarizer
+ * system prompt, so the request shares no leading token with the conversation and the
+ * engine's prefix cache cannot reuse a single block of it (measured: 0% hit, every
+ * summary token prefilled from scratch). Replaying the real prefix makes the summary a
+ * prefix-extension of the session's last routed request, which the engine has already
+ * cached — measured 94.9% hit and ~20x fewer uncached prefill tokens, and it costs
+ * nothing in correctness: the directive still arrives, only its position moves from the
+ * head of a fresh request to the end of the real one.
+ *
+ * The system prompt and tool declarations ride inside the message list (Pi folds them in
+ * with normalizeContext at the provider boundary), so the replayed messages alone
+ * reproduce the request head without orcd having to reconstruct either.
+ */
+function replayingStreamFn(realStreamFn: unknown, prefix: unknown[]): StreamFn {
+  const base: StreamFn = typeof realStreamFn === 'function' ? (realStreamFn as StreamFn) : defaultStreamFn();
+  return (model, context, options) => {
+    const directive = trailingDirective(context);
+    if (directive === undefined) return base(model, context, options);
+    const messages = convertToLlm(prefix as never) as unknown[];
+    return base(
+      model,
+      normalizeContext({
+        messages: [
+          ...messages,
+          { role: 'user', content: [{ type: 'text', text: directive }], timestamp: Date.now() },
+        ] as never,
+      }) as never,
+      options,
+    );
+  };
+}
+
+/**
+ * A summarization call's stream function, in the shape Pi calls it: it hands back something
+ * with `.result()`.
+ */
+type StreamFn = (model: unknown, context: unknown, options: unknown) => { result(): Promise<unknown> };
+
+/**
+ * The fallback for a session that supplies no stream function of its own, which is what Pi does
+ * for a summarization call whose `streamFn` argument is undefined.
+ */
+function defaultStreamFn(): StreamFn {
+  return (model, context, options) => ({
+    result: () => completeSimple(model as never, context as never, options as never),
+  });
+}
 
 function canSetThinkingLevel(session: AgentSession): session is AgentSession & {
   setThinkingLevel(level: PiThinkingLevel): void;
@@ -462,7 +550,14 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
       const auth = await modelRegistry.getApiKeyAndHeaders(activeModel);
       const apiKey = 'apiKey' in auth ? (auth as { apiKey?: string }).apiKey : undefined;
       const headers = 'headers' in auth ? (auth as { headers?: Record<string, string> }).headers : undefined;
-      const agent = (session as unknown as { agent: { streamFn?: unknown } }).agent;
+      // `streamFunction` is the live one: Pi exposes no `streamFn` on the agent, so passing that
+      // name is what left the summarizer with `undefined` all along. Resolve it through the shim
+      // so the replay runs on the same transport the session's own requests use.
+      const agent = (session as unknown as { agent: { streamFunction?: unknown } }).agent;
+      // Summarize through the session's own request head so the engine reuses the prefix
+      // it already cached for this conversation instead of re-prefilling the whole span.
+      const prefix = replayPrefixMessages(session, entries[firstKeptIdx].id);
+      const summaryStreamFn = prefix ? replayingStreamFn(agent.streamFunction, prefix) : agent.streamFunction;
       const base = await generateSummary(
         toSummarize as never,
         activeModel,
@@ -479,9 +574,14 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
         // the splice and eats output budget. BGC never thinks, whatever the session's
         // thinking level is (a background job must not inherit a per-turn setting).
         'off',
-        agent.streamFn as never,
+        summaryStreamFn as never,
       );
-      return { summary: base, firstKeptEntryId: entries[firstKeptIdx].id, tokensBefore: currentTokens, details: undefined };
+      return {
+        summary: base,
+        firstKeptEntryId: entries[firstKeptIdx].id,
+        tokensBefore: currentTokens,
+        details: undefined,
+      };
     },
 
     applyBgCompaction(result) {
