@@ -625,6 +625,40 @@ describe('orcd message router', () => {
     });
   });
 
+  it('skips a context_usage write that changes nothing', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    const card = mockCards[0];
+    card.contextTokens = 7000;
+    card.contextWindow = 200000;
+    mockRepo.save.mockClear();
+
+    // The number the stream repeats: the card already holds it, so persisting it is a no-op
+    // commit. A stream repeats an unchanged report constantly, and on a slow disk those
+    // commits starve the event loop (see the throttle above).
+    handler!({
+      type: 'context_usage',
+      sessionId: 'sess-abc',
+      contextTokens: 7000,
+      contextWindow: 200000,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockRepo.save).not.toHaveBeenCalled();
+
+    // A real change is still persisted, once the throttle window has passed.
+    await new Promise((r) => setTimeout(r, 1050));
+    handler!({
+      type: 'context_usage',
+      sessionId: 'sess-abc',
+      contextTokens: 9000,
+      contextWindow: 200000,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockRepo.save).toHaveBeenCalledTimes(1);
+  });
+
   it('does not treat task notifications as card completion', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
