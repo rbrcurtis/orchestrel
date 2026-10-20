@@ -12,7 +12,10 @@ const DB_DIR = join(process.cwd(), 'data');
 mkdirSync(DB_DIR, { recursive: true });
 
 export const AppDataSource = new DataSource({
-  type: 'better-sqlite3',
+  // node-sqlite3 runs queries on libuv's threadpool, so a commit (which costs ~200 ms on a
+  // spinning disk) does not occupy the event loop. better-sqlite3 is synchronous: every write
+  // blocks the single Node thread, which starved the board whenever a card was running.
+  type: 'sqlite',
   database: join(DB_DIR, 'orchestrel.db'),
   entities: [Card, Project, User, ProjectUser, ApiIdempotency],
   subscribers: [CardSubscriber, ProjectSubscriber],
