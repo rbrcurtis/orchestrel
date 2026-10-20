@@ -17,6 +17,13 @@ const sessionCardMap = new Map<string, number>();
 const bgcMap = new Map<string, number>();
 const pendingAsyncAfterTurnComplete = new Map<string, boolean>();
 
+// Last time a card's context usage was persisted. orcd reports usage on every streamed event, so
+// writing the row per event is a SQLite commit per event; on a disk where a commit costs ~200 ms
+// (a rollback-journal write on a container image backed by a spinning disk) those commits occupy
+// the single Node thread and the whole board stops answering. Persist changes only, at most 1/s.
+const contextSavedAt = new Map<number, number>();
+const CONTEXT_SAVE_MIN_MS = 1000;
+
 // Cards whose ws handler is in the middle of `client.create()`. The column is
 // set to 'running' optimistically before the orcd roundtrip so the board
 // updates instantly; this set tells board:changed / agent:status reactors that
@@ -232,10 +239,18 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
     if (msg.type === 'context_usage') {
       const card = await repo().findOneBy({ id: cardId });
       if (card) {
-        card.contextTokens = msg.contextTokens;
-        card.contextWindow = msg.contextWindow;
-        card.updatedAt = new Date().toISOString();
-        await repo().save(card);
+        // Persist only a real change, and at most once a second: a usage report carrying the same
+        // numbers is a no-op write, and the stream repeats those constantly.
+        const same =
+          card.contextTokens === msg.contextTokens && card.contextWindow === msg.contextWindow;
+        const last = contextSavedAt.get(cardId) ?? 0;
+        if (!same && Date.now() - last >= CONTEXT_SAVE_MIN_MS) {
+          contextSavedAt.set(cardId, Date.now());
+          card.contextTokens = msg.contextTokens;
+          card.contextWindow = msg.contextWindow;
+          card.updatedAt = new Date().toISOString();
+          await repo().save(card);
+        }
       }
       bus.publish(`card:${cardId}:context`, {
         contextTokens: msg.contextTokens,
