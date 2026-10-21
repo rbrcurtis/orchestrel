@@ -25,7 +25,9 @@ async function request<T>(server: MemoryServer, method: string, path: string, bo
     method,
     headers: {
       Authorization: `Bearer ${server.apiKey}`,
-      'Content-Type': 'application/json',
+      // Only declare a JSON body when there is one: DELETE /memories/:id carries
+      // no body, and Express rejects an empty body declared as JSON with a 400.
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
