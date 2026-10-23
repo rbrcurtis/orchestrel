@@ -294,7 +294,15 @@ export class OrcdSession {
     const payload = mapPiEventToOrcdPayload(event);
     const eventIndex = this.buffer.push(payload);
 
-    console.log(`[orcd:${this.id.slice(0, 8)}] ${JSON.stringify(payload)}`);
+    // The payload can carry a whole transcript (images included), so logging it whole
+    // wrote hundreds of megabytes a day into the journal. ORCD_LOG_EVENTS=1 restores
+    // the full payload when a session is actually being debugged.
+    const payloadType = this.isRecord(payload) && typeof payload.type === 'string' ? payload.type : 'unknown';
+    if (process.env.ORCD_LOG_EVENTS === '1') {
+      console.log(`[orcd:${this.id.slice(0, 8)}] ${JSON.stringify(payload)}`);
+    } else {
+      console.log(`[orcd:${this.id.slice(0, 8)}] event ${payloadType}`);
+    }
     // Launch/completion tracking keys off the RAW Pi event's structured details
     // (tool_execution_end + subagent-notification custom messages), not the
     // mapped payload — see async-task-tracker.ts.
