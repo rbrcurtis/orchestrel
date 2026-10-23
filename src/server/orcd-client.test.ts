@@ -1,3 +1,5 @@
+import { createServer, type Socket } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { OrcdClient } from './orcd-client';
 
@@ -336,6 +338,8 @@ describe('OrcdClient dispatch ordering', () => {
   it('schedules a reconnect when the initial dial fails', async () => {
     const client = new OrcdClient({ host: '127.0.0.1', port: 1, token: 't', name: 'local' });
     await expect(client.connect()).rejects.toBeTruthy();
+    // The retry is armed by 'close', which follows the error event on a socket.
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const internals = client as unknown as { reconnectTimer: unknown };
     expect(internals.reconnectTimer).not.toBeNull();
     client.disconnect();
@@ -452,5 +456,82 @@ describe('OrcdClient provider config', () => {
     });
     expect(sent[0]).toMatchObject({ action: 'provider_test', baseUrl: 'http://127.0.0.1:3457' });
     expect(client.capabilities).toBeNull();
+  });
+});
+
+describe('OrcdClient stream framing', () => {
+  it('reassembles a message split across many chunks and dispatches it once', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const seen: unknown[] = [];
+    const internals = client as unknown as {
+      dispatch: (msg: unknown) => void;
+      readChunk: (chunk: Buffer) => void;
+    };
+    internals.dispatch = (msg) => seen.push(msg);
+    const line = Buffer.from(
+      `${JSON.stringify({ type: 'capabilities', requestId: 'req-1', providers: { p: 'x'.repeat(300_000) } })}\n`,
+    );
+
+    for (let off = 0; off < line.length; off += 8_192) internals.readChunk(line.subarray(off, off + 8_192));
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ type: 'capabilities', requestId: 'req-1' });
+  });
+
+  it('holds a partial line until its newline arrives', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const seen: unknown[] = [];
+    const internals = client as unknown as {
+      dispatch: (msg: unknown) => void;
+      readChunk: (chunk: Buffer) => void;
+    };
+    internals.dispatch = (msg) => seen.push(msg);
+
+    internals.readChunk(Buffer.from('{"type":"ok"'));
+    expect(seen).toHaveLength(0);
+    internals.readChunk(Buffer.from('}\n'));
+    expect(seen).toEqual([{ type: 'ok' }]);
+  });
+
+  it('dispatches several messages delivered in one chunk, keeping the trailing partial', () => {
+    const client = new OrcdClient({ host: '127.0.0.1', port: 0, token: 't', name: 'local' });
+    const seen: unknown[] = [];
+    const internals = client as unknown as {
+      dispatch: (msg: unknown) => void;
+      readChunk: (chunk: Buffer) => void;
+    };
+    internals.dispatch = (msg) => seen.push(msg);
+
+    internals.readChunk(Buffer.from('{"type":"ok"}\n{"type":"ok","n":2}\n{"type":"par'));
+    expect(seen).toEqual([{ type: 'ok' }, { type: 'ok', n: 2 }]);
+    internals.readChunk(Buffer.from('tial"}\n'));
+    expect(seen).toHaveLength(3);
+  });
+});
+
+describe('OrcdClient connection handling', () => {
+  it('keeps exactly one socket when connect is called again', async () => {
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.on('close', () => sockets.delete(socket));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    const client = new OrcdClient({ host: '127.0.0.1', port, token: 't', name: 'local' });
+    const internals = client as unknown as { sayHello: () => Promise<void> };
+    internals.sayHello = async () => {};
+
+    try {
+      await client.connect();
+      await client.connect();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(sockets.size).toBe(1);
+    } finally {
+      client.disconnect();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sockets.size).toBe(0);
   });
 });

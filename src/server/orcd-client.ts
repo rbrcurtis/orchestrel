@@ -11,6 +11,8 @@ export interface OrcdClientOpts {
 
 type MessageHandler = (msg: OrcdMessage) => void | Promise<void>;
 
+const RECONNECT_DELAY_MS = 2_000;
+
 /**
  * Client for the orcd TCP socket.
  * Manages connection, reconnection, and message dispatch.
@@ -22,10 +24,13 @@ export class OrcdClient {
     'The system compacted your conversation history just now. Continue the task you were working on.';
 
   private socket: Socket | null = null;
-  private buf = '';
+  /** Chunks of the line currently being received; joined once a newline arrives. */
+  private partialLine: Buffer[] = [];
   private connected = false;
   private hasConnectedBefore = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Incremented per `connect()`; a close from an older generation is stale news. */
+  private connectGeneration = 0;
   private handlers = new Set<MessageHandler>();
   private dispatchChain = Promise.resolve();
   private destroyed = false;
@@ -95,11 +100,17 @@ export class OrcdClient {
    * Connect to orcd. Reconnects automatically on disconnect.
    */
   connect(): Promise<void> {
+    // One socket per client. A reconnect must drop the old connection: two live
+    // sockets both dispatch every broadcast, doubling transcript traffic, and the
+    // orphan is never closed by anyone.
+    this.socket?.destroy();
+    this.socket = null;
+    this.partialLine.length = 0;
+    const generation = ++this.connectGeneration;
     return new Promise((resolve, reject) => {
       this.destroyed = false;
       const sock = createConnection({ host: this.opts.host, port: this.opts.port }, () => {
         this.connected = true;
-        this.buf = '';
         const isReconnect = this.hasConnectedBefore;
         this.hasConnectedBefore = true;
         console.log(`[orcd-client:${this.nodeName}] ${isReconnect ? 're' : ''}connected`);
@@ -114,26 +125,7 @@ export class OrcdClient {
           });
       });
 
-      sock.on('data', (data) => {
-        this.buf += data.toString();
-        let nl: number;
-        while ((nl = this.buf.indexOf('\n')) !== -1) {
-          const line = this.buf.slice(0, nl).trim();
-          this.buf = this.buf.slice(nl + 1);
-          if (!line) continue;
-          try {
-            const msg = JSON.parse(line) as OrcdMessage;
-            this.dispatch(msg);
-          } catch (err) {
-            console.warn(
-              `[orcd-client:${this.nodeName}] skipping malformed message:`,
-              err instanceof Error ? err.message : err,
-              'line:',
-              line.slice(0, 120),
-            );
-          }
-        }
-      });
+      sock.on('data', (chunk: Buffer) => this.readChunk(chunk));
 
       sock.on('close', () => {
         this.connected = false;
@@ -144,39 +136,92 @@ export class OrcdClient {
           console.log(`[orcd-client:${this.nodeName}] disconnected after explicit shutdown`);
           return;
         }
-        console.log(`[orcd-client:${this.nodeName}] disconnected, reconnecting in 2s...`);
-        this.reconnectTimer = setTimeout(() => {
-          this.connect().catch((err) => {
-            console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (err as Error).message);
-          });
-        }, 2000);
+        // A newer connect() replaced this socket; its close is not news.
+        if (generation !== this.connectGeneration) {
+          console.log(`[orcd-client:${this.nodeName}] stale socket closed; a newer connection owns the node`);
+          return;
+        }
+        this.socket = null;
+        console.log(`[orcd-client:${this.nodeName}] disconnected, reconnecting in ${RECONNECT_DELAY_MS / 1000}s...`);
+        this.scheduleReconnect();
       });
 
       sock.on('error', (err) => {
-        if (!this.connected) {
-          if (!this.destroyed && !this.reconnectTimer) {
-            this.reconnectTimer = setTimeout(() => {
-              this.reconnectTimer = null;
-              this.connect().catch((e) =>
-                console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (e as Error).message),
-              );
-            }, 2000);
-          }
-          reject(err);
-        } else {
+        if (this.connected) {
           console.error(`[orcd-client:${this.nodeName}] socket error:`, err.message);
+          return;
         }
+        // 'close' follows and owns the retry — scheduling one here too made two
+        // parallel reconnect loops and leaked a socket on every failed attempt.
+        if (this.socket === sock) this.socket = null;
+        reject(err);
       });
 
       this.socket = sock;
     });
   }
 
+  private scheduleReconnect(): void {
+    if (this.destroyed || this.reconnectTimer) {
+      console.log(`[orcd-client:${this.nodeName}] reconnect already pending or client shut down, skipping`);
+      return;
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect().catch((err) =>
+        console.error(`[orcd-client:${this.nodeName}] reconnect failed:`, (err as Error).message),
+      );
+    }, RECONNECT_DELAY_MS);
+  }
+
+  /**
+   * Split the byte stream into newline-delimited messages.
+   *
+   * Transcript messages reach tens of megabytes — one session snapshot carries the
+   * whole baseline — and arrive in ~64 KB chunks. Appending each chunk to a growing
+   * string and re-slicing it is quadratic: a 48 MB line measured 6.2 s of blocked
+   * event loop, which stalled every HTTP and websocket request behind it. Chunks are
+   * therefore collected and joined exactly once, when the newline arrives.
+   */
+  private readChunk(chunk: Buffer): void {
+    let start = 0;
+    let nl: number;
+    while ((nl = chunk.indexOf(0x0a, start)) !== -1) {
+      const tail = chunk.subarray(start, nl);
+      const line = this.partialLine.length === 0 ? tail : Buffer.concat([...this.partialLine, tail]);
+      this.partialLine.length = 0;
+      start = nl + 1;
+      this.handleLine(line.toString('utf8'));
+    }
+    if (start < chunk.length) this.partialLine.push(chunk.subarray(start));
+  }
+
+  private handleLine(raw: string): void {
+    const line = raw.trim();
+    if (!line) {
+      console.warn(`[orcd-client:${this.nodeName}] skipping empty line from orcd`);
+      return;
+    }
+    try {
+      const msg = JSON.parse(line) as OrcdMessage;
+      this.dispatch(msg);
+    } catch (err) {
+      console.warn(
+        `[orcd-client:${this.nodeName}] skipping malformed message:`,
+        err instanceof Error ? err.message : err,
+        'line:',
+        line.slice(0, 120),
+      );
+    }
+  }
+
   disconnect(): void {
     this.destroyed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.socket?.destroy();
     this.socket = null;
+    this.partialLine.length = 0;
     this.connected = false;
   }
 
