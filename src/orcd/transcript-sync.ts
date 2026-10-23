@@ -1,4 +1,5 @@
 import { reduceTranscriptState } from '../shared/transcript-reducer';
+import { redactInlineMedia } from '../shared/transcript-media';
 import { TranscriptSpool } from './transcript-spool';
 import { collectDisplayPrompts, originalPromptText } from '../lib/display-prompt';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
@@ -75,7 +76,7 @@ export class TranscriptSync {
     if (!Number.isSafeInteger(replayByteCapacity) || replayByteCapacity < 1) {
       throw new Error('Transcript replay byte capacity must be a positive integer');
     }
-    this.state = { baseline: projectEntries(initialEntries), baselineThrough: 0, overlay: [], events: [] };
+    this.state = { baseline: projectBaseline(initialEntries), baselineThrough: 0, overlay: [], events: [] };
   }
 
   accept(event: AgentSessionEvent): TranscriptEnvelope<TranscriptEvent> {
@@ -88,7 +89,7 @@ export class TranscriptSync {
     // event can claim a sequence between the authoritative source view and boundary.
     const event = this.sequenceEvent({
       type: 'baseline_replaced',
-      entries: projectEntries(entries),
+      entries: projectBaseline(entries),
       coveredThrough: this.sequence,
     });
     this.spool?.dispose();
@@ -111,7 +112,10 @@ export class TranscriptSync {
   }
 
   private sequenceEvent(event: TranscriptEvent): TranscriptEnvelope<TranscriptEvent> {
-    const envelope = { cursor: { streamId: this.streamId, sequence: ++this.sequence }, event: structuredClone(event) };
+    const envelope = {
+      cursor: { streamId: this.streamId, sequence: ++this.sequence },
+      event: redactInlineMedia(event),
+    };
     this.state = reduceTranscriptState(this.state, envelope.event);
     this.retain(envelope);
     return structuredClone(envelope);
@@ -208,11 +212,40 @@ export function projectEntries(entries: SessionEntry[]): TranscriptEntryProjecti
     if (messages.length === 0) continue;
     projected.push({
       entryId: entry.id,
-      entry: structuredClone(entry),
-      messages: structuredClone(messages),
+      entry: redactInlineMedia(entry),
+      messages: redactInlineMedia(messages),
     });
   }
   return projected;
+}
+
+/** Baseline entries a replica keeps — the live transcript, newest first, not history. */
+const MAX_BASELINE_ENTRIES = 120;
+/** Baseline bytes a replica keeps. Paged history (`getPiSessionHistoryPage`) is the
+ *  path to anything older, so the live baseline stays small enough to ship per client. */
+const MAX_BASELINE_BYTES = 1_048_576;
+
+/**
+ * Project the display baseline a snapshot or settle carries.
+ *
+ * Pi's entries grow without bound — a 46 MB session was 45 MB of inline images — so a
+ * baseline holding every entry made each settle and each client snapshot a tens-of-
+ * megabytes message. The replica keeps only the recent tail (see `TranscriptReplica`,
+ * which caps the baseline at 120 entries itself) and loads older pages from the
+ * session file, so the owner caps it here instead of streaming the lot on every turn.
+ */
+function projectBaseline(entries: SessionEntry[]): TranscriptEntryProjection[] {
+  const projected = projectEntries(entries.slice(-MAX_BASELINE_ENTRIES));
+  let bytes = 0;
+  let start = projected.length;
+  while (start > 0) {
+    const size = byteSize(projected[start - 1]);
+    // Always keep the newest entry, even when a single one exceeds the budget.
+    if (start < projected.length && bytes + size > MAX_BASELINE_BYTES) break;
+    bytes += size;
+    start -= 1;
+  }
+  return projected.slice(start);
 }
 
 function userMessageText(content: unknown): string | undefined {

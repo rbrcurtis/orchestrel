@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { INJECTED_COMMANDS_MARKER } from '../shared/slash-commands';
+import { IMAGE_OMITTED_TEXT } from '../shared/transcript-media';
 
 const mockList = vi.fn();
 const mockOpen = vi.fn();
@@ -320,6 +321,38 @@ describe('getPiSessionMessages', () => {
         message: expect.objectContaining({ content: [{ type: 'text', text: 'newer turn' }] }),
       }),
     ]);
+  });
+
+  it('drops inline image data from loaded and paged history', async () => {
+    const { getPiSessionMessages } = await import('./pi-session-history');
+    const base64 = 'a'.repeat(200_000);
+    mockBuildSessionContext.mockReturnValue({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is this?' },
+            { type: 'image', data: base64, mimeType: 'image/jpeg' },
+          ],
+          timestamp: 1,
+        },
+        {
+          role: 'toolResult',
+          toolCallId: 'tool-1',
+          toolName: 'Read',
+          content: [{ type: 'image', data: base64, mimeType: 'image/png' }],
+          isError: false,
+          timestamp: 2,
+        },
+      ],
+    });
+
+    const messages = await getPiSessionMessages('pi-session-1', '/repo');
+    const json = JSON.stringify(messages);
+
+    expect(json).not.toContain(base64.slice(0, 64));
+    expect(json).toContain(IMAGE_OMITTED_TEXT);
+    expect(json).toContain('what is this?');
   });
 
   it('returns [] when the Pi API cannot find the session', async () => {

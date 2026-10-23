@@ -4,6 +4,7 @@ import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import type { TranscriptHistoryPage, TranscriptHistoryRequest } from '../shared/transcript-history';
 import { TRANSCRIPT_PAGE_SIZE } from '../shared/transcript-history';
 import { collectDisplayPrompts, originalPromptText } from './display-prompt';
+import { IMAGE_OMITTED_TEXT, redactInlineMedia } from '../shared/transcript-media';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -35,6 +36,10 @@ function getHistoryContentBlocks(content: unknown): Array<Record<string, unknown
         name: getString(block.name),
         input: isRecord(block.arguments) ? block.arguments : {},
       });
+    } else if (block.type === 'image') {
+      // Inline base64 image data is never rendered — the transcript shows the user's
+      // text — but the fallback below would serialize megabytes of it into the page.
+      blocks.push({ type: 'text', text: IMAGE_OMITTED_TEXT });
     } else {
       blocks.push({ type: 'text', text: JSON.stringify(block) });
     }
@@ -164,7 +169,7 @@ function toHistoryMessage(
       type: 'user',
       message: {
         role: 'user',
-        content: message.content,
+        content: redactInlineMedia(message.content),
       },
     };
   }
@@ -204,7 +209,7 @@ function toHistoryMessage(
           {
             type: 'tool_result',
             tool_use_id: getString(message.toolCallId) ?? '',
-            content: message.content,
+            content: redactInlineMedia(message.content),
             is_error: message.isError === true,
           },
         ],
