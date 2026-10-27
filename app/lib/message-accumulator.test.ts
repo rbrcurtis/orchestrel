@@ -267,6 +267,40 @@ describe('MessageAccumulator history display', () => {
     ]);
   });
 
+  it('stamps a history turn divider with the assistant reply, not the next prompt', () => {
+    const acc = new MessageAccumulator();
+    const turnEndedAt = Date.UTC(2026, 3, 27, 12, 5, 0);
+    const followUpSentAt = Date.UTC(2026, 3, 27, 13, 45, 0);
+
+    acc.handleHistoryMessage({
+      type: 'user',
+      uuid: 'msg_1',
+      session_id: 'sess_1',
+      timestamp: Date.UTC(2026, 3, 27, 12, 0, 0),
+      parent_tool_use_id: null,
+      message: { role: 'user', content: 'first prompt' },
+    });
+    acc.handleHistoryMessage({
+      type: 'assistant',
+      uuid: 'msg_2',
+      session_id: 'sess_1',
+      timestamp: turnEndedAt,
+      parent_tool_use_id: null,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'done' }], model: 'sonnet' },
+    });
+    acc.handleHistoryMessage({
+      type: 'user',
+      uuid: 'msg_3',
+      session_id: 'sess_1',
+      timestamp: followUpSentAt,
+      parent_tool_use_id: null,
+      message: { role: 'user', content: 'follow-up prompt' },
+    });
+
+    const result = acc.conversation.find((e) => e.kind === 'result');
+    expect(result).toMatchObject({ kind: 'result', timestamp: turnEndedAt });
+  });
+
   it('strips appended injected commands from cached history', () => {
     const acc = new MessageAccumulator();
 

@@ -245,7 +245,7 @@ export class MessageAccumulator {
         const timestamp = normalizeTimestamp(msg.timestamp);
         const { content } = msg.message;
         if (typeof content === 'string') {
-          this.finalizePendingHistoryTurn(timestamp);
+          this.finalizePendingHistoryTurn();
           this.conversation.push({ kind: 'user', content: displayUserContent(content), timestamp });
         } else if (Array.isArray(content)) {
           // Array content may be a real prompt with text blocks, or an internal
@@ -261,7 +261,7 @@ export class MessageAccumulator {
             .map((b) => (b as { text?: string }).text ?? '')
             .join('\n');
           if (text) {
-            this.finalizePendingHistoryTurn(timestamp);
+            this.finalizePendingHistoryTurn();
             this.conversation.push({ kind: 'user', content: displayUserContent(text), timestamp });
           }
         }
@@ -308,7 +308,7 @@ export class MessageAccumulator {
       }
       case 'system':
         if (msg.subtype === 'init') {
-          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.finalizePendingHistoryTurn();
           this.conversation.push({
             kind: 'system',
             subtype: 'init',
@@ -317,32 +317,32 @@ export class MessageAccumulator {
           });
         } else if (msg.subtype === 'compact_boundary') {
           const timestamp = normalizeTimestamp(msg.timestamp);
-          this.finalizePendingHistoryTurn(timestamp);
+          this.finalizePendingHistoryTurn();
           const label = msg.source === 'orchestrel-bgc' ? 'Background compaction applied' : undefined;
           this.conversation.push({ kind: 'compact', label, timestamp });
         } else if (msg.subtype === 'bgc_started') {
-          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.finalizePendingHistoryTurn();
           this.conversation.push({
             kind: 'compact',
             label: 'Background compaction started',
             timestamp: normalizeTimestamp(msg.timestamp),
           });
         } else if (msg.subtype === 'bgc_failed') {
-          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.finalizePendingHistoryTurn();
           this.conversation.push({
             kind: 'compact',
             label: msg.message ? `Background compaction failed: ${msg.message}` : 'Background compaction failed',
             timestamp: normalizeTimestamp(msg.timestamp),
           });
         } else if (msg.subtype === 'compact_started') {
-          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.finalizePendingHistoryTurn();
           this.conversation.push({
             kind: 'compact',
             label: 'Context compacting',
             timestamp: normalizeTimestamp(msg.timestamp),
           });
         } else if (msg.subtype === 'compact_done') {
-          this.finalizePendingHistoryTurn(normalizeTimestamp(msg.timestamp));
+          this.finalizePendingHistoryTurn();
           this.conversation.push({
             kind: 'compact',
             label: 'Context compacted',
@@ -572,12 +572,17 @@ export class MessageAccumulator {
     this.blockingSubagentToolIds.clear();
   }
 
-  private finalizePendingHistoryTurn(timestamp = this.historyPendingResultTimestamp): void {
+  // Close the turn that history left open. The divider marks the end of the
+  // agent's turn, so it carries the timestamp of that turn's last assistant
+  // message — never the timestamp of whatever arrived next. Stamping it with
+  // the following message (the next prompt) made an old "Turn complete" line
+  // jump to the moment the user sent a follow-up, every time history reloaded.
+  private finalizePendingHistoryTurn(): void {
     if (this.historyPendingResultTimestamp == null) return;
     this.historyTurnCount += 1;
     this.conversation.push({
       kind: 'result',
-      timestamp,
+      timestamp: this.historyPendingResultTimestamp,
       data: {
         subtype: 'success',
         costUsd: 0,
