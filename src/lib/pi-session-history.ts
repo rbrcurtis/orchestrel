@@ -56,6 +56,16 @@ function makeUuid(sessionId: string, idx: number): string {
 // append-only, so a fixed id run means a fixed window. Hashing ids instead of
 // stringify-ing record content keeps this O(n) on tiny strings — the old
 // content hash made deep paging on large sessions unreadably slow.
+/** Epoch ms of a session entry's timestamp, which Pi stores as an ISO string. */
+function entryTimestampMs(entry: unknown): number | undefined {
+  if (!isRecord(entry)) return undefined;
+  const raw = entry.timestamp;
+  if (typeof raw === 'number') return raw < 1e12 ? raw * 1000 : raw;
+  if (typeof raw !== 'string') return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
 function windowPrefix(records: TranscriptHistoryPage['records'], count: number): string {
   return createHash('sha256')
     .update(records.slice(0, count).map((r) => r.id).join('\n'))
@@ -86,6 +96,7 @@ interface CachedRecords {
   size: number;
   revision: string;
   records: TranscriptHistoryPage['records'];
+  sessionStart?: TranscriptHistoryPage['sessionStart'];
 }
 const recordCache = new Map<string, CachedRecords>();
 const MAX_CACHED_RECORD_FILES = 2;
@@ -103,7 +114,7 @@ async function buildRecords(
   sessionId: string,
   manager: { getBranch(): SessionEntry[] },
   sessionEntryToContextMessages: (entry: SessionEntry) => unknown[],
-): Promise<Pick<CachedRecords, 'revision' | 'records'>> {
+): Promise<Pick<CachedRecords, 'revision' | 'records' | 'sessionStart'>> {
   // The FULL active branch, not buildContextEntries(): that projection omits
   // everything the latest compaction summarized, which would make pre-compaction
   // history unpaged-able. Archived entries map identically, and each compaction
@@ -113,6 +124,12 @@ async function buildRecords(
   const revision = await fileRevision(path);
   const modelChange = [...entries].reverse().find((e) => e.type === 'model_change');
   const model = modelChange ? getString(modelChange.modelId) : undefined;
+  // The branch opens with the entry that named the model, so its timestamp is when
+  // that first turn started — the same instant the live init event carried.
+  const startTimestamp = entryTimestampMs(modelChange) ?? entryTimestampMs(entries[0]);
+  const sessionStart = model
+    ? { model, ...(startTimestamp != null ? { timestamp: startTimestamp } : {}) }
+    : undefined;
   if (model)
     records.push({
       id: `${sessionId}:init`,
@@ -121,6 +138,7 @@ async function buildRecords(
         subtype: 'init',
         model,
         session_id: sessionId,
+        ...(startTimestamp != null ? { timestamp: startTimestamp } : {}),
       },
     });
   const replacements = collectDisplayPrompts(entries);
@@ -143,7 +161,7 @@ async function buildRecords(
       if (isRecord(mapped)) records.push({ id, message: { ...mapped, uuid: id } });
     }
   }
-  return { revision, records };
+  return { revision, records, sessionStart };
 }
 
 function toHistoryMessage(
@@ -334,15 +352,16 @@ export async function getPiSessionHistoryPage(
   let cached = recordCache.get(path);
   let records: TranscriptHistoryPage['records'];
   let revision: string;
+  let sessionStart: TranscriptHistoryPage['sessionStart'];
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
     // LRU refresh.
     recordCache.delete(path);
     recordCache.set(path, cached);
-    ({ records, revision } = cached);
+    ({ records, revision, sessionStart } = cached);
   } else {
     const manager = SessionManager.open(path, undefined, cwd);
     const built = await buildRecords(path, sessionId, manager, sessionEntryToContextMessages);
-    ({ records, revision } = built);
+    ({ records, revision, sessionStart } = built);
     if (stat.size <= MAX_CACHED_RECORD_FILE_BYTES) {
       if (recordCache.size >= MAX_CACHED_RECORD_FILES) {
         const oldest = recordCache.keys().next().value;
@@ -404,6 +423,7 @@ export async function getPiSessionHistoryPage(
     hasOlder: start > 0,
     hasNewer: end < records.length,
     reset,
+    ...(sessionStart ? { sessionStart } : {}),
   };
 }
 

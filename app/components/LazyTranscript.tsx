@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { MessageBlock } from './MessageBlock';
 import { ScrollArea } from '~/components/ui/scroll-area';
@@ -19,6 +19,9 @@ type Props = {
   onShowScrollButtonChange: (show: boolean) => void;
   /** Bumped when the reader sends a prompt — a send always shows the prompt. */
   scrollToBottomSeq?: number;
+  /** Rendered as the transcript's first row: content older than the window, such as
+   *  the session-start divider, that must sit inline with the messages. */
+  topRow?: ReactNode;
 };
 
 const INITIAL_ROWS = 120;
@@ -41,6 +44,8 @@ function scrollToBottom(el: HTMLDivElement, behavior: ScrollBehavior = 'auto') {
 function headSignature(entry?: ConversationEntry): string | null {
   if (!entry) return null;
   switch (entry.kind) {
+    case 'turn_started':
+      return 'turn_started';
     case 'user':
       return `user:${entry.content}`;
     case 'blocks':
@@ -72,6 +77,7 @@ export function LazyTranscript({
   onNearBottomChange,
   onShowScrollButtonChange,
   scrollToBottomSeq,
+  topRow,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -374,6 +380,7 @@ export function LazyTranscript({
       >
         <div ref={contentRef} className="px-3 py-2 space-y-1 min-w-0 max-w-full">
           <div ref={topSentinelRef} className="h-px" data-testid="transcript-top-sentinel" aria-hidden="true" />
+          {topRow}
           {segments.map((rows) => (
             <div key={rows[0].index} className="space-y-1">
               {rows.map(({ index, entry }, j) => (

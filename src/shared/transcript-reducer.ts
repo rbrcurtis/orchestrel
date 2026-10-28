@@ -12,6 +12,7 @@ import type {
 export function reduceTranscriptState(state: TranscriptState, event: TranscriptEvent): TranscriptState {
   if (event.type === 'baseline_replaced') {
     return {
+      start: state.start,
       baseline: event.entries,
       baselineThrough: event.coveredThrough,
       overlay: state.overlay.filter((message) => message.startSequence > event.coveredThrough),

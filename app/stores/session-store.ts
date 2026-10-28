@@ -14,7 +14,7 @@ import type { TranscriptSnapshotMessage } from '../../src/shared/orcd-protocol';
 import { renderTranscriptSnapshot } from '../lib/transcript-display';
 import { MessageAccumulator } from '../lib/message-accumulator';
 import { readTranscriptPage, writeTranscriptPage, type TranscriptCacheScope } from '../lib/transcript-cache';
-import type { TranscriptHistoryPage } from '../../src/shared/transcript-history';
+import type { TranscriptHistoryPage, TranscriptSessionStart } from '../../src/shared/transcript-history';
 import { TRANSCRIPT_PAGE_SIZE } from '../../src/shared/transcript-history';
 
 // How many times a stop request is retried before the client gives up and
@@ -54,6 +54,8 @@ export interface SessionState {
   contextWindow: number;
   bgcInProgress: boolean;
   compactInProgress: boolean;
+  /** Where the session began — no window of records holds the transcript's first row. */
+  sessionStart?: TranscriptSessionStart;
 }
 
 function defaultSession(): SessionState {
@@ -248,6 +250,12 @@ export class SessionStore {
       replica.applySnapshot(snapshot.cursor, snapshot.state);
       if (!this.applyEnvelopes(replica, pending)) return;
       this.replicas.set(cardId, replica);
+      if (snapshot.state.start) {
+        const start = snapshot.state.start;
+        runInAction(() => {
+          this.getOrCreate(cardId).sessionStart = start;
+        });
+      }
       this.paintLive(cardId);
       // Events that arrived while this snapshot was in flight are in the replica now,
       // and with them the first state worth caching.
@@ -364,7 +372,7 @@ export class SessionStore {
             hasNewer: page.hasNewer,
           }),
         );
-        this.ingestHistory(cardId, merged);
+        this.ingestHistory(cardId, merged, result.sessionStart ?? page.sessionStart);
       } else {
         // Appending newer pages keeps the already-loaded older rows.
         const merged = [...(this.historyMessages.get(cardId) ?? []), ...pageMessages];
@@ -375,7 +383,7 @@ export class SessionStore {
             hasOlder: page.hasOlder,
           }),
         );
-        this.ingestHistory(cardId, merged);
+        this.ingestHistory(cardId, merged, result.sessionStart ?? page.sessionStart);
       }
       if (scope && !cached)
         await writeTranscriptPage(scope, { anchor, revision: result.revision, records: [result] }, null);
@@ -633,7 +641,9 @@ export class SessionStore {
     });
   }
 
-  ingestHistory(cardId: number, messages: unknown[]): void {
+  // sessionStart rides along with a history page: record 0 is outside the window, so
+  // the transcript would otherwise open mid-session with no start divider.
+  ingestHistory(cardId: number, messages: unknown[], sessionStart?: TranscriptSessionStart): void {
     this.historyMessages.set(cardId, messages);
     runInAction(() => {
       const s = this.getOrCreate(cardId);
@@ -642,6 +652,7 @@ export class SessionStore {
         s.accumulator.handleHistoryMessage(msg as HistoryMessage);
       }
       s.accumulator.flushHistory();
+      if (sessionStart) s.sessionStart = sessionStart;
       s.historyLoaded = true;
     });
   }
@@ -839,6 +850,12 @@ export class SessionStore {
           const replica = new TranscriptReplica();
           replica.applySnapshot(entry.cursor, entry.state);
           this.replicas.set(cardId, replica);
+          if (entry.state.start) {
+            const start = entry.state.start;
+            runInAction(() => {
+              this.getOrCreate(cardId).sessionStart = start;
+            });
+          }
           this.cacheStats.liveHit++;
           this.paintLive(cardId);
           void this.loadLive(cardId, entry.cursor);
@@ -853,6 +870,7 @@ export class SessionStore {
           this.ingestHistory(
             cardId,
             valid.records.map((record) => record.message),
+            valid.sessionStart,
           );
         let page = (await this.ws()
           .emit('session:history-page', {
@@ -891,6 +909,7 @@ export class SessionStore {
           this.ingestHistory(
             cardId,
             page.records.map((record) => record.message),
+            page.sessionStart,
           );
           if (scope && (!valid || cached?.revision !== page.revision)) {
             await writeTranscriptPage(

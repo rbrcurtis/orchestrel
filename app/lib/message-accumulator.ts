@@ -76,6 +76,8 @@ export interface SubagentState {
 
 export type ConversationEntry =
   | { kind: 'blocks'; blocks: ContentBlock[]; model?: string; timestamp?: number }
+  /** Divider above a user prompt: when that turn began. Derived for display. */
+  | { kind: 'turn_started'; timestamp?: number }
   | { kind: 'result'; data: TurnResult; timestamp?: number }
   | { kind: 'tool_activity'; data: ToolActivity; timestamp?: number }
   | { kind: 'user'; content: string; optimistic?: boolean; timestamp?: number }

@@ -87,6 +87,35 @@ it('pages pre-compaction entries from the full branch', async () => {
   }
 });
 
+// A window at the tail of a long session still has to know where the session began:
+// record 0 (the synthetic init record) is not in it.
+it('reports the session start alongside any window of records', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'history-start-'));
+  try {
+    const manager = SessionManager.create(dir);
+    manager.appendModelChange('deepseek', 'deepseek-flash');
+    for (let i = 0; i < 135; i++) {
+      manager.appendMessage({ role: 'user', content: `prompt-${i}`, timestamp: i });
+      manager.appendMessage(fauxAssistantMessage(`answer-${i}`));
+    }
+    const id = manager.getSessionId();
+    const latest = await getPiSessionHistoryPage(id, dir, {});
+    expect(latest.hasOlder).toBe(true);
+    expect(latest.records.some((r) => r.id === `${id}:init`)).toBe(false);
+    expect(latest.sessionStart?.model).toBe('deepseek-flash');
+    expect(latest.sessionStart?.timestamp).toEqual(expect.any(Number));
+
+    let page = latest;
+    while (page.hasOlder && page.before) {
+      page = await getPiSessionHistoryPage(id, dir, { before: page.before, revision: page.revision });
+    }
+    expect(page.records[0].id).toBe(`${id}:init`);
+    expect((page.records[0].message as { timestamp?: number }).timestamp).toBe(latest.sessionStart?.timestamp);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 // Card 989: an April card whose session file was cleaned up. The reader used to throw,
 // the backend turned that into an error, and the client fell back to session:load on
 // every reconnect — forever, for a transcript that no longer exists.

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Send, Square, Play, AlertCircle, X, WifiOff, Loader2 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
@@ -10,9 +10,15 @@ import { LazyTranscript } from './LazyTranscript';
 import { useSessionStore, useCardStore, useConfigStore, useStore } from '~/stores/context';
 import type { FileRef } from '../../src/shared/ws-protocol';
 import { parseAppCommands } from '../../src/shared/slash-commands';
+import { withTurnDividers } from '~/lib/turn-dividers';
+import type { ConversationEntry } from '~/lib/message-accumulator';
+import { formatEntryTime } from '~/lib/entry-time';
 import { FileAttachments, FilePickerButton } from './FileAttachments';
 import { uploadFiles } from '~/lib/file-attachments';
 import { TYPE_FOCUS_EVENT, type TypeFocusDetail } from '~/lib/type-focus';
+
+/** Stable empty conversation so memoised derivations keep their identity. */
+const NO_CONVERSATION: ConversationEntry[] = [];
 
 type Props = {
   cardId: number;
@@ -46,23 +52,46 @@ export const SessionView = observer(function SessionView({
 
   const session = sessionStore.getSession(cardId);
   const card = cardStore.getCard(cardId);
-  const conversation = session?.accumulator.conversation ?? [];
+  const conversation = session?.accumulator.conversation ?? NO_CONVERSATION;
   const initialPrompt = card?.description.trim() ?? '';
   // The card description is the initial prompt. For new sessions it's also the first
   // message in the loaded history, so prepending unconditionally would render it twice.
   const firstUserEntry = conversation.find((entry) => entry.kind === 'user');
   const historyStartsWithPrompt = firstUserEntry?.content.trim() === initialPrompt;
-  const visibleConversation =
-    initialPrompt && !historyStartsWithPrompt
-      ? [
-          {
-            kind: 'user' as const,
-            content: initialPrompt,
-            timestamp: card ? new Date(card.createdAt).getTime() : undefined,
-          },
-          ...conversation,
-        ]
-      : conversation;
+  const cardCreatedAt = card?.createdAt;
+  const visibleConversation = useMemo(
+    () =>
+      initialPrompt && !historyStartsWithPrompt
+        ? [
+            {
+              kind: 'user' as const,
+              content: initialPrompt,
+              timestamp: cardCreatedAt ? new Date(cardCreatedAt).getTime() : undefined,
+            },
+            ...conversation,
+          ]
+        : conversation,
+    [initialPrompt, historyStartsWithPrompt, conversation, cardCreatedAt],
+  );
+  // A turn begins at the prompt: the divider above each prompt marks it.
+  const transcriptConversation = useMemo(() => withTurnDividers(visibleConversation), [visibleConversation]);
+  // Record 0 of the transcript — the "Session started" divider — is never in the
+  // window: a history page starts at the tail, and the live baseline is truncated.
+  // It renders as the transcript's first row from the session's start metadata, and
+  // stands aside when a window does reach the real init record.
+  const sessionStart = session?.sessionStart;
+  const hasInitRecord = conversation.some((entry) => entry.kind === 'system' && entry.subtype === 'init');
+  const sessionStartTime = formatEntryTime(sessionStart?.timestamp);
+  const sessionStartRow = sessionStart && !hasInitRecord && (
+    <div className="flex items-center gap-2 my-2 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
+      <div className="flex-1 border-t border-border shrink min-w-2" />
+      <span className="shrink-0 whitespace-nowrap">
+        Session started · {sessionStart.model}
+        {sessionStartTime ? ` · ${sessionStartTime}` : ''}
+      </span>
+      <div className="flex-1 border-t border-border shrink min-w-2" />
+    </div>
+  );
   const currentBlocks = session?.accumulator.currentBlocks ?? [];
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
@@ -342,7 +371,8 @@ export const SessionView = observer(function SessionView({
     >
       <LazyTranscript
         cardId={cardId}
-        conversation={visibleConversation}
+        conversation={transcriptConversation}
+        topRow={sessionStartRow}
         currentBlocks={currentBlocks}
         hasNewerHistory={sessionStore.hasNewerHistory(cardId)}
         onLoadNewerHistory={() => sessionStore.loadNewerHistory(cardId)}

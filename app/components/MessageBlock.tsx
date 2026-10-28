@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/component
 import { ScrollArea, ScrollBar } from '~/components/ui/scroll-area';
 import type { ConversationEntry, ContentBlock, TurnResult } from '~/lib/message-accumulator';
 import { copyText } from '~/lib/utils';
+import { formatEntryTime } from '~/lib/entry-time';
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
@@ -220,19 +221,6 @@ type Props = {
   accentColor?: string | null;
 };
 
-const ENTRY_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-});
-
-function formatEntryTime(timestamp?: number): string | null {
-  if (!timestamp) return null;
-  return ENTRY_TIME_FORMATTER.format(new Date(timestamp));
-}
-
 export const MessageBlock = memo(
   observer(function MessageBlock({ entry, index: _index, accentColor }: Props) {
     switch (entry.kind) {
@@ -250,6 +238,19 @@ export const MessageBlock = memo(
             />
           </div>
         );
+      case 'turn_started': {
+        const time = formatEntryTime(entry.timestamp);
+        return (
+          <div className="flex items-center gap-2 mt-3 mb-1 text-[11px] text-muted-foreground min-w-0 overflow-hidden">
+            <div className="flex-1 border-t border-border shrink min-w-2" />
+            <span className="shrink-0 whitespace-nowrap">
+              Turn started
+              {time ? ` · ${time}` : ''}
+            </span>
+            <div className="flex-1 border-t border-border shrink min-w-2" />
+          </div>
+        );
+      }
       case 'user':
         return <UserBlock content={entry.content} accentColor={accentColor} />;
       case 'error':

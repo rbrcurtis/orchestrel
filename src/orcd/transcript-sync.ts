@@ -76,7 +76,13 @@ export class TranscriptSync {
     if (!Number.isSafeInteger(replayByteCapacity) || replayByteCapacity < 1) {
       throw new Error('Transcript replay byte capacity must be a positive integer');
     }
-    this.state = { baseline: projectBaseline(initialEntries), baselineThrough: 0, overlay: [], events: [] };
+    this.state = {
+      start: sessionStartFromEntries(initialEntries),
+      baseline: projectBaseline(initialEntries),
+      baselineThrough: 0,
+      overlay: [],
+      events: [],
+    };
   }
 
   accept(event: AgentSessionEvent): TranscriptEnvelope<TranscriptEvent> {
@@ -234,6 +240,16 @@ const MAX_BASELINE_BYTES = 1_048_576;
  * which caps the baseline at 120 entries itself) and loads older pages from the
  * session file, so the owner caps it here instead of streaming the lot on every turn.
  */
+/** The session's opening model entry: which model it started on, and when. */
+function sessionStartFromEntries(entries: SessionEntry[]): TranscriptState['start'] {
+  for (const entry of entries) {
+    if (entry.type !== 'model_change') continue;
+    const timestamp = Date.parse(entry.timestamp);
+    return { model: entry.modelId, ...(Number.isNaN(timestamp) ? {} : { timestamp }) };
+  }
+  return undefined;
+}
+
 function projectBaseline(entries: SessionEntry[]): TranscriptEntryProjection[] {
   const projected = projectEntries(entries.slice(-MAX_BASELINE_ENTRIES));
   let bytes = 0;

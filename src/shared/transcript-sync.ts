@@ -1,6 +1,7 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { AssistantMessage, AssistantMessageEvent } from '@earendil-works/pi-ai';
 import type { AgentSessionEvent, SessionEntry } from '@earendil-works/pi-coding-agent';
+import type { TranscriptSessionStart } from './transcript-history';
 
 export interface TranscriptCursor {
   streamId: string;
@@ -60,6 +61,9 @@ export type TranscriptEvent =
   | { type: 'pi_event'; event: TranscriptPassthroughEvent };
 
 export interface TranscriptState {
+  /** Where the session began. The baseline is a truncated tail, so the transcript's
+   *  first record is usually absent and its "Session started" divider would be lost. */
+  start?: TranscriptSessionStart;
   baseline: TranscriptEntryProjection[];
   /** Number of older completed live records held in the owner spool. */
   spooled?: number;

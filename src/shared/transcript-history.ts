@@ -16,6 +16,15 @@ export interface TranscriptHistoryRequest {
   anchorOnly?: boolean;
 }
 
+// Where the session itself began. A page carries only a window of records, so the
+// synthetic init record — record 0 — falls off the newest page on any session longer
+// than TRANSCRIPT_PAGE_SIZE. This rides along with every page and snapshot so the
+// transcript can still open with its "Session started" divider.
+export interface TranscriptSessionStart {
+  model: string;
+  timestamp?: number;
+}
+
 export interface TranscriptHistoryPage {
   sessionId: string;
   revision: string;
@@ -26,4 +35,5 @@ export interface TranscriptHistoryPage {
   hasOlder: boolean;
   hasNewer: boolean;
   reset: boolean;
+  sessionStart?: TranscriptSessionStart;
 }
