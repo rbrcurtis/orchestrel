@@ -21,6 +21,28 @@ import type { TaskNotificationEvent, TaskProgressEvent, TaskStartedEvent } from 
 import type { TranscriptCursor } from '../shared/transcript-sync';
 import type { OrcdAuthor } from '../shared/orcd-protocol';
 
+/**
+ * Provider error texts that mean "this request did not fit the model's window". They differ
+ * per backend (vLLM names the window and the prompt size, llama.cpp and the hosted APIs word
+ * it their own way), so match the shared phrasings the local engines emit. Pi has its own
+ * copy of these patterns for its overflow recovery; orcd needs them because Pi's recovery
+ * re-clamps to the same overshoot and gives up, leaving the run errored.
+ */
+const CONTEXT_OVERFLOW_PATTERN =
+  /maximum context length|reduce the length of the (?:input prompt|messages)|input is too long|exceeds the context window|prompt (?:is )?too long|context[_ ]length[_ ]exceeded|exceeds the available context size/i;
+
+/**
+ * Prompt size quoted by an overflow error, when the backend names it (vLLM: "your prompt
+ * contains at least 180656 input tokens"). A request that overflows reports no usage, so
+ * this is the only measurement of the live context the session can get — it keeps the
+ * forced compaction's `tokensBefore` and the threshold check honest.
+ */
+function overflowPromptTokens(error: string): number | null {
+  const match = /prompt contains at least (\d+)|(\d+)\s+input tokens/i.exec(error);
+  const tokens = Number(match?.[1] ?? match?.[2]);
+  return Number.isFinite(tokens) && tokens > 0 ? tokens : null;
+}
+
 export type SessionEventCallback = (
   msg:
     | StreamEventMessage
@@ -72,6 +94,14 @@ export class OrcdSession {
   // prompt() resolves normally in that case, so run() needs this to exit with
   // state 'errored' instead of 'completed'.
   private runError: string | null = null;
+  /**
+   * An overflow error held back from the UI while its run-end compaction is in flight.
+   * Set only for requests that did not fit the window: those are recoverable, and the
+   * card should see the standard compaction line instead of an error the agent then
+   * worked around. Re-emitted if no splice lands (nothing to compact, summarizer
+   * failure, retry cap).
+   */
+  private suppressedOverflowError: string | null = null;
   private currentUnsubscribe: (() => void) | null = null;
   // How long cancel() waits for abort() to unwind the run loop naturally before
   // forcing session_exit itself (handles tools wedged on an un-abortable read).
@@ -393,6 +423,7 @@ export class OrcdSession {
     const epoch = ++this.runEpoch;
     this.exitFinalized = false;
     this.runError = null;
+    this.suppressedOverflowError = null;
     try {
       const session = await this.getOrCreatePiSession(opts.effort);
       // A resume reuses the live Pi runtime, which was created with an earlier
@@ -432,16 +463,25 @@ export class OrcdSession {
 
       if (this.state !== 'stopped' && this.runError) {
         // The final result errored but prompt() resolved without throwing.
-        // Surface the failure: emit an error message and exit 'errored' so the
-        // backend/UI keep the error visible instead of treating it as success.
         this.state = 'errored';
-        log(`error: ${this.runError}`);
-        const errMsg: SessionErrorMessage = {
-          type: 'error',
-          sessionId: this.id,
-          error: this.runError,
-        };
-        for (const cb of this.subscribers) cb(errMsg);
+        if (CONTEXT_OVERFLOW_PATTERN.test(this.runError)) {
+          // Recoverable: the run-end hook compacts and resumes. Keep it out of the UI —
+          // the card reads an error as a dead turn — and use the size the provider
+          // quoted so the forced compaction records a real tokensBefore.
+          this.suppressedOverflowError = this.runError;
+          this.lastContextTokens = overflowPromptTokens(this.runError) ?? this.lastContextTokens;
+          log(`context overflowed at ${this.lastContextTokens} tokens; compacting instead of failing the turn`);
+        } else {
+          // Surface the failure: emit an error message and exit 'errored' so the
+          // backend/UI keep the error visible instead of treating it as success.
+          log(`error: ${this.runError}`);
+          const errMsg: SessionErrorMessage = {
+            type: 'error',
+            sessionId: this.id,
+            error: this.runError,
+          };
+          for (const cb of this.subscribers) cb(errMsg);
+        }
       }
 
       if (
@@ -470,13 +510,22 @@ export class OrcdSession {
         log('stopped');
       } else {
         this.state = 'errored';
-        log(`error: ${errStr}`);
-        const msg: SessionErrorMessage = {
-          type: 'error',
-          sessionId: this.id,
-          error: errStr,
-        };
-        for (const cb of this.subscribers) cb(msg);
+        if (CONTEXT_OVERFLOW_PATTERN.test(errStr)) {
+          // Same recoverable case as the resolved-result path above, but thrown out of
+          // prompt(): hold the error back and let the run-end hook compact and resume.
+          this.runError = errStr;
+          this.suppressedOverflowError = errStr;
+          this.lastContextTokens = overflowPromptTokens(errStr) ?? this.lastContextTokens;
+          log(`context overflowed at ${this.lastContextTokens} tokens; compacting instead of failing the turn`);
+        } else {
+          log(`error: ${errStr}`);
+          const msg: SessionErrorMessage = {
+            type: 'error',
+            sessionId: this.id,
+            error: errStr,
+          };
+          for (const cb of this.subscribers) cb(msg);
+        }
       }
     } finally {
       await this.finalizeExit(epoch);
@@ -674,6 +723,32 @@ export class OrcdSession {
     const window = this.lastContextWindow || this.resolveContextWindow();
     if (this.summarizeThreshold <= 0 || !window || window <= 0) return false;
     return this.lastContextTokens / window >= this.summarizeThreshold;
+  }
+
+  /**
+   * True when the last run failed because the request did not fit the model's window.
+   *
+   * An overflowed request reports no usage, so `lastContextTokens` still holds the size of
+   * the last *successful* request — often below the summarize threshold even though the live
+   * context is over it. The threshold check therefore cannot see this failure, and the run
+   * ends errored with the conversation still too big; the caller has to compact on the error
+   * itself rather than on the usage.
+   */
+  needsOverflowCompaction(): boolean {
+    return this.state === 'errored' && this.runError !== null && CONTEXT_OVERFLOW_PATTERN.test(this.runError);
+  }
+
+  /**
+   * Re-emit an overflow error that recovery could not handle. No-op when nothing was
+   * suppressed, so callers can invoke it unconditionally after a compaction attempt.
+   */
+  emitSuppressedOverflowError(): void {
+    const message = this.suppressedOverflowError;
+    if (!message) return;
+    this.suppressedOverflowError = null;
+    console.log(`[orcd:${this.id.slice(0, 8)}] recovery could not compact; surfacing the overflow error`);
+    const msg: SessionErrorMessage = { type: 'error', sessionId: this.id, error: message };
+    for (const cb of this.subscribers) cb(msg);
   }
 
   /** Run an out-of-band BGC summary. Parallel-safe; null = nothing to compact. */

@@ -247,12 +247,21 @@ function piContextTokens(usage: Record<string, unknown>): number | null {
  * Pull context usage off a Pi assistant message event. Pi's Usage carries no context
  * window (it lives on the model), so the window is supplied by the caller from session
  * config; an event-level window is honored if a provider ever includes one.
+ *
+ * Aborted and errored messages are skipped, matching Pi's own accounting
+ * (`getAssistantUsage`/`getContextUsage` in the Pi SDK require the same). Their usage is
+ * whatever the stream had accumulated when it stopped — often no usage chunk at all —
+ * and Pi drops the messages themselves from the next request, so reporting their count
+ * would move the context meter with a number that describes nothing.
  */
 export function getContextUsageFromPiEvent(event: unknown, fallbackWindow?: number): ContextUsage | null {
   if (!isRecord(event)) return null;
 
   const message = event.message;
   if (!isRecord(message)) return null;
+
+  const stopReason = message.stopReason ?? event.stopReason;
+  if (stopReason === 'aborted' || stopReason === 'error') return null;
 
   const usage = message.usage;
   if (!isRecord(usage)) return null;

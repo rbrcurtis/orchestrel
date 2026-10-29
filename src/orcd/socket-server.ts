@@ -42,6 +42,11 @@ export class OrcdServer {
   // hundreds of times per second while the context stays over threshold (severe on
   // small-window models). A new size means the branch changed and a retry is due.
   private bgcNoopTokens = new Map<string, number>();
+  // Overflow-forced compactions taken since this session last finished a clean run. A
+  // summarizer that cannot shrink the conversation enough would otherwise loop: error →
+  // compact → continue → error. Three attempts is well past the two a real overflow needs
+  // (the first splices, the continue turn either fits or compacts again).
+  private overflowCompactions = new Map<string, number>();
   // Prompts gated on an in-flight BGC. A rehydrated compact must not drop its
   // session from the store while a held prompt is about to start a turn on it.
   private heldPrompts = new Map<string, number>();
@@ -784,6 +789,24 @@ export class OrcdServer {
     'compacted to make room. Continue the task from where you left off; do not redo work that is ' +
     'already done.';
 
+  /** How many overflow-forced compactions a session may take between clean runs. */
+  private static readonly MAX_OVERFLOW_COMPACTIONS = 3;
+
+  /**
+   * Claim one overflow-forced compaction slot, or refuse once the cap is spent so a
+   * summarizer that cannot shrink the conversation surfaces the error instead of
+   * compact-and-continue looping. A clean run replenishes the allowance.
+   */
+  private takeOverflowCompaction(sid: string): boolean {
+    const used = this.overflowCompactions.get(sid) ?? 0;
+    if (used >= OrcdServer.MAX_OVERFLOW_COMPACTIONS) {
+      console.log(`[orcd:${sid.slice(0, 8)}:bgc] overflow compaction cap reached (${used}); surfacing the error`);
+      return false;
+    }
+    this.overflowCompactions.set(sid, used + 1);
+    return true;
+  }
+
   /**
    * Start a background compaction, or join the one already in flight for this
    * session. The returned promise settles when the attempt is done (splice
@@ -933,6 +956,9 @@ export class OrcdServer {
     session.onBeforeExit(async () => {
       // A new run starts from a fresh turn, so let the next threshold hit try again.
       this.bgcNoopTokens.delete(sid);
+      // Only an errored run needs the overflow allowance; a clean one proves the
+      // conversation fits again, so the next overflow starts from a full cap.
+      if (session.state !== 'errored') this.overflowCompactions.delete(sid);
       const pending = this.pendingApply.get(sid);
       this.pendingApply.delete(sid);
       // No pending splice, or the pending one was refused because a compaction landed
@@ -943,6 +969,19 @@ export class OrcdServer {
         if (session.needsCompaction()) {
           console.log(`[orcd:${sid.slice(0, 8)}:bgc] over threshold at run end; compacting`);
           await this.maybeStartBgc(session);
+        } else if (session.needsOverflowCompaction() && this.takeOverflowCompaction(sid)) {
+          // The failed request never reported usage, so the threshold above cannot see
+          // this overflow: compact on the error itself, then continue the task.
+          console.log(
+            `[orcd:${sid.slice(0, 8)}:bgc] request overflowed the context window at run end; compacting`,
+          );
+          await this.maybeStartBgc(session);
+        }
+        // An overflow error is held back from the UI while recovery has a chance. If no
+        // splice landed (nothing to compact, summarizer failure, retry cap) the card has
+        // to see why the turn died; a no-op for every other run end.
+        if (!this.pendingApply.has(sid) && session.lastContextTokens !== 0) {
+          session.emitSuppressedOverflowError();
         }
       }
     });

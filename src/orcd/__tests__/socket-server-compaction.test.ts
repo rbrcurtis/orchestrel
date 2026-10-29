@@ -553,6 +553,100 @@ describe('OrcdServer background compaction', () => {
     expect(sendSpy).not.toHaveBeenCalled();
   });
 
+  it('compacts on a request-overflow error even below the summarize threshold', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-overflow');
+    session.summarizeThreshold = 0.7;
+    // The overflowing request reported no usage, so the last known size sits under 0.7.
+    session.lastContextTokens = 163_386;
+    session.lastContextWindow = 240_000;
+    session.state = 'errored';
+    session['runError'] =
+      "400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"This model's " +
+      'maximum context length is 240000 tokens. However, you requested 59345 output tokens and your prompt ' +
+      'contains at least 180656 input tokens, for a total of at least 240001 tokens. Please reduce the length ' +
+      'of the input prompt or the number of requested output tokens."}}';
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 180_656, details: undefined };
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(result as never);
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
+    vi.spyOn(session, 'isIdle').mockReturnValue(true);
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+    const emitted: string[] = [];
+    session.subscribe((m) => emitted.push(JSON.stringify(m)));
+
+    await session['runBeforeExitHooks']();
+
+    expect(prepSpy).toHaveBeenCalled();
+    // The card gets the standard compaction line, never the raw 400.
+    expect(emitted.some((e) => e.includes('"type":"error"'))).toBe(false);
+    // And the run resumes on its own once the splice lands.
+    await vi.waitFor(() =>
+      expect(sendSpy).toHaveBeenCalledWith(
+        expect.stringContaining('ended with an error'),
+        undefined,
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('surfaces the overflow error when recovery cannot compact', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-overflow-stuck');
+    session.summarizeThreshold = 0.7;
+    session.lastContextTokens = 163_386;
+    session.lastContextWindow = 240_000;
+    session.state = 'errored';
+    session['runError'] = 'This model\'s maximum context length is 240000 tokens';
+    session['suppressedOverflowError'] = session['runError'];
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    // Nothing compactable: no splice lands, so the card must see the failure.
+    vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(null as never);
+    const emitted: string[] = [];
+    session.subscribe((m) => emitted.push(JSON.stringify(m)));
+
+    await session['runBeforeExitHooks']();
+
+    expect(emitted.some((e) => e.includes('"type":"error"') && e.includes('maximum context length'))).toBe(true);
+  });
+
+  it('leaves a non-overflow error alone', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-other-error');
+    session.summarizeThreshold = 0.7;
+    session.lastContextTokens = 163_386;
+    session.lastContextWindow = 240_000;
+    session.state = 'errored';
+    session['runError'] = 'ECONNRESET: socket hang up';
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(null as never);
+
+    await session['runBeforeExitHooks']();
+
+    expect(prepSpy).not.toHaveBeenCalled();
+  });
+
+  it('stops forcing overflow compactions once the cap is spent', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-overflow-cap');
+    session.summarizeThreshold = 0.7;
+    session.lastContextTokens = 163_386;
+    session.lastContextWindow = 240_000;
+    session.state = 'errored';
+    session['runError'] = 'maximum context length is 240000 tokens';
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    // Nothing compactable: the splice never lands, so the session stays errored.
+    const prepSpy = vi.spyOn(session, 'prepareBgCompaction').mockResolvedValue(null as never);
+
+    for (let i = 0; i < 5; i++) await session['runBeforeExitHooks']();
+
+    expect(prepSpy).toHaveBeenCalledTimes(3);
+  });
+
   it('keeps a rehydrated session resident while a held prompt waits on its compaction', async () => {
     const server = createServer();
     const client = createClient();

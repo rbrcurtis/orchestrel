@@ -153,6 +153,29 @@ describe('pi event boundary mapper', () => {
     });
   });
 
+  it('ignores usage on aborted and errored messages, as Pi does', () => {
+    for (const stopReason of ['aborted', 'error']) {
+      const event = {
+        type: 'message_end',
+        message: { stopReason, usage: { input: 138576, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 138576 } },
+      };
+
+      expect(getContextUsageFromPiEvent(event, 240000)).toBeNull();
+    }
+  });
+
+  it('still reports usage from a completed message', () => {
+    const event = {
+      type: 'message_end',
+      message: { stopReason: 'toolUse', usage: { totalTokens: 154906 } },
+    };
+
+    expect(getContextUsageFromPiEvent(event, 240000)).toEqual({
+      contextTokens: 154906,
+      contextWindow: 240000,
+    });
+  });
+
   it('returns null when no context window is known (usage carries none)', () => {
     const event = {
       type: 'turn_end',

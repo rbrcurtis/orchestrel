@@ -35,6 +35,23 @@ describe('OrcdSession BGC event mapping', () => {
     expect(s.isIdle()).toBe(true);
   });
 
+  it('holds an overflow error back until recovery fails, then emits it once', () => {
+    const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'overflow' });
+    const errors: string[] = [];
+    s.subscribe((m) => {
+      if (m.type === 'error') errors.push(m.error);
+    });
+    s['suppressedOverflowError'] =
+      '400 {"error":{"message":"This model\'s maximum context length is 240000 tokens"}}';
+
+    expect(errors).toEqual([]); // held back while the compaction has a chance
+    s.emitSuppressedOverflowError();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('maximum context length');
+    s.emitSuppressedOverflowError(); // one-shot: a second call must not repeat it
+    expect(errors).toHaveLength(1);
+  });
+
   it('context_usage window prefers node config over a stale BE-passed value', () => {
     // Card 1875 regression: a fable (1M) card persisted contextWindow=200000 from
     // when the model was 200k. orcd must divide by config's live 1M window, else
