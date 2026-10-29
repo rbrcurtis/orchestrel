@@ -7,6 +7,7 @@ Personal kanban board + agent session orchestration.
 - Production is `orchestrel.service` (port 6194): esbuild bundle `dist/server.mjs` under plain `node`, `NODE_ENV=production`, serving the client from `build/client`. There is **no HMR** — `sudo systemctl restart orchestrel` is the deploy step for *any* change, frontend included (its `ExecStartPost` rebuilds the client and API routes).
 - `orchestrel-dev.service` (Vite middleware + HMR, port 6197) is **disabled**; never assume it is running.
 - Never restart a service (or the orcd daemon) without Ryan's approval.
+- `orcd` runs as `orcd.service` (systemd, journald-logged). Restarting it SIGTERMs **every** in-flight card session on the node — sessions die mid-turn with unresolved tool calls (looks like a "subagent failed"). Prefer not to schedule deferred restarts (`systemd-run --on-active=... restart orcd.service`) while cards are actively running.
 - Scripts: `bun run dev` | `build` | `start`. Scratch TypeScript goes in `src/bin/scratch-*` and is deleted when done.
 
 ## Layers
