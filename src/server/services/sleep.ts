@@ -225,6 +225,8 @@ function systemPrompt(phrase: string, now: string): string {
     'Times are 24-hour HH:MM. Never use the word at in a date phrase. Never use the sleep command.',
     'Expand fractional amounts: 1.5 hours is +1 hour 30 minutes.',
     'For a named day, use the next such day after the current local time.',
+    'Conventional hours when the phrase gives none: morning/dawn/sunrise 09:00, midday/noon 12:00, afternoon 15:00, evening/dusk 19:00, night 21:00, wee hours 02:00.',
+    'The answer must be strictly in the future. If the natural reading already passed, give its next occurrence: a passed clock time, day part, or "today"-anchored phrase moves to tomorrow; a passed named day moves to the following week.',
     `The card resumes when: "${phrase}"`,
     'Reply with EXACTLY one line, nothing else:',
     '- If the phrase is a wait from now (minutes, hours, days): WAIT: +<amount>',
