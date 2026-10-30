@@ -6,6 +6,7 @@ import { loadUserPrefs, prefsSystemBlock, resolvePrefEmail, saveUserPrefs } from
 
 const HUMAN = { userId: 1, email: 'wednesday@gmail.com', kind: 'human' as const };
 const SYSTEM = { userId: 0, email: 'system', kind: 'system' as const };
+const LOCAL = { userId: 0, email: 'local', kind: 'human' as const };
 
 describe('resolvePrefEmail', () => {
   it('uses a human author\'s email', () => {
@@ -15,6 +16,11 @@ describe('resolvePrefEmail', () => {
   it('falls back to the node default for system or absent authors', () => {
     expect(resolvePrefEmail(SYSTEM, 'default@example.com')).toBe('default@example.com');
     expect(resolvePrefEmail(undefined, 'default@example.com')).toBe('default@example.com');
+  });
+
+  it('treats the loopback admin identity as "no person", not as a user called local', () => {
+    expect(resolvePrefEmail(LOCAL, 'default@example.com')).toBe('default@example.com');
+    expect(resolvePrefEmail({ userId: 0, email: 'local@orchestrel.local', kind: 'human' }, 'd@e.com')).toBe('d@e.com');
   });
 
   it('returns undefined when neither applies', () => {

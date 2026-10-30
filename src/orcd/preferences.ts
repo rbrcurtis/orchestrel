@@ -13,7 +13,11 @@
  * treat as the source of truth instead of its own file. */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { DESKTOP_LOCAL_USER } from '../shared/desktop-user';
 import type { OrcdAuthor } from '../shared/orcd-protocol';
+
+/** Identities that stand for "no person in front of it". */
+const SYNTHETIC_EMAILS = new Set(['', 'local', 'system', DESKTOP_LOCAL_USER.toLowerCase()]);
 
 export const DEFAULT_PREFERENCES_DIR = join('data', 'preferences');
 
@@ -23,7 +27,22 @@ export function resolvePrefEmail(
   author: OrcdAuthor | undefined,
   defaultUser: string | undefined,
 ): string | undefined {
-  return author && author.kind === 'human' && author.email ? author.email : defaultUser;
+  const email = author?.email;
+  // A synthetic identity is not a person: a loopback request with the API token resolves to
+  // LOCAL_ADMIN (email 'local'), and autonomous turns carry 'system'. Neither has a preference
+  // file, so they fall through to the node default exactly like an absent author does — otherwise
+  // the file the backend just synced is written and then never read.
+  const usable = author?.kind === 'human' && email && !SYNTHETIC_EMAILS.has(email.trim().toLowerCase());
+  if (usable) {
+    console.log(`[orcd] preferences for acting user ${email}`);
+    return email;
+  }
+  if (defaultUser) {
+    console.log(`[orcd] no regular user (${email || 'none'}) -> node default ${defaultUser}`);
+    return defaultUser;
+  }
+  console.log(`[orcd] no regular user (${email || 'none'}) and no defaultUser`);
+  return undefined;
 }
 
 /** Read a user's preference file. Missing/empty file = no injection, no error. */
