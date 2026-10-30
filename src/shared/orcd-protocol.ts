@@ -38,6 +38,12 @@ export interface CreateAction {
   contextWindow?: number;
   summarizeThreshold?: number; // 0-1, fraction of context window to trigger compaction
   author?: OrcdAuthor;
+  /** Sync for one user's preference file: the body the backend read from its own
+   * data/preferences (the maintainer writes only there). orcd writes it to its own
+   * <dir>/<email>.md before starting the session, and every later session on that
+   * node reads it the usual way. Absent = nothing to sync (older backend, or an
+   * autonomous start the backend attributes to no user). */
+  preferences?: { email: string; body: string };
   requestId?: string;
 }
 

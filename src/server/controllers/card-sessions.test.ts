@@ -908,17 +908,21 @@ describe('syncNode', () => {
 
     expect(mockCards[0].column).toBe('running');
     expect(mockCards[0].sessionId).toBe('sess-new');
-    expect(client.create).toHaveBeenCalledWith({
-      prompt: undefined,
-      cwd: '/tmp/project/.worktrees/card-42',
-      provider: 'anthropic',
-      model: 'sonnet',
-      sessionId: undefined,
-      contextWindow: 200000,
-      summarizeThreshold: 0.6,
-      effort: undefined,
-      author: SYSTEM_AUTHOR,
-    });
+    // The action also carries the acting user's preference body, whose content is
+    // whatever this checkout's data/preferences holds — assert the metadata only.
+    expect(client.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: undefined,
+        cwd: '/tmp/project/.worktrees/card-42',
+        provider: 'anthropic',
+        model: 'sonnet',
+        sessionId: undefined,
+        contextWindow: 200000,
+        summarizeThreshold: 0.6,
+        effort: undefined,
+        author: SYSTEM_AUTHOR,
+      }),
+    );
     expect(mockCards[0].promptsSent).toBe(1);
     expect(mockRepo.save).toHaveBeenCalled();
     expect(exitSpy).not.toHaveBeenCalled();
@@ -1046,14 +1050,18 @@ describe('syncNode', () => {
     await syncNode(client as never, syncCtx([{ id: 7, path: '/tmp/project' }]), bus);
 
     expect(mockHasEnabledScheduledJobs).toHaveBeenCalledWith(resolveWorkDir('card-42', '/tmp/project'));
-    expect(warm).toHaveBeenCalledWith({
-      sessionId: 'sess-abc',
-      cwd: resolveWorkDir('card-42', '/tmp/project'),
-      provider: 'anthropic',
-      model: 'sonnet',
-      contextWindow: 200000,
-      summarizeThreshold: 0.6,
-    });
+    // warm() also carries the preference body for the resumed session; its content is
+    // whatever this checkout's data/preferences holds, so assert the metadata only.
+    expect(warm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'sess-abc',
+        cwd: resolveWorkDir('card-42', '/tmp/project'),
+        provider: 'anthropic',
+        model: 'sonnet',
+        contextWindow: 200000,
+        summarizeThreshold: 0.6,
+      }),
+    );
   });
 
   it('does not warm a card belonging to another node', async () => {

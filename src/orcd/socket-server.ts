@@ -18,7 +18,7 @@ export interface OrcdListenConfig {
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
 import { SleepScheduler } from './sleep-scheduler';
-import { DEFAULT_PREFERENCES_DIR, loadUserPrefs, resolvePrefEmail } from './preferences';
+import { DEFAULT_PREFERENCES_DIR, loadUserPrefs, resolvePrefEmail, saveUserPrefs } from './preferences';
 
 interface ClientState {
   socket: Socket;
@@ -367,7 +367,21 @@ export class OrcdServer {
    * Sessions without a human author (auto-start, sleep wake) get the node default. */
   private prefsFor(author?: OrcdAuthor): string | undefined {
     const email = resolvePrefEmail(author, this.opts.defaultUser);
-    return email ? loadUserPrefs(email, this.opts.preferencesDir ?? DEFAULT_PREFERENCES_DIR) : undefined;
+    if (!email) {
+      console.log('[orcd] no author and no defaultUser; injecting no preferences');
+      return undefined;
+    }
+    return loadUserPrefs(email, this.opts.preferencesDir ?? DEFAULT_PREFERENCES_DIR);
+  }
+
+  /** Write the preference file the backend shipped with a create action, so the
+   * session that follows — and every later one — reads it the usual local way. */
+  private syncPrefsFromBackend(payload: { email: string; body: string } | undefined): void {
+    if (!payload) {
+      console.log('[orcd] create carried no preferences; using this node\'s copy');
+      return;
+    }
+    saveUserPrefs(payload.email, payload.body, this.opts.preferencesDir ?? DEFAULT_PREFERENCES_DIR);
   }
 
   private handleCreate(client: ClientState, action: OrcdAction & { action: 'create' }): void {
@@ -427,6 +441,10 @@ export class OrcdServer {
       this.send(client, { type: 'error', sessionId: '', error: `unknown provider: ${action.provider}` });
       return;
     }
+
+    // Sync before the session is built: the prefs it injects come from the file this
+    // writes, so the first session on a node sees the backend's copy, not a stale one.
+    this.syncPrefsFromBackend(action.preferences);
 
     const session = new OrcdSession({
       cwd: action.cwd,

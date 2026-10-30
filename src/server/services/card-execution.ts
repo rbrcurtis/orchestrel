@@ -9,6 +9,7 @@ import { windowForCard } from '../config/capabilities';
 import { parseAppCommands, type AppSlashAction } from '../../shared/slash-commands';
 import type { OrcdClient } from '../orcd-client';
 import { SYSTEM_AUTHOR, type OrcdAuthor } from '../../shared/orcd-protocol';
+import { prefsForAuthor } from './user-prefs';
 import type { FileRef } from '../../shared/ws-protocol';
 
 /** The socket/REST identity that drove a turn (numeric users.id is the stable key). */
@@ -239,6 +240,9 @@ async function sendPrompt(
       summarizeThreshold: card.summarizeThreshold,
       effort: card.thinkingLevel === 'off' ? 'disabled' : card.thinkingLevel,
       author,
+      // This backend owns the preference files; send the acting user's copy so the
+      // card's node writes it locally and loads it the usual way (see user-prefs.ts).
+      preferences: prefsForAuthor(author),
     });
 
     card.sessionId = sessionId;

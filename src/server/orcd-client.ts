@@ -322,6 +322,8 @@ export class OrcdClient {
     contextWindow?: number;
     summarizeThreshold?: number;
     author?: import('../shared/orcd-protocol').OrcdAuthor;
+    /** Per-user preference file to write on that node (see CreateAction). */
+    preferences?: { email: string; body: string };
   }): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!this.socket?.writable) {
@@ -352,6 +354,7 @@ export class OrcdClient {
         contextWindow: opts.contextWindow,
         summarizeThreshold: opts.summarizeThreshold,
         author: opts.author,
+        preferences: opts.preferences,
       });
     });
   }

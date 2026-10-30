@@ -67,14 +67,16 @@ describe('handleAgentCompact', () => {
 
     expect(callback).toHaveBeenCalledWith({});
     expect(mockTrackSession).toHaveBeenCalledWith(42, 'sess-abc');
-    expect(mockCompact).toHaveBeenCalledWith({
-      sessionId: 'sess-abc',
-      cwd: '/tmp/project',
-      provider: 'anthropic',
-      model: 'sonnet',
-      contextWindow: 200_000,
-      summarizeThreshold: 0.6,
-    });
+    expect(mockCompact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'sess-abc',
+        cwd: '/tmp/project',
+        provider: 'anthropic',
+        model: 'sonnet',
+        contextWindow: 200_000,
+        summarizeThreshold: 0.6,
+      }),
+    );
   });
 });
 

@@ -5,6 +5,7 @@ import { Project } from '../models/Project';
 import { messageBus, type MessageBus } from '../bus';
 import { AppDataSource } from '../models/index';
 import { SYSTEM_AUTHOR, type OrcdMessage } from '../../shared/orcd-protocol';
+import { prefsForAuthor } from '../services/user-prefs';
 import { resolveWorkDir } from '../../shared/worktree';
 import { hasEnabledScheduledJobs } from '../../shared/scheduled-jobs';
 import { wakeDueCard } from '../services/sleep';
@@ -891,6 +892,7 @@ async function startCardSession(client: OrcdClient, card: Card, bus: MessageBus 
       summarizeThreshold: card.summarizeThreshold,
       effort,
       author: SYSTEM_AUTHOR,
+      preferences: prefsForAuthor(SYSTEM_AUTHOR),
     });
 
     card.sessionId = sessionId;
