@@ -43,6 +43,55 @@ function overflowPromptTokens(error: string): number | null {
   return Number.isFinite(tokens) && tokens > 0 ? tokens : null;
 }
 
+/** How long the agent must stay non-streaming before a resolved run is allowed to finalize. */
+export const QUIET_MS = 2000;
+/** Upper bound on that wait, so a wedged agent cannot hold the session open forever. */
+export const QUIET_MAX_MS = 120_000;
+const QUIET_POLL_MS = 100;
+
+/**
+ * Wait until the agent has been genuinely quiet for `quietMs`, not merely until the awaited
+ * prompt() resolved.
+ *
+ * prompt() resolves when the turn loop settles, but Pi extensions can queue a follow-up turn from
+ * a turn_end hook (`sendMessage(..., { triggerTurn: true })`) — the narration nudge does exactly
+ * that. orcd used to finalize on the settle, unsubscribe, and report session_exit 'completed' while
+ * Pi was still running: session 7f454d78 (card 3711, 2026-11-01) exited at 14:19:46 and then
+ * rebuilt a jar, restarted the game server and issued four more tool calls in turns that reached
+ * nobody, because the card had already been marked finished. Poll instead of sleeping once: a
+ * follow-up turn starts within milliseconds of the settle, so any streaming observation restarts
+ * the quiet window.
+ *
+ * Returns true when quiet was observed, false when `maxMs` elapsed with the agent still streaming.
+ */
+export async function waitForQuiet(
+  isStreaming: () => boolean,
+  {
+    quietMs = QUIET_MS,
+    maxMs = QUIET_MAX_MS,
+    pollMs = QUIET_POLL_MS,
+    sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    now = () => Date.now(),
+  }: {
+    quietMs?: number;
+    maxMs?: number;
+    pollMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+    now?: () => number;
+  } = {},
+): Promise<boolean> {
+  const deadline = now() + maxMs;
+  let quietSince = now();
+  let streaming = isStreaming();
+  while (streaming || now() - quietSince < quietMs) {
+    if (now() >= deadline) return false;
+    await sleep(pollMs);
+    streaming = isStreaming();
+    if (streaming) quietSince = now();
+  }
+  return true;
+}
+
 export type SessionEventCallback = (
   msg:
     | StreamEventMessage
@@ -459,6 +508,20 @@ export class OrcdSession {
         await session.prompt(opts.prompt, promptOpts);
       } else {
         log('empty prompt; session resumed without running a turn');
+      }
+
+      // The run is only over once Pi stops generating. An extension can queue a follow-up turn
+      // from turn_end (the narration nudge does), so a resolved prompt() is not the end. See
+      // waitForQuiet: without this wait, that follow-up turn ran with orcd already unsubscribed
+      // and the session reported 'completed' mid-task.
+      if (this.state !== 'stopped' && this.state !== 'errored' && this.piSession) {
+        const pi = this.piSession;
+        const quiet = await waitForQuiet(() => pi.isStreaming());
+        if (!quiet) {
+          log('agent still streaming after the quiet window; finalizing anyway');
+        } else {
+          log('agent quiet; run complete');
+        }
       }
 
       if (this.state !== 'stopped' && this.runError) {
