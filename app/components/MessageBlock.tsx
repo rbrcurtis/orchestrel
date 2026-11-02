@@ -426,7 +426,7 @@ function UserBlock({ content, accentColor }: { content: string; accentColor?: st
       <Collapsible
         open={!collapsible || expanded}
         onOpenChange={setExpanded}
-        className="group text-sm text-foreground bg-elevated rounded-lg pl-3 pr-1 py-2 max-w-[85%] border-l-2 min-w-0 overflow-hidden"
+        className="group text-sm text-foreground bg-card rounded-lg pl-3 pr-1 py-2 max-w-[85%] border-l-2 min-w-0 overflow-hidden"
         style={{ borderLeftColor: accentVar }}
       >
         {attachedFiles.length > 0 && (
