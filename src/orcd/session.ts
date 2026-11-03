@@ -48,6 +48,12 @@ export const QUIET_MS = 2000;
 /** Upper bound on that wait, so a wedged agent cannot hold the session open forever. */
 export const QUIET_MAX_MS = 120_000;
 const QUIET_POLL_MS = 100;
+/**
+ * Share of the context window at which a `length` stop counts as window exhaustion rather
+ * than an ordinary output budget. Card 3711 died at 0.99 with `max_tokens` clamped to 2091
+ * and then 1, so anything close to full has to be treated as exhaustion.
+ */
+const WINDOW_EXHAUSTION_RATIO = 0.9;
 
 /**
  * Wait until the agent has been genuinely quiet for `quietMs`, not merely until the awaited
@@ -143,6 +149,9 @@ export class OrcdSession {
   // prompt() resolves normally in that case, so run() needs this to exit with
   // state 'errored' instead of 'completed'.
   private runError: string | null = null;
+  private lastStopReason: string | null = null;
+  private windowExhausted = false;
+  private readonly turnEndHooks: Array<() => void> = [];
   /**
    * An overflow error held back from the UI while its run-end compaction is in flight.
    * Set only for requests that did not fit the window: those are recoverable, and the
@@ -197,6 +206,26 @@ export class OrcdSession {
 
   onBeforeExit(cb: () => Promise<void>): void {
     this.beforeExitHooks.push(cb);
+  }
+
+  /**
+   * Run `cb` at every Pi turn boundary: after the turn's assistant message and all of its
+   * tool results are appended, and before the next request goes out. No request is in
+   * flight there, which is what makes it a safe moment to splice a prepared compaction
+   * into a session that never goes idle.
+   */
+  onTurnEnd(cb: () => void): void {
+    this.turnEndHooks.push(cb);
+  }
+
+  /**
+   * True when the last run stopped on the output cap because the window was already full.
+   * A `length` stop is normally just a token budget, so it only counts as exhaustion when
+   * the live context is at the window's edge; the flag is latched at run end because a
+   * splice that lands afterwards resets `lastContextTokens` to 0.
+   */
+  endedOnWindowExhaustion(): boolean {
+    return !this.running && this.windowExhausted;
   }
 
   private async runBeforeExitHooks(): Promise<void> {
@@ -352,7 +381,22 @@ export class OrcdSession {
     return this.piSession?.replayTranscript(cursor);
   }
 
+  private recordTurnStopReason(message: unknown): void {
+    if (!this.isRecord(message) || message.role !== 'assistant') return;
+    if (typeof message.stopReason === 'string') this.lastStopReason = message.stopReason;
+  }
+
+  private contextSaturation(): number {
+    const window = this.lastContextWindow || this.resolveContextWindow() || 0;
+    if (window <= 0) return 0;
+    return this.lastContextTokens / window;
+  }
+
   private emitMappedPiEvent(event: unknown): void {
+    if (this.isRecord(event) && event.type === 'turn_end') {
+      this.recordTurnStopReason(event.message);
+      for (const cb of this.turnEndHooks) cb();
+    }
     if (this.isRecord(event) && event.type === 'compaction_start') {
       // A manual `/compact` (reason 'manual') is a distinct, foreground full
       // compaction — NOT the background compactor. Keep its lifecycle separate so
@@ -473,6 +517,8 @@ export class OrcdSession {
     this.exitFinalized = false;
     this.runError = null;
     this.suppressedOverflowError = null;
+    this.lastStopReason = null;
+    this.windowExhausted = false;
     try {
       const session = await this.getOrCreatePiSession(opts.effort);
       // A resume reuses the live Pi runtime, which was created with an earlier
@@ -653,6 +699,12 @@ export class OrcdSession {
     if (epoch !== this.runEpoch || this.exitFinalized) return;
     this.exitFinalized = true;
     this.running = false;
+    this.windowExhausted = this.lastStopReason === 'length' && this.contextSaturation() >= WINDOW_EXHAUSTION_RATIO;
+    if (this.windowExhausted) {
+      console.log(
+        `[orcd:${this.id.slice(0, 8)}] run stopped on the output cap at ${this.contextSaturation().toFixed(2)} of the window; treating it as exhaustion`,
+      );
+    }
     await this.runBeforeExitHooks();
     const exitMsg: SessionExitMessage = {
       type: 'session_exit',
@@ -798,6 +850,7 @@ export class OrcdSession {
    * itself rather than on the usage.
    */
   needsOverflowCompaction(): boolean {
+    if (this.endedOnWindowExhaustion()) return true;
     return this.state === 'errored' && this.runError !== null && CONTEXT_OVERFLOW_PATTERN.test(this.runError);
   }
 

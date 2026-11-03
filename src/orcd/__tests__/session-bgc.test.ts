@@ -41,8 +41,7 @@ describe('OrcdSession BGC event mapping', () => {
     s.subscribe((m) => {
       if (m.type === 'error') errors.push(m.error);
     });
-    s['suppressedOverflowError'] =
-      '400 {"error":{"message":"This model\'s maximum context length is 240000 tokens"}}';
+    s['suppressedOverflowError'] = '400 {"error":{"message":"This model\'s maximum context length is 240000 tokens"}}';
 
     expect(errors).toEqual([]); // held back while the compaction has a chance
     s.emitSuppressedOverflowError();
@@ -94,5 +93,57 @@ describe('OrcdSession BGC event mapping', () => {
       .map((e) => e.subtype);
     expect(subtypes).not.toContain('bgc_started');
     expect(subtypes).not.toContain('compact_boundary');
+  });
+});
+
+describe('OrcdSession window exhaustion', () => {
+  function exhaustedSession(id: string, tokens: number, window: number): OrcdSession {
+    const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: id });
+    s.lastContextTokens = tokens;
+    s.lastContextWindow = window;
+    return s;
+  }
+
+  async function endRunWithStopReason(s: OrcdSession, stopReason: string): Promise<void> {
+    s['emitMappedPiEvent']({
+      type: 'turn_end',
+      message: { role: 'assistant', stopReason },
+      toolResults: [],
+    });
+    await s['finalizeExit'](s['runEpoch']);
+  }
+
+  it('treats a length stop at the window edge as an overflow that needs compaction', async () => {
+    const s = exhaustedSession('exhaust-length', 238_000, 240_000);
+    await endRunWithStopReason(s, 'length');
+    expect(s.endedOnWindowExhaustion()).toBe(true);
+    expect(s.needsOverflowCompaction()).toBe(true);
+  });
+
+  it('does not treat a length stop with room left as an overflow', async () => {
+    const s = exhaustedSession('exhaust-budget', 96_000, 240_000);
+    await endRunWithStopReason(s, 'length');
+    expect(s.endedOnWindowExhaustion()).toBe(false);
+    expect(s.needsOverflowCompaction()).toBe(false);
+  });
+
+  it('does not treat a clean stop at the window edge as an overflow', async () => {
+    const s = exhaustedSession('exhaust-clean', 238_000, 240_000);
+    await endRunWithStopReason(s, 'stop');
+    expect(s.endedOnWindowExhaustion()).toBe(false);
+    expect(s.needsOverflowCompaction()).toBe(false);
+  });
+
+  it('runs turn-end hooks at every turn boundary', () => {
+    const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'turnhook' });
+    const seen: string[] = [];
+    s.onTurnEnd(() => seen.push('turn'));
+    s['emitMappedPiEvent']({ type: 'turn_start' });
+    s['emitMappedPiEvent']({
+      type: 'turn_end',
+      message: { role: 'assistant', stopReason: 'stop' },
+      toolResults: [],
+    });
+    expect(seen).toEqual(['turn']);
   });
 });

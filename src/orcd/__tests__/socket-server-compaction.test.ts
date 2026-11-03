@@ -401,9 +401,9 @@ describe('OrcdServer background compaction', () => {
     expect(emitted.some((e) => e.includes('bgc_failed') && e.includes('hit the token cap'))).toBe(true);
   });
 
-  it('defers the splice to run-end when the session is busy, then applies', async () => {
+  it('splices at the next turn boundary while the run is still working', async () => {
     const server = createServer();
-    const session = bgcSession('bgc-defer');
+    const session = bgcSession('bgc-turn');
     server.store.add(session);
     server['attachLifecycleHooks'](session);
     const result = { summary: 'S', firstKeptEntryId: 'e1', tokensBefore: 7, details: undefined };
@@ -411,9 +411,48 @@ describe('OrcdServer background compaction', () => {
     const applySpy = vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
     vi.spyOn(session, 'isIdle').mockReturnValue(false);
     await server['maybeStartBgc'](session);
-    expect(applySpy).not.toHaveBeenCalled(); // deferred, not applied mid-run
-    await session['runBeforeExitHooks'](); // simulate run-end
+    expect(applySpy).not.toHaveBeenCalled();
+    session['emitMappedPiEvent']({
+      type: 'turn_end',
+      message: { role: 'assistant', stopReason: 'stop' },
+      toolResults: [],
+    });
     expect(applySpy).toHaveBeenCalledWith(result);
+    expect(server['pendingApply'].has(session.id)).toBe(false);
+  });
+
+  it('continues the task when a run died on the output cap with the window full', async () => {
+    const server = createServer();
+    const session = bgcSession('bgc-exhaust');
+    session.lastContextTokens = 238_000;
+    session.lastContextWindow = 240_000;
+    server.store.add(session);
+    server['attachLifecycleHooks'](session);
+    session['emitMappedPiEvent']({
+      type: 'turn_end',
+      message: { role: 'assistant', stopReason: 'length' },
+      toolResults: [],
+    });
+    await session['finalizeExit'](session['runEpoch']);
+    expect(session.endedOnWindowExhaustion()).toBe(true);
+
+    vi.spyOn(session, 'applyBgCompaction').mockReturnValue(true);
+    const autoContinue = vi.spyOn(session, 'emitAutoContinue');
+    const sendSpy = vi.spyOn(session, 'sendMessage').mockResolvedValue();
+    server['applyBgcResult'](session, {
+      summary: 'S',
+      firstKeptEntryId: 'e1',
+      tokensBefore: 238_000,
+      details: undefined,
+    } as never);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(autoContinue).toHaveBeenCalled();
+    expect(sendSpy).toHaveBeenCalledWith(
+      expect.stringContaining('ran out of room in the context window'),
+      undefined,
+      expect.anything(),
+    );
   });
 
   it('compacts before dispatching a prompt when a run ended over the threshold', async () => {
@@ -562,7 +601,7 @@ describe('OrcdServer background compaction', () => {
     session.lastContextWindow = 240_000;
     session.state = 'errored';
     session['runError'] =
-      "400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"This model's " +
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"This model\'s ' +
       'maximum context length is 240000 tokens. However, you requested 59345 output tokens and your prompt ' +
       'contains at least 180656 input tokens, for a total of at least 240001 tokens. Please reduce the length ' +
       'of the input prompt or the number of requested output tokens."}}';
@@ -598,7 +637,7 @@ describe('OrcdServer background compaction', () => {
     session.lastContextTokens = 163_386;
     session.lastContextWindow = 240_000;
     session.state = 'errored';
-    session['runError'] = 'This model\'s maximum context length is 240000 tokens';
+    session['runError'] = "This model's maximum context length is 240000 tokens";
     session['suppressedOverflowError'] = session['runError'];
     server.store.add(session);
     server['attachLifecycleHooks'](session);

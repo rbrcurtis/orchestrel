@@ -1,5 +1,11 @@
 import { createServer, type Server, type Socket } from 'net';
-import { SYSTEM_AUTHOR, type CapabilitiesMessage, type OrcdAction, type OrcdAuthor, type OrcdMessage } from '../shared/orcd-protocol';
+import {
+  SYSTEM_AUTHOR,
+  type CapabilitiesMessage,
+  type OrcdAction,
+  type OrcdAuthor,
+  type OrcdMessage,
+} from '../shared/orcd-protocol';
 import { isCompactCommand } from '../shared/slash-commands';
 import { readProviderFile, saveProviderFile, testProviderEndpoint } from './provider-config';
 import type { ProviderConfig } from './config';
@@ -24,6 +30,10 @@ interface ClientState {
   socket: Socket;
   subscriptions: Map<string, SessionEventCallback>;
   authenticated: boolean;
+}
+
+function sessionStillNeedsContinue(session: OrcdSession, reason: 'errored' | 'window-exhausted'): boolean {
+  return reason === 'errored' ? session.state === 'errored' : session.endedOnWindowExhaustion();
 }
 
 export class OrcdServer {
@@ -315,7 +325,9 @@ export class OrcdServer {
         model: saved.config.defaultModel,
         ...(saved.config.defaultThinkingLevel ? { thinkingLevel: saved.config.defaultThinkingLevel } : {}),
       };
-      console.log(`[orcd] providers saved to ${saved.configPath} (${Object.keys(saved.config.providers).length} provider(s))`);
+      console.log(
+        `[orcd] providers saved to ${saved.configPath} (${Object.keys(saved.config.providers).length} provider(s))`,
+      );
       this.send(client, this.buildCapabilities(action.requestId));
     } catch (err) {
       console.warn('[orcd] providers_save rejected:', err instanceof Error ? err.message : String(err));
@@ -323,7 +335,10 @@ export class OrcdServer {
     }
   }
 
-  private async handleProviderTest(client: ClientState, action: OrcdAction & { action: 'provider_test' }): Promise<void> {
+  private async handleProviderTest(
+    client: ClientState,
+    action: OrcdAction & { action: 'provider_test' },
+  ): Promise<void> {
     const result = await testProviderEndpoint(action.baseUrl);
     this.send(client, { type: 'provider_test', requestId: action.requestId, baseUrl: action.baseUrl, ...result });
   }
@@ -378,7 +393,7 @@ export class OrcdServer {
    * session that follows — and every later one — reads it the usual local way. */
   private syncPrefsFromBackend(payload: { email: string; body: string } | undefined): void {
     if (!payload) {
-      console.log('[orcd] create carried no preferences; using this node\'s copy');
+      console.log("[orcd] create carried no preferences; using this node's copy");
       return;
     }
     saveUserPrefs(payload.email, payload.body, this.opts.preferencesDir ?? DEFAULT_PREFERENCES_DIR);
@@ -807,6 +822,17 @@ export class OrcdServer {
     'compacted to make room. Continue the task from where you left off; do not redo work that is ' +
     'already done.';
 
+  /**
+   * Same resume, for a run that stopped cleanly on the output cap because the window was
+   * full. It did not error, so the error wording would send the agent hunting a fault that
+   * does not exist.
+   */
+  private static readonly BGC_CONTINUE_AFTER_WINDOW_PROMPT =
+    '[AUTOMATED MESSAGE FROM THE ORCHESTREL HARNESS - NOT FROM THE USER. This is not a new request.] ' +
+    'Your last turn ran out of room in the context window and was cut off, and the conversation has ' +
+    'since been compacted to make room. Continue the task from where you left off; do not redo work ' +
+    'that is already done.';
+
   /** How many overflow-forced compactions a session may take between clean runs. */
   private static readonly MAX_OVERFLOW_COMPACTIONS = 3;
 
@@ -881,7 +907,7 @@ export class OrcdServer {
       const size = `chars=${result.summary.length} ~${Math.round(result.summary.length / 4)}t`;
       if (!session.isIdle()) {
         this.pendingApply.set(sid, result);
-        console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready (${size}); deferring splice to run-end`);
+        console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready (${size}); deferring splice to next turn end`);
         return;
       }
       console.log(`[orcd:${sid.slice(0, 8)}:bgc] summary ready (${size}); applying now`);
@@ -940,24 +966,30 @@ export class OrcdServer {
    * run's epoch takes over.
    */
   private maybeContinueErrored(session: OrcdSession): void {
+    const reason =
+      session.state === 'errored' ? 'errored' : session.endedOnWindowExhaustion() ? 'window-exhausted' : null;
     // oxlint-disable-next-line orchestrel/log-before-early-return -- quiet by design: splices after clean runs are the norm
-    if (session.state !== 'errored' || !session.isIdle()) return;
+    if (!reason || !session.isIdle()) return;
     const sid = session.id.slice(0, 8);
-    console.log(`[orcd:${sid}:bgc] last run errored; scheduling continue turn after compaction`);
+    console.log(`[orcd:${sid}:bgc] last run ended ${reason}; scheduling continue turn after compaction`);
     setTimeout(() => {
       // A human/BE prompt may have landed in the gap; the running check and the
       // run()-level overlap guard both make that race a no-op here.
       // oxlint-disable-next-line orchestrel/log-before-early-return -- the scheduling log above covers the entered path
-      if (session.state !== 'errored' || !session.isIdle()) return;
-      // Tell the backend before the run starts: the errored run's session_exit
+      if (!sessionStillNeedsContinue(session, reason) || !session.isIdle()) return;
+      // Tell the backend before the run starts: the ended run's session_exit
       // untracked the session, so its early stream events would otherwise be
       // dropped and the card would sit in review while the agent works.
       session.emitAutoContinue();
       session
-        .sendMessage(OrcdServer.BGC_CONTINUE_PROMPT, undefined, SYSTEM_AUTHOR)
+        .sendMessage(
+          reason === 'window-exhausted' ? OrcdServer.BGC_CONTINUE_AFTER_WINDOW_PROMPT : OrcdServer.BGC_CONTINUE_PROMPT,
+          undefined,
+          SYSTEM_AUTHOR,
+        )
         .catch((err: unknown) =>
           console.error(
-            `[orcd:${sid}] continue turn after errored compaction failed:`,
+            `[orcd:${sid}] continue turn after ${reason} compaction failed:`,
             err instanceof Error ? err.message : String(err),
           ),
         );
@@ -968,6 +1000,14 @@ export class OrcdServer {
 
   private attachLifecycleHooks(session: OrcdSession): void {
     const sid = session.id;
+
+    session.onTurnEnd(() => {
+      const pending = this.pendingApply.get(sid);
+      if (pending) {
+        this.pendingApply.delete(sid);
+        this.applyBgcResult(session, pending);
+      }
+    });
 
     // onBeforeExit hooks are persistent (fire on every run-end), so register the
     // deferred-splice apply once per session and make it one-shot via pendingApply.
@@ -990,9 +1030,7 @@ export class OrcdServer {
         } else if (session.needsOverflowCompaction() && this.takeOverflowCompaction(sid)) {
           // The failed request never reported usage, so the threshold above cannot see
           // this overflow: compact on the error itself, then continue the task.
-          console.log(
-            `[orcd:${sid.slice(0, 8)}:bgc] request overflowed the context window at run end; compacting`,
-          );
+          console.log(`[orcd:${sid.slice(0, 8)}:bgc] request overflowed the context window at run end; compacting`);
           await this.maybeStartBgc(session);
         }
         // An overflow error is held back from the UI while recovery has a chance. If no
