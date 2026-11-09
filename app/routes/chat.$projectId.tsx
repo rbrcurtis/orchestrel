@@ -90,7 +90,7 @@ export const NewChatComposer = observer(function NewChatComposer({
                   onPaste={onPaste}
                   placeholder="How can I help you today?"
                   rows={8}
-                  className="min-h-48 resize-none border-0 bg-transparent p-4 pr-10 text-base shadow-none focus-visible:ring-0"
+                  className="min-h-48 max-h-[50vh] resize-none border-0 bg-transparent p-4 pr-10 text-base shadow-none focus-visible:ring-0"
                 />
                 <div className="absolute bottom-2 right-2">
                   <FilePickerButton onClick={openPicker} />
