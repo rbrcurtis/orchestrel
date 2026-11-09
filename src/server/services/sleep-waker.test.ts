@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockFindOneBy = vi.fn();
+const mockFind = vi.fn();
 const mockExecute = vi.fn();
 const mockSubmit = vi.fn();
 const mockPublish = vi.fn();
 
 vi.mock('../models/Card', () => ({
-  Card: { findOneBy: (...args: unknown[]) => mockFindOneBy(...args), find: vi.fn() },
+  Card: {
+    findOneBy: (...args: unknown[]) => mockFindOneBy(...args),
+    find: (...args: unknown[]) => mockFind(...args),
+  },
 }));
 
 // The claim is a conditional UPDATE whose row count decides whether this backend acts.
@@ -42,9 +46,9 @@ vi.mock('../bus', () => ({
   },
 }));
 
-// orcd holds the wake timer now, but the wake itself is still the backend's: its two
-// branches (send the stored prompt, or just start the card) decide what a parked card does
-// when its time arrives. The claim is what stops a second backend doing it again.
+// The poll re-reads the rows every tick, and the claim is what stops a second backend
+// doing the same wake. A parked card's two branches — send the stored prompt, or just
+// start the card — decide what happens when its time arrives.
 function sleepingCard(overrides: Record<string, unknown> = {}) {
   return {
     id: 7,
@@ -61,6 +65,29 @@ async function wake(cardId = 7, now = 1000) {
   const { wakeDueCard } = await import('./sleep');
   return wakeDueCard(cardId, now);
 }
+
+describe('wakeDueCards', () => {
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockFindOneBy.mockReset();
+    mockExecute.mockReset().mockResolvedValue({ affected: 1 });
+    mockSubmit.mockReset();
+  });
+
+  // The whole point of the poll: a wake that came due while the machine was off is still
+  // in the rows, so the next tick finds it instead of relying on a remembered schedule.
+  it('wakes every due card it finds in the rows', async () => {
+    mockFind.mockResolvedValue([{ id: 7 }, { id: 8 }]);
+    mockFindOneBy.mockImplementation(async ({ id }: { id: number }) =>
+      sleepingCard({ id, sleepPrompt: `prompt ${id}` }),
+    );
+
+    const { wakeDueCards } = await import('./sleep');
+    expect(await wakeDueCards(1000)).toBe(2);
+    expect(mockSubmit).toHaveBeenCalledWith(7, 'prompt 7');
+    expect(mockSubmit).toHaveBeenCalledWith(8, 'prompt 8');
+  });
+});
 
 describe('wakeDueCard', () => {
   beforeEach(() => {

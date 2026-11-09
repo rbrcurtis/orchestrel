@@ -8,7 +8,6 @@ import { SYSTEM_AUTHOR, type OrcdMessage } from '../../shared/orcd-protocol';
 import { prefsForAuthor } from '../services/user-prefs';
 import { resolveWorkDir } from '../../shared/worktree';
 import { hasEnabledScheduledJobs } from '../../shared/scheduled-jobs';
-import { wakeDueCard } from '../services/sleep';
 import type { OrcdClient } from '../orcd-client';
 import { windowForCard } from '../config/capabilities';
 
@@ -94,17 +93,6 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
   const repo = () => AppDataSource.getRepository(Card);
 
   client.onMessage(async (msg: OrcdMessage) => {
-    if (msg.type === 'sleep_due') {
-      // orcd held the timer. Every connected backend hears this, so the wake is claimed
-      // against the database before anything acts on it — exactly one wakes the card.
-      const { wakeDueCard } = await import('../services/sleep');
-      const woken = await wakeDueCard(msg.cardId).catch((err) => {
-        console.error(`[sleep] wake for card ${msg.cardId} failed:`, err);
-        return false;
-      });
-      console.log(`[orcd-router] sleep_due card ${msg.cardId} woken=${woken}`);
-      return;
-    }
     if (!('sessionId' in msg)) {
       console.log(`[orcd-router] dropping message with no sessionId: type=${msg.type}`);
       return;
@@ -122,10 +110,7 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
         cardId = routeBgcEvent(msg.sessionId, sdkEvent);
       }
     }
-    if (
-      cardId == null &&
-      (msg.type === 'session_exit' || msg.type === 'turn_complete' || isAutoContinue)
-    ) {
+    if (cardId == null && (msg.type === 'session_exit' || msg.type === 'turn_complete' || isAutoContinue)) {
       const card = await repo().findOneBy({ sessionId: msg.sessionId });
       if (card) {
         cardId = card.id;
@@ -242,8 +227,7 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
       if (card) {
         // Persist only a real change, and at most once a second: a usage report carrying the same
         // numbers is a no-op write, and the stream repeats those constantly.
-        const same =
-          card.contextTokens === msg.contextTokens && card.contextWindow === msg.contextWindow;
+        const same = card.contextTokens === msg.contextTokens && card.contextWindow === msg.contextWindow;
         const last = contextSavedAt.get(cardId) ?? 0;
         if (!same && Date.now() - last >= CONTEXT_SAVE_MIN_MS) {
           contextSavedAt.set(cardId, Date.now());
@@ -497,9 +481,8 @@ export async function syncNode(client: OrcdClient, ctx: SyncContext, bus: Messag
   }
 
   const warmed = await rearmScheduledSessions(client, live, ctx);
-  const armed = await rearmSleepWakes(client);
   console.log(
-    `[sync] node ${node}: ${live.size} live session(s), ${runningCards.length} running card(s), ${warmed} warmed, ${armed} wake(s) armed`,
+    `[sync] node ${node}: ${live.size} live session(s), ${runningCards.length} running card(s), ${warmed} warmed`,
   );
 }
 
@@ -564,28 +547,6 @@ function hasJobsIn(cwd: string, ctx: SyncContext): boolean {
     ctx.worktreeJobs.set(cwd, found);
   }
   return found;
-}
-
-// orcd keeps only in-memory timers, so the rows are re-registered here: a wake that
-// came due while this node was unreachable happens now.
-async function rearmSleepWakes(client: OrcdClient, now = Date.now()): Promise<number> {
-  const repo = AppDataSource.getRepository(Card);
-  const cards = await repo.find({
-    where: { column: 'ready', nodeName: client.nodeName },
-    select: ['id', 'sleepUntil'],
-  });
-
-  let armed = 0;
-  for (const card of cards) {
-    if (card.sleepUntil == null) continue;
-    if (card.sleepUntil <= now) {
-      await wakeDueCard(card.id, now);
-      continue;
-    }
-    client.scheduleSleep(card.id, card.sleepUntil);
-    armed++;
-  }
-  return armed;
 }
 
 // ── Board event listeners ────────────────────────────────────────────────────

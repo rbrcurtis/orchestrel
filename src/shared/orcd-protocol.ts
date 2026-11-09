@@ -230,18 +230,6 @@ export interface FileStageAction {
   };
 }
 
-export interface ScheduleSleepAction {
-  action: 'schedule_sleep';
-  cardId: number;
-  /** Epoch ms. The daemon owns the timer; the backend owns the wake it causes. */
-  wakeAt: number;
-}
-
-export interface CancelSleepAction {
-  action: 'cancel_sleep';
-  cardId: number;
-}
-
 export type OrcdAction =
   | CreateAction
   | MessageAction
@@ -266,9 +254,7 @@ export type OrcdAction =
   | GetHistoryAction
   | GetHistoryPageAction
   | GetTranscriptAction
-  | FileStageAction
-  | ScheduleSleepAction
-  | CancelSleepAction;
+  | FileStageAction;
 
 // ── orcd → Client ────────────────────────────────────────────────────────────
 
@@ -435,11 +421,6 @@ export interface FileStagedMessage {
   };
 }
 
-export interface SleepDueMessage {
-  type: 'sleep_due';
-  cardId: number;
-}
-
 export type OrcdMessage =
   | SessionCreatedMessage
   | StreamEventMessage
@@ -459,5 +440,4 @@ export type OrcdMessage =
   | HistoryMessage
   | HistoryPageMessage
   | TranscriptSnapshotMessage
-  | FileStagedMessage
-  | SleepDueMessage;
+  | FileStagedMessage;

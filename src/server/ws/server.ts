@@ -192,8 +192,8 @@ export function wsServerPlugin(): Plugin {
 
             console.log(`[orcd] ${nodes.length} node client(s) initialized`);
 
-            const { startSleepScheduleCleanup } = await import('../services/sleep');
-            startSleepScheduleCleanup();
+            const { startSleepWaker } = await import('../services/sleep');
+            startSleepWaker();
 
             initState.markInitialized();
           },

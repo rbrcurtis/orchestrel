@@ -1044,7 +1044,6 @@ describe('syncNode', () => {
       list: vi.fn(async () => ({ type: 'session_list', sessions: [] })),
       markActive: vi.fn(),
       warm,
-      scheduleSleep: vi.fn(),
     };
 
     await syncNode(client as never, syncCtx([{ id: 7, path: '/tmp/project' }]), bus);
@@ -1079,7 +1078,6 @@ describe('syncNode', () => {
       list: vi.fn(async () => ({ type: 'session_list', sessions: [] })),
       markActive: vi.fn(),
       warm,
-      scheduleSleep: vi.fn(),
     };
 
     await syncNode(client as never, syncCtx([{ id: 7, path: '/tmp/project' }]), bus);

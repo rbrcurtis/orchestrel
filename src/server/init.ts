@@ -142,8 +142,8 @@ export async function initBackend(): Promise<{
   console.log(`[orcd] ${nodes.length} node client(s) initialized`);
   startupMark('all nodes synced');
 
-  const { startSleepScheduleCleanup } = await import('./services/sleep');
-  startSleepScheduleCleanup();
+  const { startSleepWaker } = await import('./services/sleep');
+  startSleepWaker();
 
   initState.markInitialized();
   startupMark('backend init complete');

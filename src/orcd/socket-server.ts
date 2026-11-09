@@ -23,7 +23,6 @@ export interface OrcdListenConfig {
 }
 import { OrcdSession, type SessionEventCallback } from './session';
 import { SessionStore } from './session-store';
-import { SleepScheduler } from './sleep-scheduler';
 import { DEFAULT_PREFERENCES_DIR, loadUserPrefs, resolvePrefEmail, saveUserPrefs } from './preferences';
 
 interface ClientState {
@@ -40,9 +39,6 @@ export class OrcdServer {
   private server: Server | null = null;
   private clients = new Set<ClientState>();
   readonly store = new SessionStore();
-  // Wake timers for parked cards. Session lifecycle work, so it belongs here: a timer per
-  // backend would fire the same wake once per backend running against the same board.
-  private sleeps = new SleepScheduler();
   // Session ID → in-flight BGC promise. Keeping the promise (not just a flag) lets a
   // prompt arriving mid-compact join it and hold until the splice has landed.
   private compacting = new Map<string, Promise<void>>();
@@ -150,7 +146,6 @@ export class OrcdServer {
       for (const [sessionId, cb] of client.subscriptions) {
         this.store.get(sessionId)?.unsubscribe(cb);
       }
-      this.sleeps.forget(socket);
       this.clients.delete(client);
       console.log('[orcd] client disconnected');
     });
@@ -279,14 +274,6 @@ export class OrcdServer {
         break;
       case 'file_stage':
         this.handleFileStage(client, action);
-        break;
-      case 'schedule_sleep':
-        // The timer runs here; the backend still owns the wake, which it claims against
-        // the database before acting so a second backend cannot wake the same card.
-        this.sleeps.schedule(client.socket, action.cardId, action.wakeAt, (msg) => this.send(client, msg));
-        break;
-      case 'cancel_sleep':
-        this.sleeps.cancel(client.socket, action.cardId);
         break;
     }
   }

@@ -10,13 +10,12 @@
  * cross-checked against the date the model picked, because the small model
  * lands one day early on weekday phrases; one corrective retry follows.
  *
- * The daemon holds the wake timers and the backend acts on them. The card rows stay the
- * only source of truth: orcd survives a restart with no schedule of its own and the
- * backend re-registers what the rows say, so a wake that came due while nothing was
- * connected happens at the next connect.
+ * The waker re-reads the rows on every tick, so a missed fire (restart, machine off,
+ * unreachable node) is caught by the next tick and the cards stay the only schedule.
  */
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { LessThanOrEqual } from 'typeorm';
 import { Card } from '../models/Card';
 import { messageBus, type MessageBus } from '../bus';
 import { loadConfig } from '../../shared/config';
@@ -469,16 +468,37 @@ export async function resolveSleepUntil(phrase: string, now = Date.now()): Promi
 
 // ── Waker ────────────────────────────────────────────────────────────────────
 
+let wakerStarted = false;
 let cleanupStarted = false;
 
-/** Start the wake timer and the stale-sleep cleanup. Safe to call twice. */
-// One minute: a parked card is not urgent, and the first pass at boot covers the
-// wakes that came due while the server was down. A prompt-less wake only moves
-// the card; one with a prompt starts a session, so a tight poll buys nothing.
+/** Wake every sleeping card whose time has arrived. */
+export async function wakeDueCards(now = Date.now()): Promise<number> {
+  const due = await Card.find({ where: { column: 'ready', sleepUntil: LessThanOrEqual(now) } });
+  for (const card of due) await wakeDueCard(card.id, now);
+  return due.length;
+}
+
 /**
- * A wake schedule lives in the card rows, so a card dragged out of ready by hand (or done,
- * or archived) must forget its time, or returning it to ready later would fire the stale
- * one. The timer itself belongs to orcd; this keeps the rows honest.
+ * Start the wake poll and the stale-sleep cleanup. Safe to call twice.
+ *
+ * One minute: a parked card is not urgent, and the first pass shortly after boot
+ * covers the wakes that came due while the machine was down. The scan re-reads the
+ * rows every tick, so nothing has to be re-registered after a restart.
+ */
+export function startSleepWaker(intervalMs = 60_000, bus: MessageBus = messageBus): void {
+  if (wakerStarted) return;
+  wakerStarted = true;
+  startSleepScheduleCleanup(bus);
+
+  const tick = () => void wakeDueCards().catch((err) => console.error('[sleep] wake tick failed:', err));
+  setInterval(tick, intervalMs);
+  setTimeout(tick, 3_000);
+  console.log(`[sleep] waker started (every ${Math.round(intervalMs / 1000)}s)`);
+}
+
+/**
+ * A card dragged out of ready by hand (or done, or archived) must forget its time, or
+ * returning it to ready later would fire the stale one.
  */
 export function startSleepScheduleCleanup(bus: MessageBus = messageBus): void {
   if (cleanupStarted) return;
@@ -496,15 +516,15 @@ export function startSleepScheduleCleanup(bus: MessageBus = messageBus): void {
     console.log(`[sleep] card ${card.id} left ready: dropped its pending wake`);
   });
 
-  console.log('[sleep] orcd holds the wake timers; the row cleanup listener is running');
+  console.log('[sleep] row cleanup listener is running');
 }
 
 /**
  * Wake one card whose time arrived.
  *
- * orcd fires this because it held the timer, and every connected backend hears it. The
- * claim below is what makes exactly one of them act: the read decides whether the card can
- * wake at all, and the conditional update decides who won.
+ * Every backend polls the same board, so the claim below is what makes exactly one of them
+ * act: the read decides whether the card can wake at all, and the conditional update
+ * decides who won.
  */
 export async function wakeDueCard(cardId: number, now = Date.now()): Promise<boolean> {
   const card = await findCardForWake(cardId);
@@ -515,6 +535,8 @@ export async function wakeDueCard(cardId: number, now = Date.now()): Promise<boo
     console.log(`[sleep] card ${cardId} was already woken elsewhere`);
     return false;
   }
+  card.sleepUntil = null;
+  card.sleepPrompt = null;
 
   if (!prompt) {
     // Moving to running fires board:changed, which starts the session.

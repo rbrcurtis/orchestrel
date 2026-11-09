@@ -84,11 +84,6 @@ export async function submitCardPrompt(
           (prompt ? ` then: ${prompt}` : ''),
       );
       const parked = await moveCardToColumn(cardId, 'ready', { sleepUntil: until, sleepPrompt: prompt });
-      // orcd holds the wake timer, so one card wakes once however many backends run against
-      // this board. The card's own node carries it, and the node that receives the
-      // sleep_due event claims the wake in the database before acting.
-      const { client } = await cardAndClient(cardId);
-      client.scheduleSleep(cardId, until);
       return parked;
     } catch (err) {
       console.warn(`[session:${cardId}] app command /sleep failed:`, err instanceof Error ? err.message : err);
