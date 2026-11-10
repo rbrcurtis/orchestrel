@@ -4,6 +4,18 @@ import { resolve } from 'path';
 import { parse as parseYaml } from 'yaml';
 import type { ProviderAliases } from './subagent-policy';
 
+export interface OpenRouterRouting {
+  order?: string[];
+  only?: string[];
+  ignore?: string[];
+  quantizations?: string[];
+  sort?: string;
+  allow_fallbacks?: boolean;
+  require_parameters?: boolean;
+  data_collection?: 'allow' | 'deny';
+  zdr?: boolean;
+}
+
 export interface ModelDef {
   label: string;
   modelID: string;
@@ -12,9 +24,64 @@ export interface ModelDef {
   thinkingLevel?: string;
   /** Default compaction threshold (0-1) applied when this model is selected on a card. */
   summarizeThreshold?: number;
+  /** Provider routing sent on every request for models served through OpenRouter. */
+  openRouterRouting?: OpenRouterRouting;
 }
 
-export type ProviderType = 'anthropic' | 'bedrock' | 'google';
+export type ProviderType = 'anthropic' | 'bedrock' | 'google' | 'openai';
+
+function parseOpenRouterRouting(
+  providerId: string,
+  alias: string,
+  raw: unknown,
+): OpenRouterRouting | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'object') {
+    throw new Error(`config: provider "${providerId}" model "${alias}" openRouterRouting must be a map`);
+  }
+  const r = raw as Record<string, unknown>;
+  const where = `config: provider "${providerId}" model "${alias}" openRouterRouting`;
+  const strings = (key: string): string[] | undefined => {
+    const value = r[key];
+    if (value == null) return undefined;
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+      throw new Error(`${where}.${key} must be a list of strings`);
+    }
+    return value.map(String);
+  };
+  const bool = (key: string): boolean | undefined => {
+    const value = r[key];
+    if (value == null) return undefined;
+    if (typeof value !== 'boolean') throw new Error(`${where}.${key} must be true or false`);
+    return value;
+  };
+  const order = strings('order');
+  const only = strings('only');
+  const ignore = strings('ignore');
+  const quantizations = strings('quantizations');
+  const allowFallbacks = bool('allow_fallbacks');
+  const requireParameters = bool('require_parameters');
+  const zdr = bool('zdr');
+  const sort = r.sort;
+  if (sort != null && typeof sort !== 'string') {
+    throw new Error(`${where}.sort must be "price", "throughput" or "latency"`);
+  }
+  const dataCollection = r.data_collection;
+  if (dataCollection != null && dataCollection !== 'allow' && dataCollection !== 'deny') {
+    throw new Error(`${where}.data_collection must be "allow" or "deny"`);
+  }
+  return {
+    ...(order ? { order } : {}),
+    ...(only ? { only } : {}),
+    ...(ignore ? { ignore } : {}),
+    ...(quantizations ? { quantizations } : {}),
+    ...(sort != null ? { sort: String(sort) } : {}),
+    ...(allowFallbacks != null ? { allow_fallbacks: allowFallbacks } : {}),
+    ...(requireParameters != null ? { require_parameters: requireParameters } : {}),
+    ...(dataCollection != null ? { data_collection: dataCollection } : {}),
+    ...(zdr != null ? { zdr } : {}),
+  };
+}
 
 export interface ProviderDef {
   type?: ProviderType;
@@ -133,6 +200,9 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
         contextWindow: Number(m.contextWindow ?? 200000),
         ...(m.thinkingLevel != null ? { thinkingLevel: String(m.thinkingLevel) } : {}),
         ...(m.summarizeThreshold != null ? { summarizeThreshold: Number(m.summarizeThreshold) } : {}),
+        ...(m.openRouterRouting != null
+          ? { openRouterRouting: parseOpenRouterRouting(id, alias, m.openRouterRouting) }
+          : {}),
       };
     }
 

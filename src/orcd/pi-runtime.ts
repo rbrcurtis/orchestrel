@@ -293,6 +293,7 @@ function modelForThinkingMode(model: Model<Api>, adaptive: boolean): Model<Api> 
 function modelApi(type: ProviderType): Api {
   if (type === 'bedrock') return 'bedrock-converse-stream';
   if (type === 'google') return 'google-generative-ai';
+  if (type === 'openai') return 'openai-completions';
   return 'anthropic-messages';
 }
 
@@ -339,6 +340,7 @@ function registerOrchestrelProvider(
       compat: {
         sendSessionAffinityHeaders: true,
         ...(adaptive ? { forceAdaptiveThinking: true } : {}),
+        ...(model.openRouterRouting ? { openRouterRouting: model.openRouterRouting } : {}),
       },
       ...(adaptive ? { thinkingLevelMap: { xhigh: 'xhigh' } } : {}),
     })),
@@ -627,14 +629,13 @@ export async function createPiRuntimeSession(opts: CreatePiRuntimeSessionOpts): 
     async setModel(provider, model) {
       const cfg = opts.providers?.[provider];
       if (!cfg) throw new Error(`setModel: provider not in orcd config: ${provider}`);
-      // Live switching needs an explicit anthropic-compatible endpoint with its
-      // own credentials. Built-in/OAuth providers (e.g. claude-max) authenticate
-      // through extensions registered at session start and cannot be re-keyed
-      // here — such a switch must start a fresh session instead.
-      const live = cfg.type === 'anthropic' && !cfg.oauth && !!(cfg.baseUrl || cfg.apiKey || cfg.authToken);
+      const live =
+        (cfg.type === 'anthropic' || cfg.type === 'openai') &&
+        !cfg.oauth &&
+        !!(cfg.baseUrl || cfg.apiKey || cfg.authToken);
       if (!live) {
         throw new Error(
-          `setModel: provider ${provider} does not support live switching (needs an anthropic-compatible baseUrl/apiKey and no oauth)`,
+          `setModel: provider ${provider} does not support live switching (needs an anthropic- or openai-compatible baseUrl/apiKey and no oauth)`,
         );
       }
       await ensureProvider(provider, cfg);
