@@ -96,7 +96,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function validateQualifiedModel(value: unknown, parentProvider: string, field: string): string {
-  if (typeof value !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(value)) {
+  if (typeof value !== 'string' || !/^[^/\s]+\/\S+$/.test(value)) {
     throw new Error(`${field} must be a fully qualified provider/modelID`);
   }
   const [provider] = value.split('/');
