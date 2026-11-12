@@ -19,6 +19,8 @@ const WEEKLY_HOUR = 3;
 const WEEKLY_DAY = 0; // Sunday
 const MAX_TIMEOUT = 2_147_483_647;
 
+export const MAINTAINER_SCHEDULE = `memory ${DAILY_HOUR}:00 daily + Sunday ${WEEKLY_HOUR}:00, preferences ${PREFERENCES_HOUR}:00 daily`;
+
 let started = false;
 const timers: ReturnType<typeof setTimeout>[] = [];
 const inFlight = new Set<string>();
