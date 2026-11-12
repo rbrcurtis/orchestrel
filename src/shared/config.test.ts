@@ -43,8 +43,6 @@ providers:
     models:
       assistant: { modelID: qwen3.8-27b-oq8, contextWindow: 262144 }
 memory:
-  provider: max
-  model: assistant
   projects:
     trackable:
       match: ["/home/ryan/Code/trackable", "/home/ryan/Code/transcription"]
@@ -60,8 +58,6 @@ describe('memory config', () => {
     const cfg = parseConfig(MINIMAL, { TRACKABLE_MEMORY_API_KEY: 'k' });
     expect(cfg.memory).toMatchObject({
       mode: 'stage',
-      provider: 'max',
-      model: 'assistant',
       maxTurns: 30,
       excerptTokens: 24000,
       settleMs: 600000,
@@ -99,8 +95,6 @@ providers:
     models:
       assistant: { modelID: qwen3.8-27b-oq8 }
 memory:
-  provider: max
-  model: assistant
   projects:
     trackable: { match: ["/x"], apiUrl: "http://x", project: "trackable" }
 `;
@@ -117,8 +111,6 @@ providers:
     models:
       assistant: { modelID: qwen3.8-27b-oq8 }
 memory:
-  provider: max
-  model: assistant
   projects:
     trackable:
       match: ["/home/ryan/Code/trackable"]

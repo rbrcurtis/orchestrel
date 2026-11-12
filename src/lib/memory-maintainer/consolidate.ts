@@ -1,12 +1,9 @@
-/* Consolidation agent: one pi-ai ModelRuntime tool loop per session. Mirrors
- * src/orcd/pi-runtime.ts provider registration. In stage mode, search executes
- * and store/update/delete are recorded as StagedOps; in write mode they execute
- * against the memory API and are still recorded for the run log. */
 import type { Api, Message, Model, Tool, ToolCall, ToolResultMessage, ThinkingLevel } from '@earendil-works/pi-ai';
 import { Type } from '@earendil-works/pi-ai';
 import { getAgentDir, ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { ProviderConfig as ProviderConfigInput } from '@earendil-works/pi-coding-agent';
-import type { OrchestrelConfig, ProviderDef } from '../../shared/config';
+import type { OrchestrelConfig, ModelDef, ProviderDef } from '../../shared/config';
+import { providerApi } from '../../shared/provider-api';
 import { SECRETS_PATTERN, type Excerpt } from './excerpt';
 import type { MemoryOps, StagedOp } from './memory-api';
 import { SYSTEM_PROMPT } from './prompts';
@@ -27,19 +24,19 @@ export interface ConsolidateOpts {
 }
 
 /**
- * Build a pi-ai model runtime for a configured provider/model. Used by the
- * knowledge maintainer with `memory.provider`/`memory.model` and by the
- * preference maintainer with the node defaults from orcd.yaml.
+ * Build a pi-ai model runtime for the node's default provider/model. Both
+ * maintainers run on the default model so they follow the box's routing instead
+ * of pinning an engine.
  */
 export async function buildModel(
   cfg: OrchestrelConfig,
-  providerId: string,
-  modelId: string,
 ): Promise<{ runtime: ModelRuntime; model: Model<Api> }> {
+  const providerId = cfg.defaultProvider;
+  const modelId = cfg.defaultModel;
   const provider = cfg.providers[providerId];
-  if (!provider) throw new Error(`memory: provider "${providerId}" not in config`);
+  if (!provider) throw new Error(`maintainer: provider "${providerId}" not in config`);
   const modelDef = provider.models[modelId];
-  if (!modelDef) throw new Error(`memory: model "${modelId}" not in provider "${providerId}"`);
+  if (!modelDef) throw new Error(`maintainer: model "${modelId}" not in provider "${providerId}"`);
 
   const agentDir = getAgentDir();
   const runtime = await ModelRuntime.create({
@@ -47,28 +44,30 @@ export async function buildModel(
     modelsPath: `${agentDir}/models.json`,
   });
   const registry = new ModelRegistry(runtime);
-  registry.registerProvider(providerId, toProviderConfig(provider, modelDef.modelID));
+  registry.registerProvider(providerId, toProviderConfig(provider, modelDef));
   const model = registry.find(providerId, modelDef.modelID);
-  if (!model) throw new Error(`memory: failed to resolve model ${providerId}/${modelDef.modelID}`);
+  if (!model) throw new Error(`maintainer: failed to resolve model ${providerId}/${modelDef.modelID}`);
   return { runtime, model };
 }
 
-function toProviderConfig(provider: ProviderDef, modelId: string): ProviderConfigInput {
+function toProviderConfig(provider: ProviderDef, modelDef: ModelDef): ProviderConfigInput {
+  const api = providerApi(provider.type);
   return {
-    name: provider.label ?? 'memory',
-    api: 'anthropic-messages' as const,
+    name: provider.label ?? 'maintainer',
+    api,
     baseUrl: provider.baseUrl || 'https://api.anthropic.com',
     apiKey: provider.apiKey || provider.authToken || ANONYMOUS_API_KEY,
     models: [
       {
-        id: modelId,
-        name: modelId,
-        api: 'anthropic-messages' as const,
-        reasoning: true,
+        id: modelDef.modelID,
+        name: modelDef.label,
+        api,
+        reasoning: provider.type !== 'bedrock',
         input: ['text', 'image'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 262144,
+        contextWindow: modelDef.contextWindow,
         maxTokens: 64_000,
+        ...(modelDef.openRouterRouting ? { compat: { openRouterRouting: modelDef.openRouterRouting } } : {}),
       },
     ],
   };

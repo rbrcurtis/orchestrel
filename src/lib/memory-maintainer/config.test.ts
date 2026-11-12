@@ -4,8 +4,6 @@ import { routeProject } from './config';
 
 const MEMORY: MemoryConfig = {
   mode: 'stage',
-  provider: 'max',
-  model: 'assistant',
   maxTurns: 30,
   excerptTokens: 24000,
   stageDir: 'data/memory-staging',

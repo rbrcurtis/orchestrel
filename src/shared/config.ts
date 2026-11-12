@@ -123,8 +123,6 @@ export interface MemoryPreferencesConfig {
 
 export interface MemoryConfig {
   mode: 'stage' | 'write';
-  provider: string;
-  model: string;
   maxTurns: number;
   excerptTokens: number;
   stageDir: string;
@@ -244,9 +242,6 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
   const rawMemory = raw.memory;
   if (rawMemory && typeof rawMemory === 'object') {
     const m = rawMemory as Record<string, unknown>;
-    if (!m.provider || !m.model) {
-      throw new Error('config: memory requires provider and model');
-    }
     if (!m.projects || typeof m.projects !== 'object') {
       throw new Error('config: memory requires a projects map');
     }
@@ -277,8 +272,6 @@ export function parseConfig(yamlStr: string, env: Record<string, string | undefi
     }
     memory = {
       mode: m.mode === 'write' ? 'write' : 'stage',
-      provider: String(m.provider),
-      model: String(m.model),
       maxTurns: Number(m.maxTurns ?? 30),
       excerptTokens: Number(m.excerptTokens ?? 24000),
       stageDir: String(m.stageDir ?? 'data/memory-staging'),

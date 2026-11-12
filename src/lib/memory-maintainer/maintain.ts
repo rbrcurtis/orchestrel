@@ -62,7 +62,7 @@ export async function runMaintain(cfg: OrchestrelConfig): Promise<MaintainSummar
       byProject.set(f.projectKey, list);
     }
 
-    const { runtime, model } = await buildModel(cfg, memory.provider, memory.model);
+    const { runtime, model } = await buildModel(cfg);
     for (const [key, files] of byProject) {
       const server = {
         apiUrl: memory.projects[key].apiUrl,

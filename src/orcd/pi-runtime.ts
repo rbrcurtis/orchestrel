@@ -27,6 +27,7 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import type { AnthropicMessagesCompat, Api, Model } from '@earendil-works/pi-ai';
 import type { ModelDef, ProviderType } from '../shared/config';
+import { providerApi } from '../shared/provider-api';
 import { buildSubagentPolicy, cleanupManagedSubagentFiles } from '../shared/subagent-policy';
 import type { OrcdAuthor } from '../shared/orcd-protocol';
 import { createOrchestrelSubagentPolicyExtension } from '../pi-extensions/orchestrel-subagent-policy';
@@ -290,13 +291,6 @@ function modelForThinkingMode(model: Model<Api>, adaptive: boolean): Model<Api> 
   };
 }
 
-function modelApi(type: ProviderType): Api {
-  if (type === 'bedrock') return 'bedrock-converse-stream';
-  if (type === 'google') return 'google-generative-ai';
-  if (type === 'openai') return 'openai-completions';
-  return 'anthropic-messages';
-}
-
 function usesBuiltInProvider(provider: NonNullable<CreatePiRuntimeSessionOpts['provider']>): boolean {
   if (provider.oauth) return false;
   return provider.type === 'anthropic' && !provider.baseUrl && !provider.apiKey && !provider.authToken;
@@ -317,7 +311,7 @@ function registerOrchestrelProvider(
   provider: NonNullable<CreatePiRuntimeSessionOpts['provider']>,
   adaptive: boolean,
 ): void {
-  const api = modelApi(provider.type);
+  const api = providerApi(provider.type);
   const cfg: ProviderConfigInput = {
     name: provider.label ?? providerId,
     api,

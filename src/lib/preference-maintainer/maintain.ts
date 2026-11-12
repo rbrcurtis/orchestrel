@@ -84,7 +84,7 @@ export async function runPreferences(cfg: OrchestrelConfig): Promise<PreferenceS
 
     const users: PreferenceUserSummary[] = [];
     if (byUser.size > 0) {
-      const { runtime, model } = await buildModel(cfg, cfg.defaultProvider, cfg.defaultModel);
+      const { runtime, model } = await buildModel(cfg);
       const reasoning = toReasoning(cfg.defaultThinkingLevel);
       for (const [userId, { email, files }] of byUser) {
         try {
