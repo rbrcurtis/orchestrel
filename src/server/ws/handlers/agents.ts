@@ -3,7 +3,6 @@ import { Card } from '../../models/Card';
 import { isCreatePending } from '../../controllers/card-sessions';
 import { isCompactCommand } from '../../../shared/slash-commands';
 import { busRoomBridge } from '../subscriptions';
-import { windowForCard } from '../../config/capabilities';
 import { compactCardSession, stopCardExecution, submitCardPrompt } from '../../services/card-execution';
 
 export async function handleAgentSend(
@@ -98,8 +97,6 @@ export async function handleAgentStatus(
       sessionId: card?.sessionId ?? null,
       promptsSent: card?.promptsSent ?? 0,
       turnsCompleted: card?.turnsCompleted ?? 0,
-      contextTokens: card?.contextTokens ?? 0,
-      contextWindow: card ? windowForCard(card) : 200_000,
     });
     callback({});
   } catch (err) {

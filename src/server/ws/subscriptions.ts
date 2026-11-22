@@ -1,8 +1,7 @@
 import { messageBus } from '../bus';
-import { windowForCard } from '../config/capabilities';
 import type { AppServer, AppSocket } from './types';
 import type { Card as CardEntity } from '../models/Card';
-import type { Card, AgentStatus } from '../../shared/ws-protocol';
+import type { Card } from '../../shared/ws-protocol';
 
 let _io: AppServer | null = null;
 
@@ -107,26 +106,9 @@ export const busRoomBridge = {
     messageBus.on(`card:${cardId}:sdk`, sdkHandler);
     listeners.set('sdk', sdkHandler);
 
-    const statusHandler = (data: unknown) => {
-      io.to(room).emit('agent:status', data as AgentStatus);
-    };
-    messageBus.on(`card:${cardId}:status`, statusHandler);
-    listeners.set('status', statusHandler);
-
-    const contextHandler = async (payload: unknown) => {
-      const ctx = payload as { contextTokens: number; contextWindow: number };
-      const { Card: CardModel } = await import('../models/Card');
-      const card = await CardModel.findOneBy({ id: cardId });
-      io.to(room).emit('agent:status', {
-        cardId,
-        active: true,
-        status: 'running' as const,
-        sessionId: card?.sessionId ?? null,
-        promptsSent: card?.promptsSent ?? 0,
-        turnsCompleted: card?.turnsCompleted ?? 0,
-        contextTokens: ctx.contextTokens,
-        contextWindow: ctx.contextWindow,
-      });
+    const contextHandler = (payload: unknown) => {
+      const ctx = payload as { contextTokens: number | null; contextWindow: number };
+      io.to(room).emit('context:updated', { cardId, ...ctx });
     };
     messageBus.on(`card:${cardId}:context`, contextHandler);
     listeners.set('context', contextHandler);
@@ -142,8 +124,6 @@ export const busRoomBridge = {
         sessionId: p.sessionId,
         promptsSent: card?.promptsSent ?? 0,
         turnsCompleted: card?.turnsCompleted ?? 0,
-        contextTokens: card?.contextTokens ?? 0,
-        contextWindow: card ? windowForCard(card) : 200_000,
       });
     };
     messageBus.on(`card:${cardId}:exit`, exitHandler);

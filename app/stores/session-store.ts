@@ -1,5 +1,5 @@
 import { makeAutoObservable, observable, runInAction } from 'mobx';
-import type { AgentStatus, FileRef } from '../../src/shared/ws-protocol';
+import type { AgentStatus, ContextUpdate, FileRef } from '../../src/shared/ws-protocol';
 import { parseAppCommands } from '../../src/shared/slash-commands';
 import type { WsClient } from '../lib/ws-client';
 import type { SdkMessage, HistoryMessage } from '../lib/sdk-types';
@@ -50,8 +50,8 @@ export interface SessionState {
   turnsCompleted: number;
   accumulator: MessageAccumulator;
   historyLoaded: boolean;
-  contextTokens: number;
-  contextWindow: number;
+  contextTokens: number | null;
+  contextWindow: number | null;
   bgcInProgress: boolean;
   compactInProgress: boolean;
   /** Where the session began — no window of records holds the transcript's first row. */
@@ -67,8 +67,8 @@ function defaultSession(): SessionState {
     turnsCompleted: 0,
     accumulator: new MessageAccumulator(),
     historyLoaded: false,
-    contextTokens: 0,
-    contextWindow: 200_000,
+    contextTokens: null,
+    contextWindow: null,
     bgcInProgress: false,
     compactInProgress: false,
   };
@@ -603,24 +603,19 @@ export class SessionStore {
         if (sdkMsg.subtype === 'bgc_started') {
           s.bgcInProgress = true;
         }
-        // A failed BGC never splices, so it must clear the same state bgc_started set —
-        // otherwise the card shows a compaction that never finishes.
-        if (sdkMsg.subtype === 'bgc_failed') {
+        // A failed BGC never splices, and an applied one ends the run's compaction: both
+        // must clear the state bgc_started set, or the card shows a compaction that never
+        // finishes.
+        if (sdkMsg.subtype === 'bgc_failed' || sdkMsg.subtype === 'compact_boundary') {
           s.bgcInProgress = false;
-        }
-        if (sdkMsg.subtype === 'compact_boundary') {
-          s.bgcInProgress = false;
-          s.contextTokens = 1;
         }
         // A manual `/compact` runs no normal turn, so it emits no result/session_exit
-        // to clear the optimistic "running" state. compact_done is its terminal
-        // signal: reset context and return the session to idle.
+        // to clear the optimistic "running" state. compact_done is its terminal signal.
         if (sdkMsg.subtype === 'compact_started') {
           s.compactInProgress = true;
         }
         if (sdkMsg.subtype === 'compact_done') {
           s.compactInProgress = false;
-          s.contextTokens = 1;
           s.active = false;
           if (s.status === 'running' || s.status === 'starting') s.status = 'completed';
         }
@@ -663,8 +658,16 @@ export class SessionStore {
     s.accumulator.clear();
     this.historyMessages.delete(cardId);
     s.historyLoaded = false;
-    s.contextTokens = 0;
-    s.contextWindow = 200_000;
+    s.contextTokens = null;
+    s.contextWindow = null;
+  }
+
+  handleContextUpdated(data: ContextUpdate) {
+    runInAction(() => {
+      const s = this.getOrCreate(data.cardId);
+      s.contextTokens = data.contextTokens;
+      s.contextWindow = data.contextWindow;
+    });
   }
 
   handleAgentStatus(data: AgentStatus) {
@@ -677,8 +680,6 @@ export class SessionStore {
       s.sessionId = data.sessionId;
       s.promptsSent = data.promptsSent;
       s.turnsCompleted = data.turnsCompleted;
-      s.contextTokens = data.contextTokens;
-      if (data.contextWindow > 0) s.contextWindow = data.contextWindow;
 
       if (data.status === 'completed' || data.status === 'stopped' || data.status === 'errored') {
         s.bgcInProgress = false;

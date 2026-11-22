@@ -17,6 +17,13 @@ describe('ContextGauge percent label', () => {
     expect(screen.getByText('70')).toBeTruthy();
   });
 
+  it('shows a dash and an empty ring when the context size is unknown', () => {
+    const { container } = render(<ContextGauge percent={null} compacted={false} />);
+
+    expect(screen.getByText('-')).toBeTruthy();
+    expect(container.querySelectorAll('circle')[1].getAttribute('stroke-dashoffset')).toBe('100');
+  });
+
   it('disables compact button when no compact action available', () => {
     render(<ContextGauge percent={70} compacted={false} />);
 

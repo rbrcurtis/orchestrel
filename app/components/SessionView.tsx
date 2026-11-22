@@ -96,8 +96,8 @@ export const SessionView = observer(function SessionView({
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
   const sessionStoreId = session?.sessionId ?? null;
-  const contextTokens = session?.contextTokens ?? card?.contextTokens ?? 0;
-  const contextWindow = session?.contextWindow ?? card?.contextWindow ?? 200_000;
+  const contextTokens = session?.contextTokens ?? (card && card.contextTokens > 0 ? card.contextTokens : null);
+  const contextWindow = session?.contextWindow ?? (card && card.contextWindow > 0 ? card.contextWindow : null);
   const subagents = session?.accumulator.subagents ?? new Map();
   const bgcInProgress = session?.bgcInProgress ?? false;
   const compactInProgress = session?.compactInProgress ?? false;
@@ -272,7 +272,8 @@ export const SessionView = observer(function SessionView({
   // historyLoaded transitions false→true when resubscribeAll clears + reloads.
   const historyLoaded = session?.historyLoaded ?? false;
 
-  const contextPercent = contextWindow > 0 ? Math.min(100, (contextTokens / contextWindow) * 100) : 0;
+  const contextPercent =
+    contextTokens !== null && contextWindow !== null ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
 
   async function handleSend(message: string, files?: FileRef[]) {
     setNotification(null); // a new prompt clears any stale session error
@@ -590,7 +591,7 @@ function PromptInput({
   onCompact?: () => void;
   onPromptSent?: () => void;
   sendPending: boolean;
-  contextPercent: number;
+  contextPercent: number | null;
   compacted: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   keepFocusAfterSend?: boolean;

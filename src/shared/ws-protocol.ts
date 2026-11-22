@@ -169,11 +169,17 @@ export const agentStatusSchema = z.object({
   sessionId: z.string().nullable(),
   promptsSent: z.number(),
   turnsCompleted: z.number(),
-  contextTokens: z.number(),
-  contextWindow: z.number(),
 });
 
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
+
+export const contextUpdateSchema = z.object({
+  cardId: z.number(),
+  contextTokens: z.number().nullable(),
+  contextWindow: z.number(),
+});
+
+export type ContextUpdate = z.infer<typeof contextUpdateSchema>;
 
 // ── Socket.IO Typed Events ─────────────────────────────────────────────────
 
@@ -304,6 +310,7 @@ export interface ServerToClientEvents {
   'project:deleted': (data: { id: number }) => void;
   'session:message': (data: { cardId: number; message: unknown }) => void;
   'agent:status': (data: AgentStatus) => void;
+  'context:updated': (data: ContextUpdate) => void;
   /** Nodes re-advertised their capabilities (a provider save, or a reconnect). */
   'nodes:updated': (data: NodeInfo[]) => void;
 }

@@ -66,6 +66,7 @@ export class RootStore {
       onProjectDeleted: (data) => this.projects.handleDeleted(data.id),
       onSessionMessage: (data) => this.sessions.ingestSdkMessage(data.cardId, data.message),
       onAgentStatus: (data) => this.sessions.handleAgentStatus(data),
+      onContextUpdated: (data) => this.sessions.handleContextUpdated(data),
       onNodesUpdated: (nodes) => this.config.hydrateNodes(nodes),
     });
 

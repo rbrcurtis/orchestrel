@@ -585,11 +585,14 @@ describe('orcd message router', () => {
     expect(sdkSpy.mock.calls.length).toBeGreaterThan(before);
   });
 
-  it('sets context tokens to sentinel 1 when compaction is applied', async () => {
+  it('marks the context size unknown and broadcasts it when compaction is applied', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);
     trackSession(42, 'sess-abc');
     mockCards[0].contextTokens = 50000;
+
+    const ctxSpy = vi.fn();
+    bus.on('card:42:context', ctxSpy);
 
     handler!({
       type: 'stream_event',
@@ -599,8 +602,9 @@ describe('orcd message router', () => {
     });
 
     await new Promise((r) => setTimeout(r, 10));
-    expect(mockCards[0].contextTokens).toBe(1);
+    expect(mockCards[0].contextTokens).toBe(0);
     expect(mockRepo.save).toHaveBeenCalled();
+    expect(ctxSpy).toHaveBeenCalledWith({ contextTokens: null, contextWindow: 200000 });
   });
 
   it('routes context_usage to card:N:context bus topic', async () => {
@@ -735,7 +739,7 @@ describe('orcd message router', () => {
       event: { type: 'system', subtype: 'compact_boundary', session_id: 'sess-abc' },
     });
 
-    expect(mockCards[0].contextTokens).toBe(1);
+    expect(mockCards[0].contextTokens).toBe(0);
     expect(mockRepo.save).toHaveBeenCalled();
     expect(sdkSpy).toHaveBeenCalledWith({
       type: 'system',

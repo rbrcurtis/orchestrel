@@ -96,6 +96,55 @@ describe('OrcdSession BGC event mapping', () => {
   });
 });
 
+describe('OrcdSession context accounting', () => {
+  function usageEvent(tokens: number) {
+    return {
+      type: 'turn_end',
+      message: { role: 'assistant', usage: { totalTokens: tokens, contextWindow: 500000 } },
+    };
+  }
+
+  function contextReports(s: OrcdSession): number[] {
+    const reports: number[] = [];
+    s.subscribe((m) => {
+      if (m.type === 'context_usage') reports.push(m.contextTokens);
+    });
+    return reports;
+  }
+
+  it('reports the largest context seen since the last compaction', () => {
+    const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'watermark' });
+    const reports = contextReports(s);
+
+    s['emitMappedPiEvent'](usageEvent(150000));
+    s['emitMappedPiEvent'](usageEvent(142000));
+
+    expect(reports).toEqual([150000, 150000]);
+  });
+
+  it('starts over from the first report after a compaction splices the transcript', () => {
+    const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'splice' });
+    const reports = contextReports(s);
+
+    s['emitMappedPiEvent'](usageEvent(200000));
+    s['emitMappedPiEvent']({ type: 'compaction_end', reason: 'threshold', result: { summary: 'x' } });
+    s['emitMappedPiEvent'](usageEvent(40000));
+
+    expect(reports).toEqual([200000, 40000]);
+    expect(s.lastContextTokens).toBe(40000);
+  });
+
+  it('starts over after a manual /compact finishes', () => {
+    const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: 'manual-reset' });
+
+    s['emitMappedPiEvent'](usageEvent(200000));
+    s.emitCompactStarted();
+    s.emitCompactDone();
+
+    expect(s.lastContextTokens).toBe(0);
+  });
+});
+
 describe('OrcdSession window exhaustion', () => {
   function exhaustedSession(id: string, tokens: number, window: number): OrcdSession {
     const s = new OrcdSession({ cwd: '/tmp', model: 'm', provider: 'test', sessionId: id });

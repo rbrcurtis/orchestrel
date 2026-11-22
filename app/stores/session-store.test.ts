@@ -109,42 +109,20 @@ describe('SessionStore subagent lifecycle', () => {
     expect(emit).toHaveBeenCalledWith('agent:compact', { cardId: 1011 });
   });
 
-  it('sets context tokens to sentinel 1 when background compaction is applied', () => {
+  it('applies a context size update and the unknown state that follows a compaction', () => {
     const store = new SessionStore();
 
-    store.handleAgentStatus({
-      cardId: 1011,
-      active: true,
-      status: 'running',
-      sessionId: 'sess-abc',
-      promptsSent: 1,
-      turnsCompleted: 1,
-      contextTokens: 50000,
-      contextWindow: 200000,
-    });
-    store.ingestSdkMessage(1011, {
-      type: 'system',
-      subtype: 'compact_boundary',
-      source: 'orchestrel-bgc',
-      timestamp: Date.now(),
-    } as SdkMessage);
+    store.handleContextUpdated({ cardId: 1011, contextTokens: 50000, contextWindow: 500000 });
+    expect(store.getSession(1011)?.contextTokens).toBe(50000);
 
-    expect(store.getSession(1011)?.contextTokens).toBe(1);
+    store.handleContextUpdated({ cardId: 1011, contextTokens: null, contextWindow: 500000 });
+    expect(store.getSession(1011)?.contextTokens).toBeNull();
   });
 
-  it('accepts zero context token updates from agent status', () => {
+  it('keeps the reported context size when a terminal agent status arrives', () => {
     const store = new SessionStore();
 
-    store.handleAgentStatus({
-      cardId: 1011,
-      active: true,
-      status: 'running',
-      sessionId: 'sess-abc',
-      promptsSent: 1,
-      turnsCompleted: 1,
-      contextTokens: 50000,
-      contextWindow: 200000,
-    });
+    store.handleContextUpdated({ cardId: 1011, contextTokens: 50000, contextWindow: 500000 });
     store.handleAgentStatus({
       cardId: 1011,
       active: false,
@@ -152,11 +130,10 @@ describe('SessionStore subagent lifecycle', () => {
       sessionId: 'sess-abc',
       promptsSent: 1,
       turnsCompleted: 1,
-      contextTokens: 0,
-      contextWindow: 200000,
     });
 
-    expect(store.getSession(1011)?.contextTokens).toBe(0);
+    expect(store.getSession(1011)?.contextTokens).toBe(50000);
+    expect(store.getSession(1011)?.contextWindow).toBe(500000);
   });
 
   it('clears subagents when agent status is terminal', () => {
@@ -170,8 +147,6 @@ describe('SessionStore subagent lifecycle', () => {
       sessionId: 'sess-abc',
       promptsSent: 1,
       turnsCompleted: 1,
-      contextTokens: 0,
-      contextWindow: 200000,
     });
 
     expect(store.getSession(1011)?.accumulator.subagents.size).toBe(0);
@@ -193,8 +168,6 @@ describe('SessionStore subagent lifecycle', () => {
       sessionId: 'sess-abc',
       promptsSent: 1,
       turnsCompleted: 0,
-      contextTokens: 0,
-      contextWindow: 200000,
     });
 
     emit.mockClear();
@@ -205,8 +178,6 @@ describe('SessionStore subagent lifecycle', () => {
       sessionId: 'sess-abc',
       promptsSent: 1,
       turnsCompleted: 1,
-      contextTokens: 0,
-      contextWindow: 200000,
     });
 
     expect(emit).toHaveBeenCalledWith('session:history-page', { cardId: 1011, page: {} });
@@ -224,8 +195,6 @@ describe('SessionStore subagent lifecycle', () => {
       sessionId: 'sess-abc',
       promptsSent: 1,
       turnsCompleted: 0,
-      contextTokens: 0,
-      contextWindow: 200000,
     });
     store.handleAgentStatus({
       cardId: 1011,
@@ -234,8 +203,6 @@ describe('SessionStore subagent lifecycle', () => {
       sessionId: 'sess-abc',
       promptsSent: 1,
       turnsCompleted: 1,
-      contextTokens: 0,
-      contextWindow: 200000,
     });
 
     expect(emit).not.toHaveBeenCalledWith('session:load', expect.anything());
@@ -260,8 +227,6 @@ describe('SessionStore subagent lifecycle', () => {
       sessionId: 'sess-abc',
       promptsSent: 1,
       turnsCompleted: 0,
-      contextTokens: 0,
-      contextWindow: 200000,
     });
 
     store.ingestSdkMessage(1011, {
@@ -453,8 +418,6 @@ describe('SessionStore resubscribeAll', () => {
       sessionId,
       promptsSent: 0,
       turnsCompleted: 0,
-      contextTokens: 0,
-      contextWindow: 200000,
     };
   }
 
@@ -533,8 +496,6 @@ describe('SessionStore history loading', () => {
       sessionId,
       promptsSent: 1,
       turnsCompleted: 0,
-      contextTokens: 0,
-      contextWindow: 200000,
     };
   }
 
@@ -716,8 +677,6 @@ describe('SessionStore transcript cache', () => {
       sessionId: 'sess-cache',
       promptsSent: 1,
       turnsCompleted: 0,
-      contextTokens: 0,
-      contextWindow: 200_000,
     });
 
     // No viewer registered: nothing is painting this card.

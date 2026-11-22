@@ -52,7 +52,9 @@ vi.mock('~/stores/context', () => ({
 }));
 
 vi.mock('./ContextGauge', () => ({
-  ContextGauge: ({ percent }: { percent: number }) => <div data-testid="context-percent">{percent}</div>,
+  ContextGauge: ({ percent }: { percent: number | null }) => (
+    <div data-testid="context-percent">{percent === null ? '' : percent}</div>
+  ),
 }));
 
 vi.mock('./SubagentFeed', () => ({
@@ -179,18 +181,26 @@ describe('SessionView context percent', () => {
     expect(Number(screen.getByTestId('context-percent').textContent)).toBeCloseTo(69.515);
   });
 
-  it('uses session context tokens even when they are zero', () => {
+  it('falls back to the persisted card size until a live report arrives', () => {
     setDefaultState({
-      card: { contextTokens: 50000, contextWindow: 200000 },
-      session: {
-        contextTokens: 0,
-        contextWindow: 200000,
-      },
+      card: { contextTokens: 217115, contextWindow: 500000 },
+      session: { contextTokens: null, contextWindow: null },
     });
 
     renderSessionView();
 
-    expect(Number(screen.getByTestId('context-percent').textContent)).toBe(0);
+    expect(Number(screen.getByTestId('context-percent').textContent)).toBeCloseTo(43.423);
+  });
+
+  it('has no percentage to show when the context size is unknown', () => {
+    setDefaultState({
+      card: { contextTokens: 0, contextWindow: 500000 },
+      session: { contextTokens: null, contextWindow: 500000 },
+    });
+
+    renderSessionView();
+
+    expect(screen.getByTestId('context-percent').textContent).toBe('');
   });
 
   it('clamps context percent at 100', () => {

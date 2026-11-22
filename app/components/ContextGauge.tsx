@@ -11,7 +11,7 @@ import {
 import { Button } from '~/components/ui/button';
 
 type Props = {
-  percent: number;
+  percent: number | null;
   compacted: boolean;
   onCompact?: () => void;
 };
@@ -24,7 +24,8 @@ function getTier(p: number) {
 }
 
 export function ContextGauge({ percent, compacted, onCompact }: Props) {
-  const clamped = Math.max(0, Math.min(100, percent));
+  const clamped = percent === null ? 0 : Math.max(0, Math.min(100, percent));
+  const label = percent === null ? '-' : clamped > 0 ? String(Math.floor(clamped)) : null;
   const offset = 100 - clamped;
   const { color, glow } = getTier(clamped);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -65,9 +66,7 @@ export function ContextGauge({ percent, compacted, onCompact }: Props) {
               transform-origin: center;
             }
           `}</style>
-          {/* track */}
           <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#33334a" strokeWidth="3" />
-          {/* fill */}
           <circle
             cx="18"
             cy="18"
@@ -80,8 +79,7 @@ export function ContextGauge({ percent, compacted, onCompact }: Props) {
             strokeLinecap="round"
             style={{ transition: 'stroke-dashoffset 0.6s ease, stroke 0.3s ease' }}
           />
-          {/* text — counter-rotate so it reads normally */}
-          {clamped > 0 && (
+          {label !== null && (
             <text
               x="18"
               y="18"
@@ -92,7 +90,7 @@ export function ContextGauge({ percent, compacted, onCompact }: Props) {
               fontWeight="bold"
               style={{ transform: 'rotate(90deg)', transformOrigin: '18px 18px' }}
             >
-              {Math.floor(clamped)}
+              {label}
             </text>
           )}
         </svg>

@@ -124,7 +124,7 @@ export class OrcdSession {
   private pendingModel: { provider: string; model: string; providerConfig: ProviderConfig } | null = null;
   readonly buffer: RingBuffer<unknown>;
 
-  /** Last known context token count (updated after each result) */
+  /** Highest context token count reported since the last compaction spliced the transcript. */
   lastContextTokens = 0;
   lastContextWindow = 0;
 
@@ -474,13 +474,14 @@ export class OrcdSession {
 
     if (!usage) return;
 
-    this.lastContextTokens = usage.contextTokens;
+    const carriedTokens = usage.contextWindow === this.lastContextWindow ? this.lastContextTokens : 0;
+    this.lastContextTokens = Math.max(carriedTokens, usage.contextTokens);
     this.lastContextWindow = usage.contextWindow;
     const msg: ContextUsageMessage = {
       type: 'context_usage',
       sessionId: this.id,
-      contextTokens: usage.contextTokens,
-      contextWindow: usage.contextWindow,
+      contextTokens: this.lastContextTokens,
+      contextWindow: this.lastContextWindow,
     };
     for (const cb of this.subscribers) cb(msg);
   }
@@ -879,9 +880,6 @@ export class OrcdSession {
     const applied = this.piSession.applyBgCompaction(result);
     if (!applied) return false;
     this.emitCompactBoundary();
-    // The next usage event carries the post-splice count. Until it arrives the old
-    // count still looks over-threshold and would re-trigger a summary.
-    this.lastContextTokens = 0;
     return true;
   }
 
@@ -891,6 +889,7 @@ export class OrcdSession {
    */
   emitCompactBoundary(): void {
     this.emitSyntheticSystemEvent('compact_boundary');
+    this.forgetContextSize();
   }
 
   emitBgcStarted(): void {
@@ -933,6 +932,16 @@ export class OrcdSession {
     if (!this.fullCompacting) return;
     this.fullCompacting = false;
     this.emitSyntheticSystemEvent('compact_done', 'orchestrel-compact');
+    this.forgetContextSize();
+  }
+
+  /**
+   * A spliced compaction makes every token count seen so far describing nothing: the
+   * transcript it measured is gone. Until the next usage report the size is unknown, so
+   * a stale high count must not keep re-triggering a summary or holding the meter there.
+   */
+  private forgetContextSize(): void {
+    this.lastContextTokens = 0;
   }
 
   /**

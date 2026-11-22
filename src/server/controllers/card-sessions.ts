@@ -190,16 +190,13 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
         if (sys.subtype === 'compact_boundary' || sys.subtype === 'compact_done') {
           const card = await repo().findOneBy({ id: cardId });
           if (card) {
-            card.contextTokens = 1;
-            // A compaction emits no turn_complete/session_exit, so return the card
-            // to review here the same way a finished turn would — unless a live
-            // agent run still owns the session (a mid-run BGC), in which case
-            // turn_complete/session_exit settles the card.
+            card.contextTokens = 0;
             if (card.column === 'running' && !(await clientForCard(card))?.isActive(card.sessionId ?? ''))
               card.column = 'review';
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
-            console.log(`[oc:${cardId}] ${sys.subtype}: reset contextTokens to 1`);
+            bus.publish(`card:${cardId}:context`, { contextTokens: null, contextWindow: card.contextWindow });
+            console.log(`[oc:${cardId}] ${sys.subtype}: context size unknown until the next usage report`);
           }
           bgcMap.delete(msg.sessionId);
         }
@@ -225,8 +222,6 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
     if (msg.type === 'context_usage') {
       const card = await repo().findOneBy({ id: cardId });
       if (card) {
-        // Persist only a real change, and at most once a second: a usage report carrying the same
-        // numbers is a no-op write, and the stream repeats those constantly.
         const same = card.contextTokens === msg.contextTokens && card.contextWindow === msg.contextWindow;
         const last = contextSavedAt.get(cardId) ?? 0;
         if (!same && Date.now() - last >= CONTEXT_SAVE_MIN_MS) {
