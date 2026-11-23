@@ -96,8 +96,13 @@ export const SessionView = observer(function SessionView({
   const sessionActive = session?.active ?? false;
   const sessionStatus = session?.status ?? 'completed';
   const sessionStoreId = session?.sessionId ?? null;
-  const contextTokens = session?.contextTokens ?? (card && card.contextTokens > 0 ? card.contextTokens : null);
-  const contextWindow = session?.contextWindow ?? (card && card.contextWindow > 0 ? card.contextWindow : null);
+  // Only the live report draws the gauge. The persisted card size is written by the
+  // same events but survives the session, so falling back to it renders a percentage
+  // against a window that may no longer be the model's: card 3676 read 88% on a stale
+  // 200k denominator while orcd was compacting against the live 500k window (35%).
+  // No live report means the size is unknown, and the gauge shows that.
+  const contextTokens = session?.contextTokens ?? null;
+  const contextWindow = session?.contextWindow ?? null;
   const subagents = session?.accumulator.subagents ?? new Map();
   const bgcInProgress = session?.bgcInProgress ?? false;
   const compactInProgress = session?.compactInProgress ?? false;

@@ -181,7 +181,7 @@ describe('SessionView context percent', () => {
     expect(Number(screen.getByTestId('context-percent').textContent)).toBeCloseTo(69.515);
   });
 
-  it('falls back to the persisted card size until a live report arrives', () => {
+  it('shows nothing rather than the persisted card size when no live report has arrived', () => {
     setDefaultState({
       card: { contextTokens: 217115, contextWindow: 500000 },
       session: { contextTokens: null, contextWindow: null },
@@ -189,7 +189,7 @@ describe('SessionView context percent', () => {
 
     renderSessionView();
 
-    expect(Number(screen.getByTestId('context-percent').textContent)).toBeCloseTo(43.423);
+    expect(screen.getByTestId('context-percent').textContent).toBe('');
   });
 
   it('has no percentage to show when the context size is unknown', () => {
