@@ -17,12 +17,9 @@ const sessionCardMap = new Map<string, number>();
 const bgcMap = new Map<string, number>();
 const pendingAsyncAfterTurnComplete = new Map<string, boolean>();
 
-// Last time a card's context usage was persisted. orcd reports usage on every streamed event, so
-// writing the row per event is a SQLite commit per event; on a disk where a commit costs ~200 ms
-// (a rollback-journal write on a container image backed by a spinning disk) those commits occupy
-// the single Node thread and the whole board stops answering. Persist changes only, at most 1/s.
 const contextSavedAt = new Map<number, number>();
 const CONTEXT_SAVE_MIN_MS = 1000;
+const lastContextByCard = new Map<number, { contextTokens: number; contextWindow: number }>();
 
 // Cards whose ws handler is in the middle of `client.create()`. The column is
 // set to 'running' optimistically before the orcd roundtrip so the board
@@ -195,6 +192,7 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
               card.column = 'review';
             card.updatedAt = new Date().toISOString();
             await repo().save(card);
+            lastContextByCard.delete(cardId);
             bus.publish(`card:${cardId}:context`, { contextTokens: null, contextWindow: card.contextWindow });
             console.log(`[oc:${cardId}] ${sys.subtype}: context size unknown until the next usage report`);
           }
@@ -220,6 +218,7 @@ export function initOrcdRouter(client: OrcdClient, bus: MessageBus = messageBus)
     }
 
     if (msg.type === 'context_usage') {
+      lastContextByCard.set(cardId, { contextTokens: msg.contextTokens, contextWindow: msg.contextWindow });
       const card = await repo().findOneBy({ id: cardId });
       if (card) {
         const same = card.contextTokens === msg.contextTokens && card.contextWindow === msg.contextWindow;
@@ -312,6 +311,30 @@ async function settleCompactCard(cardId: number, sessionId: string): Promise<voi
   console.log(`[oc:${cardId}] compact finished → review`);
 }
 
+async function flushContextSize(cardId: number): Promise<void> {
+  const seen = lastContextByCard.get(cardId);
+  if (!seen) {
+    console.log(`[oc:${cardId}] no context report to flush`);
+    return;
+  }
+  const repo = AppDataSource.getRepository(Card);
+  const card = await repo.findOneBy({ id: cardId });
+  if (!card) {
+    console.log(`[oc:${cardId}] context flush: card gone`);
+    return;
+  }
+  if (card.contextTokens === seen.contextTokens && card.contextWindow === seen.contextWindow) {
+    console.log(`[oc:${cardId}] context flush: persisted size already current`);
+    return;
+  }
+  card.contextTokens = seen.contextTokens;
+  card.contextWindow = seen.contextWindow;
+  card.updatedAt = new Date().toISOString();
+  await repo.save(card);
+  contextSavedAt.set(cardId, Date.now());
+  console.log(`[oc:${cardId}] flushed context size ${seen.contextTokens}/${seen.contextWindow}`);
+}
+
 async function handleTurnComplete(
   cardId: number,
   sessionId: string,
@@ -319,6 +342,7 @@ async function handleTurnComplete(
   bus: MessageBus = messageBus,
 ): Promise<void> {
   pendingAsyncAfterTurnComplete.set(sessionId, hasPendingAsyncTasks);
+  await flushContextSize(cardId);
 
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
@@ -343,6 +367,9 @@ async function handleSessionExit(
 ): Promise<void> {
   const repo = AppDataSource.getRepository(Card);
   const card = await repo.findOneBy({ id: cardId });
+
+  await flushContextSize(cardId);
+  lastContextByCard.delete(cardId);
 
   const hadPendingAsyncAfterTurn = pendingAsyncAfterTurnComplete.get(sessionId) === true;
   pendingAsyncAfterTurnComplete.delete(sessionId);

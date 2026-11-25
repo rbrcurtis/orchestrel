@@ -72,9 +72,6 @@ export async function handleAgentStatus(
 ): Promise<void> {
   const { cardId } = data;
   try {
-    // Status is polled on every SessionView mount and on reconnect, so it's the
-    // reliable reconciliation point: rejoin the card room here so a viewed card
-    // keeps receiving live events even after a silent socket reconnect.
     busRoomBridge.joinCard(socket, cardId);
 
     const card = await Card.findOneBy({ id: cardId });
@@ -98,6 +95,13 @@ export async function handleAgentStatus(
       promptsSent: card?.promptsSent ?? 0,
       turnsCompleted: card?.turnsCompleted ?? 0,
     });
+    if (card) {
+      socket.emit('context:updated', {
+        cardId,
+        contextTokens: card.contextTokens > 0 ? card.contextTokens : null,
+        contextWindow: card.contextWindow,
+      });
+    }
     callback({});
   } catch (err) {
     console.error(`[session:${cardId}] agent:status error:`, err);

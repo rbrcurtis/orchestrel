@@ -663,6 +663,57 @@ describe('orcd message router', () => {
     expect(mockRepo.save).toHaveBeenCalledTimes(1);
   });
 
+  it('persists the final context report at turn_complete even inside the throttle window', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    handler!({ type: 'context_usage', sessionId: 'sess-abc', contextTokens: 50000, contextWindow: 200000 });
+    await new Promise((r) => setTimeout(r, 10));
+    handler!({ type: 'context_usage', sessionId: 'sess-abc', contextTokens: 60000, contextWindow: 200000 });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCards[0].contextTokens).toBe(50000);
+
+    await handler!({ type: 'turn_complete', sessionId: 'sess-abc', eventIndex: 9, hasPendingAsyncTasks: false });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCards[0].contextTokens).toBe(60000);
+  });
+
+  it('persists the final context report at session_exit even inside the throttle window', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    handler!({ type: 'context_usage', sessionId: 'sess-abc', contextTokens: 50000, contextWindow: 200000 });
+    await new Promise((r) => setTimeout(r, 10));
+    handler!({ type: 'context_usage', sessionId: 'sess-abc', contextTokens: 60000, contextWindow: 200000 });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCards[0].contextTokens).toBe(50000);
+
+    await handler!({ type: 'session_exit', sessionId: 'sess-abc', state: 'completed' });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockCards[0].contextTokens).toBe(60000);
+  });
+
+  it('does not persist a pre-compaction context count when the turn settles after a splice', async () => {
+    const { initOrcdRouter, trackSession } = await import('./card-sessions');
+    initOrcdRouter(mockClient as never, bus);
+    trackSession(42, 'sess-abc');
+
+    handler!({ type: 'context_usage', sessionId: 'sess-abc', contextTokens: 150000, contextWindow: 200000 });
+    await new Promise((r) => setTimeout(r, 10));
+    await handler!({
+      type: 'stream_event',
+      sessionId: 'sess-abc',
+      eventIndex: 0,
+      event: { type: 'system', subtype: 'compact_boundary', session_id: 'sess-abc' },
+    });
+    await handler!({ type: 'turn_complete', sessionId: 'sess-abc', eventIndex: 1, hasPendingAsyncTasks: false });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mockCards[0].contextTokens).toBe(0);
+  });
+
   it('does not treat task notifications as card completion', async () => {
     const { initOrcdRouter, trackSession } = await import('./card-sessions');
     initOrcdRouter(mockClient as never, bus);

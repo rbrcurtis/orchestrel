@@ -244,4 +244,54 @@ describe('handleAgentStatus', () => {
     );
     expect(callback).toHaveBeenCalledWith({});
   });
+
+  it('seeds the requesting socket with the persisted context size', async () => {
+    const { handleAgentStatus } = await import('./agents');
+    const callback = vi.fn();
+    const emit = vi.fn();
+    mockFindOneBy.mockResolvedValue({
+      id: 42,
+      column: 'review',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 217115,
+      contextWindow: 500000,
+      save: vi.fn(),
+    });
+    mockIsActive.mockReturnValue(false);
+
+    await handleAgentStatus({ cardId: 42 }, callback, { emit } as never);
+
+    expect(emit).toHaveBeenCalledWith('context:updated', {
+      cardId: 42,
+      contextTokens: 217115,
+      contextWindow: 500000,
+    });
+  });
+
+  it('seeds an unknown context size for a card that has never reported usage', async () => {
+    const { handleAgentStatus } = await import('./agents');
+    const callback = vi.fn();
+    const emit = vi.fn();
+    mockFindOneBy.mockResolvedValue({
+      id: 42,
+      column: 'review',
+      sessionId: 'sess-abc',
+      promptsSent: 1,
+      turnsCompleted: 1,
+      contextTokens: 0,
+      contextWindow: 200000,
+      save: vi.fn(),
+    });
+    mockIsActive.mockReturnValue(false);
+
+    await handleAgentStatus({ cardId: 42 }, callback, { emit } as never);
+
+    expect(emit).toHaveBeenCalledWith('context:updated', {
+      cardId: 42,
+      contextTokens: null,
+      contextWindow: 200000,
+    });
+  });
 });
